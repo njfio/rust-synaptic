@@ -32,6 +32,9 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "chrono"
 ndarray = "0.15"
 ordered-float = "4.0"
 
+# Phase 1: Advanced AI Integration - Vector Embeddings
+# Using simple TF-IDF implementation for baseline
+
 # Concurrency
 dashmap = "5.5"
 parking_lot = "0.12"
@@ -53,10 +56,11 @@ tempfile = "3.8"
 criterion = "0.5"
 
 [features]
-default = ["file-storage", "memory-storage"]
+default = ["file-storage", "memory-storage", "embeddings"]
 file-storage = []
 memory-storage = []
 sql-storage = ["sqlx"]
+embeddings = []
 vector-search = []
 
 [[example]]

@@ -61,6 +61,8 @@ pub struct AgentMemory {
     knowledge_graph: Option<memory::knowledge_graph::MemoryKnowledgeGraph>,
     temporal_manager: Option<memory::temporal::TemporalMemoryManager>,
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
+    #[cfg(feature = "embeddings")]
+    embedding_manager: Option<memory::embeddings::EmbeddingManager>,
 }
 
 impl AgentMemory {
@@ -98,6 +100,15 @@ impl AgentMemory {
             None
         };
 
+        // Initialize embedding manager if enabled
+        #[cfg(feature = "embeddings")]
+        let embedding_manager = if config.enable_embeddings {
+            let embedding_config = memory::embeddings::EmbeddingConfig::default();
+            Some(memory::embeddings::EmbeddingManager::new(embedding_config))
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             state,
@@ -106,6 +117,8 @@ impl AgentMemory {
             knowledge_graph,
             temporal_manager,
             advanced_manager,
+            #[cfg(feature = "embeddings")]
+            embedding_manager,
         })
     }
 
@@ -137,6 +150,14 @@ impl AgentMemory {
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
             let _ = am.add_memory(entry.clone(), self.knowledge_graph.as_mut()).await;
+        }
+
+        // Generate embeddings if enabled
+        #[cfg(feature = "embeddings")]
+        if let Some(ref mut em) = self.embedding_manager {
+            let _ = em.add_memory(entry.clone()).map_err(|e| {
+                eprintln!("Warning: Failed to generate embedding: {}", e);
+            });
         }
 
         // Check if we need to create a checkpoint
@@ -265,6 +286,22 @@ impl AgentMemory {
     pub fn has_memory(&self, key: &str) -> bool {
         self.state.has_memory(key)
     }
+
+    /// Semantic search using embeddings (if enabled)
+    #[cfg(feature = "embeddings")]
+    pub fn semantic_search(&mut self, query: &str, limit: Option<usize>) -> Result<Vec<memory::embeddings::SimilarMemory>> {
+        if let Some(ref mut embedding_manager) = self.embedding_manager {
+            embedding_manager.find_similar_to_query(query, limit)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Get embedding statistics (if enabled)
+    #[cfg(feature = "embeddings")]
+    pub fn embedding_stats(&self) -> Option<memory::embeddings::EmbeddingStats> {
+        self.embedding_manager.as_ref().map(|em| em.get_stats())
+    }
 }
 
 /// Memory system statistics
@@ -289,6 +326,8 @@ pub struct MemoryConfig {
     pub enable_knowledge_graph: bool,
     pub enable_temporal_tracking: bool,
     pub enable_advanced_management: bool,
+    #[cfg(feature = "embeddings")]
+    pub enable_embeddings: bool,
 }
 
 impl Default for MemoryConfig {
@@ -303,6 +342,8 @@ impl Default for MemoryConfig {
             enable_knowledge_graph: true,
             enable_temporal_tracking: true,
             enable_advanced_management: true,
+            #[cfg(feature = "embeddings")]
+            enable_embeddings: true,
         }
     }
 }

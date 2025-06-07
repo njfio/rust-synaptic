@@ -16,6 +16,9 @@ pub mod knowledge_graph;
 pub mod temporal;
 pub mod management;
 
+#[cfg(feature = "embeddings")]
+pub mod embeddings;
+
 // Re-export commonly used types
 pub use types::{MemoryEntry, MemoryFragment, MemoryType, MemoryMetadata};
 pub use state::AgentState;

@@ -1,6 +1,6 @@
 //! Integration tests for the AI Agent Memory system
 
-use ai_agent_memory::{
+use synaptic::{
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
     memory::types::MemoryMetadata,
     error::{MemoryError, Result},
