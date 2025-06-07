@@ -42,6 +42,9 @@
 pub mod error;
 pub mod memory;
 
+#[cfg(feature = "distributed")]
+pub mod distributed;
+
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
 pub use memory::{
@@ -63,6 +66,8 @@ pub struct AgentMemory {
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
+    #[cfg(feature = "distributed")]
+    distributed_coordinator: Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
 }
 
 impl AgentMemory {
@@ -109,6 +114,19 @@ impl AgentMemory {
             None
         };
 
+        // Initialize distributed coordinator if enabled
+        #[cfg(feature = "distributed")]
+        let distributed_coordinator = if config.enable_distributed {
+            if let Some(dist_config) = config.distributed_config.clone() {
+                let coordinator = distributed::coordination::DistributedCoordinator::new(dist_config).await?;
+                Some(std::sync::Arc::new(coordinator))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             state,
@@ -119,6 +137,8 @@ impl AgentMemory {
             advanced_manager,
             #[cfg(feature = "embeddings")]
             embedding_manager,
+            #[cfg(feature = "distributed")]
+            distributed_coordinator,
         })
     }
 
@@ -328,6 +348,10 @@ pub struct MemoryConfig {
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
     pub enable_embeddings: bool,
+    #[cfg(feature = "distributed")]
+    pub enable_distributed: bool,
+    #[cfg(feature = "distributed")]
+    pub distributed_config: Option<distributed::DistributedConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -344,6 +368,10 @@ impl Default for MemoryConfig {
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
             enable_embeddings: true,
+            #[cfg(feature = "distributed")]
+            enable_distributed: false,
+            #[cfg(feature = "distributed")]
+            distributed_config: None,
         }
     }
 }

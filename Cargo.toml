@@ -35,9 +35,24 @@ ordered-float = "4.0"
 # Phase 1: Advanced AI Integration - Vector Embeddings
 # Using simple TF-IDF implementation for baseline
 
-# Concurrency
+# Phase 2: Distributed Architecture & Real-time Systems
+tokio-stream = "0.1"
+futures = "0.3"
+tonic = { version = "0.10", optional = true }
+prost = { version = "0.12", optional = true }
+tonic-build = { version = "0.10", optional = true }
+rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+redis = { version = "0.24", features = ["tokio-comp", "cluster"], optional = true }
+# raft = { version = "0.7", optional = true }
+# protobuf = { version = "3.4", optional = true }
+lz4 = "1.24"
+crossbeam = "0.8"
 dashmap = "5.5"
 parking_lot = "0.12"
+tokio-tungstenite = { version = "0.20", optional = true }
+futures-util = { version = "0.3", optional = true }
+
+# Concurrency (already included above)
 
 # Error handling
 thiserror = "1.0"
@@ -50,6 +65,7 @@ tracing-subscriber = "0.3"
 # Utilities
 rayon = "1.7"
 hex = "0.4"
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -62,6 +78,8 @@ memory-storage = []
 sql-storage = ["sqlx"]
 embeddings = []
 vector-search = []
+distributed = ["rdkafka", "redis", "tonic"]
+realtime = ["tokio-tungstenite", "futures-util"]
 
 [[example]]
 name = "basic_usage"

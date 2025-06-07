@@ -68,6 +68,22 @@ pub enum MemoryError {
     /// Generic error for unexpected situations
     #[error("Unexpected error: {message}")]
     Unexpected { message: String },
+
+    /// Consensus-related errors
+    #[error("Consensus error: {message}")]
+    ConsensusError { message: String },
+
+    /// Network-related errors
+    #[error("Network error: {message}")]
+    NetworkError { message: String },
+
+    /// Distributed system errors
+    #[error("Distributed system error: {message}")]
+    DistributedError { message: String },
+
+    /// Serialization errors for distributed operations
+    #[error("Serialization error: {message}")]
+    SerializationError { message: String },
 }
 
 impl MemoryError {

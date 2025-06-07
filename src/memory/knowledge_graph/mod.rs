@@ -17,6 +17,10 @@ pub use graph::{KnowledgeGraph, GraphConfig, GraphStats};
 pub use query::{GraphQuery, GraphQueryBuilder, QueryResult, TraversalOptions};
 pub use reasoning::{GraphReasoner, InferenceRule, InferenceEngine};
 
+// Distributed graph types
+pub type MemoryNode = Node;
+pub type MemoryEdge = Edge;
+
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use std::collections::HashMap;
