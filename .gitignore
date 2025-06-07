@@ -1,0 +1,103 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+
+# Temporary files
+*.tmp
+*.temp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Memory dumps
+*.hprof
+
+# Benchmark results
+/benches/target/
+
+# Test artifacts
+/test-output/
+
+# Documentation build
+/docs/book/
+
+# Local configuration
+.local/
+local.toml
+
+# Backup files
+*.bak
+*.backup
+
+# Editor temporary files
+.#*
+\#*#
+
+# Rust analyzer
+rust-project.json
+
+# Flamegraph
+flamegraph.svg
+perf.data*
+
+# Profiling
+*.prof
+
+# Memory system specific
+agent_memory.db
+memory_storage/
+checkpoints/
+*.checkpoint
