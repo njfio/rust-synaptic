@@ -84,6 +84,22 @@ pub enum MemoryError {
     /// Serialization errors for distributed operations
     #[error("Serialization error: {message}")]
     SerializationError { message: String },
+
+    /// Security and encryption errors
+    #[error("Encryption error: {message}")]
+    Encryption { message: String },
+
+    /// Privacy and differential privacy errors
+    #[error("Privacy error: {message}")]
+    Privacy { message: String },
+
+    /// Key management errors
+    #[error("Key management error: {message}")]
+    KeyManagement { message: String },
+
+    /// Access control errors
+    #[error("Access denied: {message}")]
+    AccessDenied { message: String },
 }
 
 impl MemoryError {
@@ -125,6 +141,34 @@ impl MemoryError {
     /// Create an unexpected error
     pub fn unexpected<S: Into<String>>(message: S) -> Self {
         Self::Unexpected {
+            message: message.into(),
+        }
+    }
+
+    /// Create an encryption error
+    pub fn encryption<S: Into<String>>(message: S) -> Self {
+        Self::Encryption {
+            message: message.into(),
+        }
+    }
+
+    /// Create a privacy error
+    pub fn privacy<S: Into<String>>(message: S) -> Self {
+        Self::Privacy {
+            message: message.into(),
+        }
+    }
+
+    /// Create a key management error
+    pub fn key_management<S: Into<String>>(message: S) -> Self {
+        Self::KeyManagement {
+            message: message.into(),
+        }
+    }
+
+    /// Create an access denied error
+    pub fn access_denied<S: Into<String>>(message: S) -> Self {
+        Self::AccessDenied {
             message: message.into(),
         }
     }

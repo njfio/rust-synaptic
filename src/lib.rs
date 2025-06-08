@@ -49,6 +49,7 @@ pub mod distributed;
 pub mod analytics;
 
 pub mod integrations;
+pub mod security;
 
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};

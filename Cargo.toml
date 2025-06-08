@@ -98,6 +98,7 @@ ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
+security = []
 
 [[example]]
 name = "basic_usage"
@@ -116,6 +117,11 @@ path = "examples/real_integrations.rs"
 name = "combined_full_system"
 path = "examples/combined_full_system.rs"
 required-features = ["distributed", "external-integrations", "embeddings"]
+
+[[example]]
+name = "phase4_security_privacy"
+path = "examples/phase4_security_privacy.rs"
+required-features = ["security"]
 
 
 
