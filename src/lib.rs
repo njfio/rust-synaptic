@@ -60,6 +60,9 @@ pub mod cross_platform;
 // Basic Phase 5 implementation (always available)
 pub mod phase5_basic;
 
+// Phase 5B: Advanced Document Processing (Basic implementation always available)
+pub mod phase5b_basic;
+
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
 pub use memory::{

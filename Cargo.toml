@@ -117,6 +117,20 @@ swift-bridge = { version = "0.1", optional = true }
 # Additional dependencies for Phase 5
 md5 = { version = "0.7", optional = true }
 
+# Phase 5B: Document Processing
+# pdf = { version = "0.8", optional = true }
+# docx = { version = "1.1", optional = true }
+# markdown = { version = "1.0", optional = true }
+pulldown-cmark = { version = "0.9", optional = true }
+csv = { version = "1.3", optional = true }
+# polars = { version = "0.35", features = ["lazy", "csv-file", "parquet", "json"], optional = true }
+# calamine = { version = "0.22", optional = true }
+walkdir = { version = "2.4", optional = true }
+ignore = { version = "0.4", optional = true }
+globset = { version = "0.4", optional = true }
+mime_guess = { version = "2.0", optional = true }
+encoding_rs = { version = "0.8", optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 criterion = "0.5"
@@ -148,8 +162,16 @@ wasm-support = ["wasm-bindgen", "js-sys", "web-sys", "wasm-bindgen-futures", "ge
 mobile-support = ["jni", "ndk", "swift-bridge"]
 cross-platform = ["wasm-support", "md5", "bincode"]
 
+# Phase 5B: Advanced Document Processing
+document-memory = ["pulldown-cmark", "mime_guess", "encoding_rs"]
+data-memory = ["csv"]
+folder-processing = ["walkdir", "ignore", "globset"]
+document-processing = ["document-memory", "data-memory", "folder-processing"]
+
 # Complete Phase 5
 phase5 = ["multimodal", "cross-platform"]
+phase5b = ["document-processing", "multimodal"]
+phase5-complete = ["phase5", "phase5b"]
 
 [[example]]
 name = "basic_usage"
