@@ -112,6 +112,11 @@ required-features = ["analytics"]
 name = "real_integrations"
 path = "examples/real_integrations.rs"
 
+[[example]]
+name = "combined_full_system"
+path = "examples/combined_full_system.rs"
+required-features = ["distributed", "external-integrations", "embeddings"]
+
 
 
 [profile.release]

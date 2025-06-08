@@ -36,37 +36,30 @@
 - **Evolution Tracking**: Memory development and change impact assessment
 - **Differential Processing**: Intelligent change detection and merging
 
-## 🔗 **External Integrations (Phase 2 ✅)**
+## 🔗 **Phase 2: Dual Architecture Approach ✅**
 
-### 🗄️ **Database Integration**
+Synaptic implements **TWO complementary Phase 2 architectures** that can be used independently or together:
+
+### 🕸️ **Phase 2A: Distributed Systems**
+- **Kafka Event Bus**: Real-time event streaming and coordination
+- **Raft Consensus**: Leader election and distributed coordination
+- **Graph Sharding**: Consistent hash ring for horizontal scaling
+- **Real-time Sync**: WebSocket-based live synchronization
+- **Fault Tolerance**: Handles node failures gracefully
+
+### 🔗 **Phase 2B: External Integrations**
 - **PostgreSQL Storage**: Production-ready SQL database with connection pooling
-- **Real Schema Management**: Automated table creation and migrations
-- **Performance Optimized**: Connection pooling, prepared statements, and metrics
-- **Health Monitoring**: Comprehensive database health checks and monitoring
+- **BERT ML Models**: Real 768-dimensional vector embeddings using Candle
+- **LLM Integration**: Anthropic Claude and OpenAI GPT with real API calls
+- **Visualization Engine**: Memory network graphs and analytics timelines
+- **Redis Cache**: High-performance distributed caching
 
-### 🤖 **ML Models Integration**
-- **BERT Embeddings**: Real 768-dimensional vector embeddings using Candle
-- **Similarity Calculations**: Cosine similarity with optimized performance
-- **Access Pattern Prediction**: ML-powered memory access forecasting
-- **Model Management**: Automatic model loading and health validation
-
-### 🧠 **LLM Integration**
-- **Multi-Provider Support**: Anthropic Claude and OpenAI GPT integration
-- **Real API Calls**: Actual LLM inference for insights and summarization
-- **Auto-Detection**: Intelligent provider selection based on available API keys
-- **Cost Tracking**: Token usage and cost monitoring with rate limiting
-
-### 📊 **Visualization Engine**
-- **Real Chart Generation**: Memory network graphs and analytics timelines
-- **PNG Export**: High-quality image generation using Plotters
-- **Interactive Visualizations**: Network topology and temporal analysis
-- **Performance Metrics**: Chart generation tracking and optimization
-
-### 🔄 **Redis Cache**
-- **Distributed Caching**: High-performance Redis integration
-- **Connection Pooling**: Optimized connection management
-- **Health Monitoring**: Real-time cache performance tracking
-- **TTL Management**: Intelligent cache expiration and cleanup
+### 🎯 **Combined Power: Phase 2A + 2B**
+When used together, you get the ultimate AI memory system:
+- **Distributed coordination** with **real external services**
+- **Kafka event streaming** with **PostgreSQL persistence**
+- **Consensus algorithms** with **ML model inference**
+- **Graph sharding** with **LLM-powered insights**
 
 ## 🚀 Quick Start
 
@@ -126,12 +119,20 @@ Synaptic features a sophisticated distributed architecture with enterprise-scale
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        AgentMemory (Core API)                          │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  🧠 AI Integration (Phase 1 ✅)    │  🔗 External Integrations (Phase 2 ✅) │
-│  - Vector Embeddings               │  - PostgreSQL Database              │
-│  - Semantic Search                 │  - BERT ML Models                   │
-│  - Knowledge Graphs                │  - LLM Integration (Claude/GPT)     │
-│  - Temporal Intelligence           │  - Redis Caching                    │
-│                                    │  - Real Visualization               │
+│  🧠 AI Integration (Phase 1 ✅)                                         │
+│  - Vector Embeddings               │  - Knowledge Graphs                │
+│  - Semantic Search                 │  - Temporal Intelligence           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🕸️ Distributed Systems (Phase 2A ✅) │  🔗 External Integrations (Phase 2B ✅) │
+│  - Kafka Event Streaming          │  - PostgreSQL Database              │
+│  - Raft Consensus Algorithm       │  - BERT ML Models                   │
+│  - Graph Sharding & Scaling       │  - LLM Integration (Claude/GPT)     │
+│  - Real-time WebSocket Sync       │  - Redis Caching                    │
+│  - Fault Tolerance                │  - Real Visualization               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🎯 Combined Power: Phase 2A + 2B (Available Now!)                     │
+│  - Distributed + External Services │ - Kafka + PostgreSQL               │
+│  - Consensus + ML Models          │  - Sharding + LLM Insights          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  📊 Advanced Analytics (Phase 3 🚧)                                     │
 │  - Predictive Analytics           │  - Behavioral Analysis              │
@@ -173,13 +174,22 @@ Memory 1: "Project Alpha - React app with authentication and real-time chat"
 
 ## 🧪 Examples
 
-The repository includes comprehensive examples:
+The repository includes comprehensive examples for all system capabilities:
 
+### 🎯 **Core Functionality**
 - **[Basic Usage](examples/basic_usage.rs)**: Getting started with core functionality
 - **[Knowledge Graph](examples/knowledge_graph_usage.rs)**: Advanced graph operations
 - **[Intelligent Updates](examples/intelligent_updates.rs)**: Demonstrating smart merging
-- **[Real Integrations](examples/real_integrations.rs)**: Complete external integrations demo
 - **[Simple Demo](examples/simple_intelligent_updates.rs)**: Quick demonstration
+
+### 🕸️ **Distributed Systems (Phase 2A)**
+- **[Distributed System](examples/phase2_distributed_system.rs)**: Kafka, consensus, sharding
+
+### 🔗 **External Integrations (Phase 2B)**
+- **[Real Integrations](examples/real_integrations.rs)**: PostgreSQL, BERT, LLM, Redis, visualization
+
+### 🎯 **Combined Full System**
+- **[Combined Demo](examples/combined_full_system.rs)**: BOTH distributed + external integrations
 
 Run examples with:
 ```bash
@@ -187,32 +197,73 @@ Run examples with:
 cargo run --example basic_usage
 cargo run --example intelligent_updates
 
-# External integrations (Phase 2)
+# Phase 2A: Distributed systems
+cargo run --example phase2_distributed_system --features "distributed,embeddings"
+
+# Phase 2B: External integrations
+cargo run --example real_integrations --features external-integrations
+
+# Combined: BOTH Phase 2A + 2B (Full Power!)
+cargo run --example combined_full_system --features "distributed,external-integrations,embeddings"
+```
+
+### 🚀 **Complete Setup Guide**
+
+#### **Option 1: External Integrations Only (Phase 2B)**
+```bash
+# Set up environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# Start external services (PostgreSQL + Redis)
+docker-compose up -d postgres redis
+
+# Run external integrations demo
 cargo run --example real_integrations --features external-integrations
 ```
 
-### 🔗 **External Integrations Demo**
-
-The real integrations example demonstrates all Phase 2 features:
-
+#### **Option 2: Distributed Systems Only (Phase 2A)**
 ```bash
-# Set up environment (copy .env.example to .env and configure)
-cp .env.example .env
+# Start Kafka infrastructure
+docker-compose up -d zookeeper kafka
 
-# Start external services
+# Run distributed systems demo
+cargo run --example phase2_distributed_system --features "distributed,embeddings"
+```
+
+#### **Option 3: Combined Full System (Phase 2A + 2B)**
+```bash
+# Set up environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# Start ALL services (PostgreSQL + Redis + Kafka + Zookeeper)
 docker-compose up -d
 
-# Run the complete integration demo
-cargo run --example real_integrations --features external-integrations
+# Run the complete combined demo
+cargo run --example combined_full_system --features "distributed,external-integrations,embeddings"
 ```
 
-This demo showcases:
+### 🎯 **What Each Demo Showcases**
+
+#### **External Integrations Demo**
 - ✅ **PostgreSQL Database**: Real SQL storage with connection pooling
 - ✅ **BERT ML Models**: 768-dimensional embeddings and similarity calculations
 - ✅ **LLM Integration**: Real Anthropic Claude API calls for insights
 - ✅ **Visualization**: PNG chart generation with memory networks
 - ✅ **Redis Cache**: High-performance distributed caching
-- ✅ **Knowledge Graph**: Node creation and relationship management
+
+#### **Distributed Systems Demo**
+- ✅ **Kafka Event Streaming**: Real-time event coordination
+- ✅ **Raft Consensus**: Leader election and distributed coordination
+- ✅ **Graph Sharding**: Consistent hash ring for horizontal scaling
+- ✅ **Real-time Sync**: WebSocket-based live synchronization
+
+#### **Combined Demo**
+- ✅ **Everything Above**: Full distributed + external integrations
+- ✅ **Unified Coordination**: Kafka events + PostgreSQL persistence
+- ✅ **ML + Consensus**: BERT models + distributed coordination
+- ✅ **Complete System**: The ultimate AI memory architecture
 
 ## 🧪 **Comprehensive Testing (59/59 Passing)**
 
