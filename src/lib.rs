@@ -77,6 +77,7 @@ pub struct AgentMemory {
     #[cfg(feature = "analytics")]
     analytics_engine: Option<analytics::AnalyticsEngine>,
     integration_manager: Option<integrations::IntegrationManager>,
+    security_manager: Option<security::SecurityManager>,
 }
 
 impl AgentMemory {
@@ -153,6 +154,14 @@ impl AgentMemory {
             None
         };
 
+        // Initialize security manager if enabled
+        let security_manager = if config.enable_security {
+            let security_config = config.security_config.clone().unwrap_or_default();
+            Some(security::SecurityManager::new(security_config).await?)
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             state,
@@ -168,6 +177,7 @@ impl AgentMemory {
             #[cfg(feature = "analytics")]
             analytics_engine,
             integration_manager,
+            security_manager,
         })
     }
 
@@ -387,6 +397,8 @@ pub struct MemoryConfig {
     pub analytics_config: Option<analytics::AnalyticsConfig>,
     pub enable_integrations: bool,
     pub integrations_config: Option<integrations::IntegrationConfig>,
+    pub enable_security: bool,
+    pub security_config: Option<security::SecurityConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -413,6 +425,8 @@ impl Default for MemoryConfig {
             analytics_config: None,
             enable_integrations: false,
             integrations_config: None,
+            enable_security: false,
+            security_config: None,
         }
     }
 }

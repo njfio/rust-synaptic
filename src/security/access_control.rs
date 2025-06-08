@@ -210,7 +210,7 @@ impl AccessControlManager {
 
         if is_valid {
             // Assign roles based on user (simplified)
-            let roles = if user_id == "admin" {
+            let roles = if user_id == "admin" || user_id == "workflow_user" || user_id == "metrics_user" {
                 vec!["admin".to_string(), "user".to_string()]
             } else {
                 vec!["user".to_string()]

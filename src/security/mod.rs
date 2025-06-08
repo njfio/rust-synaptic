@@ -4,7 +4,7 @@
 //! AI agent memory system, including zero-knowledge architecture, homomorphic encryption,
 //! differential privacy, and advanced access control.
 
-use crate::error::Result;
+use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ pub mod privacy;
 pub mod access_control;
 pub mod audit;
 pub mod key_management;
+pub mod zero_knowledge;
 
 /// Security configuration for the memory system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +41,8 @@ pub struct SecurityConfig {
     pub enable_secure_mpc: bool,
     /// Enable homomorphic operations
     pub enable_homomorphic_ops: bool,
+    /// Zero-knowledge configuration
+    pub zero_knowledge_config: zero_knowledge::ZeroKnowledgeConfig,
 }
 
 impl Default for SecurityConfig {
@@ -55,6 +58,7 @@ impl Default for SecurityConfig {
             key_rotation_interval_hours: 24,
             enable_secure_mpc: true,
             enable_homomorphic_ops: true,
+            zero_knowledge_config: zero_knowledge::ZeroKnowledgeConfig::default(),
         }
     }
 }
@@ -244,6 +248,7 @@ pub struct SecurityManager {
     pub access_control: access_control::AccessControlManager,
     pub audit_logger: audit::AuditLogger,
     pub key_manager: key_management::KeyManager,
+    pub zero_knowledge_manager: Option<zero_knowledge::ZeroKnowledgeManager>,
 }
 
 impl SecurityManager {
@@ -255,6 +260,12 @@ impl SecurityManager {
         let audit_logger = audit::AuditLogger::new(&config.audit_config).await?;
         let key_manager = key_management::KeyManager::new(&config).await?;
 
+        let zero_knowledge_manager = if config.enable_zero_knowledge {
+            Some(zero_knowledge::ZeroKnowledgeManager::new(&config).await?)
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             encryption_manager,
@@ -262,6 +273,7 @@ impl SecurityManager {
             access_control,
             audit_logger,
             key_manager,
+            zero_knowledge_manager,
         })
     }
 
@@ -336,6 +348,44 @@ impl SecurityManager {
         Ok(result)
     }
 
+    /// Generate zero-knowledge proof for memory access
+    pub async fn generate_access_proof(&mut self,
+        memory_key: &str,
+        context: &SecurityContext,
+        access_type: zero_knowledge::AccessType,
+    ) -> Result<zero_knowledge::ZKProof> {
+        if let Some(ref mut zkm) = self.zero_knowledge_manager {
+            zkm.generate_access_proof(memory_key, context, access_type).await
+        } else {
+            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+        }
+    }
+
+    /// Verify zero-knowledge proof
+    pub async fn verify_access_proof(&mut self,
+        proof: &zero_knowledge::ZKProof,
+        statement: &zero_knowledge::AccessStatement,
+    ) -> Result<bool> {
+        if let Some(ref mut zkm) = self.zero_knowledge_manager {
+            zkm.verify_access_proof(proof, statement).await
+        } else {
+            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+        }
+    }
+
+    /// Generate content proof without revealing content
+    pub async fn generate_content_proof(&mut self,
+        entry: &MemoryEntry,
+        predicate: zero_knowledge::ContentPredicate,
+        context: &SecurityContext,
+    ) -> Result<zero_knowledge::ZKProof> {
+        if let Some(ref mut zkm) = self.zero_knowledge_manager {
+            zkm.generate_content_proof(entry, predicate, context).await
+        } else {
+            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+        }
+    }
+
     /// Get security metrics
     pub async fn get_security_metrics(&mut self, context: &SecurityContext) -> Result<SecurityMetrics> {
         // Check permissions
@@ -346,11 +396,18 @@ impl SecurityManager {
         let access_metrics = self.access_control.get_metrics().await?;
         let audit_metrics = self.audit_logger.get_metrics().await?;
 
+        let zero_knowledge_metrics = if let Some(ref zkm) = self.zero_knowledge_manager {
+            Some(zkm.get_metrics().await?)
+        } else {
+            None
+        };
+
         Ok(SecurityMetrics {
             encryption_metrics,
             privacy_metrics,
             access_metrics,
             audit_metrics,
+            zero_knowledge_metrics,
             timestamp: Utc::now(),
         })
     }
@@ -418,5 +475,6 @@ pub struct SecurityMetrics {
     pub privacy_metrics: privacy::PrivacyMetrics,
     pub access_metrics: access_control::AccessMetrics,
     pub audit_metrics: audit::AuditMetrics,
+    pub zero_knowledge_metrics: Option<zero_knowledge::ZeroKnowledgeMetrics>,
     pub timestamp: DateTime<Utc>,
 }
