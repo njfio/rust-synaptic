@@ -106,57 +106,56 @@ async fn create_enterprise_knowledge_graph(memory: &mut AgentMemory) -> Result<(
         memory.store(key, description).await?;
     }
 
-    // Create complex relationships
-    if let Some(kg) = memory.knowledge_graph.as_mut() {
-        // Department-Project relationships
-        kg.add_relationship("engineering", "project_ai_platform", RelationshipType::Manages, 0.9).await?;
-        kg.add_relationship("engineering", "project_mobile_app", RelationshipType::Manages, 0.8).await?;
-        kg.add_relationship("engineering", "project_data_pipeline", RelationshipType::Manages, 0.9).await?;
-        kg.add_relationship("operations", "project_security_audit", RelationshipType::Manages, 0.7).await?;
-        kg.add_relationship("operations", "project_cloud_migration", RelationshipType::Manages, 0.8).await?;
+    // Create complex relationships using the public API
+    // Department-Project relationships
+    memory.create_memory_relationship("engineering", "project_ai_platform", RelationshipType::Custom("manages".to_string())).await?;
+    memory.create_memory_relationship("engineering", "project_mobile_app", RelationshipType::Custom("manages".to_string())).await?;
+    memory.create_memory_relationship("engineering", "project_data_pipeline", RelationshipType::Custom("manages".to_string())).await?;
+    memory.create_memory_relationship("operations", "project_security_audit", RelationshipType::Custom("manages".to_string())).await?;
+    memory.create_memory_relationship("operations", "project_cloud_migration", RelationshipType::Custom("manages".to_string())).await?;
 
-        // Employee-Department relationships
-        kg.add_relationship("alice_smith", "engineering", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("bob_johnson", "engineering", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("carol_davis", "engineering", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("david_wilson", "operations", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("eve_brown", "marketing", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("frank_miller", "operations", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("grace_taylor", "marketing", RelationshipType::BelongsTo, 1.0).await?;
-        kg.add_relationship("henry_anderson", "sales", RelationshipType::BelongsTo, 1.0).await?;
+    // Employee-Department relationships
+    memory.create_memory_relationship("alice_smith", "engineering", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("bob_johnson", "engineering", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "engineering", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "operations", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("eve_brown", "marketing", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("frank_miller", "operations", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("grace_taylor", "marketing", RelationshipType::Custom("belongs_to".to_string())).await?;
+    memory.create_memory_relationship("henry_anderson", "sales", RelationshipType::Custom("belongs_to".to_string())).await?;
 
-        // Employee-Project relationships
-        kg.add_relationship("alice_smith", "project_ai_platform", RelationshipType::WorksOn, 0.9).await?;
-        kg.add_relationship("alice_smith", "project_data_pipeline", RelationshipType::WorksOn, 0.7).await?;
-        kg.add_relationship("bob_johnson", "project_mobile_app", RelationshipType::WorksOn, 0.8).await?;
-        kg.add_relationship("carol_davis", "project_ai_platform", RelationshipType::WorksOn, 0.9).await?;
-        kg.add_relationship("carol_davis", "project_data_pipeline", RelationshipType::WorksOn, 0.8).await?;
-        kg.add_relationship("david_wilson", "project_cloud_migration", RelationshipType::WorksOn, 0.9).await?;
-        kg.add_relationship("frank_miller", "project_security_audit", RelationshipType::WorksOn, 0.9).await?;
+    // Employee-Project relationships
+    memory.create_memory_relationship("alice_smith", "project_ai_platform", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("alice_smith", "project_data_pipeline", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("bob_johnson", "project_mobile_app", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "project_ai_platform", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "project_data_pipeline", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "project_cloud_migration", RelationshipType::Custom("works_on".to_string())).await?;
+    memory.create_memory_relationship("frank_miller", "project_security_audit", RelationshipType::Custom("works_on".to_string())).await?;
 
         // Technology-Project relationships
-        kg.add_relationship("project_ai_platform", "tech_rust", RelationshipType::Uses, 0.9).await?;
-        kg.add_relationship("project_ai_platform", "tech_python", RelationshipType::Uses, 0.8).await?;
-        kg.add_relationship("project_ai_platform", "tech_tensorflow", RelationshipType::Uses, 0.9).await?;
-        kg.add_relationship("project_mobile_app", "tech_react", RelationshipType::Uses, 0.9).await?;
-        kg.add_relationship("project_data_pipeline", "tech_kafka", RelationshipType::Uses, 0.9).await?;
-        kg.add_relationship("project_data_pipeline", "tech_postgresql", RelationshipType::Uses, 0.8).await?;
-        kg.add_relationship("project_cloud_migration", "tech_kubernetes", RelationshipType::Uses, 0.9).await?;
+        memory.create_memory_relationship("project_ai_platform", "tech_rust", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_ai_platform", "tech_python", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_ai_platform", "tech_tensorflow", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_mobile_app", "tech_react", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_data_pipeline", "tech_kafka", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_data_pipeline", "tech_postgresql", RelationshipType::Custom("uses".to_string())).await?;
+        memory.create_memory_relationship("project_cloud_migration", "tech_kubernetes", RelationshipType::Custom("uses".to_string())).await?;
 
         // Employee-Technology expertise relationships
-        kg.add_relationship("alice_smith", "tech_rust", RelationshipType::Knows, 0.9).await?;
-        kg.add_relationship("alice_smith", "tech_python", RelationshipType::Knows, 0.7).await?;
-        kg.add_relationship("carol_davis", "tech_python", RelationshipType::Knows, 0.9).await?;
-        kg.add_relationship("carol_davis", "tech_tensorflow", RelationshipType::Knows, 0.8).await?;
-        kg.add_relationship("bob_johnson", "tech_react", RelationshipType::Knows, 0.6).await?;
-        kg.add_relationship("david_wilson", "tech_kubernetes", RelationshipType::Knows, 0.9).await?;
-        kg.add_relationship("david_wilson", "tech_redis", RelationshipType::Knows, 0.8).await?;
+        memory.create_memory_relationship("alice_smith", "tech_rust", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("alice_smith", "tech_python", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("carol_davis", "tech_python", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("carol_davis", "tech_tensorflow", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("bob_johnson", "tech_react", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("david_wilson", "tech_kubernetes", RelationshipType::Custom("knows".to_string())).await?;
+        memory.create_memory_relationship("david_wilson", "tech_redis", RelationshipType::Custom("knows".to_string())).await?;
 
-        let stats = kg.get_statistics().await?;
+    if let Some(stats) = memory.knowledge_graph_stats() {
         println!("✓ Created enterprise knowledge graph:");
         println!("  - {} nodes", stats.node_count);
         println!("  - {} edges", stats.edge_count);
-        println!("  - {:.2} average degree", stats.average_degree);
+        println!("  - {:.2} graph density", stats.density);
     }
 
     Ok(())
@@ -230,36 +229,35 @@ async fn create_multilayer_networks(memory: &mut AgentMemory) -> Result<(), Box<
         memory.store(key, description).await?;
     }
 
-    // Create complex multi-layer relationships
-    if let Some(kg) = memory.knowledge_graph.as_mut() {
-        // Skill-Employee relationships
-        kg.add_relationship("alice_smith", "skill_machine_learning", RelationshipType::Has, 0.9).await?;
-        kg.add_relationship("alice_smith", "skill_backend_dev", RelationshipType::Has, 0.8).await?;
-        kg.add_relationship("carol_davis", "skill_machine_learning", RelationshipType::Has, 0.9).await?;
-        kg.add_relationship("carol_davis", "skill_data_analysis", RelationshipType::Has, 0.9).await?;
-        kg.add_relationship("bob_johnson", "skill_project_management", RelationshipType::Has, 0.8).await?;
-        kg.add_relationship("bob_johnson", "skill_frontend_dev", RelationshipType::Has, 0.6).await?;
-        kg.add_relationship("david_wilson", "skill_devops", RelationshipType::Has, 0.9).await?;
-        kg.add_relationship("david_wilson", "skill_system_design", RelationshipType::Has, 0.7).await?;
-        kg.add_relationship("frank_miller", "skill_security", RelationshipType::Has, 0.9).await?;
+    // Create complex multi-layer relationships using the public API
+    // Skill-Employee relationships
+    memory.create_memory_relationship("alice_smith", "skill_machine_learning", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("alice_smith", "skill_backend_dev", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "skill_machine_learning", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "skill_data_analysis", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("bob_johnson", "skill_project_management", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("bob_johnson", "skill_frontend_dev", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "skill_devops", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "skill_system_design", RelationshipType::Custom("has".to_string())).await?;
+    memory.create_memory_relationship("frank_miller", "skill_security", RelationshipType::Custom("has".to_string())).await?;
 
-        // Certification-Employee relationships
-        kg.add_relationship("alice_smith", "cert_data_scientist", RelationshipType::Holds, 1.0).await?;
-        kg.add_relationship("carol_davis", "cert_data_scientist", RelationshipType::Holds, 1.0).await?;
-        kg.add_relationship("david_wilson", "cert_aws_architect", RelationshipType::Holds, 1.0).await?;
-        kg.add_relationship("david_wilson", "cert_kubernetes_admin", RelationshipType::Holds, 1.0).await?;
-        kg.add_relationship("frank_miller", "cert_security_plus", RelationshipType::Holds, 1.0).await?;
-        kg.add_relationship("bob_johnson", "cert_scrum_master", RelationshipType::Holds, 1.0).await?;
+    // Certification-Employee relationships
+    memory.create_memory_relationship("alice_smith", "cert_data_scientist", RelationshipType::Custom("holds".to_string())).await?;
+    memory.create_memory_relationship("carol_davis", "cert_data_scientist", RelationshipType::Custom("holds".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "cert_aws_architect", RelationshipType::Custom("holds".to_string())).await?;
+    memory.create_memory_relationship("david_wilson", "cert_kubernetes_admin", RelationshipType::Custom("holds".to_string())).await?;
+    memory.create_memory_relationship("frank_miller", "cert_security_plus", RelationshipType::Custom("holds".to_string())).await?;
+    memory.create_memory_relationship("bob_johnson", "cert_scrum_master", RelationshipType::Custom("holds".to_string())).await?;
 
-        // Skill-Technology relationships
-        kg.add_relationship("skill_machine_learning", "tech_tensorflow", RelationshipType::RequiresKnowledgeOf, 0.9).await?;
-        kg.add_relationship("skill_machine_learning", "tech_python", RelationshipType::RequiresKnowledgeOf, 0.8).await?;
-        kg.add_relationship("skill_backend_dev", "tech_rust", RelationshipType::RequiresKnowledgeOf, 0.7).await?;
-        kg.add_relationship("skill_devops", "tech_kubernetes", RelationshipType::RequiresKnowledgeOf, 0.9).await?;
-        kg.add_relationship("skill_devops", "tech_redis", RelationshipType::RequiresKnowledgeOf, 0.6).await?;
-        kg.add_relationship("skill_frontend_dev", "tech_react", RelationshipType::RequiresKnowledgeOf, 0.8).await?;
+    // Skill-Technology relationships
+    memory.create_memory_relationship("skill_machine_learning", "tech_tensorflow", RelationshipType::DependsOn).await?;
+    memory.create_memory_relationship("skill_machine_learning", "tech_python", RelationshipType::DependsOn).await?;
+    memory.create_memory_relationship("skill_backend_dev", "tech_rust", RelationshipType::DependsOn).await?;
+    memory.create_memory_relationship("skill_devops", "tech_kubernetes", RelationshipType::DependsOn).await?;
+    memory.create_memory_relationship("skill_devops", "tech_redis", RelationshipType::DependsOn).await?;
+    memory.create_memory_relationship("skill_frontend_dev", "tech_react", RelationshipType::DependsOn).await?;
 
-        let stats = kg.get_statistics().await?;
+    if let Some(stats) = memory.knowledge_graph_stats() {
         println!("✓ Created multi-layered networks:");
         println!("  - {} total nodes", stats.node_count);
         println!("  - {} total edges", stats.edge_count);
@@ -276,40 +274,37 @@ async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box
     println!("------------------------------------");
 
     let viz_config = VisualizationConfig {
-        output_directory: "./visualizations".to_string(),
-        image_format: ImageFormat::PNG,
-        color_scheme: ColorScheme::Professional,
+        output_dir: std::path::PathBuf::from("./visualizations"),
+        format: ImageFormat::PNG,
+        color_scheme: ColorScheme::Default,
         width: 1920,
         height: 1080,
-        enable_labels: true,
-        enable_clustering: true,
-        enable_animations: false,
+        font_size: 14,
+        interactive: false,
     };
 
-    let viz_engine = RealVisualizationEngine::new(viz_config)?;
+    let mut viz_engine = RealVisualizationEngine::new(viz_config).await?;
 
-    // Generate network visualization
-    if let Some(kg) = &memory.knowledge_graph {
-        let nodes = kg.get_all_nodes().await?;
-        let edges = kg.get_all_edges().await?;
+    // Generate network visualization using memory entries
+    let all_memories = vec![
+        MemoryEntry::new("alice_smith".to_string(), "Alice Smith - Senior Engineer".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new("bob_johnson".to_string(), "Bob Johnson - Project Manager".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new("carol_davis".to_string(), "Carol Davis - Data Scientist".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new("david_wilson".to_string(), "David Wilson - DevOps Engineer".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new("frank_miller".to_string(), "Frank Miller - Security Specialist".to_string(), MemoryType::LongTerm),
+    ];
 
-        println!("✓ Generating enterprise network visualization...");
-        let network_path = viz_engine.create_network_visualization(
-            &nodes,
-            &edges,
-            "Enterprise Knowledge Network"
-        ).await?;
-        println!("  📊 Saved: {}", network_path);
+    let relationships = vec![
+        ("alice_smith".to_string(), "skill_machine_learning".to_string(), 0.9),
+        ("carol_davis".to_string(), "skill_data_analysis".to_string(), 0.9),
+        ("david_wilson".to_string(), "skill_devops".to_string(), 0.9),
+        ("bob_johnson".to_string(), "skill_project_management".to_string(), 0.8),
+        ("frank_miller".to_string(), "skill_security".to_string(), 0.9),
+    ];
 
-        // Generate hierarchical visualization
-        println!("✓ Generating hierarchical organization chart...");
-        let hierarchy_path = viz_engine.create_hierarchical_visualization(
-            &nodes,
-            &edges,
-            "Organizational Hierarchy"
-        ).await?;
-        println!("  📊 Saved: {}", hierarchy_path);
-    }
+    println!("✓ Generating enterprise network visualization...");
+    let network_path = viz_engine.generate_memory_network(&all_memories, &relationships).await?;
+    println!("  📊 Saved: {}", network_path);
 
     // Generate temporal analytics
     let stats = memory.stats();
@@ -321,12 +316,9 @@ async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box
     ];
 
     println!("✓ Generating temporal analytics timeline...");
-    let timeline_path = viz_engine.create_timeline_visualization(
-        &temporal_data,
-        "Memory Growth Over Time",
-        "Time",
-        "Memory Count"
-    ).await?;
+    // Generate analytics timeline instead
+    let analytics_events = vec![]; // Empty for demo
+    let timeline_path = viz_engine.generate_analytics_timeline(&analytics_events).await?;
     println!("  📊 Saved: {}", timeline_path);
 
     println!("✅ Complex visualizations generated successfully!");

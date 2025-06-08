@@ -96,7 +96,7 @@ realtime = ["tokio-tungstenite", "futures-util"]
 analytics = []
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
-visualization = ["plotters", "plotters-backend", "image"]
+visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
 security = []
 

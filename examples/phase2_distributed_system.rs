@@ -14,7 +14,7 @@ use synaptic::{
         // realtime::RealtimeSync, // Temporarily disabled
         coordination::DistributedCoordinator,
     },
-    memory::types::{MemoryEntry, MemoryType},
+    memory::types::{MemoryEntry, MemoryType, MemoryMetadata},
 };
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
@@ -95,7 +95,7 @@ async fn demonstrate_event_system() -> Result<(), Box<dyn std::error::Error>> {
         MemoryEvent::RelationshipInferred {
             from_memory: Uuid::new_v4(),
             to_memory: Uuid::new_v4(),
-            relationship_type: synaptic::memory::knowledge_graph::RelationshipType::Related,
+            relationship_type: synaptic::memory::knowledge_graph::RelationshipType::RelatedTo,
             confidence: 0.85,
             evidence: vec!["semantic similarity".to_string()],
             node_id: NodeId::new(),
@@ -177,7 +177,7 @@ async fn demonstrate_distributed_sharding() -> Result<(), Box<dyn std::error::Er
     ];
 
     for (key, content) in memories {
-        let memory_node = synaptic::memory::knowledge_graph::MemoryNode {
+        let memory_node = synaptic::distributed::sharding::MemoryNode {
             id: Uuid::new_v4(),
             memory_key: key.to_string(),
             content_hash: format!("hash_{}", key),
@@ -215,7 +215,8 @@ async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
         message_buffer_size: 1000,
     };
 
-    let sync = RealtimeSync::new(config);
+    // RealtimeSync is temporarily disabled, simulate the functionality
+    println!("  🔧 RealtimeSync temporarily disabled - simulating functionality");
 
     // Simulate broadcasting updates
     let events = vec![
@@ -239,17 +240,19 @@ async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
+    let events_len = events.len();
     for event in events {
         let metadata = OperationMetadata::new(NodeId::new(), ConsistencyLevel::Eventual);
         let envelope = synaptic::distributed::events::EventEnvelope::new(event, metadata);
-        sync.broadcast_update(&envelope).await?;
+        // sync.broadcast_update(&envelope).await?;
+        println!("  📡 Would broadcast event: {:?}", envelope.event);
     }
 
-    let stats = sync.get_stats();
-    println!("  📊 Active connections: {}", stats.active_connections);
-    println!("  📊 Total connections: {}", stats.total_connections);
-    println!("  📊 Updates sent: {}", stats.updates_sent);
-    println!("  ⏰ Last update time: {:?}", stats.last_update_time);
+    // Simulate stats
+    println!("  📊 Active connections: 0 (simulated)");
+    println!("  📊 Total connections: 0 (simulated)");
+    println!("  📊 Updates sent: {} (simulated)", events_len);
+    println!("  ⏰ Last update time: {:?} (simulated)", Utc::now());
 
     Ok(())
 }
@@ -274,16 +277,16 @@ async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error:
     ];
 
     for (key, content, consistency) in memories {
+        let mut metadata = MemoryMetadata::new();
+        metadata.importance = 0.8;
+        metadata.tags = vec!["distributed".to_string()];
+
         let memory = MemoryEntry {
             key: key.to_string(),
-            content: content.to_string(),
+            value: content.to_string(),
             memory_type: MemoryType::LongTerm,
-            importance: 0.8,
-            created_at: Utc::now(),
-            last_accessed: Utc::now(),
-            access_count: 0,
-            tags: vec!["distributed".to_string()],
-            metadata: HashMap::new(),
+            metadata,
+            embedding: None,
         };
 
         coordinator.store_memory(memory, consistency).await?;
@@ -336,16 +339,16 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
 
     // Store data across the cluster
     for (i, coordinator) in coordinators.iter().enumerate() {
+        let mut metadata = MemoryMetadata::new();
+        metadata.importance = 0.7;
+        metadata.tags = vec!["cluster".to_string()];
+
         let memory = MemoryEntry {
             key: format!("cluster_memory_{}", i),
-            content: format!("Data stored on node {}", i),
+            value: format!("Data stored on node {}", i),
             memory_type: MemoryType::LongTerm,
-            importance: 0.7,
-            created_at: Utc::now(),
-            last_accessed: Utc::now(),
-            access_count: 0,
-            tags: vec!["cluster".to_string()],
-            metadata: HashMap::new(),
+            metadata,
+            embedding: None,
         };
 
         coordinator.store_memory(memory, ConsistencyLevel::Strong).await?;
@@ -378,16 +381,16 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
 
     // Benchmark distributed storage operations
     for i in 0..num_operations {
+        let mut metadata = MemoryMetadata::new();
+        metadata.importance = 0.5;
+        metadata.tags = vec!["performance".to_string()];
+
         let memory = MemoryEntry {
             key: format!("perf_test_{}", i),
-            content: format!("Performance test data item {}", i),
+            value: format!("Performance test data item {}", i),
             memory_type: MemoryType::ShortTerm,
-            importance: 0.5,
-            created_at: Utc::now(),
-            last_accessed: Utc::now(),
-            access_count: 0,
-            tags: vec!["performance".to_string()],
-            metadata: HashMap::new(),
+            metadata,
+            embedding: None,
         };
 
         coordinator.store_memory(memory, ConsistencyLevel::Eventual).await?;
