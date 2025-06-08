@@ -456,7 +456,8 @@ impl RealVisualizationEngine {
         let image_data = std::fs::read(&filepath)
             .map_err(|e| MemoryError::storage(format!("Failed to read image file: {}", e)))?;
         
-        Ok(base64::encode(image_data))
+        use base64::{Engine as _, engine::general_purpose};
+        Ok(general_purpose::STANDARD.encode(image_data))
     }
 
     /// Health check for visualization engine

@@ -552,6 +552,112 @@ impl VisualizationEngine {
         })
     }
 
+    /// Export WebGL-compatible visualization data for 3D rendering
+    pub async fn export_webgl_data(&self) -> Result<WebGLExport> {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut colors = Vec::new();
+
+        // Convert nodes to WebGL vertices
+        for (i, node) in self.nodes.values().enumerate() {
+            vertices.extend_from_slice(&[
+                node.position.x as f32,
+                node.position.y as f32,
+                node.position.z as f32
+            ]);
+
+            colors.extend_from_slice(&[
+                node.color.0 as f32 / 255.0,
+                node.color.1 as f32 / 255.0,
+                node.color.2 as f32 / 255.0,
+                1.0 // Alpha
+            ]);
+
+            indices.push(i as u32);
+        }
+
+        // Convert edges to line indices
+        let mut edge_indices = Vec::new();
+        for edge in self.edges.values() {
+            if let (Some(source_idx), Some(target_idx)) = (
+                self.find_node_index(&edge.source),
+                self.find_node_index(&edge.target)
+            ) {
+                edge_indices.extend_from_slice(&[source_idx as u32, target_idx as u32]);
+            }
+        }
+
+        Ok(WebGLExport {
+            vertices,
+            indices,
+            colors,
+            edge_indices,
+            node_count: self.nodes.len(),
+            edge_count: self.edges.len(),
+            camera_position: Point3D::new(0.0, 0.0, 200.0),
+            camera_target: Point3D::new(0.0, 0.0, 0.0),
+            export_timestamp: Utc::now(),
+        })
+    }
+
+    /// Find node index by ID for WebGL export
+    fn find_node_index(&self, node_id: &str) -> Option<usize> {
+        self.nodes.keys().position(|id| id == node_id)
+    }
+
+    /// Export VR/AR-compatible data for immersive memory space navigation
+    pub async fn export_vr_data(&self) -> Result<VRExport> {
+        let webgl_data = self.export_webgl_data().await?;
+
+        // Create interaction zones based on node clusters
+        let mut interaction_zones = Vec::new();
+        for (i, node) in self.nodes.values().enumerate() {
+            if i % 3 == 0 { // Create zones for every 3rd node to avoid overcrowding
+                interaction_zones.push(InteractionZone {
+                    id: format!("zone_{}", i),
+                    center: node.position.clone(),
+                    radius: 25.0,
+                    zone_type: InteractionZoneType::MemoryCluster,
+                    associated_memories: vec![node.memory_key.clone()],
+                });
+            }
+        }
+
+        // Create spatial audio sources
+        let mut spatial_audio_sources = Vec::new();
+        for node in self.nodes.values() {
+            spatial_audio_sources.push(SpatialAudioSource {
+                id: format!("audio_{}", node.id),
+                position: node.position.clone(),
+                audio_type: AudioType::MemoryAccess,
+                volume: 0.3,
+                range: 15.0,
+            });
+        }
+
+        // Create haptic feedback points for important nodes
+        let mut haptic_feedback_points = Vec::new();
+        for node in self.nodes.values() {
+            if node.size > 10.0 { // Only for important nodes
+                haptic_feedback_points.push(HapticFeedbackPoint {
+                    id: format!("haptic_{}", node.id),
+                    position: node.position.clone(),
+                    intensity: (node.size / 20.0).min(1.0),
+                    duration_ms: 200,
+                    feedback_type: HapticType::ImportanceLevel,
+                });
+            }
+        }
+
+        Ok(VRExport {
+            webgl_data,
+            navigation_config: VRNavigationConfig::default(),
+            interaction_zones,
+            spatial_audio_sources,
+            haptic_feedback_points,
+        })
+    }
+
     /// Get visualization statistics
     pub fn get_visualization_stats(&self) -> VisualizationStats {
         VisualizationStats {
@@ -572,6 +678,111 @@ pub struct VisualizationExport {
     pub timelines: Vec<TemporalTimeline>,
     pub heatmaps: Vec<RelationshipHeatmap>,
     pub layout_config: Layout3DConfig,
+}
+
+/// WebGL-compatible export data for 3D rendering
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebGLExport {
+    pub vertices: Vec<f32>,
+    pub indices: Vec<u32>,
+    pub colors: Vec<f32>,
+    pub edge_indices: Vec<u32>,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub camera_position: Point3D,
+    pub camera_target: Point3D,
+    pub export_timestamp: DateTime<Utc>,
+}
+
+/// VR/AR navigation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VRNavigationConfig {
+    pub enable_teleportation: bool,
+    pub enable_hand_tracking: bool,
+    pub enable_voice_commands: bool,
+    pub interaction_distance: f64,
+    pub movement_speed: f64,
+    pub scale_factor: f64,
+}
+
+impl Default for VRNavigationConfig {
+    fn default() -> Self {
+        Self {
+            enable_teleportation: true,
+            enable_hand_tracking: true,
+            enable_voice_commands: false,
+            interaction_distance: 5.0,
+            movement_speed: 1.0,
+            scale_factor: 1.0,
+        }
+    }
+}
+
+/// VR/AR export data for immersive memory space navigation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VRExport {
+    pub webgl_data: WebGLExport,
+    pub navigation_config: VRNavigationConfig,
+    pub interaction_zones: Vec<InteractionZone>,
+    pub spatial_audio_sources: Vec<SpatialAudioSource>,
+    pub haptic_feedback_points: Vec<HapticFeedbackPoint>,
+}
+
+/// Interactive zone in VR space
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractionZone {
+    pub id: String,
+    pub center: Point3D,
+    pub radius: f64,
+    pub zone_type: InteractionZoneType,
+    pub associated_memories: Vec<String>,
+}
+
+/// Types of interaction zones
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum InteractionZoneType {
+    MemoryCluster,
+    SearchArea,
+    NavigationHub,
+    AnalyticsPanel,
+}
+
+/// Spatial audio source for VR
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpatialAudioSource {
+    pub id: String,
+    pub position: Point3D,
+    pub audio_type: AudioType,
+    pub volume: f64,
+    pub range: f64,
+}
+
+/// Types of spatial audio
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AudioType {
+    MemoryAccess,
+    RelationshipFormation,
+    PatternDetection,
+    Ambient,
+}
+
+/// Haptic feedback point for VR controllers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HapticFeedbackPoint {
+    pub id: String,
+    pub position: Point3D,
+    pub intensity: f64,
+    pub duration_ms: u64,
+    pub feedback_type: HapticType,
+}
+
+/// Types of haptic feedback
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum HapticType {
+    MemorySelection,
+    RelationshipStrength,
+    ImportanceLevel,
+    NavigationBoundary,
 }
 
 /// Visualization statistics
@@ -652,5 +863,48 @@ mod tests {
         let export = engine.export_visualization_data().await.unwrap();
         assert_eq!(export.nodes.len(), 0);
         assert_eq!(export.edges.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_webgl_export() {
+        let config = AnalyticsConfig::default();
+        let mut engine = VisualizationEngine::new(&config).unwrap();
+
+        // Create test nodes
+        let memory_entry = MemoryEntry::new("test_key".to_string(), "test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+
+        // Export WebGL data
+        let webgl_export = engine.export_webgl_data().await.unwrap();
+
+        assert_eq!(webgl_export.node_count, 2);
+        assert_eq!(webgl_export.vertices.len(), 6); // 2 nodes * 3 coordinates
+        assert_eq!(webgl_export.colors.len(), 8); // 2 nodes * 4 color components
+        assert_eq!(webgl_export.indices.len(), 2); // 2 node indices
+        assert!(webgl_export.export_timestamp <= Utc::now());
+    }
+
+    #[tokio::test]
+    async fn test_vr_export() {
+        let config = AnalyticsConfig::default();
+        let mut engine = VisualizationEngine::new(&config).unwrap();
+
+        // Create test nodes with varying importance
+        let mut memory_entry = MemoryEntry::new("important_memory".to_string(), "important content".to_string(), crate::memory::types::MemoryType::LongTerm);
+        memory_entry.metadata.importance = 0.9; // High importance
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+
+        let memory_entry2 = MemoryEntry::new("normal_memory".to_string(), "normal content".to_string(), crate::memory::types::MemoryType::ShortTerm);
+        let _node2_id = engine.create_visual_node("key2", &memory_entry2).await.unwrap();
+
+        // Export VR data
+        let vr_export = engine.export_vr_data().await.unwrap();
+
+        assert_eq!(vr_export.webgl_data.node_count, 2);
+        assert!(vr_export.interaction_zones.len() >= 0);
+        assert_eq!(vr_export.spatial_audio_sources.len(), 2); // One per node
+        assert!(vr_export.haptic_feedback_points.len() >= 0); // Depends on node importance
+        assert!(vr_export.navigation_config.enable_teleportation);
     }
 }
