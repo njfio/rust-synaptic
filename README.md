@@ -36,25 +36,37 @@
 - **Evolution Tracking**: Memory development and change impact assessment
 - **Differential Processing**: Intelligent change detection and merging
 
-## 🕸️ **Distributed Architecture (Phase 2 ✅)**
+## 🔗 **External Integrations (Phase 2 ✅)**
 
-### 🔄 **Consensus & Coordination**
-- **Raft-Inspired Algorithm**: Leader election and log replication
-- **Fault-Tolerant Operation**: Handles node failures gracefully
-- **Multi-Level Consistency**: Strong, Eventual, and Weak consistency options
-- **Distributed State Management**: Coordinated operations across nodes
+### 🗄️ **Database Integration**
+- **PostgreSQL Storage**: Production-ready SQL database with connection pooling
+- **Real Schema Management**: Automated table creation and migrations
+- **Performance Optimized**: Connection pooling, prepared statements, and metrics
+- **Health Monitoring**: Comprehensive database health checks and monitoring
 
-### 📡 **Event-Driven System**
-- **Comprehensive Event Bus**: Publish/subscribe with persistence
-- **Memory Lifecycle Events**: Created, updated, deleted, accessed tracking
-- **Event Replay Capabilities**: Complete audit trail and recovery
-- **Asynchronous Processing**: High-performance event handling
+### 🤖 **ML Models Integration**
+- **BERT Embeddings**: Real 768-dimensional vector embeddings using Candle
+- **Similarity Calculations**: Cosine similarity with optimized performance
+- **Access Pattern Prediction**: ML-powered memory access forecasting
+- **Model Management**: Automatic model loading and health validation
 
-### 🔀 **Graph Sharding & Scaling**
-- **Consistent Hash Ring**: Automatic shard assignment and rebalancing
-- **Horizontal Scaling**: Memory distribution across multiple nodes
-- **Cross-Shard Operations**: Seamless relationship handling
-- **Performance Optimized**: Enterprise-scale throughput and reliability
+### 🧠 **LLM Integration**
+- **Multi-Provider Support**: Anthropic Claude and OpenAI GPT integration
+- **Real API Calls**: Actual LLM inference for insights and summarization
+- **Auto-Detection**: Intelligent provider selection based on available API keys
+- **Cost Tracking**: Token usage and cost monitoring with rate limiting
+
+### 📊 **Visualization Engine**
+- **Real Chart Generation**: Memory network graphs and analytics timelines
+- **PNG Export**: High-quality image generation using Plotters
+- **Interactive Visualizations**: Network topology and temporal analysis
+- **Performance Metrics**: Chart generation tracking and optimization
+
+### 🔄 **Redis Cache**
+- **Distributed Caching**: High-performance Redis integration
+- **Connection Pooling**: Optimized connection management
+- **Health Monitoring**: Real-time cache performance tracking
+- **TTL Management**: Intelligent cache expiration and cleanup
 
 ## 🚀 Quick Start
 
@@ -114,11 +126,12 @@ Synaptic features a sophisticated distributed architecture with enterprise-scale
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        AgentMemory (Core API)                          │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  🧠 AI Integration (Phase 1 ✅)    │  🕸️ Distributed System (Phase 2 ✅) │
-│  - Vector Embeddings               │  - Consensus Algorithm              │
-│  - Semantic Search                 │  - Graph Sharding                   │
-│  - Knowledge Graphs                │  - Event-Driven Architecture        │
-│  - Temporal Intelligence           │  - Fault Tolerance                  │
+│  🧠 AI Integration (Phase 1 ✅)    │  🔗 External Integrations (Phase 2 ✅) │
+│  - Vector Embeddings               │  - PostgreSQL Database              │
+│  - Semantic Search                 │  - BERT ML Models                   │
+│  - Knowledge Graphs                │  - LLM Integration (Claude/GPT)     │
+│  - Temporal Intelligence           │  - Redis Caching                    │
+│                                    │  - Real Visualization               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  📊 Advanced Analytics (Phase 3 🚧)                                     │
 │  - Predictive Analytics           │  - Behavioral Analysis              │
@@ -126,9 +139,9 @@ Synaptic features a sophisticated distributed architecture with enterprise-scale
 │  - Pattern Recognition            │  - Performance Optimization         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  🔧 Production Infrastructure                                           │
-│  - Multi-Storage Backend          │  - Event Persistence                │
-│  - Consensus Coordination         │  - Health Monitoring                │
-│  - Performance Metrics            │  - Enterprise Security              │
+│  - Multi-Storage Backend          │  - Health Monitoring                │
+│  - Connection Pooling             │  - Performance Metrics              │
+│  - Real External Services         │  - Enterprise Security              │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,13 +178,41 @@ The repository includes comprehensive examples:
 - **[Basic Usage](examples/basic_usage.rs)**: Getting started with core functionality
 - **[Knowledge Graph](examples/knowledge_graph_usage.rs)**: Advanced graph operations
 - **[Intelligent Updates](examples/intelligent_updates.rs)**: Demonstrating smart merging
+- **[Real Integrations](examples/real_integrations.rs)**: Complete external integrations demo
 - **[Simple Demo](examples/simple_intelligent_updates.rs)**: Quick demonstration
 
 Run examples with:
 ```bash
+# Core functionality
 cargo run --example basic_usage
 cargo run --example intelligent_updates
+
+# External integrations (Phase 2)
+cargo run --example real_integrations --features external-integrations
 ```
+
+### 🔗 **External Integrations Demo**
+
+The real integrations example demonstrates all Phase 2 features:
+
+```bash
+# Set up environment (copy .env.example to .env and configure)
+cp .env.example .env
+
+# Start external services
+docker-compose up -d
+
+# Run the complete integration demo
+cargo run --example real_integrations --features external-integrations
+```
+
+This demo showcases:
+- ✅ **PostgreSQL Database**: Real SQL storage with connection pooling
+- ✅ **BERT ML Models**: 768-dimensional embeddings and similarity calculations
+- ✅ **LLM Integration**: Real Anthropic Claude API calls for insights
+- ✅ **Visualization**: PNG chart generation with memory networks
+- ✅ **Redis Cache**: High-performance distributed caching
+- ✅ **Knowledge Graph**: Node creation and relationship management
 
 ## 🧪 **Comprehensive Testing (59/59 Passing)**
 
@@ -249,9 +290,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### ✅ **Phases 1 & 2 Complete**
 - **Advanced AI Integration**: Vector embeddings, semantic search, knowledge graphs
-- **Distributed Architecture**: Consensus, sharding, event-driven systems
+- **External Integrations**: PostgreSQL, BERT ML, LLM APIs, Redis, Visualization
 - **Production Ready**: Zero mocking, 100% test coverage, enterprise reliability
-- **Performance Validated**: >1000 ops/sec, <1ms latency, fault tolerance
+- **Performance Validated**: Real external services, comprehensive health monitoring
 
 ### 🚀 **What's Next: Phase 3**
 Advanced analytics and intelligence features are coming next:

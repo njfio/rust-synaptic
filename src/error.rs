@@ -176,3 +176,24 @@ where
         self.map_err(|e| MemoryError::checkpoint(format!("{}: {}", context.into(), e)))
     }
 }
+
+// Additional error conversions for external integrations
+
+#[cfg(feature = "visualization")]
+impl<T> From<plotters::drawing::DrawingAreaErrorKind<T>> for MemoryError
+where
+    T: std::fmt::Debug + Send + Sync + 'static + std::error::Error
+{
+    fn from(err: plotters::drawing::DrawingAreaErrorKind<T>) -> Self {
+        MemoryError::storage(format!("Visualization error: {:?}", err))
+    }
+}
+
+#[cfg(feature = "ml-models")]
+impl From<candle_core::Error> for MemoryError {
+    fn from(err: candle_core::Error) -> Self {
+        MemoryError::storage(format!("ML model error: {}", err))
+    }
+}
+
+

@@ -109,16 +109,22 @@ pub enum InsightType {
     UsagePattern,
     /// Performance insight
     Performance,
+    /// Performance optimization insight
+    PerformanceOptimization,
     /// Content insight
     Content,
     /// Relationship insight
     Relationship,
     /// Anomaly detection
     Anomaly,
+    /// Anomaly detection insight
+    AnomalyDetection,
     /// Optimization opportunity
     Optimization,
     /// Trend insight
     Trend,
+    /// General insight
+    General,
     /// Custom insight
     Custom(String),
 }
@@ -189,6 +195,37 @@ pub struct UsageStatistics {
     pub peak_usage_hours: Vec<u8>,
     /// Memory growth rate (memories per day)
     pub growth_rate: f64,
+}
+
+/// Analytics event for external integrations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsEvent {
+    pub id: String,
+    pub event_type: String,
+    pub timestamp: DateTime<Utc>,
+    pub data: HashMap<String, serde_json::Value>,
+}
+
+/// Analytics insight for external integrations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsInsight {
+    pub id: String,
+    pub insight_type: InsightType,
+    pub title: String,
+    pub description: String,
+    pub confidence: f64,
+    pub priority: InsightPriority,
+    pub timestamp: DateTime<Utc>,
+    pub data: HashMap<String, serde_json::Value>,
+}
+
+/// Priority levels for insights
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InsightPriority {
+    Low,
+    Medium,
+    High,
+    Critical,
 }
 
 /// A recommendation based on analytics

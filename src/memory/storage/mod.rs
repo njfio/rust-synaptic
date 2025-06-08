@@ -87,7 +87,15 @@ pub async fn create_storage(backend: &StorageBackend) -> Result<Arc<dyn Storage 
         }
         #[cfg(feature = "sql-storage")]
         StorageBackend::Sql { connection_string } => {
-            Ok(Arc::new(sql::SqlStorage::new(connection_string).await?))
+            Ok(Arc::new(crate::integrations::database::DatabaseClient::new(
+                crate::integrations::database::DatabaseConfig {
+                    database_url: connection_string.to_string(),
+                    max_connections: 10,
+                    connect_timeout_secs: 30,
+                    schema: "public".to_string(),
+                    ssl_mode: "prefer".to_string(),
+                }
+            ).await?))
         }
     }
 }

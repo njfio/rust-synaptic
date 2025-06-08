@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: synaptic_postgres
+    environment:
+      POSTGRES_DB: synaptic_db
+      POSTGRES_USER: synaptic_user
+      POSTGRES_PASSWORD: synaptic_pass
+    ports:
+      - "11110:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synaptic_user -d synaptic_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: synaptic_redis
+    ports:
+      - "11111:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

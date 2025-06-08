@@ -45,6 +45,11 @@ pub mod memory;
 #[cfg(feature = "distributed")]
 pub mod distributed;
 
+#[cfg(feature = "analytics")]
+pub mod analytics;
+
+pub mod integrations;
+
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
 pub use memory::{
@@ -68,6 +73,9 @@ pub struct AgentMemory {
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
     #[cfg(feature = "distributed")]
     distributed_coordinator: Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
+    #[cfg(feature = "analytics")]
+    analytics_engine: Option<analytics::AnalyticsEngine>,
+    integration_manager: Option<integrations::IntegrationManager>,
 }
 
 impl AgentMemory {
@@ -127,6 +135,23 @@ impl AgentMemory {
             None
         };
 
+        // Initialize analytics engine if enabled
+        #[cfg(feature = "analytics")]
+        let analytics_engine = if config.enable_analytics {
+            let analytics_config = config.analytics_config.clone().unwrap_or_default();
+            Some(analytics::AnalyticsEngine::new(analytics_config)?)
+        } else {
+            None
+        };
+
+        // Initialize integration manager if enabled
+        let integration_manager = if config.enable_integrations {
+            let integrations_config = config.integrations_config.clone().unwrap_or_default();
+            Some(integrations::IntegrationManager::new(integrations_config).await?)
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             state,
@@ -139,6 +164,9 @@ impl AgentMemory {
             embedding_manager,
             #[cfg(feature = "distributed")]
             distributed_coordinator,
+            #[cfg(feature = "analytics")]
+            analytics_engine,
+            integration_manager,
         })
     }
 
@@ -352,6 +380,12 @@ pub struct MemoryConfig {
     pub enable_distributed: bool,
     #[cfg(feature = "distributed")]
     pub distributed_config: Option<distributed::DistributedConfig>,
+    #[cfg(feature = "analytics")]
+    pub enable_analytics: bool,
+    #[cfg(feature = "analytics")]
+    pub analytics_config: Option<analytics::AnalyticsConfig>,
+    pub enable_integrations: bool,
+    pub integrations_config: Option<integrations::IntegrationConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -372,6 +406,12 @@ impl Default for MemoryConfig {
             enable_distributed: false,
             #[cfg(feature = "distributed")]
             distributed_config: None,
+            #[cfg(feature = "analytics")]
+            enable_analytics: false,
+            #[cfg(feature = "analytics")]
+            analytics_config: None,
+            enable_integrations: false,
+            integrations_config: None,
         }
     }
 }

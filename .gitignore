@@ -101,3 +101,24 @@ agent_memory.db
 memory_storage/
 checkpoints/
 *.checkpoint
+
+# External integrations
+models/
+*.safetensors
+*.bin
+visualizations/
+*.png
+*.jpg
+*.jpeg
+*.svg
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# API keys and secrets
+.env.local
+.env.production
+*.key
+*.pem
+*.crt
