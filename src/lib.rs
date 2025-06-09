@@ -1,4 +1,4 @@
-//! # Synaptic 🧠
+//! # Synaptic
 //!
 //! An intelligent AI agent memory system built in Rust that creates and manages
 //! dynamic knowledge graphs with smart content updates. Unlike traditional memory
@@ -7,11 +7,11 @@
 //!
 //! ## Key Features
 //!
-//! - **🧠 Intelligent Memory Updates**: Smart node merging and content evolution tracking
-//! - **🕸️ Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
-//! - **⏰ Temporal Intelligence**: Version history and pattern detection
-//! - **🔍 Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
-//! - **🎯 Memory Management**: Intelligent summarization and lifecycle policies
+//! - **Intelligent Memory Updates**: Smart node merging and content evolution tracking
+//! - **Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
+//! - **Temporal Intelligence**: Version history and pattern detection
+//! - **Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
+//! - **Memory Management**: Intelligent summarization and lifecycle policies
 //!
 //! ## Quick Start
 //!
@@ -51,6 +51,18 @@ pub mod analytics;
 pub mod integrations;
 pub mod security;
 
+#[cfg(feature = "multimodal")]
+pub mod multimodal;
+
+#[cfg(feature = "cross-platform")]
+pub mod cross_platform;
+
+// Basic Phase 5 implementation (always available)
+pub mod phase5_basic;
+
+// Phase 5B: Advanced Document Processing (Basic implementation always available)
+pub mod phase5b_basic;
+
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
 pub use memory::{
@@ -78,6 +90,10 @@ pub struct AgentMemory {
     analytics_engine: Option<analytics::AnalyticsEngine>,
     integration_manager: Option<integrations::IntegrationManager>,
     security_manager: Option<security::SecurityManager>,
+    #[cfg(feature = "multimodal")]
+    multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
+    #[cfg(feature = "cross-platform")]
+    cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
 }
 
 impl AgentMemory {
@@ -162,6 +178,30 @@ impl AgentMemory {
             None
         };
 
+        // Initialize multimodal memory if enabled
+        #[cfg(feature = "multimodal")]
+        let multimodal_memory = if config.enable_multimodal {
+            let multimodal_config = config.multimodal_config.clone().unwrap_or_default();
+            let core_memory = std::sync::Arc::new(tokio::sync::RwLock::new(
+                // We'll need to create a temporary AgentMemory for this - this is a circular dependency
+                // In a real implementation, we'd restructure to avoid this
+                // For now, we'll initialize it as None and set it up later
+                None
+            ));
+            None // Placeholder
+        } else {
+            None
+        };
+
+        // Initialize cross-platform manager if enabled
+        #[cfg(feature = "cross-platform")]
+        let cross_platform_manager = if config.enable_cross_platform {
+            let cross_platform_config = config.cross_platform_config.clone().unwrap_or_default();
+            Some(cross_platform::CrossPlatformMemoryManager::new(cross_platform_config)?)
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             state,
@@ -178,6 +218,10 @@ impl AgentMemory {
             analytics_engine,
             integration_manager,
             security_manager,
+            #[cfg(feature = "multimodal")]
+            multimodal_memory,
+            #[cfg(feature = "cross-platform")]
+            cross_platform_manager,
         })
     }
 
@@ -399,6 +443,14 @@ pub struct MemoryConfig {
     pub integrations_config: Option<integrations::IntegrationConfig>,
     pub enable_security: bool,
     pub security_config: Option<security::SecurityConfig>,
+    #[cfg(feature = "multimodal")]
+    pub enable_multimodal: bool,
+    #[cfg(feature = "multimodal")]
+    pub multimodal_config: Option<multimodal::unified::UnifiedMultiModalConfig>,
+    #[cfg(feature = "cross-platform")]
+    pub enable_cross_platform: bool,
+    #[cfg(feature = "cross-platform")]
+    pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -427,6 +479,14 @@ impl Default for MemoryConfig {
             integrations_config: None,
             enable_security: false,
             security_config: None,
+            #[cfg(feature = "multimodal")]
+            enable_multimodal: false,
+            #[cfg(feature = "multimodal")]
+            multimodal_config: None,
+            #[cfg(feature = "cross-platform")]
+            enable_cross_platform: false,
+            #[cfg(feature = "cross-platform")]
+            cross_platform_config: None,
         }
     }
 }

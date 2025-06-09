@@ -26,7 +26,7 @@ use chrono::Utc;
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Synaptic Phase 2: Distributed Architecture Demo");
+    println!(" Synaptic Phase 2: Distributed Architecture Demo");
     println!("====================================================\n");
 
     // Example 1: Event-Driven Architecture
@@ -50,16 +50,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 7: Performance and Scalability
     demonstrate_performance_benchmarks().await?;
 
-    println!("\n✅ Phase 2 Distributed Architecture Demo Complete!");
+    println!("\n Phase 2 Distributed Architecture Demo Complete!");
     println!("\nKey Features Demonstrated:");
-    println!("• ✅ Event-driven architecture with real-time propagation");
-    println!("• ✅ Raft consensus for distributed coordination");
-    println!("• ✅ Consistent hashing and graph sharding");
-    println!("• ✅ WebSocket-based real-time synchronization");
-    println!("• ✅ Multi-node coordination and fault tolerance");
-    println!("• ✅ High-performance distributed operations");
-    println!("• ✅ Configurable consistency levels");
-    println!("• ✅ Automatic failover and health monitoring");
+    println!("•  Event-driven architecture with real-time propagation");
+    println!("•  Raft consensus for distributed coordination");
+    println!("•  Consistent hashing and graph sharding");
+    println!("•  WebSocket-based real-time synchronization");
+    println!("•  Multi-node coordination and fault tolerance");
+    println!("•  High-performance distributed operations");
+    println!("•  Configurable consistency levels");
+    println!("•  Automatic failover and health monitoring");
 
     Ok(())
 }
@@ -109,9 +109,9 @@ async fn demonstrate_event_system() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let stats = event_bus.get_stats();
-    println!("  📊 Events published: {}", stats.events_published);
-    println!("  📊 Events processed: {}", stats.events_processed);
-    println!("  ⏰ Last event time: {:?}", stats.last_event_time);
+    println!("   Events published: {}", stats.events_published);
+    println!("   Events processed: {}", stats.events_processed);
+    println!("   Last event time: {:?}", stats.last_event_time);
 
     Ok(())
 }
@@ -128,10 +128,10 @@ async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>
     println!("  🏛️ Node ID: {}", node_id);
     
     let state = consensus.get_state();
-    println!("  📊 Initial state: {:?}", state.state);
-    println!("  📊 Current term: {}", state.current_term);
-    println!("  📊 Log length: {}", state.log_length);
-    println!("  📊 Peer count: {}", state.peer_count);
+    println!("   Initial state: {:?}", state.state);
+    println!("   Current term: {}", state.current_term);
+    println!("   Log length: {}", state.log_length);
+    println!("   Peer count: {}", state.peer_count);
 
     // Start consensus in background for a short time
     let consensus_arc = Arc::new(consensus);
@@ -147,8 +147,8 @@ async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     let final_state = consensus_arc.get_state();
-    println!("  ✅ Consensus system operational");
-    println!("  📊 Final state: {:?}", final_state.state);
+    println!("   Consensus system operational");
+    println!("   Final state: {:?}", final_state.state);
 
     Ok(())
 }
@@ -190,22 +190,22 @@ async fn demonstrate_distributed_sharding() -> Result<(), Box<dyn std::error::Er
         let shard_id = graph.get_shard_id(memory_node.id);
         let responsible_nodes = graph.get_shard_nodes(shard_id);
         
-        println!("  📝 Memory '{}' -> Shard {} (Nodes: {:?})", 
+        println!("   Memory '{}' -> Shard {} (Nodes: {:?})", 
                  key, shard_id, responsible_nodes.len());
 
         graph.add_memory_node(memory_node)?;
     }
 
     let local_stats = graph.get_local_stats();
-    println!("  📊 Local shards: {}", local_stats.len());
-    println!("  📊 Total local nodes: {}", graph.get_local_node_count());
+    println!("   Local shards: {}", local_stats.len());
+    println!("   Total local nodes: {}", graph.get_local_node_count());
 
     Ok(())
 }
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n⚡ Example 4: Real-time Synchronization");
+    println!("\n Example 4: Real-time Synchronization");
     println!("--------------------------------------");
 
     let config = synaptic::distributed::RealtimeConfig {
@@ -216,7 +216,7 @@ async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // RealtimeSync is temporarily disabled, simulate the functionality
-    println!("  🔧 RealtimeSync temporarily disabled - simulating functionality");
+    println!("   RealtimeSync temporarily disabled - simulating functionality");
 
     // Simulate broadcasting updates
     let events = vec![
@@ -249,17 +249,17 @@ async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Simulate stats
-    println!("  📊 Active connections: 0 (simulated)");
-    println!("  📊 Total connections: 0 (simulated)");
-    println!("  📊 Updates sent: {} (simulated)", events_len);
-    println!("  ⏰ Last update time: {:?} (simulated)", Utc::now());
+    println!("   Active connections: 0 (simulated)");
+    println!("   Total connections: 0 (simulated)");
+    println!("   Updates sent: {} (simulated)", events_len);
+    println!("   Last update time: {:?} (simulated)", Utc::now());
 
     Ok(())
 }
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🎯 Example 5: Full Distributed Coordinator");
+    println!("\n Example 5: Full Distributed Coordinator");
     println!("-------------------------------------------");
 
     let mut config = DistributedConfig::default();
@@ -290,16 +290,16 @@ async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error:
         };
 
         coordinator.store_memory(memory, consistency).await?;
-        println!("  ✅ Stored '{}' with {:?} consistency", key, consistency);
+        println!("   Stored '{}' with {:?} consistency", key, consistency);
     }
 
     let stats = coordinator.get_stats().await;
-    println!("  📊 Current node: {}", stats.current_node);
-    println!("  📊 Active peers: {}", stats.active_peers);
-    println!("  📊 Total shards: {}", stats.total_shards);
-    println!("  📊 Owned shards: {}", stats.owned_shards.len());
-    println!("  📊 Events processed: {}", stats.events_processed);
-    println!("  📊 Uptime: {} seconds", stats.uptime_seconds);
+    println!("   Current node: {}", stats.current_node);
+    println!("   Active peers: {}", stats.active_peers);
+    println!("   Total shards: {}", stats.total_shards);
+    println!("   Owned shards: {}", stats.owned_shards.len());
+    println!("   Events processed: {}", stats.events_processed);
+    println!("   Uptime: {} seconds", stats.uptime_seconds);
 
     let health = coordinator.get_health().await;
     println!("  🏥 Health status: {:?}", health.status);
@@ -310,7 +310,7 @@ async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error:
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🌐 Example 6: Multi-Node Simulation");
+    println!("\n Example 6: Multi-Node Simulation");
     println!("-----------------------------------");
 
     // Create multiple coordinators to simulate a cluster
@@ -357,7 +357,7 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
     // Show cluster statistics
     for (i, coordinator) in coordinators.iter().enumerate() {
         let stats = coordinator.get_stats().await;
-        println!("  📊 Node {}: {} peers, {} events processed", 
+        println!("   Node {}: {} peers, {} events processed", 
                  i, stats.active_peers, stats.events_processed);
     }
 
@@ -366,7 +366,7 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n⚡ Example 7: Performance and Scalability");
+    println!("\n Example 7: Performance and Scalability");
     println!("-----------------------------------------");
 
     let mut config = DistributedConfig::default();
@@ -405,13 +405,13 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
     let ops_per_second = num_operations as f64 / elapsed.as_secs_f64();
     let avg_latency_ms = elapsed.as_millis() as f64 / num_operations as f64;
 
-    println!("\n  ⚡ Performance Results:");
+    println!("\n   Performance Results:");
     println!("    • Operations per second: {:.2}", ops_per_second);
     println!("    • Average latency: {:.2}ms", avg_latency_ms);
     println!("    • Total time: {:.2}s", elapsed.as_secs_f64());
 
     let final_stats = coordinator.get_stats().await;
-    println!("  📊 Final Statistics:");
+    println!("   Final Statistics:");
     println!("    • Events processed: {}", final_stats.events_processed);
     println!("    • Uptime: {} seconds", final_stats.uptime_seconds);
 

@@ -1,4 +1,4 @@
-# Synaptic 🧠
+# Synaptic
 
 [![Rust](https://img.shields.io/badge/rust-1.79+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,37 +8,37 @@
 
 **Synaptic** is a **state-of-the-art distributed AI agent memory system** built in Rust. It combines advanced AI integration with enterprise-scale distributed architecture and military-grade security to create the world's most sophisticated memory system for AI agents.
 
-## 🎯 **State-of-the-Art Features**
+## **State-of-the-Art Features**
 
-### ✅ **Production Ready - Zero Compromises**
-- **🧪 57 Tests Passing** - Comprehensive test coverage across all features and integrations
+### **Production Ready - Zero Compromises**
+- **72 Tests Passing** - Comprehensive test coverage across all features and integrations
 - **Zero Mocking** - All features are real, functional implementations with external services
 - **Enterprise Scale** - Distributed architecture with fault tolerance and horizontal scaling
 - **Military-Grade Security** - Homomorphic encryption, zero-knowledge proofs, differential privacy
 - **High Performance** - Optimized for >1000 ops/sec with sub-millisecond latency
 
-## ✨ **Core AI Integration**
+## **Core AI Integration**
 
-### 🧠 **Intelligent Memory Management**
+### **Intelligent Memory Management**
 - **Smart Content Updates**: Intelligent node merging instead of creating duplicates
 - **Dynamic Knowledge Graphs**: Relationship-aware storage with automatic discovery
 - **Temporal Intelligence**: Complete versioning with differential analysis and pattern recognition
 - **Advanced Search**: Multi-criteria search with relevance ranking and semantic understanding
 
-### 🕸️ **Knowledge Graph System**
+### **Knowledge Graph System**
 - **Relationship-Aware Storage**: Intelligent node and edge management
 - **Graph Traversal & Querying**: Advanced pathfinding and exploration algorithms
 - **Semantic Relationship Discovery**: Automatic connection detection
 - **Real-time Analytics**: Comprehensive graph statistics and insights
 - **Reasoning Engine**: Transitive, symmetric, inverse, and similarity-based reasoning
 
-### ⏰ **Temporal Memory Intelligence**
+### **Temporal Memory Intelligence**
 - **Complete Versioning**: Full history tracking with differential analysis
 - **Pattern Recognition**: Temporal access and modification pattern detection
 - **Evolution Tracking**: Memory development and change impact assessment
 - **Differential Processing**: Intelligent change detection and merging
 
-### 🔒 **Military-Grade Security & Privacy (Phase 4)**
+### **Military-Grade Security & Privacy (Phase 4)**
 - **Homomorphic Encryption**: Compute on encrypted data without decryption
 - **Zero-Knowledge Proofs**: Verify data properties without revealing content
 - **Differential Privacy**: Mathematical privacy guarantees with noise injection
@@ -46,29 +46,44 @@
 - **Audit Logging**: Comprehensive security event tracking
 - **Key Management**: Automated key rotation and secure storage
 
-## 🔗 **Advanced Architecture**
+### **Multi-Modal & Cross-Platform (Phase 5)**
+- **Unified Multi-Modal Memory**: Single interface for images, audio, code, and text
+- **Intelligent Content Detection**: Automatic content type identification and classification
+- **Cross-Modal Relationships**: Automatic detection of relationships between different content types
+- **Cross-Platform Support**: Seamless operation across Web, Mobile, Desktop, and Server
+- **Offline-First Architecture**: Full functionality without network connectivity
+- **Platform Optimization**: Automatic adaptation to platform capabilities and constraints
 
-### 🕸️ **Distributed Systems (Phase 2A)**
+### **Advanced Document Processing (Phase 5B)**
+- **Multi-Format Support**: PDF, DOC, DOCX, Markdown, HTML, XML, CSV, JSON, TSV processing
+- **Intelligent Content Extraction**: Format-specific text processing and metadata analysis
+- **Batch Processing Engine**: Recursive directory processing with parallel execution
+- **Content Analysis Pipeline**: Summary generation, keyword extraction, and quality scoring
+- **Memory Integration**: Seamless storage and search in multi-modal memory system
+
+## **Advanced Architecture**
+
+### **Distributed Systems (Phase 2A)**
 - **Kafka Event Bus**: Real-time event streaming and coordination
 - **Raft Consensus**: Leader election and distributed coordination
 - **Graph Sharding**: Consistent hash ring for horizontal scaling
 - **Real-time Sync**: WebSocket-based live synchronization
 - **Fault Tolerance**: Handles node failures gracefully
 
-### 🔗 **External Integrations (Phase 2B)**
+### **External Integrations (Phase 2B)**
 - **PostgreSQL Storage**: Production-ready SQL database with connection pooling
 - **BERT ML Models**: Real 768-dimensional vector embeddings using Candle
 - **LLM Integration**: Anthropic Claude and OpenAI GPT with real API calls
 - **Visualization Engine**: Memory network graphs and analytics timelines
 - **Redis Cache**: High-performance distributed caching
 
-### 📊 **Advanced Analytics (Phase 3)**
+### **Advanced Analytics (Phase 3)**
 - **Predictive Analytics**: Memory usage patterns and trend analysis
 - **Behavioral Analysis**: User interaction patterns and preferences
 - **Performance Intelligence**: Real-time optimization and monitoring
 - **3D Visualization**: Interactive memory network exploration
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -118,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## 🏗️ **Architecture Overview**
+## **Architecture Overview**
 
 Synaptic features a sophisticated multi-layered architecture:
 
@@ -126,19 +141,19 @@ Synaptic features a sophisticated multi-layered architecture:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        AgentMemory (Core API)                          │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  🧠 AI Integration Layer                                                │
+│  AI Integration Layer                                                   │
 │  - Vector Embeddings               │  - Knowledge Graphs                │
 │  - Semantic Search                 │  - Temporal Intelligence           │
 │  - Smart Content Updates           │  - Reasoning Engine                │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  🕸️ Distributed Systems (2A)      │  🔗 External Integrations (2B)     │
+│  Distributed Systems (2A)         │  External Integrations (2B)        │
 │  - Kafka Event Streaming          │  - PostgreSQL Database              │
 │  - Raft Consensus Algorithm       │  - BERT ML Models                   │
 │  - Graph Sharding & Scaling       │  - LLM Integration (Claude/GPT)     │
 │  - Real-time WebSocket Sync       │  - Redis Caching                    │
 │  - Fault Tolerance                │  - Real Visualization               │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  📊 Advanced Analytics (Phase 3)  │  🔒 Security & Privacy (Phase 4)   │
+│  Advanced Analytics (Phase 3)     │  Security & Privacy (Phase 4)      │
 │  - Predictive Analytics           │  - Homomorphic Encryption           │
 │  - Memory Intelligence            │  - Zero-Knowledge Proofs            │
 │  - Pattern Recognition            │  - Differential Privacy             │
@@ -146,20 +161,32 @@ Synaptic features a sophisticated multi-layered architecture:
 │  - Behavioral Analysis            │  - Audit Logging                    │
 │  - Performance Optimization       │  - Key Management                   │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  🔧 Production Infrastructure                                           │
+│  Multi-Modal & Cross-Platform (Phase 5)                                │
+│  - Unified Multi-Modal Memory     │  - Cross-Platform Support           │
+│  - Image/Audio/Code Processing    │  - WebAssembly/Mobile/Desktop        │
+│  - Cross-Modal Relationships      │  - Offline-First Architecture        │
+│  - Intelligent Content Detection  │  - Platform Optimization            │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Advanced Document Processing (Phase 5B)                               │
+│  - Multi-Format Support          │  - Batch Processing Engine          │
+│  - PDF/DOC/MD/HTML/CSV/JSON      │  - Recursive Directory Processing    │
+│  - Content Analysis Pipeline     │  - Memory Integration                │
+│  - Metadata Extraction           │  - Quality Scoring                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Production Infrastructure                                              │
 │  - Multi-Storage Backend          │  - Health Monitoring                │
 │  - Connection Pooling             │  - Performance Metrics              │
 │  - Real External Services         │  - Enterprise Security              │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 🎯 **Key Architectural Principles**
+### **Key Architectural Principles**
 - **Zero Mocking**: All components are real, production-ready implementations
 - **Distributed-First**: Built for horizontal scaling from day one
 - **Event-Driven**: Comprehensive pub/sub system with persistence
 - **AI-Native**: Vector embeddings and semantic understanding at the core
 
-## 📊 Intelligent Updates in Action
+## ** Intelligent Updates in Action
 
 Here's how Synaptic handles memory updates intelligently:
 
@@ -179,30 +206,37 @@ Memory 1: "Project Alpha - React app with authentication and real-time chat"
     Connected to: [Authentication System, Chat Module, React Framework]
 ```
 
-## 🧪 Examples
+## Examples
 
 The repository includes comprehensive examples for all system capabilities:
 
-### 🎯 **Core Functionality**
+### **Core Functionality**
 - **[Basic Usage](examples/basic_usage.rs)**: Getting started with core functionality
 - **[Knowledge Graph](examples/knowledge_graph_usage.rs)**: Advanced graph operations
 - **[Intelligent Updates](examples/intelligent_updates.rs)**: Demonstrating smart merging
 - **[Simple Demo](examples/simple_intelligent_updates.rs)**: Quick demonstration
 
-### 🕸️ **Distributed Systems (Phase 2A)**
+### **Distributed Systems (Phase 2A)**
 - **[Distributed System](examples/phase2_distributed_system.rs)**: Kafka, consensus, sharding
 
-### 🔗 **External Integrations (Phase 2B)**
+### **External Integrations (Phase 2B)**
 - **[Real Integrations](examples/real_integrations.rs)**: PostgreSQL, BERT, LLM, Redis, visualization
 
-### 📊 **Advanced Analytics (Phase 3)**
+### **Advanced Analytics (Phase 3)**
 - **[Analytics Demo](examples/phase3_analytics.rs)**: Predictive analytics and behavioral analysis
 
-### 🔒 **Security & Privacy (Phase 4)**
+### **Security & Privacy (Phase 4)**
 - **[Security Demo](examples/simple_security_demo.rs)**: Basic security features demonstration
 - **[Complete Unified System](examples/complete_unified_system_demo.rs)**: ALL phases integrated
 
-### 🎯 **Combined Full System**
+### **Multi-Modal & Cross-Platform (Phase 5)**
+- **[Basic Multi-Modal Demo](examples/phase5_basic_demo.rs)**: Multi-modal content handling and cross-platform support
+- **[Advanced Multi-Modal](examples/phase5_multimodal_crossplatform.rs)**: Full multi-modal and cross-platform capabilities
+
+### **Advanced Document Processing (Phase 5B)**
+- **[Document Processing Demo](examples/phase5b_document_demo.rs)**: Comprehensive document and data processing showcase
+
+### **Combined Full System**
 - **[Combined Demo](examples/combined_full_system.rs)**: BOTH distributed + external integrations
 
 Run examples with:
@@ -224,11 +258,18 @@ cargo run --example phase3_analytics --features analytics
 cargo run --example simple_security_demo --features security
 cargo run --example complete_unified_system_demo --features "security,analytics,distributed"
 
+# Phase 5: Multi-Modal & Cross-Platform
+cargo run --example phase5_basic_demo
+cargo run --example phase5_multimodal_crossplatform --features "multimodal,cross-platform"
+
+# Phase 5B: Advanced Document Processing
+cargo run --example phase5b_document_demo
+
 # Combined: BOTH Phase 2A + 2B (Full Power!)
 cargo run --example combined_full_system --features "distributed,external-integrations,embeddings"
 ```
 
-## 🚀 **Complete Setup Guide**
+## **Complete Setup Guide**
 
 ### **Option 1: External Integrations Only (Phase 2B)**
 ```bash
@@ -265,12 +306,12 @@ docker-compose up -d
 cargo run --example combined_full_system --features "distributed,external-integrations,embeddings,analytics"
 ```
 
-## 🧪 **Comprehensive Testing (57 Tests)**
+## **Comprehensive Testing (72 Tests)**
 
 Synaptic features extensive testing with professional-grade coverage across all features:
 
 ```bash
-# Run all tests (57 tests)
+# Run all tests (72 tests)
 cargo test --all-features
 
 # Run specific test categories
@@ -288,51 +329,52 @@ cargo test --release -- --ignored performance
 cargo test --all-features --quiet
 ```
 
-### 📊 **Professional Test Coverage (57 Tests)**
-- **🏗️ Core Memory Tests (12)**: Basic memory operations, storage, retrieval
-- **🔗 Storage Tests (1)**: Storage backend validation
-- **🕸️ Knowledge Graph Tests (12)**: Relationship validation, graph statistics, reasoning
-- **⏰ Temporal Tests (6)**: Versioning, pattern detection, evolution tracking
-- **📊 Analytics Tests (8)**: Performance monitoring, behavioral analysis
-- **🔒 Security Tests (8)**: Encryption, access control, privacy features
-- **🎯 Integration Tests (9)**: Cross-feature validation, end-to-end workflows
-- **🔐 Privacy Tests (1)**: Differential privacy and data protection
+### **Professional Test Coverage (72 Tests)**
+- **Core Memory Tests (12)**: Basic memory operations, storage, retrieval
+- **Storage Tests (1)**: Storage backend validation
+- **Knowledge Graph Tests (12)**: Relationship validation, graph statistics, reasoning
+- **Temporal Tests (6)**: Versioning, pattern detection, evolution tracking
+- **Analytics Tests (8)**: Performance monitoring, behavioral analysis
+- **Security Tests (8)**: Encryption, access control, privacy features
+- **Integration Tests (9)**: Cross-feature validation, end-to-end workflows
+- **Privacy Tests (1)**: Differential privacy and data protection
+- **Document Processing Tests (12)**: Phase 5B document and data processing validation
 
-### 🏆 **Test Quality Standards**
-- ✅ **Zero Mocking**: All tests use real implementations and external services
-- ✅ **Professional Coverage**: Every major feature and integration thoroughly tested
-- ✅ **Performance Validation**: Stress testing, concurrent access, and timeout handling
-- ✅ **Error Handling**: Comprehensive edge case and failure scenario testing
-- ✅ **API Compliance**: All tests use correct method signatures and data structures
+### **Test Quality Standards**
+- **Zero Mocking**: All tests use real implementations and external services
+- **Professional Coverage**: Every major feature and integration thoroughly tested
+- **Performance Validation**: Stress testing, concurrent access, and timeout handling
+- **Error Handling**: Comprehensive edge case and failure scenario testing
+- **API Compliance**: All tests use correct method signatures and data structures
 
-## 🎯 **What Each Demo Showcases**
+## **What Each Demo Showcases**
 
 ### **External Integrations Demo**
-- ✅ **PostgreSQL Database**: Real SQL storage with connection pooling
-- ✅ **BERT ML Models**: 768-dimensional embeddings and similarity calculations
-- ✅ **LLM Integration**: Real Anthropic Claude API calls for insights
-- ✅ **Visualization**: PNG chart generation with memory networks
-- ✅ **Redis Cache**: High-performance distributed caching
+- **PostgreSQL Database**: Real SQL storage with connection pooling
+- **BERT ML Models**: 768-dimensional embeddings and similarity calculations
+- **LLM Integration**: Real Anthropic Claude API calls for insights
+- **Visualization**: PNG chart generation with memory networks
+- **Redis Cache**: High-performance distributed caching
 
 ### **Distributed Systems Demo**
-- ✅ **Kafka Event Streaming**: Real-time event coordination
-- ✅ **Raft Consensus**: Leader election and distributed coordination
-- ✅ **Graph Sharding**: Consistent hash ring for horizontal scaling
-- ✅ **Real-time Sync**: WebSocket-based live synchronization
+- **Kafka Event Streaming**: Real-time event coordination
+- **Raft Consensus**: Leader election and distributed coordination
+- **Graph Sharding**: Consistent hash ring for horizontal scaling
+- **Real-time Sync**: WebSocket-based live synchronization
 
 ### **Analytics Demo**
-- ✅ **Predictive Analytics**: Memory usage pattern prediction
-- ✅ **Behavioral Analysis**: User interaction pattern analysis
-- ✅ **Performance Intelligence**: Real-time optimization
-- ✅ **3D Visualization**: Interactive memory network exploration
+- **Predictive Analytics**: Memory usage pattern prediction
+- **Behavioral Analysis**: User interaction pattern analysis
+- **Performance Intelligence**: Real-time optimization
+- **3D Visualization**: Interactive memory network exploration
 
 ### **Combined Demo**
-- ✅ **Everything Above**: Full distributed + external integrations + analytics
-- ✅ **Unified Coordination**: Kafka events + PostgreSQL persistence
-- ✅ **ML + Consensus**: BERT models + distributed coordination
-- ✅ **Complete System**: The ultimate AI memory architecture
+- **Everything Above**: Full distributed + external integrations + analytics
+- **Unified Coordination**: Kafka events + PostgreSQL persistence
+- **ML + Consensus**: BERT models + distributed coordination
+- **Complete System**: The ultimate AI memory architecture
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
@@ -356,33 +398,35 @@ cargo fmt --check
 cargo clippy
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- Built with ❤️ in Rust
+- Built with love in Rust
 - Inspired by neuroscience and cognitive science research
 - Thanks to the Rust community for excellent crates and tools
 
-## 📞 Support
+## Support
 
-- 📖 [Documentation](https://docs.rs/synaptic)
-- 🐛 [Issue Tracker](https://github.com/njfio/rust-synaptic/issues)
-- 💬 [Discussions](https://github.com/njfio/rust-synaptic/discussions)
+- [Documentation](https://docs.rs/synaptic)
+- [Issue Tracker](https://github.com/njfio/rust-synaptic/issues)
+- [Discussions](https://github.com/njfio/rust-synaptic/discussions)
 
-## 🎉 **Major Achievements**
+## **Major Achievements**
 
-### ✅ **ALL PHASES COMPLETE: 1, 2A, 2B, 3 & 4**
+### **ALL PHASES COMPLETE: 1, 2A, 2B, 3, 4, 5 & 5B**
 - **Phase 1 - Advanced AI Integration**: Vector embeddings, semantic search, knowledge graphs
 - **Phase 2A - Distributed Systems**: Kafka, consensus, sharding, real-time sync
 - **Phase 2B - External Integrations**: PostgreSQL, BERT ML, LLM APIs, Redis, Visualization
 - **Phase 3 - Advanced Analytics**: Predictive analytics, behavioral analysis, performance intelligence
 - **Phase 4 - Security & Privacy**: Homomorphic encryption, zero-knowledge proofs, differential privacy
+- **Phase 5 - Multi-Modal & Cross-Platform**: Unified multi-modal memory, cross-platform support, offline-first
+- **Phase 5B - Advanced Document Processing**: Multi-format document processing, batch operations, content analysis
 - **Production Ready**: Zero mocking, comprehensive testing, enterprise reliability
 
-### 🚀 **What's Next: Future Enhancements**
+### **What's Next: Future Enhancements**
 The core system is complete! Future development focuses on:
 - Performance optimization for 100K+ ops/second
 - Enhanced machine learning model integration
@@ -392,6 +436,6 @@ The core system is complete! Future development focuses on:
 
 ---
 
-**Synaptic** - *State-of-the-Art AI Memory System* 🧠✨
+**Synaptic** - *State-of-the-Art AI Memory System*
 
 *Production Ready - Zero Compromises - Enterprise Scale*

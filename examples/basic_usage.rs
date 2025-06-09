@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    println!("🧠 AI Agent Memory System - Basic Usage Example");
+    println!(" AI Agent Memory System - Basic Usage Example");
     println!("================================================\n");
 
     // Example 1: Basic memory operations
@@ -29,13 +29,13 @@ async fn main() -> Result<()> {
     // Example 4: Different storage backends
     storage_backends_example().await?;
 
-    println!("\n✅ All examples completed successfully!");
+    println!("\n All examples completed successfully!");
     Ok(())
 }
 
 /// Demonstrate basic memory operations
 async fn basic_memory_operations() -> Result<()> {
-    println!("📝 Example 1: Basic Memory Operations");
+    println!(" Example 1: Basic Memory Operations");
     println!("------------------------------------");
 
     // Create a new memory system with default configuration
@@ -72,7 +72,7 @@ async fn basic_memory_operations() -> Result<()> {
 
 /// Demonstrate advanced search and retrieval features
 async fn advanced_search_example() -> Result<()> {
-    println!("🔍 Example 2: Advanced Search and Retrieval");
+    println!(" Example 2: Advanced Search and Retrieval");
     println!("-------------------------------------------");
 
     // Create memory system with file storage
@@ -123,7 +123,7 @@ async fn advanced_search_example() -> Result<()> {
 
 /// Demonstrate checkpointing and state management
 async fn checkpointing_example() -> Result<()> {
-    println!("💾 Example 3: Checkpointing and State Management");
+    println!(" Example 3: Checkpointing and State Management");
     println!("------------------------------------------------");
 
     let config = MemoryConfig::default();
@@ -157,7 +157,7 @@ async fn checkpointing_example() -> Result<()> {
 
     // Check if new insight was removed (it should be)
     match memory.retrieve("new_insight").await? {
-        Some(_) => println!("❌ Unexpected: new_insight still exists"),
+        Some(_) => println!(" Unexpected: new_insight still exists"),
         None => println!("✓ Confirmed: new_insight was removed by restore"),
     }
 
@@ -230,7 +230,7 @@ fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance:
 
 /// Demonstrate error handling patterns
 async fn error_handling_example() -> Result<()> {
-    println!("⚠️  Example 5: Error Handling");
+    println!("  Example 5: Error Handling");
     println!("-----------------------------");
 
     let config = MemoryConfig::default();
@@ -238,14 +238,14 @@ async fn error_handling_example() -> Result<()> {
 
     // Try to retrieve a non-existent memory
     match memory.retrieve("non_existent_key").await? {
-        Some(entry) => println!("❌ Unexpected: found entry {}", entry.value),
+        Some(entry) => println!(" Unexpected: found entry {}", entry.value),
         None => println!("✓ Correctly handled missing memory"),
     }
 
     // Try to restore from a non-existent checkpoint
     let fake_checkpoint_id = Uuid::new_v4();
     match memory.restore_checkpoint(fake_checkpoint_id).await {
-        Ok(_) => println!("❌ Unexpected: restore succeeded"),
+        Ok(_) => println!(" Unexpected: restore succeeded"),
         Err(e) => println!("✓ Correctly handled missing checkpoint: {}", e),
     }
 

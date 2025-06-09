@@ -14,7 +14,7 @@ use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("🧠 AI Agent Memory System - Intelligent Updates Demo");
+    println!(" AI Agent Memory System - Intelligent Updates Demo");
     println!("=====================================================\n");
 
     // Create memory system with all advanced features enabled
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Example 1: Initial memory creation
-    println!("📝 Example 1: Creating Initial Memories");
+    println!(" Example 1: Creating Initial Memories");
     println!("--------------------------------------");
     
     memory.store("project_alpha", "A new web application project using React and Node.js").await?;
@@ -39,11 +39,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     // Show initial knowledge graph stats
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("📊 Initial graph: {} nodes, {} edges", stats.node_count, stats.edge_count);
+        println!(" Initial graph: {} nodes, {} edges", stats.node_count, stats.edge_count);
     }
     
     // Example 2: Updating existing memories (should merge, not duplicate)
-    println!("\n🔄 Example 2: Intelligent Memory Updates");
+    println!("\n Example 2: Intelligent Memory Updates");
     println!("----------------------------------------");
     
     // Update project_alpha with more details - should merge with existing node
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     // Show that nodes were updated, not duplicated
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("📊 After updates: {} nodes, {} edges (nodes should be same count)", stats.node_count, stats.edge_count);
+        println!(" After updates: {} nodes, {} edges (nodes should be same count)", stats.node_count, stats.edge_count);
     }
 
     // Example 3: Adding similar but distinct memories
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("✓ Added similar but distinct memories");
     
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("📊 After new memories: {} nodes, {} edges", stats.node_count, stats.edge_count);
+        println!(" After new memories: {} nodes, {} edges", stats.node_count, stats.edge_count);
     }
 
     // Example 4: Creating explicit relationships
@@ -108,11 +108,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("✓ Created explicit relationships between memories");
     
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("📊 After relationships: {} nodes, {} edges", stats.node_count, stats.edge_count);
+        println!(" After relationships: {} nodes, {} edges", stats.node_count, stats.edge_count);
     }
 
     // Example 5: Demonstrating relationship inference
-    println!("\n🧠 Example 5: Automatic Relationship Inference");
+    println!("\n Example 5: Automatic Relationship Inference");
     println!("----------------------------------------------");
     
     let inferred = memory.infer_relationships().await?;
@@ -123,11 +123,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("📊 After inference: {} nodes, {} edges", stats.node_count, stats.edge_count);
+        println!(" After inference: {} nodes, {} edges", stats.node_count, stats.edge_count);
     }
 
     // Example 6: Finding related memories
-    println!("\n🔍 Example 6: Finding Related Memories");
+    println!("\n Example 6: Finding Related Memories");
     println!("-------------------------------------");
     
     let related = memory.find_related_memories("project_alpha", 2).await?;
@@ -140,7 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Example 7: Demonstrating content evolution tracking
-    println!("\n📈 Example 7: Content Evolution Tracking");
+    println!("\n Example 7: Content Evolution Tracking");
     println!("---------------------------------------");
     
     // Make several updates to track evolution
@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("✓ Added overlapping information that was intelligently merged");
 
     // Example 9: Final statistics and summary
-    println!("\n📊 Example 9: Final System State");
+    println!("\n Example 9: Final System State");
     println!("-------------------------------");
     
     let stats = memory.stats();
@@ -184,14 +184,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("\n✅ Intelligent Updates Demo Complete!");
+    println!("\n Intelligent Updates Demo Complete!");
     println!("\nKey Features Demonstrated:");
-    println!("• ✅ Intelligent node merging (no duplicates for similar content)");
-    println!("• ✅ Content evolution tracking with temporal analysis");
-    println!("• ✅ Smart relationship updates based on content changes");
-    println!("• ✅ Automatic relationship inference and discovery");
-    println!("• ✅ Advanced memory management with consolidation");
-    println!("• ✅ Differential analysis of memory changes over time");
+    println!("•  Intelligent node merging (no duplicates for similar content)");
+    println!("•  Content evolution tracking with temporal analysis");
+    println!("•  Smart relationship updates based on content changes");
+    println!("•  Automatic relationship inference and discovery");
+    println!("•  Advanced memory management with consolidation");
+    println!("•  Differential analysis of memory changes over time");
 
     Ok(())
 }
