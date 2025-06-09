@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    println!("🕸️  AI Agent Memory System - Knowledge Graph Example");
+    println!("  AI Agent Memory System - Knowledge Graph Example");
     println!("====================================================\n");
 
     // Example 1: Basic knowledge graph operations
@@ -26,13 +26,13 @@ async fn main() -> Result<()> {
     // Example 4: Complex graph queries
     complex_graph_queries().await?;
 
-    println!("\n✅ All knowledge graph examples completed successfully!");
+    println!("\n All knowledge graph examples completed successfully!");
     Ok(())
 }
 
 /// Demonstrate basic knowledge graph operations
 async fn basic_knowledge_graph_operations() -> Result<()> {
-    println!("📊 Example 1: Basic Knowledge Graph Operations");
+    println!(" Example 1: Basic Knowledge Graph Operations");
     println!("----------------------------------------------");
 
     // Create memory system with knowledge graph enabled
@@ -132,7 +132,7 @@ async fn relationship_creation_and_traversal() -> Result<()> {
 
 /// Demonstrate inference and reasoning
 async fn inference_and_reasoning() -> Result<()> {
-    println!("🧠 Example 3: Inference and Reasoning");
+    println!(" Example 3: Inference and Reasoning");
     println!("------------------------------------");
 
     let config = MemoryConfig {
@@ -182,7 +182,7 @@ async fn inference_and_reasoning() -> Result<()> {
 
 /// Demonstrate complex graph queries
 async fn complex_graph_queries() -> Result<()> {
-    println!("🔍 Example 4: Complex Graph Queries");
+    println!(" Example 4: Complex Graph Queries");
     println!("----------------------------------");
 
     let config = MemoryConfig {
@@ -233,7 +233,7 @@ async fn complex_graph_queries() -> Result<()> {
     println!("✓ Created {} explicit relationships", 10);
 
     // Perform complex queries
-    println!("\n🔍 Complex Query Results:");
+    println!("\n Complex Query Results:");
 
     // Find all memories related to Alice
     let alice_related = memory.find_related_memories("person_alice", 3).await?;
@@ -254,7 +254,7 @@ async fn complex_graph_queries() -> Result<()> {
 
     // Get final knowledge graph statistics
     if let Some(stats) = memory.knowledge_graph_stats() {
-        println!("\n📊 Final Knowledge Graph Statistics:");
+        println!("\n Final Knowledge Graph Statistics:");
         println!("  - Total nodes: {}", stats.node_count);
         println!("  - Total edges: {}", stats.edge_count);
         println!("  - Graph density: {:.4}", stats.density);

@@ -140,7 +140,7 @@ impl MLModelManager {
             // Load model weights
             let weights_path = model_path.join("model.safetensors");
             if weights_path.exists() {
-                println!("✅ Model weights found, loading BERT model...");
+                println!("Model weights found, loading BERT model...");
 
                 // Load the actual model
                 let weights = candle_core::safetensors::load(&weights_path, &self.device)
@@ -149,9 +149,9 @@ impl MLModelManager {
                 // Create BERT model (simplified for demo)
                 // In a real implementation, you'd use the full BERT architecture
                 self.embedding_model = Some(Box::new(SimpleBertModel::new(weights)?));
-                println!("✅ BERT model loaded successfully");
+                println!("BERT model loaded successfully");
             } else {
-                println!("⚠️  Model weights not found at: {}", weights_path.display());
+                println!("Warning: Model weights not found at: {}", weights_path.display());
             }
         }
 

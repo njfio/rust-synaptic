@@ -1,4 +1,4 @@
-//! # Synaptic 🧠
+//! # Synaptic
 //!
 //! An intelligent AI agent memory system built in Rust that creates and manages
 //! dynamic knowledge graphs with smart content updates. Unlike traditional memory
@@ -7,11 +7,11 @@
 //!
 //! ## Key Features
 //!
-//! - **🧠 Intelligent Memory Updates**: Smart node merging and content evolution tracking
-//! - **🕸️ Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
-//! - **⏰ Temporal Intelligence**: Version history and pattern detection
-//! - **🔍 Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
-//! - **🎯 Memory Management**: Intelligent summarization and lifecycle policies
+//! - **Intelligent Memory Updates**: Smart node merging and content evolution tracking
+//! - **Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
+//! - **Temporal Intelligence**: Version history and pattern detection
+//! - **Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
+//! - **Memory Management**: Intelligent summarization and lifecycle policies
 //!
 //! ## Quick Start
 //!

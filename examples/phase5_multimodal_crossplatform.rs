@@ -26,13 +26,13 @@ use synaptic::cross_platform::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Phase 5: Multi-Modal & Cross-Platform Demo");
+    println!(" Phase 5: Multi-Modal & Cross-Platform Demo");
     println!("==============================================");
 
     // Phase 5A: Multi-Modal Memory System
     #[cfg(feature = "multimodal")]
     {
-        println!("\n🎨 Phase 5A: Multi-Modal Memory System");
+        println!("\n Phase 5A: Multi-Modal Memory System");
         println!("======================================");
         
         demo_multimodal_memory().await?;
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 5B: Cross-Platform Support
     #[cfg(feature = "cross-platform")]
     {
-        println!("\n🌐 Phase 5B: Cross-Platform Support");
+        println!("\n Phase 5B: Cross-Platform Support");
         println!("===================================");
         
         demo_cross_platform_support().await?;
@@ -56,11 +56,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         demo_integrated_system().await?;
     }
 
-    println!("\n🎉 Phase 5 Demo Complete!");
-    println!("✅ Multi-modal memory capabilities demonstrated");
-    println!("✅ Cross-platform support validated");
-    println!("✅ Real-time synchronization working");
-    println!("✅ Offline-first capabilities enabled");
+    println!("\n Phase 5 Demo Complete!");
+    println!(" Multi-modal memory capabilities demonstrated");
+    println!(" Cross-platform support validated");
+    println!(" Real-time synchronization working");
+    println!(" Offline-first capabilities enabled");
     
     Ok(())
 }
@@ -103,7 +103,7 @@ async fn demo_multimodal_memory() -> Result<(), Box<dyn std::error::Error>> {
         Some(image_content_type),
     ).await?;
     
-    println!("✅ Stored image memory: {}", image_id);
+    println!(" Stored image memory: {}", image_id);
 
     // Demo 2: Audio Memory
     println!("\n🎵 Audio Memory Demo");
@@ -124,10 +124,10 @@ async fn demo_multimodal_memory() -> Result<(), Box<dyn std::error::Error>> {
         Some(audio_content_type),
     ).await?;
     
-    println!("✅ Stored audio memory: {}", audio_id);
+    println!(" Stored audio memory: {}", audio_id);
 
     // Demo 3: Code Memory
-    println!("\n💻 Code Memory Demo");
+    println!("\n Code Memory Demo");
     println!("------------------");
     
     let rust_code = r#"
@@ -162,10 +162,10 @@ async fn demo_multimodal_memory() -> Result<(), Box<dyn std::error::Error>> {
         Some(code_content_type),
     ).await?;
     
-    println!("✅ Stored code memory: {}", code_id);
+    println!(" Stored code memory: {}", code_id);
 
     // Demo 4: Cross-Modal Search
-    println!("\n🔍 Cross-Modal Search Demo");
+    println!("\n Cross-Modal Search Demo");
     println!("--------------------------");
     
     let search_query = MultiModalQuery {
@@ -178,7 +178,7 @@ async fn demo_multimodal_memory() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     let search_results = multimodal_memory.search_multimodal(search_query).await?;
-    println!("✅ Found {} related memories across modalities", search_results.len());
+    println!(" Found {} related memories across modalities", search_results.len());
     
     for (i, result) in search_results.iter().enumerate() {
         println!("  {}. {} (similarity: {:.2})", 
@@ -192,14 +192,14 @@ async fn demo_multimodal_memory() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Demo 5: Statistics
-    println!("\n📊 Multi-Modal Statistics");
+    println!("\n Multi-Modal Statistics");
     println!("-------------------------");
     
     let stats = multimodal_memory.get_statistics().await?;
-    println!("✅ Total memories: {}", stats.total_memories);
-    println!("✅ Total size: {} bytes", stats.total_size);
-    println!("✅ Total relationships: {}", stats.total_relationships);
-    println!("✅ Average relationship confidence: {:.2}", stats.average_relationship_confidence);
+    println!(" Total memories: {}", stats.total_memories);
+    println!(" Total size: {} bytes", stats.total_size);
+    println!(" Total relationships: {}", stats.total_relationships);
+    println!(" Average relationship confidence: {:.2}", stats.average_relationship_confidence);
     
     for (modality, count) in &stats.memories_by_modality {
         println!("   - {}: {} memories", modality, count);
@@ -215,22 +215,22 @@ async fn demo_cross_platform_support() -> Result<(), Box<dyn std::error::Error>>
     let mut manager = CrossPlatformMemoryManager::new(cross_platform_config)?;
 
     // Demo 1: Platform Detection
-    println!("\n🔍 Platform Detection");
+    println!("\n Platform Detection");
     println!("---------------------");
     
     let platform_info = manager.get_platform_info()?;
-    println!("✅ Platform: {:?}", platform_info.platform);
-    println!("✅ Version: {}", platform_info.version);
-    println!("✅ Available memory: {} MB", platform_info.available_memory / (1024 * 1024));
-    println!("✅ Available storage: {} GB", platform_info.available_storage / (1024 * 1024 * 1024));
+    println!(" Platform: {:?}", platform_info.platform);
+    println!(" Version: {}", platform_info.version);
+    println!(" Available memory: {} MB", platform_info.available_memory / (1024 * 1024));
+    println!(" Available storage: {} GB", platform_info.available_storage / (1024 * 1024 * 1024));
     
-    println!("✅ Supported features:");
+    println!(" Supported features:");
     for feature in &platform_info.supported_features {
         println!("   - {:?}", feature);
     }
 
     // Demo 2: Feature Support Testing
-    println!("\n🧪 Feature Support Testing");
+    println!("\n Feature Support Testing");
     println!("--------------------------");
     
     let features_to_test = vec![
@@ -243,32 +243,32 @@ async fn demo_cross_platform_support() -> Result<(), Box<dyn std::error::Error>>
     
     for feature in features_to_test {
         let supported = manager.supports_feature(feature.clone())?;
-        println!("✅ {:?}: {}", feature, if supported { "✓" } else { "✗" });
+        println!(" {:?}: {}", feature, if supported { "✓" } else { "✗" });
     }
 
     // Demo 3: Storage Operations
-    println!("\n💾 Cross-Platform Storage");
+    println!("\n Cross-Platform Storage");
     println!("-------------------------");
     
-    let test_data = "Cross-platform test data with unicode: 🚀🌍💻".as_bytes();
+    let test_data = "Cross-platform test data with unicode: 🌍".as_bytes();
     manager.store("test_key", test_data)?;
-    println!("✅ Stored data across platform");
+    println!(" Stored data across platform");
     
     let retrieved = manager.retrieve("test_key")?;
     if let Some(data) = retrieved {
-        println!("✅ Retrieved data: {} bytes", data.len());
+        println!(" Retrieved data: {} bytes", data.len());
         assert_eq!(data, test_data);
     }
 
     // Demo 4: Platform Optimization
-    println!("\n⚡ Platform Optimization");
+    println!("\n Platform Optimization");
     println!("-----------------------");
     
     manager.optimize_for_platform()?;
-    println!("✅ Platform optimizations applied");
+    println!(" Platform optimizations applied");
     
     let optimized_info = manager.get_platform_info()?;
-    println!("✅ Performance profile:");
+    println!(" Performance profile:");
     println!("   - CPU score: {:.2}", optimized_info.performance_profile.cpu_score);
     println!("   - Memory score: {:.2}", optimized_info.performance_profile.memory_score);
     println!("   - Storage score: {:.2}", optimized_info.performance_profile.storage_score);
@@ -284,19 +284,19 @@ async fn demo_cross_platform_support() -> Result<(), Box<dyn std::error::Error>>
     // Test offline storage
     let offline_data = b"Offline-first data that syncs when online";
     offline_adapter.store("offline_key", offline_data)?;
-    println!("✅ Stored data offline");
+    println!(" Stored data offline");
     
     let offline_retrieved = offline_adapter.retrieve("offline_key")?;
     if let Some(data) = offline_retrieved {
-        println!("✅ Retrieved offline data: {} bytes", data.len());
+        println!(" Retrieved offline data: {} bytes", data.len());
     }
     
     // Test sync queue
     let pending_ops = offline_adapter.get_pending_operations()?;
-    println!("✅ Pending sync operations: {}", pending_ops.len());
+    println!(" Pending sync operations: {}", pending_ops.len());
 
     // Demo 6: Synchronization
-    println!("\n🔄 Synchronization Demo");
+    println!("\n Synchronization Demo");
     println!("----------------------");
     
     let sync_config = SyncConfig {
@@ -319,24 +319,24 @@ async fn demo_cross_platform_support() -> Result<(), Box<dyn std::error::Error>>
     );
     
     sync_manager.queue_sync_operation(store_op).await?;
-    println!("✅ Queued sync operation");
+    println!(" Queued sync operation");
     
     let sync_stats = sync_manager.get_statistics().await;
-    println!("✅ Sync statistics:");
+    println!(" Sync statistics:");
     println!("   - Total operations: {}", sync_stats.total_operations);
     println!("   - Successful: {}", sync_stats.successful_operations);
     println!("   - Failed: {}", sync_stats.failed_operations);
 
     // Demo 7: Storage Statistics
-    println!("\n📈 Storage Statistics");
+    println!("\n Storage Statistics");
     println!("--------------------");
     
     let storage_stats = manager.get_storage_stats()?;
-    println!("✅ Storage backend: {:?}", storage_stats.backend);
-    println!("✅ Used storage: {} bytes", storage_stats.used_storage);
-    println!("✅ Available storage: {} bytes", storage_stats.available_storage);
-    println!("✅ Item count: {}", storage_stats.item_count);
-    println!("✅ Average item size: {} bytes", storage_stats.average_item_size);
+    println!(" Storage backend: {:?}", storage_stats.backend);
+    println!(" Used storage: {} bytes", storage_stats.used_storage);
+    println!(" Available storage: {} bytes", storage_stats.available_storage);
+    println!(" Item count: {}", storage_stats.item_count);
+    println!(" Average item size: {} bytes", storage_stats.average_item_size);
 
     Ok(())
 }
@@ -378,25 +378,25 @@ async fn demo_integrated_system() -> Result<(), Box<dyn std::error::Error>> {
     // Also store in cross-platform storage for sync
     cross_platform_manager.store("mobile_screenshot_data", &image_data)?;
     
-    println!("✅ Stored multi-modal content with cross-platform sync");
+    println!(" Stored multi-modal content with cross-platform sync");
     println!("   - Multi-modal ID: {}", image_id);
     println!("   - Cross-platform storage: ✓");
 
     // Demo: Platform-aware multi-modal processing
-    println!("\n🎯 Platform-Aware Processing");
+    println!("\n Platform-Aware Processing");
     println!("----------------------------");
     
     let platform_info = cross_platform_manager.get_platform_info()?;
     let multimodal_stats = multimodal_memory.get_statistics().await?;
     
-    println!("✅ Platform: {:?}", platform_info.platform);
-    println!("✅ Multi-modal memories: {}", multimodal_stats.total_memories);
-    println!("✅ Cross-modal relationships: {}", multimodal_stats.total_relationships);
+    println!(" Platform: {:?}", platform_info.platform);
+    println!(" Multi-modal memories: {}", multimodal_stats.total_memories);
+    println!(" Cross-modal relationships: {}", multimodal_stats.total_relationships);
     
     // Adjust processing based on platform capabilities
     match platform_info.platform {
         Platform::WebAssembly => {
-            println!("🌐 WebAssembly optimizations:");
+            println!(" WebAssembly optimizations:");
             println!("   - Reduced memory usage");
             println!("   - IndexedDB storage");
             println!("   - Single-threaded processing");
@@ -422,7 +422,7 @@ async fn demo_integrated_system() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Demo: Unified search across platforms and modalities
-    println!("\n🔍 Unified Cross-Platform Multi-Modal Search");
+    println!("\n Unified Cross-Platform Multi-Modal Search");
     println!("--------------------------------------------");
     
     let search_query = MultiModalQuery {
@@ -435,16 +435,16 @@ async fn demo_integrated_system() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     let search_results = multimodal_memory.search_multimodal(search_query).await?;
-    println!("✅ Found {} results across all modalities and platforms", search_results.len());
+    println!(" Found {} results across all modalities and platforms", search_results.len());
     
     // Demo: Sync status
-    println!("\n🔄 Synchronization Status");
+    println!("\n Synchronization Status");
     println!("-------------------------");
     
-    println!("✅ Multi-modal content ready for sync");
-    println!("✅ Cross-platform storage active");
-    println!("✅ Offline-first capabilities enabled");
-    println!("✅ Real-time updates configured");
+    println!(" Multi-modal content ready for sync");
+    println!(" Cross-platform storage active");
+    println!(" Offline-first capabilities enabled");
+    println!(" Real-time updates configured");
 
     Ok(())
 }

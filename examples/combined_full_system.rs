@@ -55,9 +55,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("🚀 Synaptic Combined Full System Demo");
+    println!(" Synaptic Combined Full System Demo");
     println!("=====================================");
-    println!("🎯 Demonstrating BOTH distributed systems AND external integrations");
+    println!(" Demonstrating BOTH distributed systems AND external integrations");
     println!();
 
     // Check which features are enabled
@@ -66,11 +66,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(all(feature = "distributed", feature = "external-integrations", feature = "embeddings"))]
     {
         // Phase 1: Initialize Distributed System Components
-        println!("\n🕸️  Phase 2A: Distributed System Initialization");
+        println!("\n  Phase 2A: Distributed System Initialization");
         println!("-----------------------------------------------");
         
         let node_id = NodeId::new();
-        println!("🆔 Node ID: {}", node_id);
+        println!(" Node ID: {}", node_id);
         
         // Create distributed configuration
         let distributed_config = DistributedConfig {
@@ -92,15 +92,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Initialize event bus with in-memory store (for demo)
         let event_store = std::sync::Arc::new(InMemoryEventStore::new());
         let event_bus = EventBus::new(event_store);
-        println!("✅ Event bus initialized");
+        println!(" Event bus initialized");
         
         // Initialize consensus
         let consensus = SimpleConsensus::new(node_id, distributed_config.consensus.clone());
-        println!("✅ Consensus algorithm initialized");
+        println!(" Consensus algorithm initialized");
         
         // Initialize distributed graph
         let distributed_graph = DistributedGraph::new(NodeId(uuid::Uuid::new_v4()), 3);
-        println!("✅ Distributed graph sharding initialized");
+        println!(" Distributed graph sharding initialized");
         
         // Phase 2: Initialize External Integrations
         println!("\n🔗 Phase 2B: External Integrations Initialization");
@@ -186,22 +186,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Initialize integration manager
         match IntegrationManager::new(integration_config).await {
             Ok(integration_manager) => {
-                println!("✅ Integration manager initialized");
+                println!(" Integration manager initialized");
                 
                 // Health check all integrations
                 match integration_manager.health_check().await {
                     Ok(health_results) => {
                         println!("🏥 Integration health checks:");
                         for (service, is_healthy) in &health_results {
-                            let status = if *is_healthy { "✅" } else { "❌" };
+                            let status = if *is_healthy { "" } else { "" };
                             println!("   {} {}", status, service);
                         }
                     },
-                    Err(e) => println!("❌ Health check failed: {}", e),
+                    Err(e) => println!(" Health check failed: {}", e),
                 }
                 
                 // Phase 3: Create Combined Memory System
-                println!("\n🧠 Phase 3: Combined Memory System");
+                println!("\n Phase 3: Combined Memory System");
                 println!("----------------------------------");
                 
                 let memory_config = MemoryConfig {
@@ -215,10 +215,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 
                 match AgentMemory::new(memory_config).await {
                     Ok(mut memory) => {
-                        println!("✅ Combined memory system initialized");
+                        println!(" Combined memory system initialized");
                         
                         // Phase 4: Demonstrate Combined Operations
-                        println!("\n🎯 Phase 4: Combined Operations Demo");
+                        println!("\n Phase 4: Combined Operations Demo");
                         println!("-----------------------------------");
                         
                         // Store a memory with both distributed and external integration features
@@ -230,62 +230,62 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         
                         match memory.store("distributed_ai_project", &memory_entry.value).await {
                             Ok(_) => {
-                                println!("✅ Stored memory with distributed coordination");
+                                println!(" Stored memory with distributed coordination");
                                 
                                 // Retrieve and demonstrate features
                                 match memory.retrieve("distributed_ai_project").await {
                                     Ok(Some(retrieved)) => {
-                                        println!("✅ Retrieved memory: {}", retrieved.key);
+                                        println!(" Retrieved memory: {}", retrieved.key);
                                         
                                         // Get memory stats
                                         let memory_stats = memory.stats();
-                                        println!("📊 Memory stats: {} short-term, {} long-term",
+                                        println!(" Memory stats: {} short-term, {} long-term",
                                             memory_stats.short_term_count, memory_stats.long_term_count);
 
                                         // Simulate distributed stats
-                                        println!("📊 Distributed stats: 1 node, 1 event (simulated)");
+                                        println!(" Distributed stats: 1 node, 1 event (simulated)");
                                     },
-                                    Ok(None) => println!("❌ Memory not found"),
-                                    Err(e) => println!("❌ Failed to retrieve memory: {}", e),
+                                    Ok(None) => println!(" Memory not found"),
+                                    Err(e) => println!(" Failed to retrieve memory: {}", e),
                                 }
                             },
-                            Err(e) => println!("❌ Failed to store memory: {}", e),
+                            Err(e) => println!(" Failed to store memory: {}", e),
                         }
                         
-                        println!("\n🎉 Combined system demo completed successfully!");
-                        println!("💡 The system now has BOTH distributed capabilities AND external integrations");
+                        println!("\n Combined system demo completed successfully!");
+                        println!(" The system now has BOTH distributed capabilities AND external integrations");
                     },
-                    Err(e) => println!("❌ Failed to initialize combined memory system: {}", e),
+                    Err(e) => println!(" Failed to initialize combined memory system: {}", e),
                 }
             },
-            Err(e) => println!("❌ Failed to initialize integration manager: {}", e),
+            Err(e) => println!(" Failed to initialize integration manager: {}", e),
         }
     }
     
     #[cfg(not(all(feature = "distributed", feature = "external-integrations", feature = "embeddings")))]
     {
-        println!("❌ Combined demo requires all features enabled");
-        println!("💡 Run with: cargo run --example combined_full_system --features \"distributed,external-integrations,embeddings\"");
+        println!(" Combined demo requires all features enabled");
+        println!(" Run with: cargo run --example combined_full_system --features \"distributed,external-integrations,embeddings\"");
     }
 
     Ok(())
 }
 
 fn check_enabled_features() {
-    println!("🔧 Enabled Features:");
+    println!(" Enabled Features:");
     
     #[cfg(feature = "distributed")]
-    println!("   ✅ Distributed Systems (Kafka, Consensus, Sharding)");
+    println!("    Distributed Systems (Kafka, Consensus, Sharding)");
     #[cfg(not(feature = "distributed"))]
-    println!("   ❌ Distributed Systems (disabled)");
+    println!("    Distributed Systems (disabled)");
     
     #[cfg(feature = "external-integrations")]
-    println!("   ✅ External Integrations (PostgreSQL, BERT, LLM, Redis, Visualization)");
+    println!("    External Integrations (PostgreSQL, BERT, LLM, Redis, Visualization)");
     #[cfg(not(feature = "external-integrations"))]
-    println!("   ❌ External Integrations (disabled)");
+    println!("    External Integrations (disabled)");
     
     #[cfg(feature = "embeddings")]
-    println!("   ✅ Vector Embeddings");
+    println!("    Vector Embeddings");
     #[cfg(not(feature = "embeddings"))]
-    println!("   ❌ Vector Embeddings (disabled)");
+    println!("    Vector Embeddings (disabled)");
 }

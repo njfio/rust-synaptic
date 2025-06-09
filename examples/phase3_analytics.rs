@@ -17,7 +17,7 @@ use synaptic::analytics::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("🧠 Synaptic Phase 3: Advanced Analytics Demo");
+    println!(" Synaptic Phase 3: Advanced Analytics Demo");
     println!("============================================");
 
     #[cfg(feature = "analytics")]
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(not(feature = "analytics"))]
     {
-        println!("❌ Analytics feature not enabled. Please run with:");
+        println!(" Analytics feature not enabled. Please run with:");
         println!("   cargo run --example phase3_analytics --features analytics");
     }
 
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "analytics")]
 async fn analytics_overview_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n📊 Analytics Engine Overview");
+    println!("\n Analytics Engine Overview");
     println!("----------------------------");
 
     let config = AnalyticsConfig {
@@ -93,8 +93,8 @@ async fn analytics_overview_demo() -> Result<(), Box<dyn Error>> {
     // Generate insights
     let insights = engine.generate_insights().await?;
     
-    println!("✅ Processed {} events", engine.get_metrics().events_processed);
-    println!("🔍 Generated {} insights", insights.len());
+    println!(" Processed {} events", engine.get_metrics().events_processed);
+    println!(" Generated {} insights", insights.len());
     
     for insight in insights.iter().take(3) {
         println!("   • {} (confidence: {:.1}%)", insight.title, insight.confidence * 100.0);
@@ -125,7 +125,7 @@ async fn predictive_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Generate predictions
     let predictions = analytics.get_predictions();
-    println!("📈 Generated {} access predictions", predictions.len());
+    println!(" Generated {} access predictions", predictions.len());
 
     for prediction in predictions.iter().take(2) {
         println!("   • {} will likely be accessed at {} (confidence: {:.1}%)",
@@ -137,7 +137,7 @@ async fn predictive_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Generate caching recommendations
     let cache_recs = analytics.generate_caching_recommendations().await?;
-    println!("💾 Generated {} caching recommendations", cache_recs.len());
+    println!(" Generated {} caching recommendations", cache_recs.len());
 
     for rec in cache_recs.iter().take(2) {
         println!("   • Cache '{}' with {:?} priority (hit rate: {:.1}%)",
@@ -190,7 +190,7 @@ async fn behavioral_analysis_demo() -> Result<(), Box<dyn Error>> {
     for user in &users {
         let recommendations = analyzer.generate_recommendations(user).await?;
         if !recommendations.is_empty() {
-            println!("💡 {} recommendations for {}", recommendations.len(), user);
+            println!(" {} recommendations for {}", recommendations.len(), user);
         }
     }
 
@@ -199,7 +199,7 @@ async fn behavioral_analysis_demo() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "analytics")]
 async fn visualization_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n📈 Visualization Engine");
+    println!("\n Visualization Engine");
     println!("----------------------");
 
     let config = AnalyticsConfig::default();
@@ -208,7 +208,7 @@ async fn visualization_demo() -> Result<(), Box<dyn Error>> {
     // Create visual nodes
     let memory_entry = synaptic::memory::types::MemoryEntry::new("viz_memory".to_string(), "Visualization test content".to_string(), synaptic::memory::types::MemoryType::ShortTerm);
     let node_id = engine.create_visual_node("viz_memory", &memory_entry).await?;
-    println!("🎨 Created visual node: {}", node_id);
+    println!(" Created visual node: {}", node_id);
 
     // Create temporal timeline
     let data_points = vec![
@@ -233,7 +233,7 @@ async fn visualization_demo() -> Result<(), Box<dyn Error>> {
         data_points,
         TimelineVisualizationType::LineChart
     ).await?;
-    println!("📊 Created timeline: {}", timeline_id);
+    println!(" Created timeline: {}", timeline_id);
 
     // Export visualization data
     let export = engine.export_visualization_data().await?;
@@ -247,7 +247,7 @@ async fn visualization_demo() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "analytics")]
 async fn intelligence_analysis_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n🧠 Memory Intelligence Analysis");
+    println!("\n Memory Intelligence Analysis");
     println!("------------------------------");
 
     let config = AnalyticsConfig::default();
@@ -271,12 +271,12 @@ async fn intelligence_analysis_demo() -> Result<(), Box<dyn Error>> {
         &relationships
     ).await?;
 
-    println!("🎯 Intelligence Score: {:.2}", intelligence.intelligence_score);
+    println!(" Intelligence Score: {:.2}", intelligence.intelligence_score);
     println!("🔗 Relationships: {} direct, {} indirect",
         intelligence.relationship_intelligence.direct_relationships,
         intelligence.relationship_intelligence.indirect_relationships
     );
-    println!("📊 Complexity: {:.2}", intelligence.complexity.overall_complexity);
+    println!(" Complexity: {:.2}", intelligence.complexity.overall_complexity);
 
     // Pattern recognition
     for i in 0..25 {
@@ -290,18 +290,18 @@ async fn intelligence_analysis_demo() -> Result<(), Box<dyn Error>> {
     }
 
     let patterns = engine.recognize_patterns().await?;
-    println!("🔍 Recognized {} patterns", patterns.len());
+    println!(" Recognized {} patterns", patterns.len());
 
     // Anomaly detection
     let anomalies = engine.detect_anomalies().await?;
-    println!("⚠️  Detected {} anomalies", anomalies.len());
+    println!("  Detected {} anomalies", anomalies.len());
 
     Ok(())
 }
 
 #[cfg(feature = "analytics")]
 async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n⚡ Performance Analytics");
+    println!("\n Performance Analytics");
     println!("-----------------------");
 
     let config = AnalyticsConfig::default();
@@ -324,7 +324,7 @@ async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Analyze trends
     let trends = analyzer.get_trends();
-    println!("📈 Analyzed {} performance trends", trends.len());
+    println!(" Analyzed {} performance trends", trends.len());
 
     for (metric, trend) in trends.iter().take(3) {
         println!("   • {}: {:?} trend (confidence: {:.1}%)",
@@ -336,7 +336,7 @@ async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Generate optimization recommendations
     let recommendations = analyzer.generate_recommendations().await?;
-    println!("🔧 Generated {} optimization recommendations", recommendations.len());
+    println!(" Generated {} optimization recommendations", recommendations.len());
 
     for rec in recommendations.iter().take(2) {
         println!("   • {} (priority: {:?})", rec.title, rec.priority);
@@ -347,7 +347,7 @@ async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "analytics")]
 async fn integrated_analytics_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n🔄 Integrated Analytics Pipeline");
+    println!("\n Integrated Analytics Pipeline");
     println!("-------------------------------");
 
     // Create memory system with analytics enabled
@@ -367,7 +367,7 @@ async fn integrated_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     for (key, content) in memories {
         memory.store(key, content).await?;
-        println!("📝 Stored memory: {}", key);
+        println!(" Stored memory: {}", key);
     }
 
     // Simulate access patterns
@@ -376,8 +376,8 @@ async fn integrated_analytics_demo() -> Result<(), Box<dyn Error>> {
         let _ = memory.search("meeting", 5).await?;
     }
 
-    println!("✅ Integrated analytics pipeline completed");
-    println!("📊 Memory stats: {:?}", memory.stats());
+    println!(" Integrated analytics pipeline completed");
+    println!(" Memory stats: {:?}", memory.stats());
 
     Ok(())
 }

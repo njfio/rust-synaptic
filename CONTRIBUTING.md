@@ -1,8 +1,8 @@
-# Contributing to Synaptic 🧠
+# Contributing to Synaptic 
 
 Thank you for your interest in contributing to Synaptic! This document provides guidelines and information for contributors.
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -31,7 +31,7 @@ Thank you for your interest in contributing to Synaptic! This document provides 
    cargo test
    ```
 
-## 🔧 Development Workflow
+##  Development Workflow
 
 ### Before You Start
 
@@ -67,7 +67,7 @@ Thank you for your interest in contributing to Synaptic! This document provides 
    ```
 3. **Create a Pull Request** on GitHub
 
-## 📝 Coding Standards
+##  Coding Standards
 
 ### Code Style
 
@@ -95,7 +95,7 @@ Thank you for your interest in contributing to Synaptic! This document provides 
 - Ensure all tests pass before submitting
 - Aim for good test coverage
 
-## 🧪 Testing Guidelines
+##  Testing Guidelines
 
 ### Running Tests
 
@@ -120,7 +120,7 @@ cargo bench
 - Mock external dependencies when appropriate
 - Test both success and error cases
 
-## 📋 Pull Request Guidelines
+##  Pull Request Guidelines
 
 ### Before Submitting
 
@@ -163,7 +163,7 @@ For new features, please include:
 - **Possible implementation** approach
 - **Breaking changes** considerations
 
-## 🏷️ Commit Message Format
+##  Commit Message Format
 
 We follow conventional commits:
 
@@ -193,7 +193,7 @@ fix(storage): resolve memory leak in file backend
 docs(readme): update installation instructions
 ```
 
-## 🎯 Areas for Contribution
+##  Areas for Contribution
 
 We welcome contributions in these areas:
 
@@ -221,7 +221,7 @@ We welcome contributions in these areas:
 - **GitHub Issues**: For bug reports and feature requests
 - **Code Review**: Ask questions in PR comments
 
-## 📄 License
+##  License
 
 By contributing to Synaptic, you agree that your contributions will be licensed under the MIT License.
 
@@ -232,4 +232,4 @@ Contributors will be recognized in:
 - Release notes for significant contributions
 - The project's contributor list
 
-Thank you for helping make Synaptic better! 🧠✨
+Thank you for helping make Synaptic better! 

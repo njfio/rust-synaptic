@@ -28,13 +28,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize security manager
     let mut security_manager = SecurityManager::new(security_config.clone()).await?;
-    println!("✅ Security Manager initialized with all Phase 4 features enabled");
+    println!(" Security Manager initialized with all Phase 4 features enabled");
 
     // Create security contexts for different users
     let admin_context = SecurityContext::new("admin_user".to_string(), vec!["admin".to_string()]);
     let user_context = SecurityContext::new("regular_user".to_string(), vec!["user".to_string()]);
 
-    println!("\n🔐 1. HOMOMORPHIC ENCRYPTION DEMO");
+    println!("\n 1. HOMOMORPHIC ENCRYPTION DEMO");
     println!("==================================");
 
     // Create test memory entries
@@ -53,13 +53,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Encrypt memories with homomorphic encryption
     println!("🔒 Encrypting sensitive memory with homomorphic encryption...");
     let encrypted_sensitive = security_manager.encrypt_memory(&sensitive_entry, &admin_context).await?;
-    println!("   ✅ Encrypted with algorithm: {}", encrypted_sensitive.encryption_algorithm);
-    println!("   ✅ Privacy level: {:?}", encrypted_sensitive.privacy_level);
-    println!("   ✅ Is homomorphic: {}", encrypted_sensitive.is_homomorphic);
+    println!("    Encrypted with algorithm: {}", encrypted_sensitive.encryption_algorithm);
+    println!("    Privacy level: {:?}", encrypted_sensitive.privacy_level);
+    println!("    Is homomorphic: {}", encrypted_sensitive.is_homomorphic);
 
     println!("🔒 Encrypting public memory with standard encryption...");
     let encrypted_public = security_manager.encrypt_memory(&public_entry, &user_context).await?;
-    println!("   ✅ Encrypted with algorithm: {}", encrypted_public.encryption_algorithm);
+    println!("    Encrypted with algorithm: {}", encrypted_public.encryption_algorithm);
 
     // Perform secure computation on encrypted data
     println!("\n🧮 Performing secure computation on encrypted data...");
@@ -69,44 +69,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SecureOperation::Count,
         &admin_context
     ).await?;
-    println!("   ✅ Secure computation completed: {:?}", computation_result.operation);
-    println!("   ✅ Privacy preserved: {}", computation_result.privacy_preserved);
+    println!("    Secure computation completed: {:?}", computation_result.operation);
+    println!("    Privacy preserved: {}", computation_result.privacy_preserved);
 
-    println!("\n🔍 2. ZERO-KNOWLEDGE PROOFS DEMO");
+    println!("\n 2. ZERO-KNOWLEDGE PROOFS DEMO");
     println!("=================================");
 
     // Generate zero-knowledge proof for memory access
-    println!("🔐 Generating zero-knowledge proof for memory access...");
+    println!(" Generating zero-knowledge proof for memory access...");
     let access_proof = security_manager.generate_access_proof(
         "sensitive_data",
         &admin_context,
         AccessType::Read
     ).await?;
-    println!("   ✅ Access proof generated: {}", access_proof.id);
-    println!("   ✅ Statement hash: {}", access_proof.statement_hash);
+    println!("    Access proof generated: {}", access_proof.id);
+    println!("    Statement hash: {}", access_proof.statement_hash);
 
     // Generate content proof without revealing content
-    println!("🔐 Generating zero-knowledge proof for content properties...");
+    println!(" Generating zero-knowledge proof for content properties...");
     let content_proof = security_manager.generate_content_proof(
         &sensitive_entry,
         ContentPredicate::ContainsKeyword("financial".to_string()),
         &admin_context
     ).await?;
-    println!("   ✅ Content proof generated: {}", content_proof.id);
-    println!("   ✅ Proves content contains 'financial' without revealing content");
+    println!("    Content proof generated: {}", content_proof.id);
+    println!("    Proves content contains 'financial' without revealing content");
 
-    println!("\n📊 3. DIFFERENTIAL PRIVACY DEMO");
+    println!("\n 3. DIFFERENTIAL PRIVACY DEMO");
     println!("================================");
 
     // Apply differential privacy to memory entries
     println!("🔒 Applying differential privacy to sensitive data...");
     let privatized_entry = security_manager.privacy_manager
         .apply_differential_privacy(&sensitive_entry, &admin_context).await?;
-    println!("   ✅ Original: {}", sensitive_entry.value);
-    println!("   ✅ Privatized: {}", privatized_entry.value);
+    println!("    Original: {}", sensitive_entry.value);
+    println!("    Privatized: {}", privatized_entry.value);
 
     // Generate differentially private statistics
-    println!("📈 Generating private statistics...");
+    println!(" Generating private statistics...");
     let test_entries = vec![sensitive_entry.clone(), public_entry.clone()];
     let privacy_query = PrivacyQuery {
         query_type: PrivacyQueryType::Count,
@@ -117,69 +117,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let private_stats = security_manager.privacy_manager
         .generate_private_statistics(&test_entries, privacy_query, &admin_context).await?;
-    println!("   ✅ Private count: {:.2}", private_stats.result);
-    println!("   ✅ Epsilon used: {}", private_stats.epsilon_used);
-    println!("   ✅ Confidence interval: ({:.2}, {:.2})",
+    println!("    Private count: {:.2}", private_stats.result);
+    println!("    Epsilon used: {}", private_stats.epsilon_used);
+    println!("    Confidence interval: ({:.2}, {:.2})",
              private_stats.confidence_interval.0,
              private_stats.confidence_interval.1);
 
-    println!("\n🛡️ 4. ADVANCED ACCESS CONTROL DEMO");
+    println!("\n 4. ADVANCED ACCESS CONTROL DEMO");
     println!("===================================");
 
     // Test access control with different user contexts
-    println!("🔐 Testing access control permissions...");
+    println!(" Testing access control permissions...");
 
     // Admin should have access
     match security_manager.access_control.check_permission(&admin_context, Permission::ReadAnalytics).await {
-        Ok(_) => println!("   ✅ Admin has analytics access"),
-        Err(e) => println!("   ❌ Admin access denied: {}", e),
+        Ok(_) => println!("    Admin has analytics access"),
+        Err(e) => println!("    Admin access denied: {}", e),
     }
 
     // Regular user should not have analytics access
     match security_manager.access_control.check_permission(&user_context, Permission::ReadAnalytics).await {
-        Ok(_) => println!("   ⚠️  User has analytics access (unexpected)"),
-        Err(_) => println!("   ✅ User correctly denied analytics access"),
+        Ok(_) => println!("     User has analytics access (unexpected)"),
+        Err(_) => println!("    User correctly denied analytics access"),
     }
 
-    println!("\n📊 5. SECURITY METRICS & MONITORING");
+    println!("\n 5. SECURITY METRICS & MONITORING");
     println!("====================================");
 
     // Get comprehensive security metrics
     let security_metrics = security_manager.get_security_metrics(&admin_context).await?;
-    println!("🔍 Security Metrics Summary:");
-    println!("   📈 Encryption Operations: {}", security_metrics.encryption_metrics.total_encryptions);
-    println!("   📈 Privacy Operations: {}", security_metrics.privacy_metrics.total_privatizations);
-    println!("   📈 Access Checks: {}", security_metrics.access_metrics.total_access_time_ms);
+    println!(" Security Metrics Summary:");
+    println!("    Encryption Operations: {}", security_metrics.encryption_metrics.total_encryptions);
+    println!("    Privacy Operations: {}", security_metrics.privacy_metrics.total_privatizations);
+    println!("    Access Checks: {}", security_metrics.access_metrics.total_access_time_ms);
 
     if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("   📈 Zero-Knowledge Proofs Generated: {}", zk_metrics.total_proofs_generated);
-        println!("   📈 Zero-Knowledge Proofs Verified: {}", zk_metrics.total_proofs_verified);
-        println!("   📈 Verification Success Rate: {:.1}%", zk_metrics.verification_success_rate);
+        println!("    Zero-Knowledge Proofs Generated: {}", zk_metrics.total_proofs_generated);
+        println!("    Zero-Knowledge Proofs Verified: {}", zk_metrics.total_proofs_verified);
+        println!("    Verification Success Rate: {:.1}%", zk_metrics.verification_success_rate);
     }
 
-    println!("\n🎯 6. PRIVACY BUDGET MANAGEMENT");
+    println!("\n 6. PRIVACY BUDGET MANAGEMENT");
     println!("================================");
 
     // Check remaining privacy budget
     let remaining_budget = security_manager.privacy_manager
         .get_remaining_budget(&admin_context.user_id).await?;
-    println!("🔍 Privacy Budget Status:");
-    println!("   📊 Remaining budget for admin: {:.2}", remaining_budget);
-    println!("   📊 Total epsilon consumed: {:.2}", security_metrics.privacy_metrics.total_epsilon_consumed);
+    println!(" Privacy Budget Status:");
+    println!("    Remaining budget for admin: {:.2}", remaining_budget);
+    println!("    Total epsilon consumed: {:.2}", security_metrics.privacy_metrics.total_epsilon_consumed);
 
-    println!("\n✅ Phase 4 Security & Privacy Demo Complete!");
+    println!("\n Phase 4 Security & Privacy Demo Complete!");
     println!("=============================================");
     println!("🔒 All advanced security features demonstrated:");
-    println!("   ✅ Homomorphic Encryption - Compute on encrypted data");
-    println!("   ✅ Zero-Knowledge Proofs - Verify without revealing");
-    println!("   ✅ Differential Privacy - Statistical privacy guarantees");
-    println!("   ✅ Advanced Access Control - Fine-grained permissions");
-    println!("   ✅ Security Monitoring - Comprehensive metrics");
-    println!("   ✅ Privacy Budget Management - Controlled privacy spending");
+    println!("    Homomorphic Encryption - Compute on encrypted data");
+    println!("    Zero-Knowledge Proofs - Verify without revealing");
+    println!("    Differential Privacy - Statistical privacy guarantees");
+    println!("    Advanced Access Control - Fine-grained permissions");
+    println!("    Security Monitoring - Comprehensive metrics");
+    println!("    Privacy Budget Management - Controlled privacy spending");
 
     #[cfg(not(feature = "security"))]
     {
-        println!("❌ Security features not enabled. Please run with:");
+        println!(" Security features not enabled. Please run with:");
         println!("   cargo run --example phase4_security_privacy --features security");
     }
 
@@ -188,7 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "security")]
 async fn demonstrate_authentication(security_manager: &mut SecurityManager) -> Result<SecurityContext, Box<dyn std::error::Error>> {
-    println!("🔐 Authentication & Access Control Demo");
+    println!(" Authentication & Access Control Demo");
     println!("--------------------------------------");
 
     // Create authentication credentials
@@ -204,7 +204,7 @@ async fn demonstrate_authentication(security_manager: &mut SecurityManager) -> R
 
     // Authenticate user
     let context = security_manager.access_control.authenticate("alice_engineer".to_string(), credentials).await?;
-    println!("✅ User authenticated successfully");
+    println!(" User authenticated successfully");
     println!("   User ID: {}", context.user_id);
     println!("   Session ID: {}", context.session_id);
     println!("   Roles: {:?}", context.roles);
@@ -220,8 +220,8 @@ async fn demonstrate_authentication(security_manager: &mut SecurityManager) -> R
 
     for permission in permissions_to_test {
         match security_manager.access_control.check_permission(&context, permission.clone()).await {
-            Ok(()) => println!("✅ Permission granted: {:?}", permission),
-            Err(_) => println!("❌ Permission denied: {:?}", permission),
+            Ok(()) => println!(" Permission granted: {:?}", permission),
+            Err(_) => println!(" Permission denied: {:?}", permission),
         }
     }
 
@@ -235,7 +235,7 @@ async fn demonstrate_encryption(
     memory: &mut AgentMemory,
     context: &SecurityContext
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔐 Encryption & Zero-Knowledge Demo");
+    println!(" Encryption & Zero-Knowledge Demo");
     println!("----------------------------------");
 
     // Use the authenticated context passed from the previous step
@@ -252,7 +252,7 @@ async fn demonstrate_encryption(
     for (i, entry) in sensitive_entries.iter().enumerate() {
         // Encrypt with zero-knowledge architecture
         let encrypted_entry = security_manager.encrypt_memory(entry, context).await?;
-        println!("✅ Entry {} encrypted with {} algorithm", 
+        println!(" Entry {} encrypted with {} algorithm", 
                  i + 1, encrypted_entry.encryption_algorithm);
         println!("   Privacy Level: {:?}", encrypted_entry.privacy_level);
         println!("   Homomorphic: {}", encrypted_entry.is_homomorphic);
@@ -263,7 +263,7 @@ async fn demonstrate_encryption(
     // Demonstrate decryption
     for (i, encrypted_entry) in encrypted_entries.iter().enumerate() {
         let decrypted_entry = security_manager.decrypt_memory(encrypted_entry, context).await?;
-        println!("✅ Entry {} decrypted successfully", i + 1);
+        println!(" Entry {} decrypted successfully", i + 1);
         println!("   Original length: {} chars", sensitive_entries[i].value.len());
         println!("   Decrypted length: {} chars", decrypted_entry.value.len());
     }
@@ -293,7 +293,7 @@ async fn demonstrate_differential_privacy(
     context.mfa_verified = true;
 
     // Apply differential privacy to individual entries
-    println!("📊 Applying differential privacy to individual entries:");
+    println!(" Applying differential privacy to individual entries:");
     for (i, entry) in dataset.iter().enumerate() {
         let privatized_entry = security_manager.privacy_manager
             .apply_differential_privacy(entry, &context).await?;
@@ -328,7 +328,7 @@ async fn demonstrate_differential_privacy(
         },
     ];
 
-    println!("\n📈 Generating differentially private statistics:");
+    println!("\n Generating differentially private statistics:");
     for query in queries {
         let stats = security_manager.privacy_manager
             .generate_private_statistics(&dataset, query.clone(), &context).await?;
@@ -374,7 +374,7 @@ async fn demonstrate_homomorphic_computation(
         encrypted_entries.push(encrypted);
     }
 
-    println!("✅ {} entries encrypted with homomorphic encryption", encrypted_entries.len());
+    println!(" {} entries encrypted with homomorphic encryption", encrypted_entries.len());
 
     // Perform secure computations on encrypted data
     let operations = vec![
@@ -392,7 +392,7 @@ async fn demonstrate_homomorphic_computation(
             &context
         ).await?;
         
-        println!("✅ Secure computation completed: {:?}", operation);
+        println!(" Secure computation completed: {:?}", operation);
         println!("   Computation ID: {}", result.computation_id);
         println!("   Privacy preserved: {}", result.privacy_preserved);
         println!("   Result size: {} bytes", result.result_data.len());
@@ -406,7 +406,7 @@ async fn demonstrate_homomorphic_computation(
 async fn demonstrate_audit_and_compliance(
     security_manager: &mut SecurityManager
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("📋 Audit Logging & Compliance Demo");
+    println!(" Audit Logging & Compliance Demo");
     println!("----------------------------------");
 
     let mut context = SecurityContext::new("audit_user".to_string(), vec!["user".to_string()]);
@@ -434,7 +434,7 @@ async fn demonstrate_audit_and_compliance(
 
     // Get security alerts
     let alerts = security_manager.audit_logger.get_security_alerts().await?;
-    println!("🚨 Active security alerts: {}", alerts.len());
+    println!(" Active security alerts: {}", alerts.len());
     for alert in &alerts {
         println!("   Alert: {:?} - {}", alert.alert_type, alert.message);
         println!("   Risk Level: {:?}, Time: {}", alert.risk_level, alert.timestamp);
@@ -447,7 +447,7 @@ async fn demonstrate_audit_and_compliance(
     let compliance_report = security_manager.audit_logger
         .generate_compliance_report(start_time, end_time).await?;
     
-    println!("\n📊 Compliance Report (Last 24 hours):");
+    println!("\n Compliance Report (Last 24 hours):");
     println!("   Total Events: {}", compliance_report.total_events);
     println!("   Authentication Events: {}", compliance_report.authentication_events);
     println!("   Access Control Events: {}", compliance_report.access_control_events);
@@ -464,14 +464,14 @@ async fn demonstrate_audit_and_compliance(
 async fn show_security_metrics(
     security_manager: &mut SecurityManager
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("📊 Security Metrics Summary");
+    println!(" Security Metrics Summary");
     println!("---------------------------");
 
     let mut context = SecurityContext::new("metrics_user".to_string(), vec!["admin".to_string()]);
     context.mfa_verified = true;
     let metrics = security_manager.get_security_metrics(&context).await?;
 
-    println!("🔐 Encryption Metrics:");
+    println!(" Encryption Metrics:");
     println!("   Total Encryptions: {}", metrics.encryption_metrics.total_encryptions);
     println!("   Total Decryptions: {}", metrics.encryption_metrics.total_decryptions);
     println!("   Homomorphic Operations: {}", metrics.encryption_metrics.total_homomorphic_computations);
@@ -491,7 +491,7 @@ async fn show_security_metrics(
     println!("   Grant Rate: {:.1}%", metrics.access_metrics.permission_grant_rate);
     println!("   Auth Success Rate: {:.1}%", metrics.access_metrics.authentication_success_rate);
 
-    println!("\n📋 Audit Metrics:");
+    println!("\n Audit Metrics:");
     println!("   Total Events: {}", metrics.audit_metrics.total_events);
     println!("   Failed Events: {}", metrics.audit_metrics.failed_events);
     println!("   Failure Rate: {:.1}%", metrics.audit_metrics.failure_rate);
