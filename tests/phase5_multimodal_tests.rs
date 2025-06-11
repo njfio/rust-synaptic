@@ -53,6 +53,40 @@ async fn test_audio_memory_processor() {
     assert_eq!(format, AudioFormat::Mp3);
 }
 
+#[cfg(all(feature = "audio-memory", feature = "whisper-rs"))]
+#[tokio::test]
+async fn test_audio_transcription_output() {
+    let model_path = match std::env::var("WHISPER_MODEL_PATH") {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("WHISPER_MODEL_PATH not set, skipping test");
+            return;
+        }
+    };
+    let audio_path = match std::env::var("WHISPER_TEST_AUDIO") {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("WHISPER_TEST_AUDIO not set, skipping test");
+            return;
+        }
+    };
+
+    std::env::set_var("WHISPER_MODEL_PATH", &model_path);
+
+    let processor = AudioMemoryProcessor::new(Default::default()).unwrap();
+    let data = std::fs::read(&audio_path).expect("failed to read audio");
+    let format = processor.detect_format(&data).unwrap();
+    let (samples, spec) = processor.load_audio(&data, &format).unwrap();
+    let transcript = processor
+        .transcribe_audio(&samples, spec.sample_rate)
+        .await
+        .unwrap();
+
+    assert!(transcript.is_some());
+    let t = transcript.unwrap();
+    assert!(!t.is_empty());
+}
+
 #[cfg(feature = "code-memory")]
 #[tokio::test]
 async fn test_code_memory_processor() {
