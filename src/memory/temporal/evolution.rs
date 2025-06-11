@@ -110,6 +110,15 @@ pub struct GlobalEvolutionMetrics {
     pub system_growth_rate: f64,
 }
 
+/// Result of an evolution metrics query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EvolutionData {
+    /// Metrics for a specific memory key
+    PerMemory(EvolutionMetrics),
+    /// Metrics aggregated across all memories
+    Global(GlobalEvolutionMetrics),
+}
+
 /// Configuration for evolution tracking
 #[derive(Debug, Clone)]
 pub struct EvolutionConfig {

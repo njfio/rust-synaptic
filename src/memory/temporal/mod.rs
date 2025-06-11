@@ -15,7 +15,14 @@ pub mod evolution;
 pub use versioning::{MemoryVersion, VersionHistory, VersionManager, ChangeType};
 pub use differential::{MemoryDiff, DiffAnalyzer, ChangeSet, DiffMetrics};
 pub use patterns::{TemporalPattern, PatternDetector, TemporalTrend, AccessPattern};
-pub use evolution::{MemoryEvolution, EvolutionTracker, EvolutionMetrics, EvolutionEvent};
+pub use evolution::{
+    MemoryEvolution,
+    EvolutionTracker,
+    EvolutionMetrics,
+    EvolutionEvent,
+    GlobalEvolutionMetrics,
+    EvolutionData,
+};
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
@@ -131,8 +138,8 @@ pub struct TemporalAnalysis {
     pub changes: Vec<ChangeSet>,
     /// Identified temporal patterns
     pub patterns: Vec<TemporalPattern>,
-    /// Evolution metrics
-    pub evolution_metrics: Option<EvolutionMetrics>,
+    /// Evolution metrics (per-memory or global)
+    pub evolution_metrics: Option<EvolutionData>,
     /// Summary statistics
     pub summary: TemporalSummary,
 }
@@ -233,12 +240,12 @@ impl TemporalMemoryManager {
 
         // Get evolution metrics if requested
         let evolution_metrics = if query.include_evolution {
-            if let Some(_memory_key) = &query.memory_key {
-                // TODO: Return proper evolution metrics
-                None
+            if let Some(memory_key) = &query.memory_key {
+                let metrics = self.evolution_tracker.get_metrics(memory_key).await?;
+                Some(EvolutionData::PerMemory(metrics))
             } else {
-                // TODO: Return global evolution metrics
-                None
+                let metrics = self.evolution_tracker.get_global_metrics().await?;
+                Some(EvolutionData::Global(metrics))
             }
         } else {
             None
