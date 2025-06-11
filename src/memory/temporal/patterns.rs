@@ -3,7 +3,8 @@
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::TimeRange;
-use chrono::{DateTime, Utc, Duration, Weekday};
+use chrono::{DateTime, Utc, Duration, Weekday, Timelike, Datelike};
+use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -246,31 +247,184 @@ impl PatternDetector {
     }
 
     /// Detect daily recurring patterns
-    async fn detect_daily_pattern(&self, _time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
-        // TODO: Implement daily pattern detection
-        // This would analyze activity by hour of day to find recurring patterns
-        Ok(None)
+    async fn detect_daily_pattern(&self, time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+        let evidence = self.gather_evidence_in_range(time_range);
+        if evidence.len() < self.config.min_data_points {
+            return Ok(None);
+        }
+
+        let mut hourly: [u32; 24] = [0; 24];
+        for ev in &evidence {
+            hourly[ev.timestamp.hour() as usize] += 1;
+        }
+
+        let (peak_hour, &peak_count) = hourly
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| *c)
+            .unwrap();
+        if peak_count == 0 {
+            return Ok(None);
+        }
+
+        let strength = peak_count as f64 / evidence.len() as f64;
+        let mut metadata = HashMap::new();
+        metadata.insert("hour_of_day".into(), peak_hour.to_string());
+
+        let pattern = TemporalPattern {
+            id: format!("daily_{peak_hour}"),
+            pattern_type: PatternType::Daily,
+            strength,
+            confidence: strength,
+            time_range: time_range.clone(),
+            description: format!("Activity peaks around {:02}:00", peak_hour),
+            evidence: evidence
+                .into_iter()
+                .filter(|e| e.timestamp.hour() as usize == peak_hour)
+                .collect(),
+            metadata,
+        };
+
+        Ok(Some(pattern))
     }
 
     /// Detect weekly recurring patterns
-    async fn detect_weekly_pattern(&self, _time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
-        // TODO: Implement weekly pattern detection
-        // This would analyze activity by day of week
-        Ok(None)
+    async fn detect_weekly_pattern(&self, time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+        let evidence = self.gather_evidence_in_range(time_range);
+        if evidence.len() < self.config.min_data_points {
+            return Ok(None);
+        }
+
+        let mut daily: [u32; 7] = [0; 7];
+        for ev in &evidence {
+            daily[ev.timestamp.weekday().num_days_from_monday() as usize] += 1;
+        }
+
+        let (peak_day_idx, &peak_count) = daily
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| *c)
+            .unwrap();
+        if peak_count == 0 {
+            return Ok(None);
+        }
+
+        let strength = peak_count as f64 / evidence.len() as f64;
+        let weekday = Weekday::from_u64(peak_day_idx as u64).unwrap_or(Weekday::Mon);
+        let mut metadata = HashMap::new();
+        metadata.insert("day_of_week".into(), weekday.num_days_from_monday().to_string());
+
+        let pattern = TemporalPattern {
+            id: format!("weekly_{:?}", weekday),
+            pattern_type: PatternType::Weekly,
+            strength,
+            confidence: strength,
+            time_range: time_range.clone(),
+            description: format!("Activity peaks on {:?}", weekday),
+            evidence: evidence
+                .into_iter()
+                .filter(|e| e.timestamp.weekday() == weekday)
+                .collect(),
+            metadata,
+        };
+
+        Ok(Some(pattern))
     }
 
     /// Detect burst patterns (high activity in short periods)
-    async fn detect_burst_patterns(&self, _time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
-        // TODO: Implement burst pattern detection
-        // This would identify periods of unusually high activity
-        Ok(Vec::new())
+    async fn detect_burst_patterns(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+        let mut evidence = self.gather_evidence_in_range(time_range);
+        if evidence.len() < self.config.min_data_points {
+            return Ok(Vec::new());
+        }
+
+        evidence.sort_by_key(|e| e.timestamp);
+        let mut clusters: Vec<Vec<PatternEvidence>> = Vec::new();
+        for ev in evidence {
+            if let Some(cluster) = clusters.last_mut() {
+                if ev.timestamp - cluster.last().unwrap().timestamp <= Duration::minutes(60) {
+                    cluster.push(ev);
+                    continue;
+                }
+            }
+            clusters.push(vec![ev]);
+        }
+
+        let mut patterns = Vec::new();
+        for cluster in clusters.into_iter().filter(|c| c.len() as usize >= self.config.min_data_points) {
+            let start = cluster.first().unwrap().timestamp;
+            let end = cluster.last().unwrap().timestamp;
+            let strength = cluster.len() as f64 / self.config.min_data_points as f64;
+            let pattern = TemporalPattern {
+                id: format!("burst_{}_{}", start.timestamp(), end.timestamp()),
+                pattern_type: PatternType::Burst,
+                strength: strength.min(1.0),
+                confidence: 0.8,
+                time_range: TimeRange::new(start, end),
+                description: format!("Burst of {} events", cluster.len()),
+                evidence: cluster,
+                metadata: HashMap::new(),
+            };
+            patterns.push(pattern);
+        }
+        Ok(patterns)
     }
 
     /// Detect trend patterns (gradual changes over time)
-    async fn detect_trend_patterns(&self, _time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
-        // TODO: Implement trend pattern detection
-        // This would use statistical methods to identify trends
-        Ok(Vec::new())
+    async fn detect_trend_patterns(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+        use std::collections::BTreeMap;
+        let evidence = self.gather_evidence_in_range(time_range);
+        if evidence.len() < self.config.min_data_points {
+            return Ok(Vec::new());
+        }
+
+        let mut daily_counts: BTreeMap<i64, u32> = BTreeMap::new();
+        for ev in &evidence {
+            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().timestamp();
+            *daily_counts.entry(day).or_insert(0) += 1;
+        }
+
+        if daily_counts.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let n = daily_counts.len() as f64;
+        let times: Vec<f64> = (0..daily_counts.len()).map(|i| i as f64).collect();
+        let values: Vec<f64> = daily_counts.values().map(|&v| v as f64).collect();
+        let mean_x = (n - 1.0) / 2.0;
+        let mean_y = values.iter().sum::<f64>() / n;
+        let numerator: f64 = times
+            .iter()
+            .zip(values.iter())
+            .map(|(x, y)| (x - mean_x) * (y - mean_y))
+            .sum();
+        let denominator: f64 = times.iter().map(|x| (x - mean_x).powi(2)).sum();
+        if denominator == 0.0 {
+            return Ok(Vec::new());
+        }
+        let slope = numerator / denominator;
+
+        let pattern_type = if slope > 0.0 {
+            PatternType::GradualIncrease
+        } else {
+            PatternType::GradualDecrease
+        };
+
+        let strength = slope.abs().min(1.0);
+        let start = *daily_counts.keys().next().unwrap();
+        let end = *daily_counts.keys().last().unwrap();
+        let pattern = TemporalPattern {
+            id: format!("trend_{:?}", pattern_type),
+            pattern_type,
+            strength,
+            confidence: strength,
+            time_range: TimeRange::new(DateTime::<Utc>::from_utc(chrono::NaiveDateTime::from_timestamp_opt(start, 0).unwrap(), Utc),
+                                         DateTime::<Utc>::from_utc(chrono::NaiveDateTime::from_timestamp_opt(end, 0).unwrap(), Utc)),
+            description: "Gradual trend detected".to_string(),
+            evidence,
+            metadata: HashMap::new(),
+        };
+        Ok(vec![pattern])
     }
 
     /// Update existing patterns with new evidence
@@ -310,16 +464,24 @@ impl PatternDetector {
     }
 
     /// Check if evidence fits a daily pattern
-    fn fits_daily_pattern(&self, evidence: &PatternEvidence, _pattern: &TemporalPattern) -> bool {
-        // TODO: Implement daily pattern matching logic
-        // This would check if the evidence timestamp aligns with expected daily timing
+    fn fits_daily_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        if let Some(hour_str) = pattern.metadata.get("hour_of_day") {
+            if let Ok(hour) = hour_str.parse::<u32>() {
+                return evidence.timestamp.hour() == hour;
+            }
+        }
         false
     }
 
     /// Check if evidence fits a weekly pattern
-    fn fits_weekly_pattern(&self, evidence: &PatternEvidence, _pattern: &TemporalPattern) -> bool {
-        // TODO: Implement weekly pattern matching logic
-        // This would check if the evidence timestamp aligns with expected weekly timing
+    fn fits_weekly_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        if let Some(day_str) = pattern.metadata.get("day_of_week") {
+            if let Ok(day) = day_str.parse::<u32>() {
+                if let Some(wd) = Weekday::from_u64(day as u64) {
+                    return evidence.timestamp.weekday() == wd;
+                }
+            }
+        }
         false
     }
 
@@ -378,24 +540,84 @@ impl PatternDetector {
         (1.0 - variance).max(0.0)
     }
 
+    /// Collect all evidence within a time range
+    fn gather_evidence_in_range(&self, range: &TimeRange) -> Vec<PatternEvidence> {
+        self.patterns
+            .iter()
+            .flat_map(|p| p.evidence.iter().cloned())
+            .filter(|e| range.contains(e.timestamp))
+            .collect()
+    }
+
     /// Analyze access patterns for a specific memory
     pub async fn analyze_access_pattern(&self, memory_key: &str) -> Result<AccessPattern> {
-        // TODO: Implement access pattern analysis
-        // This would analyze when and how often a memory is accessed
+        let evidence: Vec<PatternEvidence> = self
+            .patterns
+            .iter()
+            .flat_map(|p| p.evidence.iter())
+            .filter(|e| e.memory_key == memory_key)
+            .cloned()
+            .collect();
 
         let mut hourly_distribution = [0u32; 24];
         let mut daily_distribution = [0u32; 7];
+        let mut timestamps = Vec::new();
 
-        // Placeholder implementation
+        for ev in &evidence {
+            hourly_distribution[ev.timestamp.hour() as usize] += 1;
+            daily_distribution[ev.timestamp.weekday().num_days_from_monday() as usize] += 1;
+            timestamps.push(ev.timestamp);
+        }
+
+        let mut peak_times = Vec::new();
+        if let (Some(start), Some(end)) = (timestamps.iter().min(), timestamps.iter().max()) {
+            let range = TimeRange::new(*start, *end);
+            if let Some(p) = self.detect_daily_pattern(&range).await? {
+                if let Some(h) = p.metadata.get("hour_of_day").and_then(|s| s.parse::<u32>().ok()) {
+                    let dt = start.date_naive().and_hms_opt(h, 0, 0).unwrap();
+                    peak_times.push(DateTime::<Utc>::from_utc(dt, Utc));
+                }
+            }
+            for burst in self.detect_burst_patterns(&range).await? {
+                peak_times.push(burst.time_range.start);
+            }
+        }
+
+        // clustering info
+        timestamps.sort();
+        let mut clusters: Vec<Vec<DateTime<Utc>>> = Vec::new();
+        for ts in timestamps {
+            if let Some(cluster) = clusters.last_mut() {
+                if ts - *cluster.last().unwrap() <= Duration::minutes(60) {
+                    cluster.push(ts);
+                    continue;
+                }
+            }
+            clusters.push(vec![ts]);
+        }
+        let cluster_count = clusters.len();
+        let avg_cluster_size = if cluster_count > 0 {
+            clusters.iter().map(|c| c.len()).sum::<usize>() as f64 / cluster_count as f64
+        } else { 0.0 };
+        let inter_cluster_time = if clusters.len() > 1 {
+            let mut times = Vec::new();
+            for pair in clusters.windows(2) {
+                times.push(pair[1][0] - *pair[0].last().unwrap());
+            }
+            times.iter().fold(Duration::zero(), |acc, d| acc + *d) / (times.len() as i32)
+        } else {
+            Duration::zero()
+        };
+
         Ok(AccessPattern {
             memory_key: memory_key.to_string(),
             hourly_distribution,
             daily_distribution,
-            peak_times: Vec::new(),
+            peak_times,
             clustering_info: ClusteringInfo {
-                cluster_count: 0,
-                avg_cluster_size: 0.0,
-                inter_cluster_time: Duration::hours(1),
+                cluster_count,
+                avg_cluster_size,
+                inter_cluster_time,
             },
         })
     }

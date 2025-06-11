@@ -23,6 +23,7 @@ async-trait = "0.1"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 indexmap = "2.0"
+num-traits = "0.2"
 
 # Storage
 sled = "0.34"
