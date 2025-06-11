@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::Duration;
 
 /// Offline storage adapter
 pub struct OfflineAdapter {
@@ -27,6 +29,9 @@ pub struct OfflineAdapter {
     
     /// Conflict resolution strategy
     conflict_resolver: Box<dyn ConflictResolver>,
+
+    /// Remote storage backend
+    remote_backend: Arc<dyn RemoteBackend>,
 }
 
 /// Offline-specific configuration
@@ -201,6 +206,52 @@ impl ConflictResolver for LastWriteWinsResolver {
     }
 }
 
+/// Remote storage backend used for synchronization
+pub trait RemoteBackend: Send + Sync {
+    /// Upload data to remote storage
+    fn upload(&self, key: &str, data: &[u8], version: u64) -> Result<(), SynapticError>;
+
+    /// Download data from remote storage
+    fn download(&self, key: &str) -> Result<Option<(Vec<u8>, u64)>, SynapticError>;
+
+    /// Delete data from remote storage
+    fn delete(&self, key: &str) -> Result<(), SynapticError>;
+}
+
+/// Simple in-memory remote backend for testing and defaults
+#[derive(Default, Clone)]
+pub struct InMemoryRemoteBackend {
+    store: Arc<RwLock<HashMap<String, (Vec<u8>, u64)>>>,
+}
+
+impl RemoteBackend for InMemoryRemoteBackend {
+    fn upload(&self, key: &str, data: &[u8], version: u64) -> Result<(), SynapticError> {
+        let mut store = self
+            .store
+            .write()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        store.insert(key.to_string(), (data.to_vec(), version));
+        Ok(())
+    }
+
+    fn download(&self, key: &str) -> Result<Option<(Vec<u8>, u64)>, SynapticError> {
+        let store = self
+            .store
+            .read()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        Ok(store.get(key).cloned())
+    }
+
+    fn delete(&self, key: &str) -> Result<(), SynapticError> {
+        let mut store = self
+            .store
+            .write()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        store.remove(key);
+        Ok(())
+    }
+}
+
 impl LocalStorage {
     /// Create new local storage
     fn new(storage_dir: PathBuf) -> Result<Self, SynapticError> {
@@ -368,6 +419,11 @@ impl LocalStorage {
 impl OfflineAdapter {
     /// Create new offline adapter
     pub fn new() -> Result<Self, SynapticError> {
+        Self::with_remote_backend(Arc::new(InMemoryRemoteBackend::default()))
+    }
+
+    /// Create new offline adapter with custom remote backend
+    pub fn with_remote_backend(remote_backend: Arc<dyn RemoteBackend>) -> Result<Self, SynapticError> {
         let config = OfflineConfig::default();
         let mut storage = LocalStorage::new(config.storage_dir.clone())?;
         storage.load_existing()?;
@@ -377,6 +433,7 @@ impl OfflineAdapter {
             config,
             sync_queue: Arc::new(RwLock::new(Vec::new())),
             conflict_resolver: Box::new(LastWriteWinsResolver),
+            remote_backend,
         })
     }
 
@@ -411,37 +468,61 @@ impl OfflineAdapter {
         Ok(())
     }
 
-    /// Check if online (placeholder implementation)
+    /// Check if online by attempting a TCP connection
     pub fn is_online(&self) -> bool {
-        // In a real implementation, this would check network connectivity
-        true
+        let addr = std::env::var("SYNC_ONLINE_TEST_ADDR").unwrap_or_else(|_| "example.com:80".to_string());
+        if let Ok(mut addrs) = addr.to_socket_addrs() {
+            if let Some(sock) = addrs.next() {
+                return TcpStream::connect_timeout(&sock, Duration::from_secs(1)).is_ok();
+            }
+        }
+        false
     }
 
-    /// Sync with remote (placeholder implementation)
+    /// Sync queued operations with the remote backend
     pub async fn sync_with_remote(&self) -> Result<(), SynapticError> {
         if !self.is_online() {
             return Ok(()); // Skip sync if offline
         }
 
         let operations = self.get_pending_operations()?;
-        
+
         for operation in operations {
             match operation {
                 SyncOperation::Upload { key, data, version } => {
-                    // Upload to remote storage
-                    println!("Uploading {} (version {})", key, version);
+                    self.remote_backend.upload(&key, &data, version)?;
                 }
-                SyncOperation::Download { key, remote_version } => {
-                    // Download from remote storage
-                    println!("Downloading {} (version {})", key, remote_version);
+                SyncOperation::Download { key, .. } => {
+                    if let Some((data, _ver)) = self.remote_backend.download(&key)? {
+                        let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                        storage.store(&key, &data)?;
+                    }
                 }
                 SyncOperation::Delete { key } => {
-                    // Delete from remote storage
-                    println!("Deleting {}", key);
+                    self.remote_backend.delete(&key)?;
                 }
-                SyncOperation::ResolveConflict { key, resolution, .. } => {
-                    // Resolve conflict
-                    println!("Resolving conflict for {} with strategy {:?}", key, resolution);
+                SyncOperation::ResolveConflict { key, resolution, local_version, remote_version } => {
+                    match resolution {
+                        ConflictResolution::UseLocal => {
+                            let data = {
+                                let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                                storage.retrieve(&key)?
+                            };
+                            if let Some(data) = data {
+                                self.remote_backend.upload(&key, &data, local_version)?;
+                            }
+                        }
+                        ConflictResolution::UseRemote => {
+                            if let Some((data, _)) = self.remote_backend.download(&key)? {
+                                let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                                storage.store(&key, &data)?;
+                            } else {
+                                // remote version missing, nothing to do
+                                let _ = remote_version; // suppress unused warning
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
