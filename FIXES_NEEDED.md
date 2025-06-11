@@ -6,6 +6,7 @@ places where placeholder or simulated behaviour exists.
 
 ## Missing or Incomplete Functionality
 
+
 1. **Database Storage Backend (`src/integrations/database.rs`):**
    - Methods such as `search`, `update`, `delete`, `list_keys`, `count`, `clear`,
      `exists`, `backup`, and `restore` currently return configuration errors
@@ -31,6 +32,16 @@ places where placeholder or simulated behaviour exists.
    - The `README.md` contains overly promotional language and outdated claims.
      Revise it to clearly describe the project's goals and current
      functionality in a concise, professional tone.
+
+1. **Security Modules:**
+   - Several functions accept a `SecurityContext` parameter but do not use it.
+     Implement full cryptographic logic for encryption, key management, and
+     zero‑knowledge proofs.
+2. **Analytics and Temporal Modules:**
+   - Many structures accumulate metrics that are never read or updated.
+     Additional logic is required to collect statistics and leverage them for
+     analysis and insights.
+
 
 ## Mocking
 
