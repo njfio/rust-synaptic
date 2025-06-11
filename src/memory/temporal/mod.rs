@@ -154,6 +154,17 @@ pub struct TemporalSummary {
     pub stability_score: f64,
 }
 
+/// Basic usage statistics for the temporal system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemporalUsageStats {
+    /// Total versions stored
+    pub total_versions: usize,
+    /// Total diffs calculated
+    pub total_diffs: usize,
+    /// Total evolution events
+    pub total_evolution_events: usize,
+}
+
 impl TemporalMemoryManager {
     /// Create a new temporal memory manager
     pub fn new(config: TemporalConfig) -> Self {
@@ -270,6 +281,19 @@ impl TemporalMemoryManager {
     pub async fn cleanup_old_versions(&mut self) -> Result<usize> {
         let cutoff_date = Utc::now() - Duration::days(self.config.max_version_age_days as i64);
         self.version_manager.cleanup_versions_before(cutoff_date).await
+    }
+
+    /// Retrieve aggregated usage statistics
+    pub async fn get_usage_stats(&self) -> Result<TemporalUsageStats> {
+        let total_versions = self.version_manager.total_versions();
+        let diff_metrics = self.diff_analyzer.get_metrics();
+        let evolution_metrics = self.evolution_tracker.get_global_metrics().await?;
+
+        Ok(TemporalUsageStats {
+            total_versions,
+            total_diffs: diff_metrics.total_diffs,
+            total_evolution_events: evolution_metrics.total_events,
+        })
     }
 
     /// Calculate temporal summary statistics

@@ -183,6 +183,19 @@ pub struct DiffMetrics {
     pub avg_compression_ratio: Option<f64>,
 }
 
+impl Default for DiffMetrics {
+    fn default() -> Self {
+        Self {
+            total_diffs: 0,
+            avg_significance: 0.0,
+            most_common_change: ContentChangeType::Unchanged,
+            avg_content_similarity: 0.0,
+            total_diff_size: 0,
+            avg_compression_ratio: None,
+        }
+    }
+}
+
 /// Differential analyzer for comparing memory states
 pub struct DiffAnalyzer {
     /// Cache of recent diffs
@@ -191,6 +204,10 @@ pub struct DiffAnalyzer {
     change_sets: Vec<ChangeSet>,
     /// Configuration
     config: DiffConfig,
+    /// Running metrics
+    metrics: DiffMetrics,
+    /// Internal counts for change types
+    change_type_counts: HashMap<ContentChangeType, usize>,
 }
 
 /// Configuration for differential analysis
@@ -224,6 +241,8 @@ impl DiffAnalyzer {
             diff_cache: HashMap::new(),
             change_sets: Vec::new(),
             config: DiffConfig::default(),
+            metrics: DiffMetrics::default(),
+            change_type_counts: HashMap::new(),
         }
     }
 
@@ -266,6 +285,28 @@ impl DiffAnalyzer {
         // Cache the diff if significant enough
         if significance_score >= self.config.min_significance_threshold {
             self.cache_diff(cache_key, diff.clone());
+        }
+
+        // Update metrics
+        self.metrics.total_diffs += 1;
+        self.metrics.avg_significance =
+            (self.metrics.avg_significance * (self.metrics.total_diffs - 1) as f64
+                + significance_score)
+                / self.metrics.total_diffs as f64;
+        self.metrics.avg_content_similarity =
+            (self.metrics.avg_content_similarity * (self.metrics.total_diffs - 1) as f64
+                + diff.content_changes.similarity_score)
+                / self.metrics.total_diffs as f64;
+        self.metrics.total_diff_size += diff_size;
+        *self.change_type_counts
+            .entry(diff.content_changes.change_type.clone())
+            .or_insert(0) += 1;
+        if let Some((change, _)) = self
+            .change_type_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+        {
+            self.metrics.most_common_change = change.clone();
         }
 
         Ok(diff)
@@ -539,51 +580,15 @@ impl DiffAnalyzer {
 
     /// Get differential metrics
     pub fn get_metrics(&self) -> DiffMetrics {
-        let total_diffs = self.diff_cache.len();
-        
-        if total_diffs == 0 {
-            return DiffMetrics {
-                total_diffs: 0,
-                avg_significance: 0.0,
-                most_common_change: ContentChangeType::Unchanged,
-                avg_content_similarity: 0.0,
-                total_diff_size: 0,
-                avg_compression_ratio: None,
-            };
-        }
-        
-        let avg_significance = self.diff_cache.values()
-            .map(|d| d.significance_score)
-            .sum::<f64>() / total_diffs as f64;
-        
-        let avg_content_similarity = self.diff_cache.values()
-            .map(|d| d.content_changes.similarity_score)
-            .sum::<f64>() / total_diffs as f64;
-        
-        let total_diff_size = self.diff_cache.values()
-            .map(|d| d.diff_size)
-            .sum();
-        
-        // Find most common change type
-        let mut change_type_counts = HashMap::new();
-        for diff in self.diff_cache.values() {
-            *change_type_counts.entry(diff.content_changes.change_type.clone()).or_insert(0) += 1;
-        }
-        
-        let most_common_change = change_type_counts
-            .into_iter()
+        let mut metrics = self.metrics.clone();
+        if let Some((change, _)) = self
+            .change_type_counts
+            .iter()
             .max_by_key(|(_, count)| *count)
-            .map(|(change_type, _)| change_type)
-            .unwrap_or(ContentChangeType::Unchanged);
-        
-        DiffMetrics {
-            total_diffs,
-            avg_significance,
-            most_common_change,
-            avg_content_similarity,
-            total_diff_size,
-            avg_compression_ratio: None, // TODO: Implement compression metrics
+        {
+            metrics.most_common_change = change.clone();
         }
+        metrics
     }
 }
 
