@@ -234,8 +234,11 @@ impl AnalyticsEngine {
         }
 
         // Process event through analytics modules
+        let before_predictions = self.predictive.get_predictions().len();
         self.predictive.process_event(&event).await?;
         self.behavioral.process_event(&event).await?;
+        let after_predictions = self.predictive.get_predictions().len();
+        self.metrics.predictions_made += (after_predictions - before_predictions) as u64;
 
         // Update metrics
         self.metrics.events_processed += 1;
@@ -271,6 +274,11 @@ impl AnalyticsEngine {
     /// Get analytics metrics
     pub fn get_metrics(&self) -> &AnalyticsMetrics {
         &self.metrics
+    }
+
+    /// Retrieve a copy of usage statistics
+    pub fn get_usage_stats(&self) -> AnalyticsMetrics {
+        self.metrics.clone()
     }
 
     /// Get recent insights
