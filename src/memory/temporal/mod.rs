@@ -304,7 +304,7 @@ impl TemporalMemoryManager {
     }
 
     /// Calculate temporal summary statistics
-    fn calculate_temporal_summary(
+    pub fn calculate_temporal_summary(
         &self,
         version_history: &[MemoryVersion],
         changes: &[ChangeSet],
@@ -338,13 +338,45 @@ impl TemporalMemoryManager {
             1.0
         };
 
+        let bucket_size = Self::determine_bucket_size(time_range);
+        let most_active_period = Self::detect_most_active_period(version_history, bucket_size);
+
         TemporalSummary {
             total_versions,
             total_changes,
-            most_active_period: None, // TODO: Implement period detection
+            most_active_period,
             avg_change_frequency,
             most_common_change_type,
             stability_score,
         }
+    }
+
+    /// Determine bucket size for activity analysis based on overall range
+    fn determine_bucket_size(time_range: &TimeRange) -> Duration {
+        if time_range.duration().num_hours() <= 24 {
+            Duration::hours(1)
+        } else {
+            Duration::days(1)
+        }
+    }
+
+    /// Detect the most active period using the given bucket size
+    fn detect_most_active_period(
+        version_history: &[MemoryVersion],
+        bucket_size: Duration,
+    ) -> Option<TimeRange> {
+        use chrono::NaiveDateTime;
+        let mut counts: HashMap<DateTime<Utc>, usize> = HashMap::new();
+        for version in version_history {
+            let ts = version.created_at.timestamp();
+            let bucket_start = ts - (ts % bucket_size.num_seconds());
+            if let Some(start_naive) = NaiveDateTime::from_timestamp_opt(bucket_start, 0) {
+                let bucket = DateTime::<Utc>::from_utc(start_naive, Utc);
+                *counts.entry(bucket).or_insert(0) += 1;
+            }
+        }
+
+        let (start, _) = counts.into_iter().max_by_key(|(_, c)| *c)?;
+        Some(TimeRange::new(start, start + bucket_size))
     }
 }
