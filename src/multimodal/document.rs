@@ -8,6 +8,11 @@ use crate::error::SynapticError;
 use crate::memory::types::MemoryId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{Read, Cursor};
+use pdf_extract;
+use zip::read::ZipArchive;
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use uuid::Uuid;
 
 /// Document formats supported by the document processor
@@ -286,16 +291,39 @@ impl DocumentMemoryProcessor {
         }
     }
 
-    /// Extract text from PDF (placeholder implementation)
-    async fn extract_pdf_text(&self, _content: &[u8]) -> MultiModalResult<String> {
-        // In a real implementation, use pdf crate
-        Ok("PDF text extraction not implemented in basic version".to_string())
+    /// Extract text from PDF using pdf-extract
+    async fn extract_pdf_text(&self, content: &[u8]) -> MultiModalResult<String> {
+        let mut cursor = std::io::Cursor::new(content);
+        match pdf_extract::extract_text_from_reader(&mut cursor) {
+            Ok(text) => Ok(text),
+            Err(e) => Err(SynapticError::ProcessingError(format!("PDF extraction failed: {e}")))
+        }
     }
 
-    /// Extract text from DOCX (placeholder implementation)
-    async fn extract_docx_text(&self, _content: &[u8]) -> MultiModalResult<String> {
-        // In a real implementation, use docx crate
-        Ok("DOCX text extraction not implemented in basic version".to_string())
+    /// Extract text from DOCX using zip and quick-xml
+    async fn extract_docx_text(&self, content: &[u8]) -> MultiModalResult<String> {
+        let mut archive = ZipArchive::new(std::io::Cursor::new(content))
+            .map_err(|e| SynapticError::ProcessingError(format!("DOCX zip error: {e}")))?;
+        let mut doc_xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .map_err(|e| SynapticError::ProcessingError(format!("DOCX entry error: {e}")))?
+            .read_to_string(&mut doc_xml)
+            .map_err(|e| SynapticError::ProcessingError(format!("DOCX read error: {e}")))?;
+        let mut reader = Reader::from_str(&doc_xml);
+        reader.trim_text(true);
+        let mut buf = Vec::new();
+        let mut text = String::new();
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Text(e)) => text.push_str(&e.unescape().unwrap_or_default()),
+                Ok(Event::Eof) => break,
+                Err(e) => return Err(SynapticError::ProcessingError(format!("DOCX parse error: {e}"))),
+                _ => {}
+            }
+            buf.clear();
+        }
+        Ok(text)
     }
 
     /// Extract text from Markdown
