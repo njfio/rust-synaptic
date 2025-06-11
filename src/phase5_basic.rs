@@ -255,15 +255,17 @@ pub struct BasicStatistics {
 }
 
 /// Basic in-memory adapter for testing
+use std::sync::{Arc, Mutex};
+
 pub struct BasicMemoryAdapter {
-    storage: HashMap<String, Vec<u8>>,
+    storage: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     platform_info: BasicPlatformInfo,
 }
 
 impl BasicMemoryAdapter {
     pub fn new() -> Self {
         Self {
-            storage: HashMap::new(),
+            storage: Arc::new(Mutex::new(HashMap::new())),
             platform_info: BasicPlatformInfo {
                 platform_name: "Memory".to_string(),
                 supports_file_system: false,
@@ -277,22 +279,24 @@ impl BasicMemoryAdapter {
 
 impl BasicCrossPlatformAdapter for BasicMemoryAdapter {
     fn store(&self, key: &str, data: &[u8]) -> Result<()> {
-        // In a real implementation, this would need interior mutability
-        // For now, we'll just simulate success
+        let mut map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        map.insert(key.to_string(), data.to_vec());
         Ok(())
     }
 
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        Ok(self.storage.get(key).cloned())
+        let map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        Ok(map.get(key).cloned())
     }
 
     fn delete(&self, key: &str) -> Result<bool> {
-        // In a real implementation, this would need interior mutability
-        Ok(true)
+        let mut map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        Ok(map.remove(key).is_some())
     }
 
     fn list_keys(&self) -> Result<Vec<String>> {
-        Ok(self.storage.keys().cloned().collect())
+        let map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        Ok(map.keys().cloned().collect())
     }
 
     fn get_platform_info(&self) -> BasicPlatformInfo {

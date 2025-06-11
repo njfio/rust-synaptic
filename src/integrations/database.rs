@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +47,7 @@ pub struct DatabaseClient {
     #[cfg(feature = "sql-storage")]
     pool: PgPool,
     config: DatabaseConfig,
-    metrics: DatabaseMetrics,
+    metrics: Mutex<DatabaseMetrics>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,11 +70,10 @@ impl DatabaseClient {
                 .await
                 .map_err(|e| MemoryError::storage(format!("Failed to connect to database: {}", e)))?;
 
-            // Run migrations
             let mut client = Self {
                 pool,
                 config,
-                metrics: DatabaseMetrics::default(),
+                metrics: Mutex::new(DatabaseMetrics::default()),
             };
 
             client.run_migrations().await?;
@@ -167,7 +167,7 @@ impl DatabaseClient {
 
     /// Store a memory entry in the database
     #[cfg(feature = "sql-storage")]
-    pub async fn store_memory(&mut self, entry: &MemoryEntry) -> Result<()> {
+    pub async fn store_memory(&self, entry: &MemoryEntry) -> Result<()> {
         let start_time = std::time::Instant::now();
 
         let memory_type_str = format!("{:?}", entry.memory_type);
@@ -214,7 +214,7 @@ impl DatabaseClient {
 
     /// Retrieve a memory entry from the database
     #[cfg(feature = "sql-storage")]
-    pub async fn get_memory(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
+    pub async fn get_memory(&self, key: &str) -> Result<Option<MemoryEntry>> {
         let start_time = std::time::Instant::now();
 
         let row = sqlx::query(&format!(r#"
@@ -269,7 +269,7 @@ impl DatabaseClient {
 
     /// Store an analytics event
     #[cfg(feature = "sql-storage")]
-    pub async fn store_analytics_event(&mut self, event: &AnalyticsEvent) -> Result<()> {
+    pub async fn store_analytics_event(&self, event: &AnalyticsEvent) -> Result<()> {
         let start_time = std::time::Instant::now();
 
         let event_data_json = serde_json::to_value(&event.data)
@@ -311,14 +311,16 @@ impl DatabaseClient {
     }
 
     /// Get database metrics
-    pub fn get_metrics(&self) -> &DatabaseMetrics {
-        &self.metrics
+    pub fn get_metrics(&self) -> DatabaseMetrics {
+        self.metrics.lock().map(|m| m.clone()).unwrap_or_default()
     }
 
     #[cfg(feature = "sql-storage")]
-    fn update_metrics(&mut self, start_time: std::time::Instant) {
-        self.metrics.queries_executed += 1;
-        self.metrics.total_query_time_ms += start_time.elapsed().as_millis() as u64;
+    fn update_metrics(&self, start_time: std::time::Instant) {
+        if let Ok(mut m) = self.metrics.lock() {
+            m.queries_executed += 1;
+            m.total_query_time_ms += start_time.elapsed().as_millis() as u64;
+        }
     }
 
     fn extract_user_context(&self, _event: &AnalyticsEvent) -> Option<String> {
@@ -341,8 +343,8 @@ impl DatabaseClient {
         Ok(())
     }
 
-    pub fn get_metrics(&self) -> &DatabaseMetrics {
-        &DatabaseMetrics::default()
+    pub fn get_metrics(&self) -> DatabaseMetrics {
+        DatabaseMetrics::default()
     }
 }
 
@@ -352,9 +354,7 @@ impl Storage for DatabaseClient {
     async fn store(&self, entry: &MemoryEntry) -> Result<()> {
         #[cfg(feature = "sql-storage")]
         {
-            // We need to work around the mutability issue
-            // In a real implementation, you'd use interior mutability or Arc<Mutex<>>
-            Err(MemoryError::configuration("Database storage requires mutable access"))
+            self.store_memory(entry).await
         }
         #[cfg(not(feature = "sql-storage"))]
         {
@@ -365,8 +365,7 @@ impl Storage for DatabaseClient {
     async fn retrieve(&self, key: &str) -> Result<Option<MemoryEntry>> {
         #[cfg(feature = "sql-storage")]
         {
-            // Similar issue - would need interior mutability for metrics
-            Err(MemoryError::configuration("Database storage requires mutable access"))
+            self.get_memory(key).await
         }
         #[cfg(not(feature = "sql-storage"))]
         {
@@ -374,48 +373,172 @@ impl Storage for DatabaseClient {
         }
     }
 
-    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<crate::memory::types::MemoryFragment>> {
-        Err(MemoryError::configuration("Search not implemented for database storage"))
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<crate::memory::types::MemoryFragment>> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let rows = sqlx::query(&format!("SELECT key, value FROM {}.memory_entries WHERE value ILIKE $1 LIMIT $2", self.config.schema))
+                .bind(format!("%{}%", query))
+                .bind(limit as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Search failed: {}", e)))?;
+            let fragments = rows.into_iter().map(|row| crate::memory::types::MemoryFragment {
+                key: row.get("key"),
+                snippet: row.get::<String, _>("value").chars().take(100).collect(),
+            }).collect();
+            Ok(fragments)
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
-    async fn update(&self, _key: &str, _entry: &MemoryEntry) -> Result<()> {
-        Err(MemoryError::configuration("Update not implemented for database storage"))
+    async fn update(&self, key: &str, entry: &MemoryEntry) -> Result<()> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let mut updated = entry.clone();
+            updated.key = key.to_string();
+            self.store_memory(&updated).await
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
-    async fn delete(&self, _key: &str) -> Result<bool> {
-        Err(MemoryError::configuration("Delete not implemented for database storage"))
+    async fn delete(&self, key: &str) -> Result<bool> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let result = sqlx::query(&format!("DELETE FROM {}.memory_entries WHERE key=$1", self.config.schema))
+                .bind(key)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Delete failed: {}", e)))?;
+            Ok(result.rows_affected() > 0)
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
     async fn list_keys(&self) -> Result<Vec<String>> {
-        Err(MemoryError::configuration("List keys not implemented for database storage"))
+        #[cfg(feature = "sql-storage")]
+        {
+            let rows = sqlx::query(&format!("SELECT key FROM {}.memory_entries", self.config.schema))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("List keys failed: {}", e)))?;
+            Ok(rows.into_iter().map(|r| r.get("key")).collect())
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
     async fn count(&self) -> Result<usize> {
-        Err(MemoryError::configuration("Count not implemented for database storage"))
+        #[cfg(feature = "sql-storage")]
+        {
+            let row = sqlx::query(&format!("SELECT COUNT(*) as count FROM {}.memory_entries", self.config.schema))
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Count failed: {}", e)))?;
+            Ok(row.get::<i64, _>("count") as usize)
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
     async fn clear(&self) -> Result<()> {
-        Err(MemoryError::configuration("Clear not implemented for database storage"))
+        #[cfg(feature = "sql-storage")]
+        {
+            sqlx::query(&format!("TRUNCATE TABLE {}.memory_entries", self.config.schema))
+                .execute(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Clear failed: {}", e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
-    async fn exists(&self, _key: &str) -> Result<bool> {
-        Err(MemoryError::configuration("Exists not implemented for database storage"))
+    async fn exists(&self, key: &str) -> Result<bool> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let row = sqlx::query(&format!("SELECT EXISTS(SELECT 1 FROM {}.memory_entries WHERE key=$1) as exist", self.config.schema))
+                .bind(key)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Exists query failed: {}", e)))?;
+            Ok(row.get::<bool, _>("exist"))
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
     async fn stats(&self) -> Result<crate::memory::storage::StorageStats> {
-        Ok(crate::memory::storage::StorageStats::new("database".to_string()))
+        let count = self.count().await.unwrap_or(0);
+        Ok(crate::memory::storage::StorageStats {
+            total_entries: count,
+            total_size_bytes: 0,
+            average_entry_size: 0.0,
+            storage_type: "database".to_string(),
+            last_maintenance: None,
+            fragmentation_ratio: 0.0,
+        })
     }
 
     async fn maintenance(&self) -> Result<()> {
         Ok(())
     }
 
-    async fn backup(&self, _path: &str) -> Result<()> {
-        Err(MemoryError::configuration("Backup not implemented for database storage"))
+    async fn backup(&self, path: &str) -> Result<()> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let rows = sqlx::query(&format!("SELECT key, value FROM {}.memory_entries", self.config.schema))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Backup query failed: {}", e)))?;
+            let pairs: Vec<(String, String)> = rows.into_iter().map(|r| (r.get("key"), r.get("value"))).collect();
+            let json = serde_json::to_string(&pairs).map_err(|e| MemoryError::storage(e.to_string()))?;
+            tokio::fs::write(path, json).await.map_err(|e| MemoryError::storage(e.to_string()))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
-    async fn restore(&self, _path: &str) -> Result<()> {
-        Err(MemoryError::configuration("Restore not implemented for database storage"))
+    async fn restore(&self, path: &str) -> Result<()> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let data = tokio::fs::read(path).await.map_err(|e| MemoryError::storage(e.to_string()))?;
+            let rows: Vec<(String, String)> = serde_json::from_slice(&data).map_err(|e| MemoryError::storage(e.to_string()))?;
+            for (key, value) in rows {
+                let entry = MemoryEntry {
+                    key,
+                    value,
+                    memory_type: MemoryType::ShortTerm,
+                    metadata: MemoryMetadata::default(),
+                    embedding: None,
+                };
+                let _ = self.store_memory(&entry).await;
+            }
+            Ok(())
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration("SQL storage feature not enabled"))
+        }
     }
 
 
