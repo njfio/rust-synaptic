@@ -164,7 +164,7 @@ impl AudioMemoryProcessor {
     /// Transcribe audio to text using speech recognition
     #[cfg(all(feature = "audio-memory", feature = "whisper-rs"))]
     pub async fn transcribe_audio(&self, samples: &[f32], sample_rate: u32) -> MultiModalResult<Option<String>> {
-        if !self.config.enable_transcription || self.whisper_context.is_none() {
+        if !self.config.enable_transcription {
             return Ok(None);
         }
 
@@ -175,14 +175,60 @@ impl AudioMemoryProcessor {
             samples.to_vec()
         };
 
-        // In a real implementation, you would:
-        // 1. Load a Whisper model
-        // 2. Create transcription parameters
-        // 3. Run inference on the audio
-        // 4. Extract text with confidence scores
-        
-        // For now, return a placeholder
-        Ok(Some("Transcription placeholder - Whisper model not loaded".to_string()))
+        // Determine model path
+        let model_path = std::env::var("WHISPER_MODEL_PATH")
+            .map_err(|_| SynapticError::ProcessingError("WHISPER_MODEL_PATH not set".to_string()))?;
+
+        // Load Whisper context and state
+        let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to load model: {e}")))?;
+        let mut state = ctx
+            .create_state()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to create state: {e}")))?;
+
+        // Create parameters for inference
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+
+        // Run inference
+        state
+            .full(params, &resampled_samples)
+            .map_err(|e| SynapticError::ProcessingError(format!("Whisper inference failed: {e}")))?;
+
+        let num_segments = state
+            .full_n_segments()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get segments: {e}")))?;
+
+        let mut transcript = String::new();
+        let mut probs = Vec::new();
+        for i in 0..num_segments {
+            let seg = state
+                .full_get_segment_text(i)
+                .map_err(|e| SynapticError::ProcessingError(format!("Failed to get segment: {e}")))?;
+            transcript.push_str(&seg);
+            transcript.push(' ');
+
+            let n_tokens = state
+                .full_n_tokens(i)
+                .map_err(|e| SynapticError::ProcessingError(format!("Failed to get tokens: {e}")))?;
+            for t in 0..n_tokens {
+                let p = state
+                    .full_get_token_prob(i, t)
+                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to get token prob: {e}")))?;
+                probs.push(p);
+            }
+        }
+
+        let avg_confidence = if probs.is_empty() {
+            0.0
+        } else {
+            probs.iter().copied().sum::<f32>() / probs.len() as f32
+        };
+
+        Ok(Some(format!("{avg_confidence:.3}: {}", transcript.trim())))
     }
 
     /// Resample audio to target sample rate
