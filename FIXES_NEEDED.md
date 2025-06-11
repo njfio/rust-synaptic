@@ -27,6 +27,10 @@ places where placeholder or simulated behaviour exists.
    - Many structures accumulate metrics that are never read or updated.
      Additional logic is required to collect statistics and leverage them for
      analysis and insights.
+6. **README Cleanup:**
+   - The `README.md` contains overly promotional language and outdated claims.
+     Revise it to clearly describe the project's goals and current
+     functionality in a concise, professional tone.
 
 ## Mocking
 
