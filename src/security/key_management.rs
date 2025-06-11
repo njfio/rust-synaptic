@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Key management system
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyManager {
     config: SecurityConfig,
     master_keys: HashMap<String, MasterKey>,

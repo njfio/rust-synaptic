@@ -7,6 +7,7 @@
 use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -254,11 +255,11 @@ pub struct SecurityManager {
 impl SecurityManager {
     /// Create a new security manager
     pub async fn new(config: SecurityConfig) -> Result<Self> {
-        let encryption_manager = encryption::EncryptionManager::new(&config).await?;
+        let key_manager = key_management::KeyManager::new(&config).await?;
+        let encryption_manager = encryption::EncryptionManager::new(&config, key_manager.clone()).await?;
         let privacy_manager = privacy::PrivacyManager::new(&config).await?;
         let access_control = access_control::AccessControlManager::new(&config).await?;
         let audit_logger = audit::AuditLogger::new(&config.audit_config).await?;
-        let key_manager = key_management::KeyManager::new(&config).await?;
 
         let zero_knowledge_manager = if config.enable_zero_knowledge {
             Some(zero_knowledge::ZeroKnowledgeManager::new(&config).await?)
@@ -306,12 +307,34 @@ impl SecurityManager {
     }
 
     /// Decrypt a memory entry
-    pub async fn decrypt_memory(&mut self, 
-        encrypted_entry: &EncryptedMemoryEntry, 
+    pub async fn decrypt_memory(&mut self,
+        encrypted_entry: &EncryptedMemoryEntry,
         context: &SecurityContext
     ) -> Result<MemoryEntry> {
         // Check permissions
         self.access_control.check_permission(context, Permission::ReadMemory).await?;
+
+        // Verify zero-knowledge proof if enabled
+        if self.config.enable_zero_knowledge {
+            if let Some(ref mut zkm) = self.zero_knowledge_manager {
+                if let Some(proof_json) = context.attributes.get("zk_access_proof") {
+                    let proof: zero_knowledge::ZKProof = serde_json::from_str(proof_json)
+                        .map_err(|_| MemoryError::access_denied("Invalid proof format".to_string()))?;
+                    let statement = zero_knowledge::AccessStatement {
+                        memory_key: encrypted_entry.id.clone(),
+                        user_id: context.user_id.clone(),
+                        access_type: zero_knowledge::AccessType::Read,
+                        timestamp: Utc::now(),
+                    };
+                    let valid = zkm.verify_access_proof(&proof, &statement).await?;
+                    if !valid {
+                        return Err(MemoryError::access_denied("Zero-knowledge verification failed".to_string()));
+                    }
+                } else {
+                    return Err(MemoryError::access_denied("Access proof required".to_string()));
+                }
+            }
+        }
 
         // Decrypt based on encryption type
         let decrypted_entry = if encrypted_entry.is_homomorphic {

@@ -5,8 +5,9 @@
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
-use crate::security::{SecurityConfig, SecurityContext, EncryptedMemoryEntry, EncryptionMetadata, 
+use crate::security::{SecurityConfig, SecurityContext, EncryptedMemoryEntry, EncryptionMetadata,
                      SecureOperation, EncryptedComputationResult, PrivacyLevel};
+use crate::security::key_management::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
@@ -17,13 +18,14 @@ use uuid::Uuid;
 pub struct EncryptionManager {
     config: SecurityConfig,
     key_cache: HashMap<String, EncryptionKey>,
+    key_manager: KeyManager,
     homomorphic_context: Option<HomomorphicContext>,
     metrics: EncryptionMetrics,
 }
 
 impl EncryptionManager {
     /// Create a new encryption manager
-    pub async fn new(config: &SecurityConfig) -> Result<Self> {
+    pub async fn new(config: &SecurityConfig, key_manager: KeyManager) -> Result<Self> {
         let homomorphic_context = if config.enable_homomorphic_encryption {
             Some(HomomorphicContext::new(config).await?)
         } else {
@@ -33,20 +35,26 @@ impl EncryptionManager {
         Ok(Self {
             config: config.clone(),
             key_cache: HashMap::new(),
+            key_manager,
             homomorphic_context,
             metrics: EncryptionMetrics::default(),
         })
     }
 
     /// Standard AES-GCM encryption
-    pub async fn standard_encrypt(&mut self, 
-        entry: &MemoryEntry, 
+    pub async fn standard_encrypt(&mut self,
+        entry: &MemoryEntry,
         context: &SecurityContext
     ) -> Result<EncryptedMemoryEntry> {
         let start_time = std::time::Instant::now();
 
+        // Basic context validation
+        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
+            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        }
+
         // Generate or retrieve encryption key
-        let key = self.get_or_generate_key(&context.user_id, "AES-256-GCM").await?;
+        let key = self.get_or_generate_key(context, "AES-256-GCM").await?;
         
         // Generate random IV and salt
         let iv = self.generate_random_bytes(12)?;
@@ -85,14 +93,19 @@ impl EncryptionManager {
     }
 
     /// Standard AES-GCM decryption
-    pub async fn standard_decrypt(&mut self, 
-        encrypted_entry: &EncryptedMemoryEntry, 
+    pub async fn standard_decrypt(&mut self,
+        encrypted_entry: &EncryptedMemoryEntry,
         context: &SecurityContext
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
 
+        // Validate context before retrieving key
+        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
+            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        }
+
         // Retrieve encryption key
-        let key = self.get_key(&encrypted_entry.key_id).await?;
+        let key = self.get_key(&encrypted_entry.key_id, context).await?;
         
         // Extract metadata
         let iv = &encrypted_entry.metadata.iv;
@@ -121,11 +134,15 @@ impl EncryptionManager {
     }
 
     /// Homomorphic encryption for secure computation
-    pub async fn homomorphic_encrypt(&mut self, 
-        entry: &MemoryEntry, 
+    pub async fn homomorphic_encrypt(&mut self,
+        entry: &MemoryEntry,
         context: &SecurityContext
     ) -> Result<EncryptedMemoryEntry> {
         let start_time = std::time::Instant::now();
+
+        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
+            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        }
 
         let homomorphic_context = self.homomorphic_context.as_ref()
             .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
@@ -162,11 +179,15 @@ impl EncryptionManager {
     }
 
     /// Homomorphic decryption
-    pub async fn homomorphic_decrypt(&mut self, 
-        encrypted_entry: &EncryptedMemoryEntry, 
+    pub async fn homomorphic_decrypt(&mut self,
+        encrypted_entry: &EncryptedMemoryEntry,
         context: &SecurityContext
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
+
+        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
+            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        }
 
         let homomorphic_context = self.homomorphic_context.as_ref()
             .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
@@ -191,6 +212,10 @@ impl EncryptionManager {
         context: &SecurityContext
     ) -> Result<EncryptedComputationResult> {
         let start_time = std::time::Instant::now();
+
+        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
+            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        }
 
         let homomorphic_context = self.homomorphic_context.as_ref()
             .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
@@ -239,17 +264,18 @@ impl EncryptionManager {
 
     // Private helper methods
 
-    async fn get_or_generate_key(&mut self, user_id: &str, algorithm: &str) -> Result<EncryptionKey> {
-        let key_id = format!("{}:{}", user_id, algorithm);
-        
+    async fn get_or_generate_key(&mut self, context: &SecurityContext, algorithm: &str) -> Result<EncryptionKey> {
+        let key_id = format!("{}:{}", context.user_id, algorithm);
+
         if let Some(key) = self.key_cache.get(&key_id) {
             return Ok(key.clone());
         }
 
-        // Generate new key
-        let key_data = self.generate_random_bytes(32)?; // 256-bit key
+        // Generate new key using key manager
+        let data_key_id = self.key_manager.generate_data_key("default").await?;
+        let key_data = self.key_manager.get_data_key(&data_key_id).await?;
         let key = EncryptionKey {
-            id: key_id.clone(),
+            id: data_key_id.clone(),
             data: key_data,
             algorithm: algorithm.to_string(),
             created_at: Utc::now(),
@@ -260,10 +286,25 @@ impl EncryptionManager {
         Ok(key)
     }
 
-    async fn get_key(&self, key_id: &str) -> Result<EncryptionKey> {
-        self.key_cache.get(key_id)
-            .cloned()
-            .ok_or_else(|| MemoryError::encryption(format!("Key not found: {}", key_id)))
+    async fn get_key(&mut self, key_id: &str, context: &SecurityContext) -> Result<EncryptionKey> {
+        if let Some(key) = self.key_cache.get(key_id) {
+            return Ok(key.clone());
+        }
+
+        // Attempt to retrieve key from key manager
+        let key_bytes = self.key_manager.get_data_key(key_id).await?;
+        let info = self.key_manager.get_key_info(key_id).await?;
+
+        let key = EncryptionKey {
+            id: info.id,
+            data: key_bytes,
+            algorithm: info.algorithm,
+            created_at: info.created_at,
+            expires_at: info.expires_at,
+        };
+
+        self.key_cache.insert(key_id.to_string(), key.clone());
+        Ok(key)
     }
 
     fn generate_random_bytes(&self, length: usize) -> Result<Vec<u8>> {
