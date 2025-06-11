@@ -23,6 +23,19 @@ pub struct AccessPrediction {
     pub reasoning: String,
 }
 
+/// Prediction for upcoming search queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchPrediction {
+    /// Query text expected in the future
+    pub query: String,
+    /// When the query is likely to occur
+    pub predicted_time: DateTime<Utc>,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+    /// Reasoning behind the prediction
+    pub reasoning: String,
+}
+
 /// Usage trend analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageTrend {
@@ -261,6 +274,12 @@ pub struct PredictiveAnalytics {
     patterns: HashMap<String, AccessPattern>,
     /// Recent predictions made
     predictions: Vec<AccessPrediction>,
+    /// Search query patterns
+    search_patterns: HashMap<String, AccessPattern>,
+    /// Record of recent search queries
+    search_history: VecDeque<(String, DateTime<Utc>)>,
+    /// Predictions for upcoming searches
+    search_predictions: Vec<SearchPrediction>,
     /// Usage trends
     trends: HashMap<String, UsageTrend>,
     /// Caching recommendations
@@ -274,6 +293,9 @@ impl PredictiveAnalytics {
             config: config.clone(),
             patterns: HashMap::new(),
             predictions: Vec::new(),
+            search_patterns: HashMap::new(),
+            search_history: VecDeque::new(),
+            search_predictions: Vec::new(),
             trends: HashMap::new(),
             cache_recommendations: Vec::new(),
         })
@@ -314,9 +336,30 @@ impl PredictiveAnalytics {
     }
 
     /// Analyze search patterns for predictive insights
-    async fn analyze_search_pattern(&mut self, _query: String, _timestamp: DateTime<Utc>, _response_time_ms: u64) -> Result<()> {
-        // TODO: Implement search pattern analysis
-        // This could predict future search queries based on patterns
+    async fn analyze_search_pattern(&mut self, query: String, timestamp: DateTime<Utc>, _response_time_ms: u64) -> Result<()> {
+        // Record search history
+        self.search_history.push_back((query.clone(), timestamp));
+        if self.search_history.len() > 100 {
+            self.search_history.pop_front();
+        }
+
+        // Track occurrences for this query
+        let pattern = self
+            .search_patterns
+            .entry(query.clone())
+            .or_insert_with(|| AccessPattern::new(query.clone()));
+        pattern.add_access(timestamp, AccessType::Search);
+
+        // Generate prediction if the pattern is strong enough
+        if let Some(pred) = pattern.predict_next_access(self.config.prediction_threshold) {
+            self.search_predictions.push(SearchPrediction {
+                query: query.clone(),
+                predicted_time: pred.predicted_time,
+                confidence: pred.confidence,
+                reasoning: pred.reasoning,
+            });
+        }
+
         Ok(())
     }
 
@@ -506,6 +549,11 @@ impl PredictiveAnalytics {
         &self.predictions
     }
 
+    /// Get search query predictions
+    pub fn get_search_predictions(&self) -> &[SearchPrediction] {
+        &self.search_predictions
+    }
+
     /// Get usage trends
     pub fn get_trends(&self) -> &HashMap<String, UsageTrend> {
         &self.trends
@@ -564,6 +612,25 @@ mod tests {
 
         // Should have generated some predictions
         assert!(!analytics.predictions.is_empty() || analytics.patterns.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_search_prediction_generation() {
+        let config = AnalyticsConfig::default();
+        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+
+        let base_time = Utc::now();
+        for i in 0..5 {
+            let event = AnalyticsEvent::SearchQuery {
+                query: "test search".to_string(),
+                results_count: 2,
+                timestamp: base_time + Duration::hours(i),
+                response_time_ms: 20,
+            };
+            analytics.process_event(&event).await.unwrap();
+        }
+
+        assert!(!analytics.get_search_predictions().is_empty());
     }
 
     #[tokio::test]
