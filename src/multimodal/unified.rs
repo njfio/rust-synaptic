@@ -10,19 +10,19 @@ use super::{
     image::ImageMemoryProcessor,
     ContentType, MultiModalMemory, MultiModalProcessor, MultiModalResult,
 };
-use crate::error::SynapticError;
+use crate::error::MemoryError as SynapticError;
 use crate::memory::types::MemoryId;
 use crate::AgentMemory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::sync::RwLock;
 
 /// Unified multi-modal memory manager
 #[derive(Debug)]
 pub struct UnifiedMultiModalMemory {
-    /// Core memory system
-    core_memory: Arc<RwLock<AgentMemory>>,
+    /// Core memory system (weak reference to avoid cycles)
+    core_memory: Weak<RwLock<AgentMemory>>,
     
     /// Image processor
     #[cfg(feature = "image-memory")]
@@ -164,7 +164,7 @@ impl UnifiedMultiModalMemory {
         let cross_modal_analyzer = CrossModalAnalyzer::new(config.cross_modal_config.clone());
 
         Ok(Self {
-            core_memory,
+            core_memory: Arc::downgrade(&core_memory),
             #[cfg(feature = "image-memory")]
             image_processor,
             #[cfg(feature = "audio-memory")]
@@ -204,7 +204,11 @@ impl UnifiedMultiModalMemory {
 
         // Store reference in core memory
         {
-            let mut core = self.core_memory.write().await;
+            let core_arc = self
+                .core_memory
+                .upgrade()
+                .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
+            let mut core = core_arc.write().await;
             core.store(key, &format!("multimodal:{}", memory.id)).await
                 .map_err(|e| SynapticError::ProcessingError(format!("Failed to store in core memory: {}", e)))?;
         }
@@ -221,7 +225,11 @@ impl UnifiedMultiModalMemory {
     pub async fn retrieve_multimodal(&self, key: &str) -> MultiModalResult<Option<MultiModalMemory>> {
         // Get reference from core memory
         let core_value = {
-            let core = self.core_memory.read().await;
+            let core_arc = self
+                .core_memory
+                .upgrade()
+                .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
+            let core = core_arc.read().await;
             core.retrieve(key).await
                 .map_err(|e| SynapticError::ProcessingError(format!("Failed to retrieve from core memory: {}", e)))?
         };
@@ -304,7 +312,11 @@ impl UnifiedMultiModalMemory {
     pub async fn delete_multimodal(&self, key: &str) -> MultiModalResult<bool> {
         // Get memory ID from core memory
         let core_value = {
-            let core = self.core_memory.read().await;
+            let core_arc = self
+                .core_memory
+                .upgrade()
+                .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
+            let core = core_arc.read().await;
             core.retrieve(key).await
                 .map_err(|e| SynapticError::ProcessingError(format!("Failed to retrieve from core memory: {}", e)))?
         };
@@ -319,7 +331,11 @@ impl UnifiedMultiModalMemory {
 
                 // Remove from core memory
                 {
-                    let mut core = self.core_memory.write().await;
+                    let core_arc = self
+                        .core_memory
+                        .upgrade()
+                        .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
+                    let mut core = core_arc.write().await;
                     core.delete(key).await
                         .map_err(|e| SynapticError::ProcessingError(format!("Failed to delete from core memory: {}", e)))?;
                 }
