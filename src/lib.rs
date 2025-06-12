@@ -178,21 +178,6 @@ impl AgentMemory {
             None
         };
 
-        // Initialize multimodal memory if enabled
-        #[cfg(feature = "multimodal")]
-        let multimodal_memory = if config.enable_multimodal {
-            let multimodal_config = config.multimodal_config.clone().unwrap_or_default();
-            let core_memory = std::sync::Arc::new(tokio::sync::RwLock::new(
-                // We'll need to create a temporary AgentMemory for this - this is a circular dependency
-                // In a real implementation, we'd restructure to avoid this
-                // For now, we'll initialize it as None and set it up later
-                None
-            ));
-            None // Placeholder
-        } else {
-            None
-        };
-
         // Initialize cross-platform manager if enabled
         #[cfg(feature = "cross-platform")]
         let cross_platform_manager = if config.enable_cross_platform {
@@ -202,8 +187,9 @@ impl AgentMemory {
             None
         };
 
-        Ok(Self {
-            config,
+        // Build base agent without multimodal memory initialized
+        let mut agent = Self {
+            config: config.clone(),
             state,
             storage,
             checkpoint_manager,
@@ -219,10 +205,27 @@ impl AgentMemory {
             integration_manager,
             security_manager,
             #[cfg(feature = "multimodal")]
-            multimodal_memory,
+            multimodal_memory: None,
             #[cfg(feature = "cross-platform")]
             cross_platform_manager,
-        })
+        };
+
+        // Initialize multimodal memory after creating base agent to avoid circular dependency
+        #[cfg(feature = "multimodal")]
+        if config.enable_multimodal {
+            let multimodal_config = config.multimodal_config.clone().unwrap_or_default();
+            let agent_arc = std::sync::Arc::new(tokio::sync::RwLock::new(agent));
+            let mm = multimodal::unified::UnifiedMultiModalMemory::new(agent_arc.clone(), multimodal_config).await?;
+            {
+                let mut guard = agent_arc.write().await;
+                guard.multimodal_memory = Some(std::sync::Arc::new(tokio::sync::RwLock::new(mm)));
+            }
+            agent = std::sync::Arc::try_unwrap(agent_arc)
+                .map_err(|_| MemoryError::concurrency("Failed to unwrap Arc during initialization"))?
+                .into_inner();
+        }
+
+        Ok(agent)
     }
 
     /// Store a memory entry with intelligent updating
@@ -483,6 +486,12 @@ impl AgentMemory {
         } else {
             None
         }
+
+    /// Check if the multi-modal subsystem is initialized
+    #[cfg(feature = "multimodal")]
+    pub fn multimodal_enabled(&self) -> bool {
+        self.multimodal_memory.is_some()
+
     }
 }
 

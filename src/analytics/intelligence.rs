@@ -281,9 +281,20 @@ impl MemoryIntelligenceEngine {
             0.0
         };
         
-        // Clustering coefficient (simplified)
+        // Clustering coefficient based on relationship strength connectivity
         let clustering_coefficient = if direct_relationships > 1 {
-            0.5 // Placeholder calculation
+            let pair_count = (direct_relationships * (direct_relationships - 1) / 2) as f64;
+
+            let mut sum_strength = 0.0;
+            for i in 0..relationships.len() {
+                let s1 = relationships[i].1;
+                for j in (i + 1)..relationships.len() {
+                    let s2 = relationships[j].1;
+                    sum_strength += s1 * s2;
+                }
+            }
+
+            (sum_strength / pair_count).min(1.0)
         } else {
             0.0
         };
@@ -423,16 +434,66 @@ impl MemoryIntelligenceEngine {
 
     /// Recognize content similarity patterns
     async fn recognize_content_patterns(&self) -> Result<Vec<PatternRecognition>> {
-        // Placeholder for content similarity pattern recognition
-        // This would analyze memory content for similar themes, topics, or structures
-        Ok(Vec::new())
+        let mut groups: HashMap<&str, Vec<String>> = HashMap::new();
+
+        for (key, intel) in &self.intelligence_cache {
+            let bucket = if intel.content_intelligence.semantic_richness > 0.7 {
+                "high"
+            } else if intel.content_intelligence.semantic_richness < 0.3 {
+                "low"
+            } else {
+                "medium"
+            };
+
+            groups.entry(bucket).or_insert_with(Vec::new).push(key.clone());
+        }
+
+        let mut patterns = Vec::new();
+        for (bucket, keys) in groups {
+            if keys.len() > 1 {
+                let pattern = PatternRecognition {
+                    pattern_id: Uuid::new_v4().to_string(),
+                    pattern_type: PatternType::ContentSimilarity,
+                    description: format!("{} memories share {} semantic richness", keys.len(), bucket),
+                    confidence: (keys.len() as f64 / 5.0).min(1.0),
+                    affected_memories: keys,
+                    strength: 0.6,
+                    discovered_at: Utc::now(),
+                };
+                patterns.push(pattern);
+            }
+        }
+
+        Ok(patterns)
     }
 
     /// Recognize user behavior patterns
     async fn recognize_user_patterns(&self) -> Result<Vec<PatternRecognition>> {
-        // Placeholder for user behavior pattern recognition
-        // This would analyze user access patterns, preferences, and behaviors
-        Ok(Vec::new())
+        let mut user_access: HashMap<String, usize> = HashMap::new();
+
+        for event in &self.analysis_history {
+            if let AnalyticsEvent::MemoryAccess { user_context: Some(user), .. } = event {
+                *user_access.entry(user.clone()).or_insert(0) += 1;
+            }
+        }
+
+        let mut patterns = Vec::new();
+        for (user, count) in user_access {
+            if count > 5 {
+                let pattern = PatternRecognition {
+                    pattern_id: Uuid::new_v4().to_string(),
+                    pattern_type: PatternType::UserBehavior,
+                    description: format!("User {} accessed memories {} times", user, count),
+                    confidence: (count as f64 / 20.0).min(1.0),
+                    affected_memories: Vec::new(),
+                    strength: 0.7,
+                    discovered_at: Utc::now(),
+                };
+                patterns.push(pattern);
+            }
+        }
+
+        Ok(patterns)
     }
 
     /// Detect anomalies in memory system
@@ -495,16 +556,69 @@ impl MemoryIntelligenceEngine {
 
     /// Detect performance anomalies
     async fn detect_performance_anomalies(&self) -> Result<Vec<AnomalyDetection>> {
-        // Placeholder for performance anomaly detection
-        // This would monitor response times, throughput, and resource usage
-        Ok(Vec::new())
+        let mut anomalies = Vec::new();
+        let recent_threshold = Utc::now() - Duration::hours(1);
+
+        let mut total_time = 0.0;
+        let mut count = 0;
+
+        for event in &self.analysis_history {
+            if let AnalyticsEvent::SearchQuery { response_time_ms, timestamp, .. } = event {
+                if *timestamp > recent_threshold {
+                    total_time += *response_time_ms as f64;
+                    count += 1;
+                }
+            }
+        }
+
+        if count > 0 {
+            let avg_recent = total_time / count as f64;
+            let baseline = *self.baseline_metrics.get("avg_response_time_ms").unwrap_or(&100.0);
+            if avg_recent > baseline * 2.0 {
+                anomalies.push(AnomalyDetection {
+                    anomaly_id: Uuid::new_v4().to_string(),
+                    anomaly_type: AnomalyType::Performance,
+                    severity: AnomalySeverity::Medium,
+                    description: format!("Average response time spiked to {:.2}ms", avg_recent),
+                    affected_component: "query_engine".to_string(),
+                    anomaly_score: avg_recent / baseline,
+                    detected_at: Utc::now(),
+                    recommended_actions: vec![
+                        "Investigate slow queries".to_string(),
+                        "Scale resources".to_string(),
+                    ],
+                });
+            }
+        }
+
+        Ok(anomalies)
     }
 
     /// Detect content anomalies
     async fn detect_content_anomalies(&self) -> Result<Vec<AnomalyDetection>> {
-        // Placeholder for content anomaly detection
-        // This would detect unusual content patterns, corrupted data, or inconsistencies
-        Ok(Vec::new())
+        let mut anomalies = Vec::new();
+
+        for event in &self.analysis_history {
+            if let AnalyticsEvent::MemoryModification { memory_key, change_magnitude, timestamp, .. } = event {
+                if *change_magnitude > 0.9 {
+                    anomalies.push(AnomalyDetection {
+                        anomaly_id: Uuid::new_v4().to_string(),
+                        anomaly_type: AnomalyType::ContentAnomaly,
+                        severity: AnomalySeverity::High,
+                        description: format!("Large modification detected for {}", memory_key),
+                        affected_component: memory_key.clone(),
+                        anomaly_score: *change_magnitude,
+                        detected_at: *timestamp,
+                        recommended_actions: vec![
+                            "Review recent changes".to_string(),
+                            "Verify data integrity".to_string(),
+                        ],
+                    });
+                }
+            }
+        }
+
+        Ok(anomalies)
     }
 
     /// Update baseline metrics
@@ -519,6 +633,20 @@ impl MemoryIntelligenceEngine {
             let time_span_hours = 24.0; // Assume 24 hours of data
             let hourly_access_rate = total_accesses as f64 / time_span_hours;
             self.baseline_metrics.insert("hourly_accesses".to_string(), hourly_access_rate);
+
+            let (mut total_rt, mut rt_count) = (0.0, 0);
+            for event in &self.analysis_history {
+                if let AnalyticsEvent::SearchQuery { response_time_ms, .. } = event {
+                    total_rt += *response_time_ms as f64;
+                    rt_count += 1;
+                }
+            }
+            if rt_count > 0 {
+                self.baseline_metrics.insert(
+                    "avg_response_time_ms".to_string(),
+                    total_rt / rt_count as f64,
+                );
+            }
         }
 
         Ok(())
@@ -650,8 +778,7 @@ mod tests {
         }
 
         let patterns = engine.recognize_patterns().await.unwrap();
-        // Should not error, patterns may be empty initially
-        assert!(patterns.len() >= 0);
+        assert!(patterns.len() > 0);
     }
 
     #[tokio::test]
@@ -674,8 +801,8 @@ mod tests {
         }
 
         let anomalies = engine.detect_anomalies().await.unwrap();
-        // Should detect the spike in access patterns
-        assert!(anomalies.len() >= 0);
+        assert!(!anomalies.is_empty());
+        assert!(anomalies.iter().any(|a| a.anomaly_type == AnomalyType::AccessPattern));
     }
 
     #[tokio::test]
@@ -694,6 +821,18 @@ mod tests {
             discovered_at: Utc::now(),
         };
         engine.patterns.push(pattern);
+
+        // Also add an anomaly for insight generation
+        engine.anomalies.push(AnomalyDetection {
+            anomaly_id: Uuid::new_v4().to_string(),
+            anomaly_type: AnomalyType::AccessPattern,
+            severity: AnomalySeverity::High,
+            description: "test anomaly".to_string(),
+            affected_component: "test".to_string(),
+            anomaly_score: 2.0,
+            detected_at: Utc::now(),
+            recommended_actions: vec!["noop".to_string()],
+        });
 
         let insights = engine.generate_insights().await.unwrap();
         assert!(insights.len() > 0);

@@ -52,6 +52,8 @@ dashmap = "5.5"
 parking_lot = "0.12"
 tokio-tungstenite = { version = "0.20", optional = true }
 futures-util = { version = "0.3", optional = true }
+diff = "0.1"
+lz4_flex = "0.11"
 
 # Concurrency (already included above)
 
