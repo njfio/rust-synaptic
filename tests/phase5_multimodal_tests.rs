@@ -219,6 +219,35 @@ async fn test_code_complexity_metrics() {
     assert!(metrics.maintainability_index >= 0.0);
 }
 
+#[cfg(feature = "code-memory")]
+#[tokio::test]
+async fn test_code_function_extraction() {
+    let mut processor = CodeMemoryProcessor::new(Default::default()).unwrap();
+
+    let code = r#"
+        fn add(a: i32, b: i32) -> i32 {
+            a + b
+        }
+
+        fn main() {
+            let _ = add(1, 2);
+        }
+    "#;
+
+    let tree = processor
+        .parse_code(code, &CodeLanguage::Rust)
+        .unwrap()
+        .expect("failed to parse code");
+
+    let funcs = processor
+        .extract_functions(&tree, code, &CodeLanguage::Rust)
+        .unwrap();
+
+    let names: Vec<_> = funcs.iter().map(|f| f.name.clone()).collect();
+    assert!(names.contains(&"add".to_string()));
+    assert!(names.contains(&"main".to_string()));
+}
+
 #[cfg(feature = "multimodal")]
 #[tokio::test]
 async fn test_cross_modal_analyzer() {

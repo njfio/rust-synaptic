@@ -504,8 +504,42 @@ impl MultiModalProcessor for CodeMemoryProcessor {
             )));
         }
 
-        // Parse code and extract functions (requires mutable self)
-        let functions = vec![]; // Placeholder - would need mutable self
+        // Parse code and extract functions
+        #[cfg(feature = "code-memory")]
+        let functions = {
+            if self.config.enable_syntax_analysis && self.config.enable_function_analysis {
+                let mut parser = Parser::new();
+
+                let ts_lang_opt = match &language {
+                    #[cfg(feature = "tree-sitter-rust")]
+                    CodeLanguage::Rust => Some(unsafe { tree_sitter_rust() }),
+                    #[cfg(feature = "tree-sitter-python")]
+                    CodeLanguage::Python => Some(unsafe { tree_sitter_python() }),
+                    #[cfg(feature = "tree-sitter-javascript")]
+                    CodeLanguage::JavaScript => Some(unsafe { tree_sitter_javascript() }),
+                    _ => None,
+                };
+
+                if let Some(ts_lang) = ts_lang_opt {
+                    if parser.set_language(ts_lang).is_ok() {
+                        if let Some(tree) = parser.parse(&code_content, None) {
+                            self.extract_functions(&tree, &code_content, &language)?
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
+        };
+
+        #[cfg(not(feature = "code-memory"))]
+        let functions = Vec::new();
         
         // Calculate complexity metrics
         let complexity_metrics = self.calculate_complexity_metrics(&code_content, &functions);
