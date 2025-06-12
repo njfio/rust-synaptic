@@ -303,6 +303,21 @@ impl TemporalMemoryManager {
         })
     }
 
+    /// Get differential analysis metrics
+    pub fn get_diff_metrics(&self) -> DiffMetrics {
+        self.diff_analyzer.get_metrics()
+    }
+
+    /// Get global evolution metrics
+    pub async fn get_global_evolution_metrics(&self) -> Result<GlobalEvolutionMetrics> {
+        self.evolution_tracker.get_global_metrics().await
+    }
+
+    /// Get evolution metrics for a specific memory
+    pub async fn get_evolution_metrics(&self, memory_key: &str) -> Result<EvolutionMetrics> {
+        self.evolution_tracker.get_metrics(memory_key).await
+    }
+
     /// Calculate temporal summary statistics
     pub fn calculate_temporal_summary(
         &self,

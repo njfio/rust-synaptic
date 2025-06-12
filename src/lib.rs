@@ -245,6 +245,18 @@ impl AgentMemory {
             let _ = tm.track_memory_change(&entry, change_type).await;
         }
 
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            use crate::analytics::{AnalyticsEvent, ModificationType};
+            let event = AnalyticsEvent::MemoryModification {
+                memory_key: key.to_string(),
+                modification_type: ModificationType::ContentUpdate,
+                timestamp: Utc::now(),
+                change_magnitude: 1.0,
+            };
+            let _ = analytics.record_event(event).await;
+        }
+
         // Add or update in knowledge graph if enabled (intelligent merging)
         if let Some(ref mut kg) = self.knowledge_graph {
             let _ = kg.add_or_update_memory_node(&entry).await;
@@ -275,11 +287,36 @@ impl AgentMemory {
     pub async fn retrieve(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
         // First check short-term memory
         if let Some(entry) = self.state.get_memory(key) {
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
+                use crate::analytics::{AnalyticsEvent, AccessType};
+                let event = AnalyticsEvent::MemoryAccess {
+                    memory_key: key.to_string(),
+                    access_type: AccessType::Read,
+                    timestamp: Utc::now(),
+                    user_context: None,
+                };
+                let _ = analytics.record_event(event).await;
+            }
             return Ok(Some(entry.clone()));
         }
 
         // Then check storage
-        self.storage.retrieve(key).await
+        let result = self.storage.retrieve(key).await?;
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            if result.is_some() {
+                use crate::analytics::{AnalyticsEvent, AccessType};
+                let event = AnalyticsEvent::MemoryAccess {
+                    memory_key: key.to_string(),
+                    access_type: AccessType::Read,
+                    timestamp: Utc::now(),
+                    user_context: None,
+                };
+                let _ = analytics.record_event(event).await;
+            }
+        }
+        Ok(result)
     }
 
     /// Search memories by content similarity
@@ -352,6 +389,19 @@ impl AgentMemory {
                 relationship_type,
                 None,
             ).await?;
+
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
+                use crate::analytics::AnalyticsEvent;
+                let event = AnalyticsEvent::RelationshipDiscovery {
+                    source_key: from_memory.to_string(),
+                    target_key: to_memory.to_string(),
+                    relationship_strength: 1.0,
+                    timestamp: Utc::now(),
+                };
+                let _ = analytics.record_event(event).await;
+            }
+
             Ok(Some(relationship_id))
         } else {
             Ok(None)
@@ -404,6 +454,35 @@ impl AgentMemory {
     #[cfg(feature = "embeddings")]
     pub fn embedding_stats(&self) -> Option<memory::embeddings::EmbeddingStats> {
         self.embedding_manager.as_ref().map(|em| em.get_stats())
+    }
+
+    /// Get analytics metrics (if enabled)
+    #[cfg(feature = "analytics")]
+    pub fn get_analytics_metrics(&self) -> Option<analytics::AnalyticsMetrics> {
+        self.analytics_engine.as_ref().map(|eng| eng.get_usage_stats())
+    }
+
+    /// Get temporal usage statistics (if enabled)
+    pub async fn get_temporal_usage_stats(&self) -> Option<memory::temporal::TemporalUsageStats> {
+        if let Some(ref tm) = self.temporal_manager {
+            tm.get_usage_stats().await.ok()
+        } else {
+            None
+        }
+    }
+
+    /// Get differential metrics from the temporal manager
+    pub fn get_temporal_diff_metrics(&self) -> Option<memory::temporal::DiffMetrics> {
+        self.temporal_manager.as_ref().map(|tm| tm.get_diff_metrics())
+    }
+
+    /// Get global evolution metrics from the temporal manager
+    pub async fn get_global_evolution_metrics(&self) -> Option<memory::temporal::GlobalEvolutionMetrics> {
+        if let Some(ref tm) = self.temporal_manager {
+            tm.get_global_evolution_metrics().await.ok()
+        } else {
+            None
+        }
     }
 }
 
