@@ -459,7 +459,27 @@ impl PatternDetector {
                 // Check if the evidence fits the weekly pattern
                 self.fits_weekly_pattern(evidence, pattern)
             }
-            _ => false, // TODO: Implement other pattern types
+            PatternType::Monthly => {
+                self.fits_monthly_pattern(evidence, pattern)
+            }
+            PatternType::Seasonal => {
+                self.fits_seasonal_pattern(evidence, pattern)
+            }
+            PatternType::Burst => {
+                self.fits_burst_pattern(evidence, pattern)
+            }
+            PatternType::GradualIncrease | PatternType::GradualDecrease => {
+                self.fits_gradual_pattern(evidence, pattern)
+            }
+            PatternType::Cyclical { period_hours } => {
+                self.fits_cyclical_pattern(evidence, pattern, period_hours)
+            }
+            PatternType::Irregular => {
+                self.fits_irregular_pattern(evidence, pattern)
+            }
+            PatternType::Custom(_) => {
+                self.fits_custom_pattern(evidence, pattern)
+            }
         }
     }
 
@@ -483,6 +503,67 @@ impl PatternDetector {
             }
         }
         false
+    }
+
+    /// Check if evidence fits a monthly pattern
+    fn fits_monthly_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        if let Some(day_str) = pattern.metadata.get("day_of_month") {
+            if let Ok(day) = day_str.parse::<u32>() {
+                return evidence.timestamp.day() == day;
+            }
+        }
+        false
+    }
+
+    /// Check if evidence fits a seasonal pattern
+    fn fits_seasonal_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        if let (Some(start_str), Some(end_str)) = (pattern.metadata.get("start_month"), pattern.metadata.get("end_month")) {
+            if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>()) {
+                let month = evidence.timestamp.month();
+                if start <= end {
+                    return month >= start && month <= end;
+                } else {
+                    // wraps around the year
+                    return month >= start || month <= end;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if evidence fits a burst pattern
+    fn fits_burst_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        pattern.time_range.contains(evidence.timestamp)
+    }
+
+    /// Check if evidence fits a gradual pattern (increase or decrease)
+    fn fits_gradual_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        pattern.time_range.contains(evidence.timestamp)
+    }
+
+    /// Check if evidence fits a cyclical pattern
+    fn fits_cyclical_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern, period_hours: u64) -> bool {
+        if period_hours == 0 {
+            return false;
+        }
+        let diff = evidence.timestamp - pattern.time_range.start;
+        let hours = diff.num_hours().abs() as u64;
+        hours % period_hours == 0
+    }
+
+    /// Check if evidence fits an irregular pattern
+    fn fits_irregular_pattern(&self, _evidence: &PatternEvidence, _pattern: &TemporalPattern) -> bool {
+        true
+    }
+
+    /// Check if evidence fits a custom pattern (simple metadata matching)
+    fn fits_custom_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+        if let Some(key) = pattern.metadata.get("memory_key") {
+            if key != &evidence.memory_key {
+                return false;
+            }
+        }
+        true
     }
 
     /// Recalculate pattern metrics for a specific pattern index
@@ -649,5 +730,129 @@ impl PatternDetector {
 impl Default for PatternDetector {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, NaiveDate};
+
+    fn dt(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
+        Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap())
+    }
+
+    fn evidence_at(ts: DateTime<Utc>) -> PatternEvidence {
+        PatternEvidence {
+            timestamp: ts,
+            memory_key: "m1".into(),
+            activity_type: ActivityType::Access,
+            strength: 1.0,
+        }
+    }
+
+    fn base_pattern(pt: PatternType, range: TimeRange, metadata: HashMap<String, String>) -> TemporalPattern {
+        TemporalPattern {
+            id: "p".into(),
+            pattern_type: pt,
+            strength: 1.0,
+            confidence: 1.0,
+            time_range: range,
+            description: String::new(),
+            evidence: Vec::new(),
+            metadata,
+        }
+    }
+
+    #[test]
+    fn supports_daily() {
+        let detector = PatternDetector::new();
+        let mut meta = HashMap::new();
+        meta.insert("hour_of_day".into(), "10".into());
+        let pattern = base_pattern(PatternType::Daily, TimeRange::last_days(1), meta);
+        let ev = evidence_at(dt(2024, 1, 1, 10));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_weekly() {
+        let detector = PatternDetector::new();
+        let mut meta = HashMap::new();
+        // 2 -> Wednesday
+        meta.insert("day_of_week".into(), "2".into());
+        let pattern = base_pattern(PatternType::Weekly, TimeRange::last_days(7), meta);
+        let ev = evidence_at(dt(2024, 1, 3, 12));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_monthly() {
+        let detector = PatternDetector::new();
+        let mut meta = HashMap::new();
+        meta.insert("day_of_month".into(), "15".into());
+        let pattern = base_pattern(PatternType::Monthly, TimeRange::last_days(30), meta);
+        let ev = evidence_at(dt(2024, 1, 15, 8));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_seasonal() {
+        let detector = PatternDetector::new();
+        let mut meta = HashMap::new();
+        meta.insert("start_month".into(), "3".into());
+        meta.insert("end_month".into(), "5".into());
+        let pattern = base_pattern(PatternType::Seasonal, TimeRange::last_days(365), meta);
+        let ev = evidence_at(dt(2024, 4, 1, 0));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_burst() {
+        let detector = PatternDetector::new();
+        let start = dt(2024, 1, 1, 0);
+        let range = TimeRange::new(start, start + Duration::hours(2));
+        let pattern = base_pattern(PatternType::Burst, range.clone(), HashMap::new());
+        let ev = evidence_at(start + Duration::hours(1));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_gradual() {
+        let detector = PatternDetector::new();
+        let start = dt(2024, 1, 1, 0);
+        let range = TimeRange::new(start, start + Duration::days(10));
+        let pattern = base_pattern(PatternType::GradualIncrease, range.clone(), HashMap::new());
+        let ev = evidence_at(start + Duration::days(5));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_cyclical() {
+        let detector = PatternDetector::new();
+        let start = dt(2024, 1, 1, 0);
+        let range = TimeRange::new(start, start + Duration::days(5));
+        let pattern = base_pattern(PatternType::Cyclical { period_hours: 24 }, range.clone(), HashMap::new());
+        let ev = evidence_at(start + Duration::hours(48));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_irregular() {
+        let detector = PatternDetector::new();
+        let start = dt(2024, 1, 1, 0);
+        let pattern = base_pattern(PatternType::Irregular, TimeRange::new(start, start + Duration::days(1)), HashMap::new());
+        let ev = evidence_at(start + Duration::hours(6));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
+    }
+
+    #[test]
+    fn supports_custom() {
+        let detector = PatternDetector::new();
+        let start = dt(2024, 1, 1, 0);
+        let mut meta = HashMap::new();
+        meta.insert("memory_key".into(), "m1".into());
+        let pattern = base_pattern(PatternType::Custom("x".into()), TimeRange::new(start, start + Duration::days(1)), meta);
+        let ev = evidence_at(start + Duration::hours(1));
+        assert!(detector.evidence_supports_pattern(&ev, &pattern));
     }
 }
