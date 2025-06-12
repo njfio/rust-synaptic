@@ -155,6 +155,8 @@ fn test_data_processing() {
         format: "CSV".to_string(),
         schema: None,
     });
+    assert!(result.processing_time_ms > 0);
+    assert!(result.processing_time_ms < 10_000);
     assert!(result.metadata.summary.is_some());
     assert!(result.metadata.summary.unwrap().contains("4 rows"));
     
@@ -168,6 +170,8 @@ fn test_data_processing() {
         format: "JSON".to_string(),
         schema: None,
     });
+    assert!(result.processing_time_ms > 0);
+    assert!(result.processing_time_ms < 10_000);
     
     // Test TSV file
     let tsv_path = temp_dir.path().join("test.tsv");
@@ -179,6 +183,8 @@ fn test_data_processing() {
         format: "TSV".to_string(),
         schema: None,
     });
+    assert!(result.processing_time_ms > 0);
+    assert!(result.processing_time_ms < 10_000);
 }
 
 /// Test batch directory processing

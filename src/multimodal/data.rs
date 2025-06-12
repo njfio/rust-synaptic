@@ -742,6 +742,7 @@ impl DataMemoryProcessor {
 #[async_trait::async_trait]
 impl MultiModalProcessor for DataMemoryProcessor {
     async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+        let start_time = std::time::Instant::now();
         if content.len() > self.config.max_file_size {
             return Err(SynapticError::ProcessingError(
                 format!("Data file size {} exceeds maximum {}", content.len(), self.config.max_file_size)
@@ -793,6 +794,8 @@ impl MultiModalProcessor for DataMemoryProcessor {
         let mut final_metadata = data_metadata;
         final_metadata.summary = summary;
 
+        let processing_time = start_time.elapsed().as_millis() as u64;
+
         // Create multi-modal metadata
         let metadata = MultiModalMetadata {
             title: Some(format!("Data file with {} rows", final_metadata.schema.row_count)),
@@ -800,7 +803,7 @@ impl MultiModalProcessor for DataMemoryProcessor {
             tags: final_metadata.schema.data_types.clone(),
             quality_score: final_metadata.quality_score,
             confidence: 0.9,
-            processing_time_ms: 200, // Placeholder
+            processing_time_ms: processing_time,
             extracted_features: HashMap::new(),
         };
 
