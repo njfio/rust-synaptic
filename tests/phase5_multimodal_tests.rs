@@ -401,3 +401,14 @@ async fn test_phase5_memory_config_integration() {
     assert_eq!(stats.short_term_count, 0);
     assert_eq!(stats.long_term_count, 0);
 }
+
+#[cfg(feature = "multimodal")]
+#[tokio::test]
+async fn test_enable_multimodal_initialization() {
+    let mut config = MemoryConfig::default();
+    config.enable_multimodal = true;
+    config.multimodal_config = Some(UnifiedMultiModalConfig::default());
+
+    let memory = AgentMemory::new(config).await.unwrap();
+    assert!(memory.multimodal_enabled());
+}
