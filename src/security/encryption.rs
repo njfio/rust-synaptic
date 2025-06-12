@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use aes_gcm::{Aes256Gcm, Key};
+use aes_gcm::aead::{Aead, KeyInit, Payload, generic_array::GenericArray};
 
 /// Encryption manager for advanced cryptographic operations
 #[derive(Debug)]
@@ -308,33 +312,32 @@ impl EncryptionManager {
     }
 
     fn generate_random_bytes(&self, length: usize) -> Result<Vec<u8>> {
-        // In production, use a cryptographically secure random number generator
         let mut bytes = vec![0u8; length];
-        for i in 0..length {
-            bytes[i] = (i * 17 + 42) as u8; // Deterministic for testing
-        }
+        OsRng.fill_bytes(&mut bytes);
         Ok(bytes)
     }
 
     fn aes_gcm_encrypt(&self, plaintext: &[u8], key: &[u8], iv: &[u8], salt: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
-        // Simulated AES-GCM encryption
-        // In production, use a real cryptographic library like ring or openssl
-        let mut ciphertext = plaintext.to_vec();
-        for (i, byte) in ciphertext.iter_mut().enumerate() {
-            *byte ^= key[i % key.len()] ^ iv[i % iv.len()] ^ salt[i % salt.len()];
-        }
-        
-        let auth_tag = vec![0xAA, 0xBB, 0xCC, 0xDD]; // Simulated auth tag
-        Ok((ciphertext, auth_tag))
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+        let nonce = GenericArray::from_slice(iv);
+        let encrypted = cipher
+            .encrypt(nonce, Payload { msg: plaintext, aad: salt })
+            .map_err(|_| MemoryError::encryption("AES-GCM encryption failed"))?;
+        let tag = encrypted[encrypted.len() - 16..].to_vec();
+        let ciphertext = encrypted[..encrypted.len() - 16].to_vec();
+        Ok((ciphertext, tag))
     }
 
-    fn aes_gcm_decrypt(&self, ciphertext: &[u8], key: &[u8], iv: &[u8], salt: &[u8], _auth_tag: &[u8]) -> Result<Vec<u8>> {
-        // Simulated AES-GCM decryption (reverse of encryption)
-        let mut plaintext = ciphertext.to_vec();
-        for (i, byte) in plaintext.iter_mut().enumerate() {
-            *byte ^= key[i % key.len()] ^ iv[i % iv.len()] ^ salt[i % salt.len()];
-        }
-        Ok(plaintext)
+    fn aes_gcm_decrypt(&self, ciphertext: &[u8], key: &[u8], iv: &[u8], salt: &[u8], auth_tag: &[u8]) -> Result<Vec<u8>> {
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+        let nonce = GenericArray::from_slice(iv);
+        let mut combined = Vec::with_capacity(ciphertext.len() + auth_tag.len());
+        combined.extend_from_slice(ciphertext);
+        combined.extend_from_slice(auth_tag);
+        let decrypted = cipher
+            .decrypt(nonce, Payload { msg: &combined, aad: salt })
+            .map_err(|_| MemoryError::encryption("AES-GCM decryption failed"))?;
+        Ok(decrypted)
     }
 
     fn extract_numeric_features(&self, entry: &MemoryEntry) -> Result<Vec<f64>> {
