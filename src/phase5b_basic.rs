@@ -83,6 +83,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use std::io::Read;
+use pdf_extract;
+use zip::read::ZipArchive;
+use quick_xml::Reader;
+use quick_xml::events::Event;
 
 /// Basic document and data memory manager for Phase 5B
 pub struct BasicDocumentDataManager {
@@ -585,12 +590,32 @@ impl BasicDocumentDataManager {
     fn extract_document_content(&self, content: &[u8], format: &str) -> Result<(String, ProcessingMetadata), SynapticError> {
         let text = match format {
             "PDF" => {
-                // Basic PDF text extraction (in real implementation, use pdf crate)
-                "PDF content extraction not implemented in basic version".to_string()
+                pdf_extract::extract_text_from_mem(content)
+                    .map_err(|e| SynapticError::storage(format!("Failed to extract PDF text: {e}")))?
             }
             "Word" => {
-                // Basic DOCX text extraction (in real implementation, use docx crate)
-                "Word document content extraction not implemented in basic version".to_string()
+                let mut archive = zip::ZipArchive::new(std::io::Cursor::new(content))
+                    .map_err(|e| SynapticError::storage(format!("Failed to open DOCX archive: {e}")))?;
+                let mut doc_xml = String::new();
+                archive
+                    .by_name("word/document.xml")
+                    .map_err(|e| SynapticError::storage(format!("DOCX missing document.xml: {e}")))?
+                    .read_to_string(&mut doc_xml)
+                    .map_err(|e| SynapticError::storage(format!("Failed to read DOCX XML: {e}")))?;
+                let mut reader = quick_xml::Reader::from_str(&doc_xml);
+                reader.trim_text(true);
+                let mut buf = Vec::new();
+                let mut t = String::new();
+                loop {
+                    match reader.read_event_into(&mut buf) {
+                        Ok(quick_xml::events::Event::Text(e)) => t.push_str(&e.unescape().unwrap_or_default()),
+                        Ok(quick_xml::events::Event::Eof) => break,
+                        Ok(_) => {}
+                        Err(e) => return Err(SynapticError::storage(format!("Failed to parse DOCX XML: {e}"))),
+                    }
+                    buf.clear();
+                }
+                t
             }
             "Markdown" => {
                 let markdown_text = String::from_utf8_lossy(content);

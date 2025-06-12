@@ -5,6 +5,7 @@
 use synaptic::phase5b_basic::*;
 use std::fs;
 use tempfile::TempDir;
+use base64;
 
 /// Test basic document manager creation and configuration
 #[test]
@@ -111,6 +112,28 @@ fn test_document_processing() {
     assert!(result.success);
     assert_eq!(result.content_type, ContentType::Document {
         format: "HTML".to_string(),
+        language: Some("en".to_string()),
+    });
+
+    // Test PDF file
+    let pdf_bytes = base64::decode(include_str!("assets/sample.pdf.base64").replace('\n', "")).unwrap();
+    let pdf_path = temp_dir.path().join("test.pdf");
+    fs::write(&pdf_path, pdf_bytes).unwrap();
+    let result = manager.process_file(&pdf_path).unwrap();
+    assert!(result.success);
+    assert_eq!(result.content_type, ContentType::Document {
+        format: "PDF".to_string(),
+        language: Some("en".to_string()),
+    });
+
+    // Test DOCX file
+    let docx_bytes = base64::decode(include_str!("assets/sample.docx.base64").replace('\n', "")).unwrap();
+    let docx_path = temp_dir.path().join("test.docx");
+    fs::write(&docx_path, docx_bytes).unwrap();
+    let result = manager.process_file(&docx_path).unwrap();
+    assert!(result.success);
+    assert_eq!(result.content_type, ContentType::Document {
+        format: "Word".to_string(),
         language: Some("en".to_string()),
     });
 }
