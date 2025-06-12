@@ -38,6 +38,49 @@ async fn test_image_memory_processor() {
     assert_eq!(format, ImageFormat::Jpeg);
 }
 
+#[cfg(all(feature = "image-memory", feature = "tesseract"))]
+#[tokio::test]
+async fn test_image_ocr_extraction() {
+    use image::{ImageBuffer, Rgba};
+
+    let processor = ImageMemoryProcessor::new(Default::default()).unwrap();
+
+    // Create simple image with block letters "HI"
+    let mut img = ImageBuffer::from_pixel(60, 20, Rgba([255, 255, 255, 255]));
+    let black = Rgba([0, 0, 0, 255]);
+    for y in 0..20 {
+        img.put_pixel(5, y, black);
+        img.put_pixel(15, y, black);
+        img.put_pixel(25, y, black);
+    }
+    for x in 5..15 {
+        img.put_pixel(x, 10, black);
+    }
+
+    let mut bytes = Vec::new();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageOutputFormat::Png)
+        .unwrap();
+
+    let memory = processor
+        .process(
+            &bytes,
+            &ContentType::Image {
+                format: ImageFormat::Png,
+                width: 60,
+                height: 20,
+            },
+        )
+        .await
+        .unwrap();
+
+    if let ContentSpecificMetadata::Image { text_regions, .. } = memory.metadata.content_specific {
+        assert!(!text_regions.is_empty());
+    } else {
+        panic!("Expected image metadata");
+    }
+}
+
 #[cfg(feature = "audio-memory")]
 #[tokio::test]
 async fn test_audio_memory_processor() {

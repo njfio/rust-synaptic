@@ -22,7 +22,10 @@ use {
 };
 
 #[cfg(all(feature = "image-memory", feature = "tesseract"))]
-use tesseract::Tesseract;
+use {
+    std::sync::Mutex,
+    tesseract::Tesseract,
+};
 
 #[cfg(all(feature = "image-memory", feature = "opencv"))]
 use opencv::{
@@ -37,7 +40,7 @@ use opencv::{
 pub struct ImageMemoryProcessor {
     /// OCR engine for text extraction
     #[cfg(feature = "tesseract")]
-    ocr_engine: Option<Tesseract>,
+    ocr_engine: Option<Mutex<Tesseract>>,
     
     /// Object detection models
     #[cfg(feature = "opencv")]
@@ -106,10 +109,10 @@ impl ImageMemoryProcessor {
         // Initialize OCR engine
         #[cfg(feature = "tesseract")]
         if processor.config.enable_ocr {
-            processor.ocr_engine = Some(
+            processor.ocr_engine = Some(Mutex::new(
                 Tesseract::new(None, Some("eng"))
                     .map_err(|e| SynapticError::ProcessingError(format!("Failed to initialize OCR: {}", e)))?,
-            );
+            ));
         }
 
         // Initialize object detector
@@ -145,12 +148,17 @@ impl ImageMemoryProcessor {
 
     /// Extract text from image using OCR
     #[cfg(all(feature = "image-memory", feature = "tesseract"))]
-    pub async fn extract_text(&mut self, img: &DynamicImage) -> MultiModalResult<Vec<TextRegion>> {
+    pub async fn extract_text(&self, img: &DynamicImage) -> MultiModalResult<Vec<TextRegion>> {
         if !self.config.enable_ocr || self.ocr_engine.is_none() {
             return Ok(vec![]);
         }
 
-        let ocr = self.ocr_engine.as_mut().unwrap();
+        let mut ocr = self
+            .ocr_engine
+            .as_ref()
+            .unwrap()
+            .lock()
+            .map_err(|_| SynapticError::ProcessingError("Failed to lock OCR engine".to_string()))?;
         
         // Convert image to grayscale for better OCR
         let gray_img = img.to_luma8();
@@ -359,8 +367,11 @@ impl MultiModalProcessor for ImageMemoryProcessor {
         // Load image
         let img = self.load_image(content)?;
         
-        // Extract text regions (requires mutable self for OCR)
-        let text_regions = vec![]; // Placeholder - would need mutable self
+        // Extract text regions using OCR if available
+        #[cfg(feature = "tesseract")]
+        let text_regions = self.extract_text(&img).await?;
+        #[cfg(not(feature = "tesseract"))]
+        let text_regions = vec![];
         
         // Detect objects
         #[cfg(feature = "opencv")]
