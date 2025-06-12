@@ -164,14 +164,13 @@ mod external_integration_tests {
                     MemoryType::ShortTerm,
                 );
                 let _ = client.cache_memory("test_key", &test_entry, None).await;
-                let _ = client.get_cached_memory("test_key").await;
-                let _ = client.delete_cached("test_key").await;
 
-                let stats = client.get_cache_stats().await;
-                match stats {
-                    Ok(cache_stats) => println!("Redis cache stats: {:?}", cache_stats),
-                    Err(e) => println!("Failed to get cache stats: {}", e),
+                if let Ok(stats) = client.get_cache_stats().await {
+                    assert!(stats.used_memory_bytes > 0);
+                    assert!(stats.total_keys >= 1);
                 }
+
+                let _ = client.delete_cached("test_key").await;
             },
             Err(_) => {
                 println!("Redis not available, skipping Redis integration test");

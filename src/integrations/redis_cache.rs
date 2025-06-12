@@ -265,13 +265,27 @@ impl RedisClient {
     pub async fn get_cache_stats(&mut self) -> Result<CacheStats> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            // For MultiplexedConnection, we'll use a simpler approach
-            // In production, you would use a proper Redis info command
-            let used_memory = 1024u64; // Placeholder
-            let max_memory = 1024 * 1024u64; // Placeholder
 
-            // Use the placeholder values we set above
+            // Query INFO MEMORY for real usage statistics
+            let info: String = redis::cmd("INFO")
+                .arg("MEMORY")
+                .query_async(conn)
+                .await
+                .map_err(|e| MemoryError::storage(format!("Failed to query INFO MEMORY: {}", e)))?;
+
+            let mut used_memory = 0u64;
+            let mut max_memory = 0u64;
+            let mut evictions = 0u64;
+
+            for line in info.lines() {
+                if let Some(val) = line.strip_prefix("used_memory:") {
+                    used_memory = val.trim().parse().unwrap_or(0);
+                } else if let Some(val) = line.strip_prefix("maxmemory:") {
+                    max_memory = val.trim().parse().unwrap_or(0);
+                } else if let Some(val) = line.strip_prefix("evicted_keys:") {
+                    evictions = val.trim().parse().unwrap_or(0);
+                }
+            }
 
             let hit_rate = if self.metrics.cache_hits + self.metrics.cache_misses > 0 {
                 self.metrics.cache_hits as f64 / (self.metrics.cache_hits + self.metrics.cache_misses) as f64
@@ -284,7 +298,7 @@ impl RedisClient {
                 used_memory_bytes: used_memory,
                 max_memory_bytes: max_memory,
                 total_keys: self.get_key_count().await?,
-                evictions: 0, // Would need to parse from Redis info
+                evictions,
             });
         }
 
