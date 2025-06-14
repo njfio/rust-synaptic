@@ -171,9 +171,9 @@ impl MemoryKnowledgeGraph {
         let query = GraphQueryBuilder::new()
             .match_nodes_with_property("concept", concept)
             .build();
-        
+
         let results = self.query_graph(query).await?;
-        
+
         let mut memory_keys = Vec::new();
         for result in results {
             for node_id in result.nodes {
@@ -182,8 +182,23 @@ impl MemoryKnowledgeGraph {
                 }
             }
         }
-        
+
         Ok(memory_keys)
+    }
+
+    /// Get the node ID for a given memory key
+    pub async fn get_node_for_memory(&self, memory_key: &str) -> Result<Option<Uuid>> {
+        Ok(self.memory_to_node.get(memory_key).copied())
+    }
+
+    /// Get the memory key for a given node ID
+    pub async fn get_memory_for_node(&self, node_id: Uuid) -> Result<Option<String>> {
+        Ok(self.node_to_memory.get(&node_id).cloned())
+    }
+
+    /// Get all connected nodes with their relationship types and strengths
+    pub async fn get_connected_nodes(&self, node_id: Uuid) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
+        self.graph.get_connected_nodes(node_id).await
     }
 
     /// Auto-detect relationships based on content similarity and metadata

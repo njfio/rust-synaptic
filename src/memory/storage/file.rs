@@ -313,6 +313,18 @@ impl Storage for FileStorage {
         self.import_from_json(path).await?;
         Ok(())
     }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        let mut entries = Vec::new();
+
+        for result in self.db.iter() {
+            let (_key, value) = result.storage_context("Failed to iterate over database")?;
+            let entry = self.deserialize_entry(&value)?;
+            entries.push(entry);
+        }
+
+        Ok(entries)
+    }
 }
 
 #[async_trait]
