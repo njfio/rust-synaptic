@@ -267,7 +267,7 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am.add_memory(entry.clone(), self.knowledge_graph.as_mut()).await;
+            let _ = am.add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut()).await;
         }
 
         // Generate embeddings if enabled
