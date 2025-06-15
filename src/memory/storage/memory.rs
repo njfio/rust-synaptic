@@ -187,6 +187,10 @@ impl Storage for MemoryStorage {
             "In-memory storage does not support restore operations"
         ))
     }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        Ok(self.entries.iter().map(|entry| entry.value().clone()).collect())
+    }
 }
 
 #[async_trait]

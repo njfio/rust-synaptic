@@ -1,6 +1,6 @@
 //! Core knowledge graph implementation
 
-use super::types::{Node, Edge, GraphPath, KnowledgeGraphMetadata};
+use super::types::{Node, Edge, GraphPath, KnowledgeGraphMetadata, RelationshipType};
 use super::query::{GraphQuery, QueryResult, TraversalOptions, TraversalDirection};
 use crate::error::{MemoryError, Result};
 use chrono::{DateTime, Utc};
@@ -457,6 +457,35 @@ impl KnowledgeGraph {
         }
         
         stats
+    }
+
+    /// Get all connected nodes with their relationship types and strengths
+    pub async fn get_connected_nodes(&self, node_id: Uuid) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
+        let mut connected_nodes = Vec::new();
+
+        // Get outgoing edges
+        if let Some(edge_ids) = self.adjacency.get(&node_id) {
+            for edge_id in edge_ids.iter() {
+                if let Some(edge) = self.edges.get(edge_id) {
+                    let relationship_type = edge.relationship.relationship_type.clone();
+                    let strength = edge.relationship.strength;
+                    connected_nodes.push((edge.to_node, relationship_type, strength));
+                }
+            }
+        }
+
+        // Get incoming edges
+        if let Some(edge_ids) = self.reverse_adjacency.get(&node_id) {
+            for edge_id in edge_ids.iter() {
+                if let Some(edge) = self.edges.get(edge_id) {
+                    let relationship_type = edge.relationship.relationship_type.clone();
+                    let strength = edge.relationship.strength;
+                    connected_nodes.push((edge.from_node, relationship_type, strength));
+                }
+            }
+        }
+
+        Ok(connected_nodes)
     }
 
     /// Find an edge between two nodes
