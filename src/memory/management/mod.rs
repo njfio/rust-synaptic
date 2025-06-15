@@ -20,14 +20,332 @@ pub use lifecycle::{MemoryLifecycleManager, LifecyclePolicy, MemoryStage, Lifecy
 pub use optimization::{MemoryOptimizer, OptimizationStrategy, OptimizationResult, PerformanceMetrics};
 pub use analytics::{MemoryAnalytics, AnalyticsReport, InsightType, TrendAnalysis};
 
-use crate::error::{MemoryError, Result};
-use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
+use crate::error::Result;
+use crate::memory::types::{MemoryEntry, MemoryType};
 use crate::memory::temporal::{TemporalMemoryManager, ChangeType};
-use crate::memory::knowledge_graph::{MemoryKnowledgeGraph, RelationshipType};
+use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
+use crate::memory::storage::Storage;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use uuid::Uuid;
+use std::sync::Arc;
+
+/// Simple memory manager for basic operations and testing
+pub struct MemoryManager {
+    /// Storage backend
+    storage: Arc<dyn Storage + Send + Sync>,
+    /// Knowledge graph for relationships
+    knowledge_graph: Option<MemoryKnowledgeGraph>,
+    /// Temporal manager for tracking changes
+    temporal_manager: Option<TemporalMemoryManager>,
+    /// Advanced manager for complex operations
+    advanced_manager: Option<AdvancedMemoryManager>,
+}
+
+impl MemoryManager {
+    /// Create a new memory manager
+    pub async fn new(
+        storage: Arc<dyn Storage + Send + Sync>,
+        knowledge_graph: Option<MemoryKnowledgeGraph>,
+        temporal_manager: Option<TemporalMemoryManager>,
+        advanced_manager: Option<AdvancedMemoryManager>,
+    ) -> Result<Self> {
+        Ok(Self {
+            storage,
+            knowledge_graph,
+            temporal_manager,
+            advanced_manager,
+        })
+    }
+
+    /// Store a memory entry
+    pub async fn store_memory(&self, memory: &MemoryEntry) -> Result<()> {
+        self.storage.store(memory).await
+    }
+
+    /// Count related memories using the implemented algorithm
+    pub async fn count_related_memories(&self, memory: &MemoryEntry) -> Result<usize> {
+        let start_time = std::time::Instant::now();
+        tracing::info!("Counting related memories for key: {}", memory.key);
+
+        let mut related_count = 0;
+        let mut processed_keys = std::collections::HashSet::new();
+
+        // Strategy 1: Knowledge Graph Traversal
+        if let Some(kg) = &self.knowledge_graph {
+            related_count += self.count_graph_related_memories(kg, memory, &mut processed_keys).await?;
+        }
+
+        // Strategy 2: Similarity-based matching
+        related_count += self.count_similarity_related_memories(memory, &processed_keys).await?;
+
+        // Strategy 3: Tag-based relationships
+        related_count += self.count_tag_related_memories(memory, &processed_keys).await?;
+
+        // Strategy 4: Temporal proximity relationships
+        related_count += self.count_temporal_related_memories(memory, &processed_keys).await?;
+
+        // Strategy 5: Pure content similarity (without temporal constraints)
+        related_count += self.count_content_related_memories(memory, &processed_keys).await?;
+
+        let duration_ms = start_time.elapsed().as_millis();
+        tracing::info!(
+            "Found {} related memories for '{}' in {}ms",
+            related_count, memory.key, duration_ms
+        );
+
+        Ok(related_count)
+    }
+
+    /// Count related memories using knowledge graph traversal
+    async fn count_graph_related_memories(
+        &self,
+        kg: &MemoryKnowledgeGraph,
+        memory: &MemoryEntry,
+        processed_keys: &mut std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        use crate::memory::knowledge_graph::RelationshipType;
+
+        let mut count = 0;
+
+        // Get the node ID for this memory
+        if let Some(node_id) = kg.get_node_for_memory(&memory.key).await? {
+            // Perform BFS traversal up to depth 3 to find related memories
+            let max_depth = 3;
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+
+            queue.push_back((node_id, 0)); // (node_id, depth)
+            visited.insert(node_id);
+
+            while let Some((current_node, depth)) = queue.pop_front() {
+                if depth >= max_depth {
+                    continue;
+                }
+
+                // Get all connected nodes
+                let connected_nodes = kg.get_connected_nodes(current_node).await?;
+
+                for (connected_node, relationship_type, strength) in connected_nodes {
+                    if visited.contains(&connected_node) {
+                        continue;
+                    }
+
+                    visited.insert(connected_node);
+
+                    // Check if this node represents a memory
+                    if let Some(memory_key) = kg.get_memory_for_node(connected_node).await? {
+                        if memory_key != memory.key && !processed_keys.contains(&memory_key) {
+                            // Apply relationship strength threshold
+                            let strength_threshold = match relationship_type {
+                                RelationshipType::RelatedTo => 0.3,
+                                RelationshipType::DependsOn => 0.5,
+                                RelationshipType::Contains => 0.4,
+                                RelationshipType::PartOf => 0.4,
+                                RelationshipType::SimilarTo => 0.6,
+                                RelationshipType::TemporallyRelated => 0.2,
+                                RelationshipType::CausedBy => 0.7,
+                                _ => 0.5, // Default threshold for other types
+                            };
+
+                            if strength >= strength_threshold {
+                                count += 1;
+                                processed_keys.insert(memory_key);
+
+                                // Add to queue for further exploration
+                                queue.push_back((connected_node, depth + 1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::debug!("Graph traversal found {} related memories", count);
+        Ok(count)
+    }
+
+    /// Count related memories using similarity metrics
+    async fn count_similarity_related_memories(
+        &self,
+        memory: &MemoryEntry,
+        processed_keys: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        let mut count = 0;
+
+        // Only proceed if we have an embedding for the target memory
+        if let Some(target_embedding) = &memory.embedding {
+            let similarity_threshold = 0.7; // High similarity threshold
+
+            // Get all memories from storage for comparison
+            let all_memories = self.storage.get_all_entries().await?;
+
+            for stored_memory in all_memories {
+                if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
+                    continue;
+                }
+
+                if let Some(stored_embedding) = &stored_memory.embedding {
+                    // Convert f32 to f64 for similarity calculation
+                    let target_f64: Vec<f64> = target_embedding.iter().map(|&x| x as f64).collect();
+                    let stored_f64: Vec<f64> = stored_embedding.iter().map(|&x| x as f64).collect();
+
+                    // Calculate cosine similarity
+                    let similarity = crate::memory::embeddings::similarity::cosine_similarity(
+                        &target_f64, &stored_f64
+                    );
+
+                    if similarity >= similarity_threshold {
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        tracing::debug!("Similarity analysis found {} related memories", count);
+        Ok(count)
+    }
+
+    /// Count related memories using tag-based relationships
+    async fn count_tag_related_memories(
+        &self,
+        memory: &MemoryEntry,
+        processed_keys: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        let mut count = 0;
+
+        if memory.metadata.tags.is_empty() {
+            return Ok(0);
+        }
+
+        // Get all memories from storage
+        let all_memories = self.storage.get_all_entries().await?;
+
+        for stored_memory in all_memories {
+            if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
+                continue;
+            }
+
+            // Calculate tag overlap using Jaccard similarity
+            let memory_tags: std::collections::HashSet<_> = memory.metadata.tags.iter().collect();
+            let stored_tags: std::collections::HashSet<_> = stored_memory.metadata.tags.iter().collect();
+
+            let intersection = memory_tags.intersection(&stored_tags).count();
+            let union = memory_tags.union(&stored_tags).count();
+
+            if union > 0 {
+                let jaccard_similarity = intersection as f64 / union as f64;
+
+                // Require at least 30% tag overlap
+                if jaccard_similarity >= 0.3 {
+                    count += 1;
+                }
+            }
+        }
+
+        tracing::debug!("Tag analysis found {} related memories", count);
+        Ok(count)
+    }
+
+    /// Count related memories using temporal proximity
+    async fn count_temporal_related_memories(
+        &self,
+        memory: &MemoryEntry,
+        processed_keys: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        let mut count = 0;
+
+        // Define temporal window (memories created within 1 hour)
+        let time_window = chrono::Duration::hours(1);
+        let memory_time = memory.created_at();
+
+        // Get all memories from storage
+        let all_memories = self.storage.get_all_entries().await?;
+
+        for stored_memory in all_memories {
+            if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
+                continue;
+            }
+
+            let stored_time = stored_memory.created_at();
+            let time_diff = if memory_time > stored_time {
+                memory_time - stored_time
+            } else {
+                stored_time - memory_time
+            };
+
+            // Check if within temporal window
+            if time_diff <= time_window {
+                // Additional check: ensure some content similarity for temporal relationships
+                let content_similarity = self.calculate_content_similarity(&memory.value, &stored_memory.value);
+
+                if content_similarity >= 0.1 { // Lower threshold for temporal relationships
+                    count += 1;
+                }
+            }
+        }
+
+        tracing::debug!("Temporal analysis found {} related memories", count);
+        Ok(count)
+    }
+
+    /// Count related memories using pure content similarity (without temporal constraints)
+    async fn count_content_related_memories(
+        &self,
+        memory: &MemoryEntry,
+        processed_keys: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        let mut count = 0;
+
+        // Get all memories from storage
+        let all_memories = self.storage.get_all_entries().await?;
+
+        for stored_memory in all_memories {
+            if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
+                continue;
+            }
+
+            // Calculate content similarity
+            let content_similarity = self.calculate_content_similarity(&memory.value, &stored_memory.value);
+
+            // Use a lower threshold for pure content similarity
+            if content_similarity >= 0.4 {
+                count += 1;
+            }
+        }
+
+        tracing::debug!("Content analysis found {} related memories", count);
+        Ok(count)
+    }
+
+    /// Calculate simple content similarity using word overlap
+    fn calculate_content_similarity(&self, content1: &str, content2: &str) -> f64 {
+        let content1_lower = content1.to_lowercase();
+        let content2_lower = content2.to_lowercase();
+
+        let words1: std::collections::HashSet<_> = content1_lower
+            .split_whitespace()
+            .filter(|word| word.len() > 2) // Less strict word filtering
+            .collect();
+
+        let words2: std::collections::HashSet<_> = content2_lower
+            .split_whitespace()
+            .filter(|word| word.len() > 2)
+            .collect();
+
+        if words1.is_empty() && words2.is_empty() {
+            return 1.0;
+        }
+
+        if words1.is_empty() || words2.is_empty() {
+            return 0.0;
+        }
+
+        let intersection = words1.intersection(&words2).count();
+        let union = words1.union(&words2).count();
+
+        intersection as f64 / union as f64
+    }
+}
 
 /// Advanced memory management system
 pub struct AdvancedMemoryManager {
@@ -127,6 +445,53 @@ pub struct MemoryOperationResult {
     pub messages: Vec<String>,
 }
 
+/// Summarization trigger information
+#[derive(Debug, Clone)]
+pub struct SummarizationTrigger {
+    /// Reason for triggering summarization
+    pub reason: String,
+    /// Related memory keys to include in summarization
+    pub related_memory_keys: Vec<String>,
+    /// Trigger type
+    pub trigger_type: SummarizationTriggerType,
+    /// Confidence score for the trigger (0.0 to 1.0)
+    pub confidence: f64,
+    /// Additional metadata
+    pub metadata: std::collections::HashMap<String, String>,
+}
+
+/// Types of summarization triggers
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SummarizationTriggerType {
+    /// Triggered by related memory count threshold
+    RelatedMemoryThreshold,
+    /// Triggered by content complexity analysis
+    ContentComplexity,
+    /// Triggered by temporal clustering
+    TemporalClustering,
+    /// Triggered by semantic density
+    SemanticDensity,
+    /// Triggered by storage optimization needs
+    StorageOptimization,
+    /// Triggered by manual request
+    Manual,
+}
+
+/// Result of automatic summarization execution
+#[derive(Debug, Clone)]
+pub struct AutoSummarizationResult {
+    /// Number of memories processed
+    pub processed_count: usize,
+    /// Generated summary key
+    pub summary_key: String,
+    /// Success status
+    pub success: bool,
+    /// Processing time in milliseconds
+    pub duration_ms: u64,
+    /// Any warnings or messages
+    pub messages: Vec<String>,
+}
+
 /// Memory management statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryManagementStats {
@@ -152,12 +517,15 @@ impl AdvancedMemoryManager {
     /// Create a new advanced memory manager
     pub fn new(config: MemoryManagementConfig) -> Self {
         let temporal_config = crate::memory::temporal::TemporalConfig::default();
-        
+
+        // Create a default in-memory storage for the optimizer
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+
         Self {
             summarizer: MemorySummarizer::new(),
             search_engine: AdvancedSearchEngine::new(),
             lifecycle_manager: MemoryLifecycleManager::new(),
-            optimizer: MemoryOptimizer::new(),
+            optimizer: MemoryOptimizer::new(storage),
             analytics: MemoryAnalytics::new(),
             temporal_manager: TemporalMemoryManager::new(temporal_config),
             config,
@@ -168,43 +536,46 @@ impl AdvancedMemoryManager {
     pub async fn add_memory(
         &mut self,
         memory: MemoryEntry,
-        knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
+        mut knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
     ) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
-        
+
         // Track the change temporally
         let _version_id = self.temporal_manager
             .track_memory_change(&memory, ChangeType::Created)
             .await?;
-        
+
         // Add to knowledge graph if provided
-        if let Some(kg) = knowledge_graph {
+        if let Some(ref mut kg) = knowledge_graph {
             let _node_id = kg.add_memory_node(&memory).await?;
             messages.push("Added to knowledge graph".to_string());
         }
-        
+
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
             self.lifecycle_manager.track_memory_creation(&memory).await?;
         }
-        
+
         // Update analytics
         if self.config.enable_analytics {
             self.analytics.record_memory_addition(&memory).await?;
         }
-        
+
         // Check if summarization is needed
         if self.config.enable_auto_summarization {
-            let related_count = self.count_related_memories(&memory).await?;
-            if related_count >= self.config.summarization_threshold {
-                messages.push("Summarization threshold reached".to_string());
-                // TODO: Trigger summarization
+            let summarization_result = self.evaluate_summarization_triggers(&memory, knowledge_graph.as_deref()).await?;
+            if let Some(trigger_info) = summarization_result {
+                messages.push(format!("Summarization triggered: {}", trigger_info.reason));
+
+                // Execute the summarization
+                let summary_result = self.execute_automatic_summarization(trigger_info).await?;
+                messages.push(format!("Summarization completed: {} memories processed", summary_result.processed_count));
             }
         }
-        
+
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Add,
             success: true,
@@ -227,7 +598,7 @@ impl AdvancedMemoryManager {
     ) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
-        
+
         // Create updated memory entry (this would normally come from storage)
         // For now, we'll create a placeholder
         let updated_memory = MemoryEntry::new(
@@ -235,29 +606,29 @@ impl AdvancedMemoryManager {
             new_value,
             MemoryType::ShortTerm, // This should be determined from existing memory
         );
-        
+
         // Track the change temporally
         let _version_id = self.temporal_manager
             .track_memory_change(&updated_memory, ChangeType::Updated)
             .await?;
-        
+
         // Update in knowledge graph if provided
         if let Some(_kg) = knowledge_graph {
             messages.push("Updated in knowledge graph".to_string());
         }
-        
+
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
             self.lifecycle_manager.track_memory_update(&updated_memory).await?;
         }
-        
+
         // Update analytics
         if self.config.enable_analytics {
             self.analytics.record_memory_update(&updated_memory).await?;
         }
-        
+
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Update,
             success: true,
@@ -279,36 +650,36 @@ impl AdvancedMemoryManager {
     ) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
-        
+
         // Create a placeholder for the deleted memory
         let deleted_memory = MemoryEntry::new(
             memory_key.to_string(),
             String::new(),
             MemoryType::ShortTerm,
         );
-        
+
         // Track the deletion temporally
         let _version_id = self.temporal_manager
             .track_memory_change(&deleted_memory, ChangeType::Deleted)
             .await?;
-        
+
         // Remove from knowledge graph if provided
         if let Some(_kg) = knowledge_graph {
             messages.push("Removed from knowledge graph".to_string());
         }
-        
+
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
             self.lifecycle_manager.track_memory_deletion(memory_key).await?;
         }
-        
+
         // Update analytics
         if self.config.enable_analytics {
             self.analytics.record_memory_deletion(memory_key).await?;
         }
-        
+
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Delete,
             success: true,
@@ -344,11 +715,11 @@ impl AdvancedMemoryManager {
     /// Optimize memory storage and organization
     pub async fn optimize_memories(&mut self) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
-        
+
         let optimization_result = self.optimizer.optimize().await?;
-        
+
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Optimize,
             success: true,
@@ -382,7 +753,7 @@ impl AdvancedMemoryManager {
     /// Perform automatic maintenance tasks
     pub async fn perform_maintenance(&mut self) -> Result<Vec<MemoryOperationResult>> {
         let mut results = Vec::new();
-        
+
         // Cleanup old versions
         if self.config.enable_lifecycle_management {
             let cleanup_count = self.temporal_manager.cleanup_old_versions().await?;
@@ -398,27 +769,297 @@ impl AdvancedMemoryManager {
                 messages: vec!["Cleaned up old versions".to_string()],
             });
         }
-        
+
         // Perform optimization if needed
         if self.config.enable_auto_optimization {
             let last_opt = self.optimizer.get_last_optimization_time();
             let should_optimize = last_opt.map_or(true, |time| {
                 Utc::now() - time > Duration::hours(self.config.optimization_interval_hours as i64)
             });
-            
+
             if should_optimize {
                 let opt_result = self.optimize_memories().await?;
                 results.push(opt_result);
             }
         }
-        
+
         Ok(results)
     }
 
-    /// Count related memories for summarization threshold
-    async fn count_related_memories(&self, _memory: &MemoryEntry) -> Result<usize> {
-        // TODO: Implement logic to count related memories
-        // This would use the knowledge graph and similarity metrics
-        Ok(0)
+    /// Evaluate whether summarization should be triggered for a new memory
+    async fn evaluate_summarization_triggers(
+        &self,
+        memory: &MemoryEntry,
+        knowledge_graph: Option<&MemoryKnowledgeGraph>,
+    ) -> Result<Option<SummarizationTrigger>> {
+        let start_time = std::time::Instant::now();
+        tracing::debug!("Evaluating summarization triggers for memory: {}", memory.key);
+
+        // Strategy 1: Storage optimization trigger (highest priority for very large memories)
+        if let Some(trigger) = self.check_storage_optimization_trigger(memory).await? {
+            return Ok(Some(trigger));
+        }
+
+        // Strategy 2: Semantic density analysis (high priority for dense content)
+        if let Some(trigger) = self.check_semantic_density_trigger(memory, knowledge_graph).await? {
+            return Ok(Some(trigger));
+        }
+
+        // Strategy 3: Related memory count threshold
+        if let Some(trigger) = self.check_related_memory_threshold(memory).await? {
+            return Ok(Some(trigger));
+        }
+
+        // Strategy 4: Content complexity analysis
+        if let Some(trigger) = self.check_content_complexity_trigger(memory).await? {
+            return Ok(Some(trigger));
+        }
+
+        // Strategy 5: Temporal clustering analysis
+        if let Some(trigger) = self.check_temporal_clustering_trigger(memory).await? {
+            return Ok(Some(trigger));
+        }
+
+        let duration_ms = start_time.elapsed().as_millis();
+        tracing::debug!("Summarization trigger evaluation completed in {}ms - no triggers activated", duration_ms);
+
+        Ok(None)
     }
+
+    /// Check if related memory count exceeds threshold
+    async fn check_related_memory_threshold(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+        // For now, we'll use a simplified approach since we don't have direct storage access
+        // In a real implementation, this would query the storage system
+        let related_count = 5; // Placeholder - would be calculated from actual storage
+
+        if related_count >= self.config.summarization_threshold {
+            let confidence = (related_count as f64 / (self.config.summarization_threshold as f64 * 2.0)).min(1.0);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("related_count".to_string(), related_count.to_string());
+            metadata.insert("threshold".to_string(), self.config.summarization_threshold.to_string());
+
+            return Ok(Some(SummarizationTrigger {
+                reason: format!("Related memory count ({}) exceeds threshold ({})", related_count, self.config.summarization_threshold),
+                related_memory_keys: vec![memory.key.clone()], // This would be expanded with actual related keys
+                trigger_type: SummarizationTriggerType::RelatedMemoryThreshold,
+                confidence,
+                metadata,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Check if content complexity warrants summarization
+    async fn check_content_complexity_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+        let content_length = memory.value.len();
+        let word_count = memory.value.split_whitespace().count();
+        let sentence_count = memory.value.split(&['.', '!', '?']).filter(|s| !s.trim().is_empty()).count();
+
+        // Calculate complexity metrics
+        let avg_word_length = if word_count > 0 {
+            content_length as f64 / word_count as f64
+        } else {
+            0.0
+        };
+
+        let avg_sentence_length = if sentence_count > 0 {
+            word_count as f64 / sentence_count as f64
+        } else {
+            0.0
+        };
+
+        // Complexity thresholds (higher threshold to avoid false positives)
+        let complexity_score = (avg_word_length / 6.0) + (avg_sentence_length / 20.0) + (content_length as f64 / 5000.0);
+
+        if complexity_score > 2.5 {
+            let confidence = (complexity_score / 3.0).min(1.0);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("complexity_score".to_string(), format!("{:.2}", complexity_score));
+            metadata.insert("word_count".to_string(), word_count.to_string());
+            metadata.insert("sentence_count".to_string(), sentence_count.to_string());
+            metadata.insert("content_length".to_string(), content_length.to_string());
+
+            return Ok(Some(SummarizationTrigger {
+                reason: format!("Content complexity score ({:.2}) exceeds threshold (1.5)", complexity_score),
+                related_memory_keys: vec![memory.key.clone()],
+                trigger_type: SummarizationTriggerType::ContentComplexity,
+                confidence,
+                metadata,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Check if temporal clustering suggests summarization
+    async fn check_temporal_clustering_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+        let _memory_time = memory.created_at();
+        let _time_window = chrono::Duration::hours(2); // 2-hour clustering window
+
+        // This would normally query storage for memories in the time window
+        // For now, we'll use a simplified approach
+        let cluster_threshold = 5; // Minimum memories in cluster to trigger summarization
+
+        // Simulate cluster detection (in real implementation, this would query storage)
+        let cluster_size = 3; // Placeholder
+
+        if cluster_size >= cluster_threshold {
+            let confidence = (cluster_size as f64 / (cluster_threshold as f64 * 2.0)).min(1.0);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("cluster_size".to_string(), cluster_size.to_string());
+            metadata.insert("time_window_hours".to_string(), "2".to_string());
+            metadata.insert("cluster_threshold".to_string(), cluster_threshold.to_string());
+
+            return Ok(Some(SummarizationTrigger {
+                reason: format!("Temporal cluster of {} memories detected within 2-hour window", cluster_size),
+                related_memory_keys: vec![memory.key.clone()],
+                trigger_type: SummarizationTriggerType::TemporalClustering,
+                confidence,
+                metadata,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Check if semantic density warrants summarization
+    async fn check_semantic_density_trigger(
+        &self,
+        memory: &MemoryEntry,
+        knowledge_graph: Option<&MemoryKnowledgeGraph>,
+    ) -> Result<Option<SummarizationTrigger>> {
+        // Calculate semantic density based on unique concepts and relationships
+        let content_lower = memory.value.to_lowercase();
+        let unique_words: std::collections::HashSet<_> = content_lower
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .collect();
+
+        let concept_density = unique_words.len() as f64 / memory.value.split_whitespace().count().max(1) as f64;
+        let tag_density = memory.metadata.tags.len() as f64 / 10.0; // Normalize to 10 tags max
+
+        // Factor in knowledge graph connectivity if available
+        let graph_connectivity = if let Some(_kg) = knowledge_graph {
+            0.3 // Placeholder for actual graph connectivity calculation
+        } else {
+            0.0
+        };
+
+        let semantic_density = concept_density + tag_density + graph_connectivity;
+
+        if semantic_density > 1.2 {
+            let confidence = (semantic_density / 1.5).min(1.0);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("semantic_density".to_string(), format!("{:.2}", semantic_density));
+            metadata.insert("concept_density".to_string(), format!("{:.2}", concept_density));
+            metadata.insert("tag_density".to_string(), format!("{:.2}", tag_density));
+            metadata.insert("unique_concepts".to_string(), unique_words.len().to_string());
+
+            return Ok(Some(SummarizationTrigger {
+                reason: format!("Semantic density ({:.2}) exceeds threshold (1.2)", semantic_density),
+                related_memory_keys: vec![memory.key.clone()],
+                trigger_type: SummarizationTriggerType::SemanticDensity,
+                confidence,
+                metadata,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Check if storage optimization suggests summarization
+    async fn check_storage_optimization_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+        // Calculate storage efficiency metrics
+        let content_size = memory.value.len();
+        let metadata_size = serde_json::to_string(&memory.metadata).unwrap_or_default().len();
+        let total_size = content_size + metadata_size;
+
+        // Check if this memory is particularly large or if we have many similar memories
+        let size_threshold = 10000; // 10KB threshold
+
+        if total_size > size_threshold {
+            let confidence = (total_size as f64 / (size_threshold as f64 * 2.0)).min(1.0);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("total_size".to_string(), total_size.to_string());
+            metadata.insert("content_size".to_string(), content_size.to_string());
+            metadata.insert("metadata_size".to_string(), metadata_size.to_string());
+            metadata.insert("size_threshold".to_string(), size_threshold.to_string());
+
+            return Ok(Some(SummarizationTrigger {
+                reason: format!("Memory size ({} bytes) exceeds storage optimization threshold ({} bytes)", total_size, size_threshold),
+                related_memory_keys: vec![memory.key.clone()],
+                trigger_type: SummarizationTriggerType::StorageOptimization,
+                confidence,
+                metadata,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Execute automatic summarization based on trigger information
+    async fn execute_automatic_summarization(
+        &mut self,
+        trigger: SummarizationTrigger,
+    ) -> Result<AutoSummarizationResult> {
+        let start_time = std::time::Instant::now();
+        tracing::info!("Executing automatic summarization: {}", trigger.reason);
+
+        let mut messages = Vec::new();
+
+        // Determine summarization strategy based on trigger type
+        let strategy = match trigger.trigger_type {
+            SummarizationTriggerType::RelatedMemoryThreshold => SummaryStrategy::Hierarchical,
+            SummarizationTriggerType::ContentComplexity => SummaryStrategy::KeyPoints,
+            SummarizationTriggerType::TemporalClustering => SummaryStrategy::Chronological,
+            SummarizationTriggerType::SemanticDensity => SummaryStrategy::Conceptual,
+            SummarizationTriggerType::StorageOptimization => SummaryStrategy::Consolidation,
+            SummarizationTriggerType::Manual => SummaryStrategy::ImportanceBased,
+        };
+
+        // Execute the summarization
+        let summary_result = self.summarizer.summarize_memories(
+            trigger.related_memory_keys.clone(),
+            strategy.clone(),
+        ).await?;
+
+        // Generate a unique key for the summary
+        let summary_key = format!("summary_{}_{}",
+            format!("{:?}", trigger.trigger_type).to_lowercase(),
+            chrono::Utc::now().timestamp()
+        );
+
+        messages.push(format!("Applied {:?} strategy", strategy));
+        messages.push(format!("Generated summary with key: {}", summary_key));
+
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+
+        tracing::info!(
+            "Automatic summarization completed in {}ms: {} memories processed",
+            duration_ms,
+            trigger.related_memory_keys.len()
+        );
+
+        Ok(AutoSummarizationResult {
+            processed_count: trigger.related_memory_keys.len(),
+            summary_key,
+            success: summary_result.quality_metrics.overall_quality > 0.5, // Use quality as success indicator
+            duration_ms,
+            messages,
+        })
+    }
+
+
+
+
+
 }
+
+#[cfg(test)]
+mod tests;
