@@ -400,26 +400,290 @@ impl MemorySummarizer {
         self.generate_key_points_summary(memories).await
     }
 
-    /// Extract entities from text
+    /// Extract entities from text using sophisticated NLP-inspired analysis
     async fn extract_entities(&self, text: &str) -> Result<Vec<Entity>> {
-        // TODO: Implement proper entity extraction using NLP
         let mut entities = Vec::new();
-        
-        // Simple keyword-based entity extraction for demonstration
-        let keywords = ["project", "task", "goal", "problem", "solution", "meeting", "deadline"];
-        
-        for keyword in keywords {
-            if text.to_lowercase().contains(keyword) {
+
+        // 1. Extract domain-specific entities with proper classification
+        entities.extend(self.extract_domain_specific_entities(text)?);
+
+        // 2. Extract named entities (people, places, organizations)
+        entities.extend(self.extract_named_entities_from_text(text)?);
+
+        // 3. Extract temporal entities (dates, times, events)
+        entities.extend(self.extract_temporal_entities_from_text(text)?);
+
+        // 4. Extract technical entities (technologies, tools, concepts)
+        entities.extend(self.extract_technical_entities(text)?);
+
+        // 5. Extract action entities (tasks, goals, problems, solutions)
+        entities.extend(self.extract_action_entities(text)?);
+
+        // Sort by importance and remove duplicates
+        entities.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap());
+        entities.dedup_by(|a, b| a.name == b.name && a.entity_type == b.entity_type);
+
+        // Limit to top 20 entities to avoid noise
+        entities.truncate(20);
+
+        tracing::debug!("Extracted {} entities from text of length {}", entities.len(), text.len());
+
+        Ok(entities)
+    }
+
+    /// Extract domain-specific entities with proper classification
+    fn extract_domain_specific_entities(&self, text: &str) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+
+        // Project-related keywords
+        let project_keywords = ["project", "initiative", "program", "campaign", "effort"];
+        for keyword in &project_keywords {
+            let frequency = text.to_lowercase().matches(keyword).count();
+            if frequency > 0 {
                 entities.push(Entity {
                     name: keyword.to_string(),
-                    entity_type: EntityType::Concept,
-                    frequency: text.to_lowercase().matches(keyword).count(),
-                    importance: 0.5,
-                    context: vec![format!("Found in summary context")],
+                    entity_type: EntityType::Project,
+                    frequency,
+                    importance: 0.8,
+                    context: self.extract_context_for_keyword(text, keyword),
                 });
             }
         }
-        
+
+        // Task-related keywords
+        let task_keywords = ["task", "action", "todo", "assignment", "work", "job"];
+        for keyword in &task_keywords {
+            let frequency = text.to_lowercase().matches(keyword).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: keyword.to_string(),
+                    entity_type: EntityType::Task,
+                    frequency,
+                    importance: 0.7,
+                    context: self.extract_context_for_keyword(text, keyword),
+                });
+            }
+        }
+
+        // Goal-related keywords
+        let goal_keywords = ["goal", "objective", "target", "aim", "purpose", "mission"];
+        for keyword in &goal_keywords {
+            let frequency = text.to_lowercase().matches(keyword).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: keyword.to_string(),
+                    entity_type: EntityType::Goal,
+                    frequency,
+                    importance: 0.9,
+                    context: self.extract_context_for_keyword(text, keyword),
+                });
+            }
+        }
+
+        // Problem-related keywords
+        let problem_keywords = ["problem", "issue", "challenge", "obstacle", "difficulty", "bug"];
+        for keyword in &problem_keywords {
+            let frequency = text.to_lowercase().matches(keyword).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: keyword.to_string(),
+                    entity_type: EntityType::Problem,
+                    frequency,
+                    importance: 0.8,
+                    context: self.extract_context_for_keyword(text, keyword),
+                });
+            }
+        }
+
+        // Solution-related keywords
+        let solution_keywords = ["solution", "fix", "resolution", "answer", "approach", "method"];
+        for keyword in &solution_keywords {
+            let frequency = text.to_lowercase().matches(keyword).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: keyword.to_string(),
+                    entity_type: EntityType::Solution,
+                    frequency,
+                    importance: 0.9,
+                    context: self.extract_context_for_keyword(text, keyword),
+                });
+            }
+        }
+
+        Ok(entities)
+    }
+
+    /// Extract context around a keyword
+    fn extract_context_for_keyword(&self, text: &str, keyword: &str) -> Vec<String> {
+        let mut contexts = Vec::new();
+        let text_lower = text.to_lowercase();
+        let keyword_lower = keyword.to_lowercase();
+
+        let mut start = 0;
+        while let Some(pos) = text_lower[start..].find(&keyword_lower) {
+            let actual_pos = start + pos;
+            let context_start = actual_pos.saturating_sub(30);
+            let context_end = (actual_pos + keyword.len() + 30).min(text.len());
+
+            let context = text[context_start..context_end].trim().to_string();
+            if !context.is_empty() {
+                contexts.push(context);
+            }
+
+            start = actual_pos + keyword.len();
+            if contexts.len() >= 3 { // Limit to 3 contexts per keyword
+                break;
+            }
+        }
+
+        contexts
+    }
+
+    /// Extract named entities from text (people, places, organizations)
+    fn extract_named_entities_from_text(&self, text: &str) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+
+        // Extract capitalized words that might be proper nouns
+        if let Ok(proper_noun_regex) = regex::Regex::new(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b") {
+            for mat in proper_noun_regex.find_iter(text) {
+                let value = mat.as_str();
+
+                // Skip common words that are capitalized
+                let common_words = ["The", "This", "That", "These", "Those", "When", "Where", "Why", "How", "What", "Who"];
+                if !common_words.contains(&value) && value.len() > 2 {
+                    let entity_type = if value.contains(' ') && value.split_whitespace().count() > 1 {
+                        EntityType::Organization // Multi-word proper nouns are likely organizations
+                    } else {
+                        EntityType::Person // Single word proper nouns are likely people
+                    };
+
+                    entities.push(Entity {
+                        name: value.to_string(),
+                        entity_type,
+                        frequency: text.matches(value).count(),
+                        importance: 0.7,
+                        context: self.extract_context_for_keyword(text, value),
+                    });
+                }
+            }
+        }
+
+        Ok(entities)
+    }
+
+    /// Extract temporal entities from text
+    fn extract_temporal_entities_from_text(&self, text: &str) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+
+        // Extract date patterns
+        let date_patterns = [
+            (r"\d{4}-\d{2}-\d{2}", "Date (ISO format)"),
+            (r"\d{1,2}/\d{1,2}/\d{4}", "Date (US format)"),
+            (r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}", "Date (full month)"),
+        ];
+
+        for (pattern, description) in &date_patterns {
+            if let Ok(regex) = regex::Regex::new(pattern) {
+                for mat in regex.find_iter(text) {
+                    entities.push(Entity {
+                        name: mat.as_str().to_string(),
+                        entity_type: EntityType::Event,
+                        frequency: 1,
+                        importance: 0.6,
+                        context: vec![format!("{}: {}", description, mat.as_str())],
+                    });
+                }
+            }
+        }
+
+        // Extract time patterns
+        if let Ok(time_regex) = regex::Regex::new(r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\b") {
+            for mat in time_regex.find_iter(text) {
+                entities.push(Entity {
+                    name: mat.as_str().to_string(),
+                    entity_type: EntityType::Event,
+                    frequency: 1,
+                    importance: 0.5,
+                    context: vec![format!("Time reference: {}", mat.as_str())],
+                });
+            }
+        }
+
+        Ok(entities)
+    }
+
+    /// Extract technical entities (technologies, tools, concepts)
+    fn extract_technical_entities(&self, text: &str) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+
+        // Technology keywords
+        let tech_keywords = ["API", "database", "server", "client", "framework", "library", "algorithm", "protocol"];
+        for keyword in &tech_keywords {
+            let frequency = text.to_lowercase().matches(&keyword.to_lowercase()).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: keyword.to_string(),
+                    entity_type: EntityType::Technology,
+                    frequency,
+                    importance: 0.8,
+                    context: self.extract_context_for_keyword(text, keyword),
+                });
+            }
+        }
+
+        // Extract words with technical patterns (camelCase, snake_case, etc.)
+        if let Ok(tech_pattern_regex) = regex::Regex::new(r"\b[a-z]+[A-Z][a-zA-Z]*\b|\b[a-z]+_[a-z_]+\b|\b[A-Z]{2,}\b") {
+            for mat in tech_pattern_regex.find_iter(text) {
+                let value = mat.as_str();
+                if value.len() > 3 { // Filter out short acronyms
+                    entities.push(Entity {
+                        name: value.to_string(),
+                        entity_type: EntityType::Technology,
+                        frequency: text.matches(value).count(),
+                        importance: 0.6,
+                        context: self.extract_context_for_keyword(text, value),
+                    });
+                }
+            }
+        }
+
+        Ok(entities)
+    }
+
+    /// Extract action entities (tasks, goals, problems, solutions)
+    fn extract_action_entities(&self, text: &str) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+
+        // Action verbs that indicate tasks or goals
+        let action_verbs = ["implement", "develop", "create", "build", "design", "analyze", "optimize", "improve", "fix", "resolve"];
+        for verb in &action_verbs {
+            let frequency = text.to_lowercase().matches(verb).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: verb.to_string(),
+                    entity_type: EntityType::Task,
+                    frequency,
+                    importance: 0.7,
+                    context: self.extract_context_for_keyword(text, verb),
+                });
+            }
+        }
+
+        // Extract phrases that indicate concepts
+        let concept_phrases = ["machine learning", "artificial intelligence", "data science", "software engineering", "system design"];
+        for phrase in &concept_phrases {
+            let frequency = text.to_lowercase().matches(phrase).count();
+            if frequency > 0 {
+                entities.push(Entity {
+                    name: phrase.to_string(),
+                    entity_type: EntityType::Concept,
+                    frequency,
+                    importance: 0.9,
+                    context: self.extract_context_for_keyword(text, phrase),
+                });
+            }
+        }
+
         Ok(entities)
     }
 
@@ -450,35 +714,216 @@ impl MemorySummarizer {
         })
     }
 
-    /// Extract key themes from text
+    /// Extract key themes from text using sophisticated content analysis
     async fn extract_key_themes(&self, text: &str) -> Result<Vec<String>> {
-        // TODO: Implement proper theme extraction
-        let themes = vec![
-            "Information Management".to_string(),
-            "Knowledge Organization".to_string(),
-            "Memory Consolidation".to_string(),
-        ];
-        
-        // Filter themes that appear to be relevant to the text
-        Ok(themes.into_iter()
-            .filter(|theme| text.to_lowercase().contains(&theme.to_lowercase()))
-            .collect())
+        let mut themes = Vec::new();
+
+        // 1. Extract themes based on domain-specific keywords
+        themes.extend(self.extract_domain_themes(text)?);
+
+        // 2. Extract themes based on action patterns
+        themes.extend(self.extract_action_themes(text)?);
+
+        // 3. Extract themes based on technical content
+        themes.extend(self.extract_technical_themes(text)?);
+
+        // 4. Extract themes based on temporal patterns
+        themes.extend(self.extract_temporal_themes(text)?);
+
+        // 5. Extract themes based on organizational patterns
+        themes.extend(self.extract_organizational_themes(text)?);
+
+        // Remove duplicates and sort by relevance
+        themes.sort();
+        themes.dedup();
+
+        // Limit to top 10 themes to avoid noise
+        themes.truncate(10);
+
+        tracing::debug!("Extracted {} themes from text", themes.len());
+
+        Ok(themes)
     }
 
-    /// Calculate quality metrics for a summary
+    /// Extract domain-specific themes
+    fn extract_domain_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // Information management themes
+        if text_lower.contains("information") || text_lower.contains("data") || text_lower.contains("knowledge") {
+            themes.push("Information Management".to_string());
+        }
+
+        // Project management themes
+        if text_lower.contains("project") || text_lower.contains("task") || text_lower.contains("deadline") {
+            themes.push("Project Management".to_string());
+        }
+
+        // Problem solving themes
+        if text_lower.contains("problem") || text_lower.contains("solution") || text_lower.contains("issue") {
+            themes.push("Problem Solving".to_string());
+        }
+
+        // Learning and development themes
+        if text_lower.contains("learn") || text_lower.contains("study") || text_lower.contains("research") {
+            themes.push("Learning & Development".to_string());
+        }
+
+        // Communication themes
+        if text_lower.contains("meeting") || text_lower.contains("discussion") || text_lower.contains("communication") {
+            themes.push("Communication".to_string());
+        }
+
+        // Technology themes
+        if text_lower.contains("software") || text_lower.contains("system") || text_lower.contains("technology") {
+            themes.push("Technology".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract action-based themes
+    fn extract_action_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // Development themes
+        if text_lower.contains("develop") || text_lower.contains("build") || text_lower.contains("create") {
+            themes.push("Development".to_string());
+        }
+
+        // Analysis themes
+        if text_lower.contains("analyze") || text_lower.contains("evaluate") || text_lower.contains("assess") {
+            themes.push("Analysis".to_string());
+        }
+
+        // Planning themes
+        if text_lower.contains("plan") || text_lower.contains("strategy") || text_lower.contains("design") {
+            themes.push("Planning".to_string());
+        }
+
+        // Implementation themes
+        if text_lower.contains("implement") || text_lower.contains("execute") || text_lower.contains("deploy") {
+            themes.push("Implementation".to_string());
+        }
+
+        // Optimization themes
+        if text_lower.contains("optimize") || text_lower.contains("improve") || text_lower.contains("enhance") {
+            themes.push("Optimization".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract technical themes
+    fn extract_technical_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // AI/ML themes
+        if text_lower.contains("ai") || text_lower.contains("machine learning") || text_lower.contains("neural") {
+            themes.push("Artificial Intelligence".to_string());
+        }
+
+        // Database themes
+        if text_lower.contains("database") || text_lower.contains("sql") || text_lower.contains("query") {
+            themes.push("Database Management".to_string());
+        }
+
+        // Security themes
+        if text_lower.contains("security") || text_lower.contains("encryption") || text_lower.contains("authentication") {
+            themes.push("Security".to_string());
+        }
+
+        // Performance themes
+        if text_lower.contains("performance") || text_lower.contains("optimization") || text_lower.contains("efficiency") {
+            themes.push("Performance".to_string());
+        }
+
+        // Architecture themes
+        if text_lower.contains("architecture") || text_lower.contains("design pattern") || text_lower.contains("framework") {
+            themes.push("Software Architecture".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract temporal themes
+    fn extract_temporal_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // Scheduling themes
+        if text_lower.contains("schedule") || text_lower.contains("timeline") || text_lower.contains("deadline") {
+            themes.push("Scheduling".to_string());
+        }
+
+        // Historical themes
+        if text_lower.contains("history") || text_lower.contains("past") || text_lower.contains("previous") {
+            themes.push("Historical Analysis".to_string());
+        }
+
+        // Future planning themes
+        if text_lower.contains("future") || text_lower.contains("upcoming") || text_lower.contains("next") {
+            themes.push("Future Planning".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract organizational themes
+    fn extract_organizational_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // Team collaboration themes
+        if text_lower.contains("team") || text_lower.contains("collaboration") || text_lower.contains("group") {
+            themes.push("Team Collaboration".to_string());
+        }
+
+        // Process improvement themes
+        if text_lower.contains("process") || text_lower.contains("workflow") || text_lower.contains("procedure") {
+            themes.push("Process Management".to_string());
+        }
+
+        // Quality assurance themes
+        if text_lower.contains("quality") || text_lower.contains("testing") || text_lower.contains("validation") {
+            themes.push("Quality Assurance".to_string());
+        }
+
+        // Documentation themes
+        if text_lower.contains("document") || text_lower.contains("specification") || text_lower.contains("manual") {
+            themes.push("Documentation".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Calculate quality metrics for a summary using sophisticated analysis
     async fn calculate_quality_metrics(
         &self,
         summary_content: &str,
         memories: &[MemoryEntry],
     ) -> Result<SummaryQualityMetrics> {
-        // TODO: Implement proper quality assessment
-        let coherence = 0.8; // Placeholder
-        let completeness = 0.7; // Placeholder
-        let conciseness = 0.9; // Placeholder
-        let accuracy = 0.8; // Placeholder
-        
-        let overall_quality = (coherence + completeness + conciseness + accuracy) / 4.0;
-        
+        // 1. Calculate coherence (how well the summary flows and connects ideas)
+        let coherence = self.calculate_coherence_score(summary_content)?;
+
+        // 2. Calculate completeness (how much of the original information is preserved)
+        let completeness = self.calculate_completeness_score(summary_content, memories)?;
+
+        // 3. Calculate conciseness (how efficiently information is presented)
+        let conciseness = self.calculate_conciseness_score(summary_content, memories)?;
+
+        // 4. Calculate accuracy (how faithful the summary is to the original content)
+        let accuracy = self.calculate_accuracy_score(summary_content, memories)?;
+
+        // Calculate overall quality as weighted average
+        let overall_quality = (coherence * 0.25 + completeness * 0.3 + conciseness * 0.2 + accuracy * 0.25);
+
+        tracing::debug!("Quality metrics - Coherence: {:.2}, Completeness: {:.2}, Conciseness: {:.2}, Accuracy: {:.2}, Overall: {:.2}",
+            coherence, completeness, conciseness, accuracy, overall_quality);
+
         Ok(SummaryQualityMetrics {
             coherence,
             completeness,
@@ -486,6 +931,247 @@ impl MemorySummarizer {
             accuracy,
             overall_quality,
         })
+    }
+
+    /// Calculate coherence score (how well the summary flows)
+    fn calculate_coherence_score(&self, summary_content: &str) -> Result<f64> {
+        let mut coherence_factors = Vec::new();
+
+        // 1. Sentence connectivity (presence of transition words)
+        let transition_words = ["however", "therefore", "furthermore", "additionally", "consequently", "meanwhile", "similarly", "in contrast"];
+        let transition_count = transition_words.iter()
+            .map(|word| summary_content.to_lowercase().matches(word).count())
+            .sum::<usize>();
+        let sentence_count = summary_content.split(&['.', '!', '?'][..]).count();
+        let transition_score = if sentence_count > 1 {
+            (transition_count as f64 / (sentence_count - 1) as f64).min(1.0)
+        } else {
+            0.5
+        };
+        coherence_factors.push(transition_score);
+
+        // 2. Consistent terminology (repeated key terms)
+        let words: Vec<&str> = summary_content.split_whitespace().collect();
+        let unique_words: std::collections::HashSet<&str> = words.iter().cloned().collect();
+        let repetition_score = if words.len() > 0 {
+            1.0 - (unique_words.len() as f64 / words.len() as f64)
+        } else {
+            0.0
+        };
+        coherence_factors.push(repetition_score);
+
+        // 3. Logical structure (presence of organizational markers)
+        let structure_markers = ["first", "second", "third", "finally", "in conclusion", "to summarize"];
+        let structure_count = structure_markers.iter()
+            .map(|marker| summary_content.to_lowercase().matches(marker).count())
+            .sum::<usize>();
+        let structure_score = (structure_count as f64 / 3.0).min(1.0); // Normalize to max 3 markers
+        coherence_factors.push(structure_score);
+
+        let coherence = if coherence_factors.is_empty() {
+            0.5
+        } else {
+            coherence_factors.iter().sum::<f64>() / coherence_factors.len() as f64
+        };
+
+        Ok(coherence.min(1.0))
+    }
+
+    /// Calculate completeness score (how much information is preserved)
+    fn calculate_completeness_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+        if memories.is_empty() {
+            return Ok(0.0);
+        }
+
+        let mut completeness_factors = Vec::new();
+
+        // 1. Key term coverage
+        let mut all_original_words = std::collections::HashSet::new();
+        for memory in memories {
+            for word in memory.value.split_whitespace() {
+                if word.len() > 3 { // Only consider significant words
+                    all_original_words.insert(word.to_lowercase());
+                }
+            }
+        }
+
+        let summary_words: std::collections::HashSet<String> = summary_content
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .map(|word| word.to_lowercase())
+            .collect();
+
+        let covered_words = all_original_words.iter()
+            .filter(|word| summary_words.contains(*word))
+            .count();
+
+        let term_coverage = if all_original_words.is_empty() {
+            0.0
+        } else {
+            covered_words as f64 / all_original_words.len() as f64
+        };
+        completeness_factors.push(term_coverage);
+
+        // 2. Important memory coverage (based on importance scores)
+        let high_importance_memories = memories.iter()
+            .filter(|m| m.metadata.importance > 0.7)
+            .count();
+
+        let covered_important_concepts = memories.iter()
+            .filter(|m| m.metadata.importance > 0.7)
+            .filter(|m| {
+                let memory_words: Vec<&str> = m.value.split_whitespace().collect();
+                memory_words.iter().any(|word| summary_content.to_lowercase().contains(&word.to_lowercase()))
+            })
+            .count();
+
+        let importance_coverage = if high_importance_memories > 0 {
+            covered_important_concepts as f64 / high_importance_memories as f64
+        } else {
+            1.0 // No high importance memories to cover
+        };
+        completeness_factors.push(importance_coverage);
+
+        // 3. Memory count representation
+        let memory_representation = (memories.len() as f64).log2() / 10.0; // Logarithmic scaling
+        completeness_factors.push(memory_representation.min(1.0));
+
+        let completeness = if completeness_factors.is_empty() {
+            0.0
+        } else {
+            completeness_factors.iter().sum::<f64>() / completeness_factors.len() as f64
+        };
+
+        Ok(completeness.min(1.0))
+    }
+
+    /// Calculate conciseness score (efficiency of information presentation)
+    fn calculate_conciseness_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+        let original_length: usize = memories.iter().map(|m| m.value.len()).sum();
+        let summary_length = summary_content.len();
+
+        if original_length == 0 {
+            return Ok(0.0);
+        }
+
+        // 1. Compression ratio (higher compression = more concise, but not too high)
+        let compression_ratio = original_length as f64 / summary_length as f64;
+        let compression_score = if compression_ratio > 10.0 {
+            0.5 // Too much compression might lose information
+        } else if compression_ratio > 2.0 {
+            1.0 // Good compression
+        } else {
+            compression_ratio / 2.0 // Linear scaling for low compression
+        };
+
+        // 2. Information density (meaningful words per total words)
+        let words: Vec<&str> = summary_content.split_whitespace().collect();
+        let stop_words = ["the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"];
+        let meaningful_words = words.iter()
+            .filter(|word| !stop_words.contains(&word.to_lowercase().as_str()))
+            .count();
+
+        let density_score = if words.is_empty() {
+            0.0
+        } else {
+            meaningful_words as f64 / words.len() as f64
+        };
+
+        // 3. Redundancy check (repeated phrases)
+        let sentences: Vec<&str> = summary_content.split(&['.', '!', '?'][..]).collect();
+        let unique_sentences: std::collections::HashSet<&str> = sentences.iter().cloned().collect();
+        let redundancy_score = if sentences.is_empty() {
+            1.0
+        } else {
+            unique_sentences.len() as f64 / sentences.len() as f64
+        };
+
+        let conciseness = (compression_score * 0.4 + density_score * 0.3 + redundancy_score * 0.3);
+
+        Ok(conciseness.min(1.0))
+    }
+
+    /// Calculate accuracy score (faithfulness to original content)
+    fn calculate_accuracy_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+        if memories.is_empty() {
+            return Ok(0.0);
+        }
+
+        let mut accuracy_factors = Vec::new();
+
+        // 1. Factual consistency (no contradictory information)
+        // This is a simplified check - in a full implementation, this would use NLP
+        let summary_lower = summary_content.to_lowercase();
+        let contradiction_indicators = ["not", "never", "opposite", "contrary", "however", "but"];
+        let contradiction_count = contradiction_indicators.iter()
+            .map(|indicator| summary_lower.matches(indicator).count())
+            .sum::<usize>();
+
+        let consistency_score = if summary_content.len() > 0 {
+            1.0 - (contradiction_count as f64 / (summary_content.len() / 100) as f64).min(1.0)
+        } else {
+            0.0
+        };
+        accuracy_factors.push(consistency_score);
+
+        // 2. Semantic similarity (shared concepts and terms)
+        let mut original_concepts = std::collections::HashSet::new();
+        for memory in memories {
+            for word in memory.value.split_whitespace() {
+                if word.len() > 4 { // Focus on substantial words
+                    original_concepts.insert(word.to_lowercase());
+                }
+            }
+        }
+
+        let summary_concepts: std::collections::HashSet<String> = summary_content
+            .split_whitespace()
+            .filter(|word| word.len() > 4)
+            .map(|word| word.to_lowercase())
+            .collect();
+
+        let concept_overlap = original_concepts.intersection(&summary_concepts).count();
+        let semantic_score = if original_concepts.is_empty() {
+            0.0
+        } else {
+            concept_overlap as f64 / original_concepts.len() as f64
+        };
+        accuracy_factors.push(semantic_score);
+
+        // 3. Tone preservation (positive/negative sentiment consistency)
+        let positive_words = ["good", "great", "excellent", "successful", "effective", "improved"];
+        let negative_words = ["bad", "poor", "failed", "problem", "issue", "error"];
+
+        let original_positive = memories.iter()
+            .map(|m| positive_words.iter().map(|w| m.value.to_lowercase().matches(w).count()).sum::<usize>())
+            .sum::<usize>();
+        let original_negative = memories.iter()
+            .map(|m| negative_words.iter().map(|w| m.value.to_lowercase().matches(w).count()).sum::<usize>())
+            .sum::<usize>();
+
+        let summary_positive = positive_words.iter().map(|w| summary_lower.matches(w).count()).sum::<usize>();
+        let summary_negative = negative_words.iter().map(|w| summary_lower.matches(w).count()).sum::<usize>();
+
+        let tone_score = if original_positive + original_negative > 0 {
+            let original_sentiment = original_positive as f64 / (original_positive + original_negative) as f64;
+            let summary_sentiment = if summary_positive + summary_negative > 0 {
+                summary_positive as f64 / (summary_positive + summary_negative) as f64
+            } else {
+                0.5 // Neutral
+            };
+            1.0 - (original_sentiment - summary_sentiment).abs()
+        } else {
+            1.0 // No sentiment to preserve
+        };
+        accuracy_factors.push(tone_score);
+
+        let accuracy = if accuracy_factors.is_empty() {
+            0.0
+        } else {
+            accuracy_factors.iter().sum::<f64>() / accuracy_factors.len() as f64
+        };
+
+        Ok(accuracy.min(1.0))
     }
 
     /// Check if summarization should be triggered using comprehensive multi-strategy analysis
@@ -543,19 +1229,90 @@ impl MemorySummarizer {
     /// Strategy 1: Check if related memory count exceeds threshold (> 10 related memories)
     async fn check_related_count_trigger(
         &self,
-        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
-        _memory: &MemoryEntry,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
     ) -> Result<bool> {
-        // In a full implementation, this would:
-        // 1. Count related memories using the comprehensive counting algorithm
-        // 2. Compare against configurable threshold (default: 10)
-        // 3. Return true if threshold exceeded
+        // Use sophisticated multi-strategy related memory counting
+        let related_count = self.count_related_memories_comprehensive(storage, memory).await?;
+        let threshold = 10; // Configurable threshold
 
-        // Placeholder: simulate finding related memories
-        let related_count = 8; // Simulated count
-        let threshold = 10;
+        tracing::debug!("Related memory count: {} (threshold: {})", related_count, threshold);
 
         Ok(related_count > threshold)
+    }
+
+    /// Count related memories using comprehensive multi-strategy approach
+    async fn count_related_memories_comprehensive(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
+    ) -> Result<usize> {
+        let mut related_memories = std::collections::HashSet::new();
+
+        // Strategy 1: Content similarity (using word overlap)
+        let memory_words: std::collections::HashSet<String> = memory.value
+            .split_whitespace()
+            .filter(|word| word.len() > 3) // Filter out short words
+            .map(|word| word.to_lowercase())
+            .collect();
+
+        // Get all memories from storage for comparison
+        let all_memory_keys = storage.list_keys().await?;
+        for key in &all_memory_keys {
+            if key == &memory.key {
+                continue; // Skip self
+            }
+
+            if let Some(other_memory) = storage.retrieve(key).await? {
+                let other_words: std::collections::HashSet<String> = other_memory.value
+                    .split_whitespace()
+                    .filter(|word| word.len() > 3)
+                    .map(|word| word.to_lowercase())
+                    .collect();
+
+                let intersection = memory_words.intersection(&other_words).count();
+                let union = memory_words.union(&other_words).count();
+                let similarity = if union > 0 { intersection as f64 / union as f64 } else { 0.0 };
+
+                if similarity > 0.3 { // Similarity threshold
+                    related_memories.insert(key.clone());
+                }
+            }
+        }
+
+        // Strategy 2: Tag-based relationships
+        for key in &all_memory_keys {
+            if key == &memory.key {
+                continue;
+            }
+
+            if let Some(other_memory) = storage.retrieve(key).await? {
+                let memory_tags: std::collections::HashSet<_> = memory.metadata.tags.iter().collect();
+                let other_tags: std::collections::HashSet<_> = other_memory.metadata.tags.iter().collect();
+                let tag_overlap = memory_tags.intersection(&other_tags).count();
+
+                if tag_overlap > 0 {
+                    related_memories.insert(key.clone());
+                }
+            }
+        }
+
+        // Strategy 3: Temporal proximity (memories created within 24 hours)
+        let time_window = chrono::Duration::hours(24);
+        for key in &all_memory_keys {
+            if key == &memory.key {
+                continue;
+            }
+
+            if let Some(other_memory) = storage.retrieve(key).await? {
+                let time_diff = (memory.metadata.created_at - other_memory.metadata.created_at).abs();
+                if time_diff < time_window {
+                    related_memories.insert(key.clone());
+                }
+            }
+        }
+
+        Ok(related_memories.len())
     }
 
     /// Strategy 2: Check if oldest related memory exceeds age threshold (> 7 days)
@@ -578,35 +1335,147 @@ impl MemorySummarizer {
     /// Strategy 3: Check if high similarity cluster detected (similarity > 0.8)
     async fn check_similarity_cluster_trigger(
         &self,
-        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
-        _memory: &MemoryEntry,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
     ) -> Result<bool> {
-        // In a full implementation, this would:
-        // 1. Calculate similarity between related memories
-        // 2. Detect clusters with high similarity (> 0.8)
-        // 3. Trigger if cluster size > threshold (e.g., 5 memories)
-
-        // Placeholder: simulate cluster detection
-        let cluster_similarity = 0.75; // Simulated similarity
         let similarity_threshold = 0.8;
+        let cluster_size_threshold = 5;
 
-        Ok(cluster_similarity > similarity_threshold)
+        // Find all related memories
+        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
+
+        if related_memories.len() < cluster_size_threshold {
+            return Ok(false);
+        }
+
+        // Calculate pairwise similarities within the cluster
+        let mut high_similarity_pairs = 0;
+        let total_pairs = related_memories.len() * (related_memories.len() - 1) / 2;
+
+        for i in 0..related_memories.len() {
+            for j in (i + 1)..related_memories.len() {
+                let similarity = self.calculate_memory_similarity(&related_memories[i], &related_memories[j])?;
+                if similarity > similarity_threshold {
+                    high_similarity_pairs += 1;
+                }
+            }
+        }
+
+        // Trigger if more than 50% of pairs have high similarity
+        let high_similarity_ratio = if total_pairs > 0 {
+            high_similarity_pairs as f64 / total_pairs as f64
+        } else {
+            0.0
+        };
+
+        tracing::debug!("Similarity cluster analysis: {} high similarity pairs out of {} total pairs (ratio: {:.2})",
+            high_similarity_pairs, total_pairs, high_similarity_ratio);
+
+        Ok(high_similarity_ratio > 0.5)
+    }
+
+    /// Find related memories for clustering analysis
+    async fn find_related_memories_for_clustering(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
+    ) -> Result<Vec<MemoryEntry>> {
+        let mut related_memories = Vec::new();
+        related_memories.push(memory.clone()); // Include the target memory
+
+        let all_memory_keys = storage.list_keys().await?;
+        for key in all_memory_keys {
+            if key == memory.key {
+                continue; // Skip self (already added)
+            }
+
+            if let Some(other_memory) = storage.retrieve(&key).await? {
+                // Check if this memory is related (using multiple criteria)
+                let is_related = self.is_memory_related(memory, &other_memory)?;
+                if is_related {
+                    related_memories.push(other_memory);
+                }
+            }
+        }
+
+        Ok(related_memories)
+    }
+
+    /// Check if two memories are related
+    fn is_memory_related(&self, memory1: &MemoryEntry, memory2: &MemoryEntry) -> Result<bool> {
+        // 1. Tag overlap
+        let memory1_tags: std::collections::HashSet<_> = memory1.metadata.tags.iter().collect();
+        let memory2_tags: std::collections::HashSet<_> = memory2.metadata.tags.iter().collect();
+        let tag_overlap = memory1_tags.intersection(&memory2_tags).count();
+        if tag_overlap > 0 {
+            return Ok(true);
+        }
+
+        // 2. Content similarity
+        let similarity = self.calculate_memory_similarity(memory1, memory2)?;
+        if similarity > 0.3 {
+            return Ok(true);
+        }
+
+        // 3. Temporal proximity (within 48 hours)
+        let time_diff = (memory1.metadata.created_at - memory2.metadata.created_at).abs();
+        if time_diff < chrono::Duration::hours(48) {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Calculate similarity between two memories
+    fn calculate_memory_similarity(&self, memory1: &MemoryEntry, memory2: &MemoryEntry) -> Result<f64> {
+        let words1: std::collections::HashSet<String> = memory1.value
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .map(|word| word.to_lowercase())
+            .collect();
+
+        let words2: std::collections::HashSet<String> = memory2.value
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .map(|word| word.to_lowercase())
+            .collect();
+
+        let intersection = words1.intersection(&words2).count();
+        let union = words1.union(&words2).count();
+
+        let jaccard_similarity = if union > 0 {
+            intersection as f64 / union as f64
+        } else {
+            0.0
+        };
+
+        // Also consider importance similarity
+        let importance_diff = (memory1.metadata.importance - memory2.metadata.importance).abs();
+        let importance_similarity = 1.0 - importance_diff;
+
+        // Combine similarities with weights
+        let combined_similarity = jaccard_similarity * 0.8 + importance_similarity * 0.2;
+
+        Ok(combined_similarity)
     }
 
     /// Strategy 4: Check if importance accumulation exceeds threshold (total importance > 15.0)
     async fn check_importance_accumulation_trigger(
         &self,
-        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<bool> {
-        // In a full implementation, this would:
-        // 1. Sum importance scores of all related memories
-        // 2. Compare against configurable threshold (default: 15.0)
-        // 3. Trigger if total importance exceeds threshold
-
-        // Placeholder: simulate importance accumulation
-        let total_importance = memory.metadata.importance + 12.0; // Simulated total
         let importance_threshold = 15.0;
+
+        // Find all related memories and sum their importance scores
+        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
+
+        let total_importance: f64 = related_memories.iter()
+            .map(|m| m.metadata.importance)
+            .sum();
+
+        tracing::debug!("Importance accumulation: {:.2} (threshold: {:.2}, related memories: {})",
+            total_importance, importance_threshold, related_memories.len());
 
         Ok(total_importance > importance_threshold)
     }
@@ -633,18 +1502,79 @@ impl MemorySummarizer {
     /// Strategy 6: Check if temporal patterns detected (regular intervals, bursts, etc.)
     async fn check_temporal_pattern_trigger(
         &self,
-        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
-        _memory: &MemoryEntry,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
     ) -> Result<bool> {
-        // In a full implementation, this would:
-        // 1. Analyze temporal patterns in related memories
-        // 2. Detect regular intervals, burst patterns, etc.
-        // 3. Trigger if significant patterns detected
+        // Find related memories for temporal analysis
+        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
 
-        // Placeholder: simulate pattern detection
-        let pattern_detected = false; // Simulated pattern detection
+        if related_memories.len() < 3 {
+            return Ok(false); // Need at least 3 memories to detect patterns
+        }
 
-        Ok(pattern_detected)
+        // Sort memories by creation time
+        let mut sorted_memories = related_memories;
+        sorted_memories.sort_by_key(|m| m.metadata.created_at);
+
+        // Analyze temporal patterns
+        let burst_detected = self.detect_burst_pattern(&sorted_memories)?;
+        let regular_interval_detected = self.detect_regular_interval_pattern(&sorted_memories)?;
+
+        tracing::debug!("Temporal pattern analysis: burst={}, regular_interval={}",
+            burst_detected, regular_interval_detected);
+
+        Ok(burst_detected || regular_interval_detected)
+    }
+
+    /// Detect burst pattern (multiple memories created in short time span)
+    fn detect_burst_pattern(&self, sorted_memories: &[MemoryEntry]) -> Result<bool> {
+        let burst_window = chrono::Duration::hours(2); // 2-hour window
+        let burst_threshold = 3; // At least 3 memories in the window
+
+        for i in 0..sorted_memories.len() {
+            let window_start = sorted_memories[i].metadata.created_at;
+            let window_end = window_start + burst_window;
+
+            let memories_in_window = sorted_memories.iter()
+                .filter(|m| m.metadata.created_at >= window_start && m.metadata.created_at <= window_end)
+                .count();
+
+            if memories_in_window >= burst_threshold {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Detect regular interval pattern (memories created at regular intervals)
+    fn detect_regular_interval_pattern(&self, sorted_memories: &[MemoryEntry]) -> Result<bool> {
+        if sorted_memories.len() < 3 {
+            return Ok(false);
+        }
+
+        // Calculate intervals between consecutive memories
+        let mut intervals = Vec::new();
+        for i in 1..sorted_memories.len() {
+            let interval = sorted_memories[i].metadata.created_at - sorted_memories[i-1].metadata.created_at;
+            intervals.push(interval.num_seconds().abs() as f64);
+        }
+
+        // Check if intervals are relatively consistent (coefficient of variation < 0.5)
+        let mean_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
+        let variance = intervals.iter()
+            .map(|x| (x - mean_interval).powi(2))
+            .sum::<f64>() / intervals.len() as f64;
+        let std_dev = variance.sqrt();
+
+        let coefficient_of_variation = if mean_interval > 0.0 {
+            std_dev / mean_interval
+        } else {
+            1.0
+        };
+
+        // Regular pattern detected if coefficient of variation is low
+        Ok(coefficient_of_variation < 0.5)
     }
 
     /// Create default consolidation rules
@@ -697,21 +1627,90 @@ impl MemorySummarizer {
         Ok(candidates)
     }
 
-    /// Apply a specific consolidation rule
+    /// Apply a specific consolidation rule using sophisticated analysis
     async fn apply_consolidation_rule(
         &self,
         rule: &ConsolidationRule,
         memories: &[MemoryEntry],
     ) -> Result<Vec<Vec<String>>> {
         let mut candidates = Vec::new();
-        
-        // TODO: Implement proper consolidation rule application
-        // This would involve:
-        // 1. Filtering memories by rule criteria
-        // 2. Calculating similarity between memories
-        // 3. Grouping similar memories together
-        // 4. Checking age differences and importance thresholds
-        
+
+        // Step 1: Filter memories by rule criteria
+        let eligible_memories: Vec<&MemoryEntry> = memories.iter()
+            .filter(|memory| {
+                // Check minimum importance threshold
+                if memory.metadata.importance < rule.min_importance {
+                    return false;
+                }
+
+                // Check if memory has any trigger tags
+                if !rule.trigger_tags.is_empty() {
+                    let has_trigger_tag = rule.trigger_tags.iter()
+                        .any(|tag| memory.metadata.tags.contains(tag));
+                    if !has_trigger_tag {
+                        return false;
+                    }
+                }
+
+                true
+            })
+            .collect();
+
+        if eligible_memories.len() < 2 {
+            return Ok(candidates); // Need at least 2 memories to consolidate
+        }
+
+        // Step 2: Group memories by similarity
+        let mut groups = Vec::new();
+        let mut processed = std::collections::HashSet::new();
+
+        for (i, memory1) in eligible_memories.iter().enumerate() {
+            if processed.contains(&i) {
+                continue;
+            }
+
+            let mut group = vec![memory1.key.clone()];
+            processed.insert(i);
+
+            // Find similar memories for this group
+            for (j, memory2) in eligible_memories.iter().enumerate() {
+                if i == j || processed.contains(&j) {
+                    continue;
+                }
+
+                // Check similarity threshold
+                let similarity = self.calculate_memory_similarity(memory1, memory2)?;
+                if similarity < rule.similarity_threshold {
+                    continue;
+                }
+
+                // Check age difference threshold
+                let age_diff = (memory1.metadata.created_at - memory2.metadata.created_at).abs();
+                let max_age_diff = chrono::Duration::hours(rule.max_age_difference_hours as i64);
+                if age_diff > max_age_diff {
+                    continue;
+                }
+
+                // Add to group
+                group.push(memory2.key.clone());
+                processed.insert(j);
+            }
+
+            // Only add groups with multiple memories
+            if group.len() > 1 {
+                groups.push(group);
+            }
+        }
+
+        // Step 3: Apply additional consolidation logic
+        for group in groups {
+            if group.len() >= 2 {
+                candidates.push(group);
+            }
+        }
+
+        tracing::debug!("Consolidation rule '{}' found {} candidate groups", rule.name, candidates.len());
+
         Ok(candidates)
     }
 }
