@@ -47,6 +47,8 @@ redis = { version = "0.24", features = ["tokio-comp", "cluster"], optional = tru
 # raft = { version = "0.7", optional = true }
 # protobuf = { version = "3.4", optional = true }
 lz4 = { version = "1.24", optional = true }
+zstd = { version = "0.13", optional = true }
+brotli = { version = "3.4", optional = true }
 crossbeam = "0.8"
 dashmap = "5.5"
 parking_lot = "0.12"
@@ -151,6 +153,7 @@ sql-storage = ["sqlx"]
 embeddings = []
 vector-search = []
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
+compression = ["lz4", "zstd", "brotli"]
 realtime = ["tokio-tungstenite", "futures-util"]
 analytics = []
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
