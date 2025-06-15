@@ -274,13 +274,17 @@ impl AdvancedSearchEngine {
     }
 
     /// Perform a search query
-    pub async fn search(&self, query: SearchQuery) -> Result<Vec<SearchResult>> {
+    pub async fn search(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        query: SearchQuery,
+    ) -> Result<Vec<SearchResult>> {
         let start_time = std::time::Instant::now();
         
         // Note: Search history update removed for immutable method
 
         // Execute the search
-        let mut results = self.execute_search(&query).await?;
+        let mut results = self.execute_search(storage, &query).await?;
 
         // Apply ranking
         self.rank_results(&mut results, &query.ranking_strategy).await?;
@@ -304,12 +308,16 @@ impl AdvancedSearchEngine {
     }
 
     /// Execute the core search logic
-    async fn execute_search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
+    async fn execute_search(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        query: &SearchQuery,
+    ) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
 
         // Text-based search
         if let Some(text_query) = &query.text_query {
-            let text_results = self.search_by_text(text_query).await?;
+            let text_results = self.search_by_text(storage, text_query).await?;
             results.extend(text_results);
         }
 
@@ -330,7 +338,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Search by text content
-    async fn search_by_text(&self, text_query: &str) -> Result<Vec<SearchResult>> {
+    async fn search_by_text(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        text_query: &str,
+    ) -> Result<Vec<SearchResult>> {
         let query_lower = text_query.to_lowercase();
         let query_words: Vec<&str> = query_lower
             .split_whitespace()
@@ -359,34 +371,33 @@ impl AdvancedSearchEngine {
             }
         }
 
-        // Convert to search results
+        // Convert to search results by retrieving actual memories from storage
         let mut results = Vec::new();
         for (memory_key, score) in candidate_memories {
-            if let Some(index_entry) = self.search_index.metadata_index.get(&memory_key) {
-                // Create a placeholder memory entry
-                let memory = MemoryEntry::new(
-                    memory_key.clone(),
-                    format!("Content for {}", memory_key), // Placeholder
-                    MemoryType::ShortTerm, // Placeholder
-                );
+            if let Some(_index_entry) = self.search_index.metadata_index.get(&memory_key) {
+                // Retrieve the actual memory from storage
+                if let Some(memory) = storage.retrieve(&memory_key).await? {
+                    let relevance_score = score / query_words.len() as f64;
+                    let highlights = self.generate_highlights(&memory.value, text_query).await?;
 
-                let relevance_score = score / query_words.len() as f64;
-                let highlights = self.generate_highlights(&memory.value, text_query).await?;
-
-                results.push(SearchResult {
-                    memory,
-                    relevance_score,
-                    ranking_score: relevance_score,
-                    highlights,
-                    explanation: format!("Matched {} query terms", score as usize),
-                    related_memories: Vec::new(),
-                    search_metadata: SearchResultMetadata {
-                        generated_at: Utc::now(),
-                        algorithm: "text_search".to_string(),
-                        processing_time_ms: 0,
-                        debug_info: HashMap::new(),
-                    },
-                });
+                    results.push(SearchResult {
+                        memory,
+                        relevance_score,
+                        ranking_score: relevance_score,
+                        highlights,
+                        explanation: format!("Matched {} query terms with score {:.2}", score as usize, relevance_score),
+                        related_memories: Vec::new(),
+                        search_metadata: SearchResultMetadata {
+                            generated_at: Utc::now(),
+                            algorithm: "text_search".to_string(),
+                            processing_time_ms: 0,
+                            debug_info: HashMap::new(),
+                        },
+                    });
+                } else {
+                    // Memory not found in storage, but exists in index - log warning
+                    tracing::warn!("Memory '{}' found in search index but not in storage", memory_key);
+                }
             }
         }
 
@@ -491,8 +502,8 @@ impl AdvancedSearchEngine {
             RankingStrategy::Combined(factors) => {
                 self.apply_combined_ranking(results, factors).await?;
             }
-            RankingStrategy::Custom(_name) => {
-                // TODO: Implement custom ranking strategies
+            RankingStrategy::Custom(name) => {
+                self.apply_custom_ranking(results, name).await?;
             }
         }
 
@@ -540,6 +551,58 @@ impl AdvancedSearchEngine {
             } else {
                 result.relevance_score
             };
+        }
+
+        results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap());
+        Ok(())
+    }
+
+    /// Apply custom ranking strategy
+    async fn apply_custom_ranking(&self, results: &mut [SearchResult], strategy_name: &str) -> Result<()> {
+        match strategy_name {
+            "recent_and_important" => {
+                // Combine recency and importance with equal weight
+                for result in results.iter_mut() {
+                    let age_hours = (Utc::now() - result.memory.created_at()).num_hours() as f64;
+                    let recency_score = (1.0 / (1.0 + age_hours / 24.0)).max(0.0);
+                    let importance_score = result.memory.metadata.importance;
+                    result.ranking_score = (recency_score + importance_score) / 2.0;
+                }
+            }
+            "user_engagement" => {
+                // Rank by access frequency and confidence
+                for result in results.iter_mut() {
+                    let frequency_score = (result.memory.access_count() as f64 / 100.0).min(1.0);
+                    let confidence_score = result.memory.metadata.confidence;
+                    result.ranking_score = (frequency_score * 0.6 + confidence_score * 0.4);
+                }
+            }
+            "content_richness" => {
+                // Rank by content length and tag diversity
+                for result in results.iter_mut() {
+                    let content_score = (result.memory.value.len() as f64 / 1000.0).min(1.0);
+                    let tag_score = (result.memory.metadata.tags.len() as f64 / 10.0).min(1.0);
+                    result.ranking_score = (content_score * 0.7 + tag_score * 0.3);
+                }
+            }
+            "balanced" => {
+                // Balanced ranking considering multiple factors
+                for result in results.iter_mut() {
+                    let relevance = result.relevance_score;
+                    let importance = result.memory.metadata.importance;
+                    let age_hours = (Utc::now() - result.memory.created_at()).num_hours() as f64;
+                    let recency = (1.0 / (1.0 + age_hours / 24.0)).max(0.0);
+                    let frequency = (result.memory.access_count() as f64 / 100.0).min(1.0);
+
+                    result.ranking_score = relevance * 0.3 + importance * 0.25 + recency * 0.25 + frequency * 0.2;
+                }
+            }
+            _ => {
+                // Default to relevance-based ranking for unknown strategies
+                tracing::warn!("Unknown custom ranking strategy '{}', falling back to relevance", strategy_name);
+                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+                return Ok(());
+            }
         }
 
         results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap());
@@ -889,7 +952,12 @@ impl AdvancedSearchEngine {
     }
 
     /// Perform semantic search using embeddings (if available)
-    pub async fn semantic_search(&self, query_embedding: &[f32], limit: Option<usize>) -> Result<Vec<SearchResult>> {
+    pub async fn semantic_search(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        query_embedding: &[f32],
+        limit: Option<usize>,
+    ) -> Result<Vec<SearchResult>> {
         if !self.config.enable_semantic_search {
             return Err(MemoryError::configuration("Semantic search not enabled"));
         }
@@ -903,27 +971,25 @@ impl AdvancedSearchEngine {
             let semantic_score = self.simulate_semantic_similarity(query_embedding, index_entry);
 
             if semantic_score > 0.3 { // Threshold for semantic relevance
-                // Create placeholder memory entry
-                let memory = MemoryEntry::new(
-                    memory_key.clone(),
-                    format!("Semantic content for {}", memory_key),
-                    MemoryType::ShortTerm,
-                );
-
-                results.push(SearchResult {
-                    memory,
-                    relevance_score: semantic_score,
-                    ranking_score: semantic_score,
-                    highlights: Vec::new(), // Semantic search doesn't have text highlights
-                    explanation: format!("Semantic similarity: {:.2}", semantic_score),
-                    related_memories: Vec::new(),
-                    search_metadata: SearchResultMetadata {
-                        generated_at: Utc::now(),
-                        algorithm: "semantic_search".to_string(),
-                        processing_time_ms: 0,
-                        debug_info: HashMap::new(),
-                    },
-                });
+                // Retrieve the actual memory from storage
+                if let Some(memory) = storage.retrieve(memory_key).await? {
+                    results.push(SearchResult {
+                        memory,
+                        relevance_score: semantic_score,
+                        ranking_score: semantic_score,
+                        highlights: Vec::new(), // Semantic search doesn't have text highlights
+                        explanation: format!("Semantic similarity: {:.2}", semantic_score),
+                        related_memories: Vec::new(),
+                        search_metadata: SearchResultMetadata {
+                            generated_at: Utc::now(),
+                            algorithm: "semantic_search".to_string(),
+                            processing_time_ms: 0,
+                            debug_info: HashMap::new(),
+                        },
+                    });
+                } else {
+                    tracing::warn!("Memory '{}' found in search index but not in storage", memory_key);
+                }
             }
         }
 

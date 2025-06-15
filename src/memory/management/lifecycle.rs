@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+use lz4_flex;
 
 /// Manages the lifecycle of memories from creation to archival
 pub struct MemoryLifecycleManager {
@@ -186,7 +187,11 @@ impl MemoryLifecycleManager {
     }
 
     /// Track memory creation
-    pub async fn track_memory_creation(&mut self, memory: &MemoryEntry) -> Result<()> {
+    pub async fn track_memory_creation(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
+    ) -> Result<()> {
         let state = MemoryLifecycleState {
             memory_key: memory.key.clone(),
             stage: MemoryStage::Created,
@@ -208,13 +213,17 @@ impl MemoryLifecycleManager {
         };
 
         self.events.push(event);
-        self.evaluate_policies(&memory.key).await?;
+        self.evaluate_policies(storage, &memory.key).await?;
 
         Ok(())
     }
 
     /// Track memory update
-    pub async fn track_memory_update(&mut self, memory: &MemoryEntry) -> Result<()> {
+    pub async fn track_memory_update(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory: &MemoryEntry,
+    ) -> Result<()> {
         if let Some(state) = self.memory_states.get_mut(&memory.key) {
             state.last_updated = Utc::now();
             
@@ -233,7 +242,7 @@ impl MemoryLifecycleManager {
             };
 
             self.events.push(event);
-            self.evaluate_policies(&memory.key).await?;
+            self.evaluate_policies(storage, &memory.key).await?;
         }
 
         Ok(())
@@ -262,7 +271,11 @@ impl MemoryLifecycleManager {
 
     /// Evaluate policies for a specific memory using comprehensive lifecycle management
     /// Implements automated archival, retention policies, and cleanup with sophisticated logic
-    async fn evaluate_policies(&mut self, memory_key: &str) -> Result<()> {
+    async fn evaluate_policies(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
         tracing::debug!("Evaluating lifecycle policies for memory: {}", memory_key);
         let start_time = std::time::Instant::now();
 
@@ -280,7 +293,7 @@ impl MemoryLifecycleManager {
             tracing::debug!("Evaluating policy '{}' for memory '{}'", policy.name, memory_key);
 
             // Check if all conditions are met
-            let conditions_met = self.evaluate_policy_conditions(&policy, memory_key, &memory_state).await?;
+            let conditions_met = self.evaluate_policy_conditions(storage, &policy, memory_key, &memory_state).await?;
 
             if conditions_met {
                 tracing::info!("Policy '{}' triggered for memory '{}'", policy.name, memory_key);
@@ -308,7 +321,7 @@ impl MemoryLifecycleManager {
 
         // Execute actions
         for (action, policy_id) in actions_to_execute {
-            self.execute_lifecycle_action(memory_key, &action, &policy_id).await?;
+            self.execute_lifecycle_action(storage, memory_key, &action, &policy_id).await?;
         }
 
         let duration = start_time.elapsed();
@@ -320,12 +333,13 @@ impl MemoryLifecycleManager {
     /// Evaluate conditions for a specific policy against a memory
     async fn evaluate_policy_conditions(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         policy: &LifecyclePolicy,
         memory_key: &str,
         memory_state: &MemoryLifecycleState,
     ) -> Result<bool> {
         for condition in &policy.conditions {
-            let condition_met = self.evaluate_single_condition(condition, memory_key, memory_state).await?;
+            let condition_met = self.evaluate_single_condition(storage, condition, memory_key, memory_state).await?;
             if !condition_met {
                 tracing::debug!("Condition {:?} not met for memory '{}'", condition, memory_key);
                 return Ok(false);
@@ -339,6 +353,7 @@ impl MemoryLifecycleManager {
     /// Evaluate a single condition against a memory
     async fn evaluate_single_condition(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         condition: &LifecycleCondition,
         memory_key: &str,
         memory_state: &MemoryLifecycleState,
@@ -368,24 +383,37 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleCondition::ImportanceBelow { threshold } => {
-                // This would require access to the actual memory entry
-                // For now, simulate based on memory state
-                let simulated_importance = 0.5; // Would get from actual memory
-                Ok(simulated_importance < *threshold)
+                // Get the actual memory entry to check importance
+                if let Some(memory) = storage.retrieve(memory_key).await? {
+                    Ok(memory.metadata.importance < *threshold)
+                } else {
+                    // Memory not found, consider it as low importance
+                    Ok(true)
+                }
             }
 
             LifecycleCondition::SizeExceeds { bytes } => {
-                // This would require access to the actual memory entry
-                // For now, simulate based on memory key length
-                let simulated_size = memory_key.len() * 100; // Rough estimate
-                Ok(simulated_size > *bytes)
+                // Get the actual memory entry to check size
+                if let Some(memory) = storage.retrieve(memory_key).await? {
+                    let memory_size = memory.value.len() +
+                        memory.metadata.tags.iter().map(|t| t.len()).sum::<usize>() +
+                        memory.key.len();
+                    Ok(memory_size > *bytes)
+                } else {
+                    // Memory not found, consider it as not exceeding size
+                    Ok(false)
+                }
             }
 
             LifecycleCondition::HasTags { tags } => {
-                // This would require access to the actual memory entry
-                // For now, simulate based on memory key patterns
-                let has_matching_tag = tags.iter().any(|tag| memory_key.contains(tag));
-                Ok(has_matching_tag)
+                // Get the actual memory entry to check tags
+                if let Some(memory) = storage.retrieve(memory_key).await? {
+                    let has_matching_tag = tags.iter().any(|tag| memory.metadata.tags.contains(tag));
+                    Ok(has_matching_tag)
+                } else {
+                    // Memory not found, consider it as not having tags
+                    Ok(false)
+                }
             }
 
             LifecycleCondition::AccessCountBelow { count } => {
@@ -406,6 +434,7 @@ impl MemoryLifecycleManager {
     /// Execute a lifecycle action on a memory
     async fn execute_lifecycle_action(
         &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_key: &str,
         action: &LifecycleAction,
         policy_id: &str,
@@ -422,15 +451,15 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleAction::Compress => {
-                self.compress_memory(memory_key).await?;
+                self.compress_memory(storage, memory_key).await?;
             }
 
             LifecycleAction::MoveToLongTerm => {
-                self.move_to_long_term_storage(memory_key).await?;
+                self.move_to_long_term_storage(storage, memory_key).await?;
             }
 
             LifecycleAction::ReduceImportance { factor } => {
-                self.reduce_memory_importance(memory_key, *factor).await?;
+                self.reduce_memory_importance(storage, memory_key, *factor).await?;
             }
 
             LifecycleAction::AddWarningTag { tag } => {
@@ -438,7 +467,7 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleAction::Summarize => {
-                self.summarize_memory(memory_key).await?;
+                self.summarize_memory(storage, memory_key).await?;
             }
 
             LifecycleAction::Custom { action } => {
@@ -502,36 +531,115 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Compress a memory (placeholder for compression logic)
-    async fn compress_memory(&mut self, memory_key: &str) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. Compress the memory content using algorithms like LZ4, GZIP, etc.
-        // 2. Update memory metadata to reflect compression
-        // 3. Potentially move to different storage tier
+    /// Compress a memory using LZ4 compression algorithm
+    async fn compress_memory(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        // Retrieve the memory from storage
+        if let Some(mut memory) = storage.retrieve(memory_key).await? {
+            let original_size = memory.value.len();
 
-        tracing::info!("Memory '{}' compressed (placeholder implementation)", memory_key);
+            // Compress the memory content using LZ4
+            let compressed_data = lz4_flex::compress_prepend_size(memory.value.as_bytes());
+            let compressed_size = compressed_data.len();
+
+            // Update memory with compressed content (using hex encoding for simplicity)
+            memory.value = format!("COMPRESSED:{}", hex::encode(&compressed_data));
+            memory.metadata.tags.push("compressed".to_string());
+            memory.metadata.last_accessed = chrono::Utc::now();
+
+            // Store the compressed memory back
+            storage.store(&memory).await?;
+
+            // Update lifecycle state
+            if let Some(state) = self.memory_states.get_mut(memory_key) {
+                state.last_updated = chrono::Utc::now();
+                state.warnings.push(format!("Compressed: {} -> {} bytes ({:.1}% reduction)",
+                    original_size, compressed_size,
+                    (1.0 - compressed_size as f64 / original_size as f64) * 100.0));
+            }
+
+            tracing::info!("Memory '{}' compressed: {} -> {} bytes ({:.1}% reduction)",
+                memory_key, original_size, compressed_size,
+                (1.0 - compressed_size as f64 / original_size as f64) * 100.0);
+        } else {
+            tracing::warn!("Memory '{}' not found for compression", memory_key);
+        }
+
         Ok(())
     }
 
-    /// Move memory to long-term storage
-    async fn move_to_long_term_storage(&mut self, memory_key: &str) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. Move memory to slower but cheaper storage (e.g., S3 Glacier)
-        // 2. Update memory metadata with new storage location
-        // 3. Potentially compress the memory as well
+    /// Move memory to long-term storage with metadata updates
+    async fn move_to_long_term_storage(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        // Retrieve the memory from storage
+        if let Some(mut memory) = storage.retrieve(memory_key).await? {
+            // Mark memory as moved to long-term storage
+            memory.metadata.tags.push("long_term_storage".to_string());
+            memory.metadata.tags.push("archived".to_string());
+            memory.metadata.last_accessed = chrono::Utc::now();
 
-        tracing::info!("Memory '{}' moved to long-term storage (placeholder implementation)", memory_key);
+            // Reduce importance for long-term storage
+            memory.metadata.importance *= 0.5;
+
+            // Store the updated memory back
+            storage.store(&memory).await?;
+
+            // Update lifecycle state
+            if let Some(state) = self.memory_states.get_mut(memory_key) {
+                state.stage = MemoryStage::Archived;
+                state.last_updated = chrono::Utc::now();
+                state.warnings.push("Moved to long-term storage".to_string());
+            }
+
+            tracing::info!("Memory '{}' moved to long-term storage successfully", memory_key);
+        } else {
+            tracing::warn!("Memory '{}' not found for long-term storage move", memory_key);
+        }
+
         Ok(())
     }
 
-    /// Reduce memory importance by a factor
-    async fn reduce_memory_importance(&mut self, memory_key: &str, factor: f64) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. Access the actual memory entry
-        // 2. Reduce its importance score by the given factor
-        // 3. Update the memory in storage
+    /// Reduce memory importance by a factor with storage update
+    async fn reduce_memory_importance(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+        factor: f64,
+    ) -> Result<()> {
+        // Retrieve the memory from storage
+        if let Some(mut memory) = storage.retrieve(memory_key).await? {
+            let original_importance = memory.metadata.importance;
 
-        tracing::info!("Memory '{}' importance reduced by factor {} (placeholder implementation)", memory_key, factor);
+            // Reduce importance by the given factor
+            memory.metadata.importance *= factor;
+            memory.metadata.importance = memory.metadata.importance.max(0.0).min(1.0); // Clamp to [0, 1]
+            memory.metadata.last_accessed = chrono::Utc::now();
+
+            // Add tag to indicate importance reduction
+            memory.metadata.tags.push(format!("importance_reduced_{:.2}", factor));
+
+            // Store the updated memory back
+            storage.store(&memory).await?;
+
+            // Update lifecycle state
+            if let Some(state) = self.memory_states.get_mut(memory_key) {
+                state.last_updated = chrono::Utc::now();
+                state.warnings.push(format!("Importance reduced: {:.3} -> {:.3} (factor: {:.2})",
+                    original_importance, memory.metadata.importance, factor));
+            }
+
+            tracing::info!("Memory '{}' importance reduced: {:.3} -> {:.3} (factor: {:.2})",
+                memory_key, original_importance, memory.metadata.importance, factor);
+        } else {
+            tracing::warn!("Memory '{}' not found for importance reduction", memory_key);
+        }
+
         Ok(())
     }
 
@@ -546,15 +654,80 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Summarize a memory (placeholder for summarization logic)
-    async fn summarize_memory(&mut self, memory_key: &str) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. Use the summarization system to create a summary
-        // 2. Replace the original content with the summary
-        // 3. Mark the memory as summarized
+    /// Summarize a memory using intelligent content reduction
+    async fn summarize_memory(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        // Retrieve the memory from storage
+        if let Some(mut memory) = storage.retrieve(memory_key).await? {
+            let original_length = memory.value.len();
 
-        tracing::info!("Memory '{}' summarized (placeholder implementation)", memory_key);
+            // Create a simple but effective summary
+            let summary = self.create_memory_summary(&memory.value);
+            let summary_length = summary.len();
+
+            // Update memory with summary
+            memory.value = summary;
+            memory.metadata.tags.push("summarized".to_string());
+            memory.metadata.tags.push(format!("original_length_{}", original_length));
+            memory.metadata.last_accessed = chrono::Utc::now();
+
+            // Reduce importance slightly since it's now summarized
+            memory.metadata.importance *= 0.9;
+
+            // Store the summarized memory back
+            storage.store(&memory).await?;
+
+            // Update lifecycle state
+            if let Some(state) = self.memory_states.get_mut(memory_key) {
+                state.last_updated = chrono::Utc::now();
+                state.warnings.push(format!("Summarized: {} -> {} chars ({:.1}% reduction)",
+                    original_length, summary_length,
+                    (1.0 - summary_length as f64 / original_length as f64) * 100.0));
+            }
+
+            tracing::info!("Memory '{}' summarized: {} -> {} chars ({:.1}% reduction)",
+                memory_key, original_length, summary_length,
+                (1.0 - summary_length as f64 / original_length as f64) * 100.0);
+        } else {
+            tracing::warn!("Memory '{}' not found for summarization", memory_key);
+        }
+
         Ok(())
+    }
+
+    /// Create a summary of memory content using multiple strategies
+    fn create_memory_summary(&self, content: &str) -> String {
+        if content.len() <= 200 {
+            return content.to_string(); // Already short enough
+        }
+
+        // Strategy 1: Extract first and last sentences
+        let sentences: Vec<&str> = content.split('.').filter(|s| !s.trim().is_empty()).collect();
+        if sentences.len() >= 2 {
+            let first_sentence = sentences[0].trim();
+            let last_sentence = sentences[sentences.len() - 1].trim();
+
+            if first_sentence.len() + last_sentence.len() < content.len() / 2 {
+                return format!("{}. ... {}", first_sentence, last_sentence);
+            }
+        }
+
+        // Strategy 2: Extract key phrases (words longer than 4 characters)
+        let key_words: Vec<&str> = content.split_whitespace()
+            .filter(|word| word.len() > 4 && word.chars().all(|c| c.is_alphabetic()))
+            .take(10)
+            .collect();
+
+        if !key_words.is_empty() {
+            return format!("Key concepts: {}", key_words.join(", "));
+        }
+
+        // Strategy 3: Simple truncation with ellipsis
+        let truncated = &content[..content.len().min(200)];
+        format!("{}...", truncated)
     }
 
     /// Execute a custom action
@@ -567,7 +740,10 @@ impl MemoryLifecycleManager {
     }
 
     /// Run automated lifecycle management for all memories
-    pub async fn run_automated_lifecycle_management(&mut self) -> Result<LifecycleManagementReport> {
+    pub async fn run_automated_lifecycle_management(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+    ) -> Result<LifecycleManagementReport> {
         tracing::info!("Starting automated lifecycle management run");
         let start_time = std::time::Instant::now();
 
@@ -587,7 +763,7 @@ impl MemoryLifecycleManager {
         report.total_memories_evaluated = memory_keys.len();
 
         for memory_key in memory_keys {
-            match self.evaluate_policies(&memory_key).await {
+            match self.evaluate_policies(storage, &memory_key).await {
                 Ok(()) => {
                     // Count actions taken (simplified)
                     let start_time_utc = Utc::now() - chrono::Duration::milliseconds(start_time.elapsed().as_millis() as i64);

@@ -587,6 +587,8 @@ impl DocumentMemoryProcessor {
 #[async_trait::async_trait]
 impl MultiModalProcessor for DocumentMemoryProcessor {
     async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+        let start_time = std::time::Instant::now();
+
         if content.len() > self.config.max_document_size {
             return Err(SynapticError::ProcessingError(
                 format!("Document size {} exceeds maximum {}", content.len(), self.config.max_document_size)
@@ -647,14 +649,23 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             structure,
         };
 
+        // Calculate real processing time
+        let processing_time_ms = start_time.elapsed().as_millis() as u64;
+
+        // Calculate real quality score using multiple factors
+        let quality_score = self.calculate_document_quality_score(&doc_metadata, content.len());
+
+        // Calculate confidence based on processing success and content characteristics
+        let confidence = self.calculate_processing_confidence(&doc_metadata, &format, processing_time_ms);
+
         // Create multi-modal metadata
         let metadata = MultiModalMetadata {
             title: doc_metadata.title.clone(),
             description: doc_metadata.summary.clone(),
             tags: doc_metadata.keywords.clone(),
-            quality_score: 0.8, // Default quality score
-            confidence: 0.9,
-            processing_time_ms: 100, // Placeholder
+            quality_score,
+            confidence,
+            processing_time_ms,
             extracted_features: HashMap::new(),
         };
 
@@ -725,5 +736,181 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)
+    }
+
+    /// Calculate document quality score based on multiple factors
+    fn calculate_document_quality_score(&self, metadata: &DocumentMetadata, content_size: usize) -> f64 {
+        let mut quality_factors = Vec::new();
+
+        // Factor 1: Content completeness (0.0-1.0)
+        let completeness_score = if metadata.word_count > 0 {
+            let ideal_word_count = 500.0; // Ideal document length
+            let word_ratio = metadata.word_count as f64 / ideal_word_count;
+            // Use sigmoid function to score between 0 and 1
+            1.0 / (1.0 + (-2.0 * (word_ratio - 0.5)).exp())
+        } else {
+            0.0
+        };
+        quality_factors.push(completeness_score * 0.25);
+
+        // Factor 2: Structure richness (0.0-1.0)
+        let structure_score = {
+            let heading_count = metadata.structure.headings.len() as f64;
+            let section_count = metadata.structure.sections.len() as f64;
+            let reference_count = metadata.structure.references.len() as f64;
+
+            // Normalize structure elements
+            let structure_richness = (heading_count * 0.4 + section_count * 0.4 + reference_count * 0.2) / 10.0;
+            structure_richness.min(1.0)
+        };
+        quality_factors.push(structure_score * 0.20);
+
+        // Factor 3: Keyword density and relevance (0.0-1.0)
+        let keyword_score = if metadata.word_count > 0 {
+            let keyword_density = metadata.keywords.len() as f64 / (metadata.word_count as f64 / 100.0);
+            // Optimal keyword density is around 2-5%
+            let optimal_density = 3.5;
+            let density_score = 1.0 - (keyword_density - optimal_density).abs() / optimal_density;
+            density_score.max(0.0).min(1.0)
+        } else {
+            0.0
+        };
+        quality_factors.push(keyword_score * 0.15);
+
+        // Factor 4: Content-to-size ratio (0.0-1.0)
+        let efficiency_score = if content_size > 0 {
+            let text_ratio = metadata.char_count as f64 / content_size as f64;
+            // Good text extraction should yield 0.3-0.8 ratio
+            if text_ratio >= 0.3 && text_ratio <= 0.8 {
+                1.0
+            } else if text_ratio < 0.3 {
+                text_ratio / 0.3
+            } else {
+                1.0 - (text_ratio - 0.8) / 0.2
+            }
+        } else {
+            0.0
+        };
+        quality_factors.push(efficiency_score * 0.15);
+
+        // Factor 5: Language and readability (0.0-1.0)
+        let readability_score = if metadata.word_count > 0 && metadata.char_count > 0 {
+            let avg_word_length = metadata.char_count as f64 / metadata.word_count as f64;
+            // Optimal average word length is around 4-6 characters
+            let readability = if avg_word_length >= 4.0 && avg_word_length <= 6.0 {
+                1.0
+            } else if avg_word_length < 4.0 {
+                avg_word_length / 4.0
+            } else {
+                1.0 - (avg_word_length - 6.0) / 4.0
+            };
+            readability.max(0.0).min(1.0)
+        } else {
+            0.0
+        };
+        quality_factors.push(readability_score * 0.15);
+
+        // Factor 6: Summary quality (0.0-1.0)
+        let summary_score = if let Some(ref summary) = metadata.summary {
+            let summary_length = summary.len() as f64;
+            let text_length = metadata.char_count as f64;
+            if text_length > 0.0 {
+                let summary_ratio = summary_length / text_length;
+                // Good summary should be 5-15% of original text
+                if summary_ratio >= 0.05 && summary_ratio <= 0.15 {
+                    1.0
+                } else if summary_ratio < 0.05 {
+                    summary_ratio / 0.05
+                } else {
+                    1.0 - (summary_ratio - 0.15) / 0.10
+                }
+            } else {
+                0.0
+            }
+        } else {
+            0.5 // Neutral score if no summary
+        };
+        quality_factors.push(summary_score * 0.10);
+
+        // Calculate weighted average
+        let total_score: f64 = quality_factors.iter().sum();
+        total_score.max(0.0).min(1.0)
+    }
+
+    /// Calculate processing confidence based on various factors
+    fn calculate_processing_confidence(&self, metadata: &DocumentMetadata, format: &DocumentFormat, processing_time_ms: u64) -> f64 {
+        let mut confidence_factors = Vec::new();
+
+        // Factor 1: Format recognition confidence (0.0-1.0)
+        let format_confidence = match format {
+            DocumentFormat::Pdf => 0.9,
+            DocumentFormat::Docx => 0.85,
+            DocumentFormat::Txt => 0.95,
+            DocumentFormat::Rtf => 0.8,
+            DocumentFormat::Html => 0.85,
+            DocumentFormat::Markdown => 0.9,
+            DocumentFormat::Unknown => 0.3,
+        };
+        confidence_factors.push(format_confidence * 0.3);
+
+        // Factor 2: Text extraction success (0.0-1.0)
+        let extraction_confidence = if metadata.word_count > 0 {
+            // Higher word count generally indicates successful extraction
+            let word_confidence = (metadata.word_count as f64 / 100.0).min(1.0);
+            word_confidence
+        } else {
+            0.1 // Low confidence if no words extracted
+        };
+        confidence_factors.push(extraction_confidence * 0.25);
+
+        // Factor 3: Processing time reasonableness (0.0-1.0)
+        let time_confidence = {
+            let expected_time_per_kb = 10.0; // ms per KB
+            let content_kb = metadata.char_count as f64 / 1024.0;
+            let expected_time = content_kb * expected_time_per_kb;
+            let time_ratio = processing_time_ms as f64 / expected_time.max(1.0);
+
+            // Confidence is higher when processing time is reasonable
+            if time_ratio <= 2.0 {
+                1.0 - (time_ratio - 1.0).abs() / 2.0
+            } else {
+                0.5 / time_ratio // Decreasing confidence for very long processing
+            }
+        };
+        confidence_factors.push(time_confidence * 0.2);
+
+        // Factor 4: Content consistency (0.0-1.0)
+        let consistency_confidence = {
+            let char_to_word_ratio = if metadata.word_count > 0 {
+                metadata.char_count as f64 / metadata.word_count as f64
+            } else {
+                0.0
+            };
+
+            // Typical ratio is 4-8 characters per word
+            if char_to_word_ratio >= 3.0 && char_to_word_ratio <= 10.0 {
+                1.0
+            } else if char_to_word_ratio < 3.0 {
+                char_to_word_ratio / 3.0
+            } else {
+                1.0 - (char_to_word_ratio - 10.0) / 10.0
+            }
+        };
+        confidence_factors.push(consistency_confidence.max(0.0).min(1.0) * 0.15);
+
+        // Factor 5: Feature extraction success (0.0-1.0)
+        let feature_confidence = {
+            let has_keywords = !metadata.keywords.is_empty();
+            let has_structure = !metadata.structure.headings.is_empty() || !metadata.structure.sections.is_empty();
+            let has_summary = metadata.summary.is_some();
+
+            let feature_count = [has_keywords, has_structure, has_summary].iter().filter(|&&x| x).count();
+            feature_count as f64 / 3.0
+        };
+        confidence_factors.push(feature_confidence * 0.1);
+
+        // Calculate weighted average
+        let total_confidence: f64 = confidence_factors.iter().sum();
+        total_confidence.max(0.0).min(1.0)
     }
 }
