@@ -148,6 +148,17 @@ pub struct MemoryManagementStats {
     pub last_optimization: Option<DateTime<Utc>>,
 }
 
+/// Result of executing intelligent summarization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummarizationExecutionResult {
+    pub memories_processed: usize,
+    pub strategy_used: String,
+    pub quality_score: f64,
+    pub execution_time_ms: u64,
+    pub summary_length: usize,
+    pub compression_ratio: f64,
+}
+
 impl AdvancedMemoryManager {
     /// Create a new advanced memory manager
     pub fn new(config: MemoryManagementConfig) -> Self {
@@ -267,11 +278,28 @@ impl AdvancedMemoryManager {
         }
 
         // Check if summarization should be triggered
+        let mut summarization_data = None;
         if self.config.enable_auto_summarization {
             let related_count = self.count_related_memories(storage, &updated_memory).await?;
             if related_count > self.config.summarization_threshold {
                 messages.push(format!("Summarization triggered: {} related memories found", related_count));
-                // TODO: Trigger summarization
+
+                // Execute intelligent summarization with comprehensive strategy selection
+                let summarization_result = self.execute_intelligent_summarization(
+                    storage,
+                    &updated_memory,
+                    related_count
+                ).await?;
+
+                messages.push(format!(
+                    "Summarization completed: {} memories processed, strategy: {}, quality: {:.3}",
+                    summarization_result.memories_processed,
+                    summarization_result.strategy_used,
+                    summarization_result.quality_score
+                ));
+
+                // Store summarization metrics for result data
+                summarization_data = Some(serde_json::to_value(&summarization_result)?);
             }
         }
 
@@ -279,17 +307,29 @@ impl AdvancedMemoryManager {
 
         tracing::info!("Memory '{}' updated successfully in {}ms", memory_key, duration_ms);
 
+        // Build result data with potential summarization info
+        let mut result_data = serde_json::json!({
+            "memory_key": memory_key,
+            "new_value_length": updated_memory.value.len(),
+            "version_id": version_id,
+            "related_memories_count": 0,
+            "summarization_triggered": false
+        });
+
+        // Add summarization data if it was triggered
+        if self.config.enable_auto_summarization {
+            if let Some(summarization_data) = summarization_data {
+                result_data["summarization_triggered"] = serde_json::Value::Bool(true);
+                result_data["summarization_result"] = summarization_data;
+            }
+        }
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Update,
             success: true,
             affected_count: 1,
             duration_ms,
-            result_data: Some(serde_json::json!({
-                "memory_key": memory_key,
-                "new_value_length": updated_memory.value.len(),
-                "version_id": version_id,
-                "related_memories_count": 0
-            })),
+            result_data: Some(result_data),
             messages,
         })
     }
@@ -848,6 +888,243 @@ impl AdvancedMemoryManager {
         let union = words1.union(&words2).count();
 
         intersection as f64 / union as f64
+    }
+
+    /// Execute intelligent summarization with comprehensive strategy selection
+    /// Uses multi-factor analysis to determine optimal summarization approach
+    async fn execute_intelligent_summarization(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        target_memory: &MemoryEntry,
+        related_count: usize,
+    ) -> Result<SummarizationExecutionResult> {
+        let start_time = std::time::Instant::now();
+        tracing::info!("Starting intelligent summarization for memory '{}' with {} related memories",
+            target_memory.key, related_count);
+
+        // Collect all related memories for summarization
+        let related_memory_keys = self.collect_related_memory_keys(storage, target_memory).await?;
+
+        // Determine optimal summarization strategy based on content analysis
+        let strategy = self.determine_optimal_summarization_strategy(
+            storage,
+            target_memory,
+            &related_memory_keys,
+            related_count
+        ).await?;
+
+        tracing::info!("Selected summarization strategy: {:?} for {} memories", strategy, related_memory_keys.len());
+
+        // Execute summarization with selected strategy
+        let summary_result = self.summarizer
+            .summarize_memories(storage, related_memory_keys.clone(), strategy.clone())
+            .await?;
+
+        // Calculate quality metrics for the summarization
+        let quality_score = self.calculate_summarization_quality_score(&summary_result, related_count).await?;
+
+        // Store summarization results if quality meets threshold
+        if quality_score > 0.6 {
+            let summary_key = format!("summary_{}_{}", target_memory.key, chrono::Utc::now().timestamp());
+            self.store_summarization_result(storage, &summary_key, &summary_result, quality_score).await?;
+            tracing::info!("High-quality summary stored with key: {}", summary_key);
+        }
+
+        let execution_time = start_time.elapsed();
+        tracing::info!("Summarization completed in {:?} with quality score: {:.3}", execution_time, quality_score);
+
+        Ok(SummarizationExecutionResult {
+            memories_processed: related_memory_keys.len(),
+            strategy_used: format!("{:?}", strategy),
+            quality_score,
+            execution_time_ms: execution_time.as_millis() as u64,
+            summary_length: summary_result.summary_content.len(),
+            compression_ratio: if related_memory_keys.len() > 0 {
+                summary_result.summary_content.len() as f64 / related_memory_keys.len() as f64
+            } else {
+                0.0
+            },
+        })
+    }
+
+    /// Collect all related memory keys for summarization
+    async fn collect_related_memory_keys(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        target_memory: &MemoryEntry,
+    ) -> Result<Vec<String>> {
+        let mut all_related = std::collections::HashSet::new();
+
+        // Use all existing strategies to collect comprehensive related memories
+        let kg_related = self.count_knowledge_graph_related(storage, target_memory).await?;
+        all_related.extend(kg_related);
+
+        let similarity_related = self.count_similarity_based_related(storage, target_memory).await?;
+        all_related.extend(similarity_related);
+
+        let tag_related = self.count_tag_based_related(storage, target_memory).await?;
+        all_related.extend(tag_related);
+
+        let temporal_related = self.count_temporal_proximity_related(storage, target_memory).await?;
+        all_related.extend(temporal_related);
+
+        let content_related = self.count_content_similarity_related(storage, target_memory).await?;
+        all_related.extend(content_related);
+
+        // Always include the target memory itself
+        all_related.insert(target_memory.key.clone());
+
+        Ok(all_related.into_iter().collect())
+    }
+
+    /// Determine optimal summarization strategy based on content analysis
+    async fn determine_optimal_summarization_strategy(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        target_memory: &MemoryEntry,
+        related_keys: &[String],
+        related_count: usize,
+    ) -> Result<SummaryStrategy> {
+        // Analyze content characteristics to determine best strategy
+        let mut content_lengths = Vec::new();
+        let mut has_structured_content = false;
+        let mut has_temporal_patterns = false;
+        let mut total_content_size = 0;
+
+        for key in related_keys {
+            if let Some(memory) = storage.retrieve(key).await? {
+                content_lengths.push(memory.value.len());
+                total_content_size += memory.value.len();
+
+                // Check for structured content indicators
+                if memory.value.contains("##") || memory.value.contains("- ") || memory.value.contains("1.") {
+                    has_structured_content = true;
+                }
+
+                // Check for temporal patterns
+                if memory.metadata.tags.iter().any(|tag| tag.contains("time") || tag.contains("date") || tag.contains("schedule")) {
+                    has_temporal_patterns = true;
+                }
+            }
+        }
+
+        let avg_content_length = if !content_lengths.is_empty() {
+            content_lengths.iter().sum::<usize>() / content_lengths.len()
+        } else {
+            0
+        };
+
+        // Strategy selection logic based on content analysis
+        let strategy = if related_count > 20 && total_content_size > 50000 {
+            // Large dataset - use hierarchical summarization
+            SummaryStrategy::Hierarchical
+        } else if has_structured_content && related_count > 5 {
+            // Structured content - use key points approach
+            SummaryStrategy::KeyPoints
+        } else if has_temporal_patterns {
+            // Temporal patterns - use chronological approach
+            SummaryStrategy::Chronological
+        } else if avg_content_length > 1000 {
+            // Long content - use importance-based approach
+            SummaryStrategy::ImportanceBased
+        } else {
+            // Default to key points for smaller datasets
+            SummaryStrategy::KeyPoints
+        };
+
+        tracing::debug!("Strategy selection factors: count={}, avg_length={}, structured={}, temporal={}, total_size={}",
+            related_count, avg_content_length, has_structured_content, has_temporal_patterns, total_content_size);
+
+        Ok(strategy)
+    }
+
+    /// Calculate quality score for summarization result
+    async fn calculate_summarization_quality_score(
+        &self,
+        summary_result: &SummaryResult,
+        original_count: usize,
+    ) -> Result<f64> {
+        let mut quality_factors = Vec::new();
+
+        // Factor 1: Compression effectiveness (0.0-1.0)
+        let compression_score = if original_count > 0 {
+            let compression_ratio = summary_result.summary_content.len() as f64 / (original_count * 500) as f64; // Assume 500 chars avg
+            if compression_ratio > 0.1 && compression_ratio < 0.5 {
+                1.0 - (compression_ratio - 0.3).abs() / 0.2
+            } else {
+                0.5
+            }
+        } else {
+            0.0
+        };
+        quality_factors.push(compression_score * 0.3);
+
+        // Factor 2: Content coherence (based on summary quality metrics)
+        let coherence_score = summary_result.quality_metrics.coherence;
+        quality_factors.push(coherence_score * 0.25);
+
+        // Factor 3: Information preservation (based on key themes)
+        let preservation_score = if summary_result.key_themes.len() >= (original_count / 3).max(1) {
+            1.0
+        } else {
+            summary_result.key_themes.len() as f64 / (original_count / 3).max(1) as f64
+        };
+        quality_factors.push(preservation_score * 0.25);
+
+        // Factor 4: Summary length appropriateness
+        let length_score = {
+            let summary_length = summary_result.summary_content.len();
+            if summary_length >= 100 && summary_length <= 2000 {
+                1.0
+            } else if summary_length < 100 {
+                summary_length as f64 / 100.0
+            } else {
+                1.0 - (summary_length as f64 - 2000.0) / 3000.0
+            }
+        };
+        quality_factors.push(length_score.max(0.0).min(1.0) * 0.2);
+
+        let total_quality: f64 = quality_factors.iter().sum();
+        Ok(total_quality.max(0.0).min(1.0))
+    }
+
+    /// Store summarization result for future reference
+    async fn store_summarization_result(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        summary_key: &str,
+        summary_result: &SummaryResult,
+        quality_score: f64,
+    ) -> Result<()> {
+        use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
+
+        let mut metadata = MemoryMetadata::new()
+            .with_importance(quality_score)
+            .with_confidence(quality_score)
+            .with_tags(vec![
+                "summary".to_string(),
+                "auto_generated".to_string(),
+                format!("quality_{:.2}", quality_score),
+                format!("strategy_{:?}", summary_result.strategy),
+            ]);
+
+        // Add custom fields for additional context
+        metadata.set_custom_field("context".to_string(), format!("Auto-generated summary of {} related memories", summary_result.source_memory_keys.len()));
+        metadata.set_custom_field("source_count".to_string(), summary_result.source_memory_keys.len().to_string());
+        metadata.set_custom_field("compression_ratio".to_string(), summary_result.compression_ratio.to_string());
+
+        let summary_memory = MemoryEntry {
+            key: summary_key.to_string(),
+            value: summary_result.summary_content.clone(),
+            memory_type: MemoryType::LongTerm,
+            metadata,
+            embedding: None,
+        };
+
+        storage.store(&summary_memory).await?;
+        tracing::info!("Stored summarization result with key: {}", summary_key);
+
+        Ok(())
     }
 
 }
