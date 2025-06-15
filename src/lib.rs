@@ -486,12 +486,12 @@ impl AgentMemory {
         } else {
             None
         }
+    }
 
     /// Check if the multi-modal subsystem is initialized
     #[cfg(feature = "multimodal")]
     pub fn multimodal_enabled(&self) -> bool {
         self.multimodal_memory.is_some()
-
     }
 }
 
