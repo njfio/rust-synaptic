@@ -1,4 +1,4 @@
-//! # Synaptic 🧠
+//! # Synaptic
 //!
 //! An intelligent AI agent memory system built in Rust that creates and manages
 //! dynamic knowledge graphs with smart content updates. Unlike traditional memory
@@ -7,11 +7,11 @@
 //!
 //! ## Key Features
 //!
-//! - **🧠 Intelligent Memory Updates**: Smart node merging and content evolution tracking
-//! - **🕸️ Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
-//! - **⏰ Temporal Intelligence**: Version history and pattern detection
-//! - **🔍 Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
-//! - **🎯 Memory Management**: Intelligent summarization and lifecycle policies
+//! - **Intelligent Memory Updates**: Smart node merging and content evolution tracking
+//! - **Advanced Knowledge Graph**: Dynamic relationship detection and reasoning engine
+//! - **Temporal Intelligence**: Version history and pattern detection
+//! - **Advanced Search & Retrieval**: Multi-criteria search with relevance ranking
+//! - **Memory Management**: Intelligent summarization and lifecycle policies
 //!
 //! ## Quick Start
 //!
@@ -51,6 +51,18 @@ pub mod analytics;
 pub mod integrations;
 pub mod security;
 
+#[cfg(feature = "multimodal")]
+pub mod multimodal;
+
+#[cfg(feature = "cross-platform")]
+pub mod cross_platform;
+
+// Basic Phase 5 implementation (always available)
+pub mod phase5_basic;
+
+// Phase 5B: Advanced Document Processing (Basic implementation always available)
+pub mod phase5b_basic;
+
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
 pub use memory::{
@@ -78,6 +90,10 @@ pub struct AgentMemory {
     analytics_engine: Option<analytics::AnalyticsEngine>,
     integration_manager: Option<integrations::IntegrationManager>,
     security_manager: Option<security::SecurityManager>,
+    #[cfg(feature = "multimodal")]
+    multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
+    #[cfg(feature = "cross-platform")]
+    cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
 }
 
 impl AgentMemory {
@@ -162,8 +178,18 @@ impl AgentMemory {
             None
         };
 
-        Ok(Self {
-            config,
+        // Initialize cross-platform manager if enabled
+        #[cfg(feature = "cross-platform")]
+        let cross_platform_manager = if config.enable_cross_platform {
+            let cross_platform_config = config.cross_platform_config.clone().unwrap_or_default();
+            Some(cross_platform::CrossPlatformMemoryManager::new(cross_platform_config)?)
+        } else {
+            None
+        };
+
+        // Build base agent without multimodal memory initialized
+        let mut agent = Self {
+            config: config.clone(),
             state,
             storage,
             checkpoint_manager,
@@ -178,7 +204,28 @@ impl AgentMemory {
             analytics_engine,
             integration_manager,
             security_manager,
-        })
+            #[cfg(feature = "multimodal")]
+            multimodal_memory: None,
+            #[cfg(feature = "cross-platform")]
+            cross_platform_manager,
+        };
+
+        // Initialize multimodal memory after creating base agent to avoid circular dependency
+        #[cfg(feature = "multimodal")]
+        if config.enable_multimodal {
+            let multimodal_config = config.multimodal_config.clone().unwrap_or_default();
+            let agent_arc = std::sync::Arc::new(tokio::sync::RwLock::new(agent));
+            let mm = multimodal::unified::UnifiedMultiModalMemory::new(agent_arc.clone(), multimodal_config).await?;
+            {
+                let mut guard = agent_arc.write().await;
+                guard.multimodal_memory = Some(std::sync::Arc::new(tokio::sync::RwLock::new(mm)));
+            }
+            agent = std::sync::Arc::try_unwrap(agent_arc)
+                .map_err(|_| MemoryError::concurrency("Failed to unwrap Arc during initialization"))?
+                .into_inner();
+        }
+
+        Ok(agent)
     }
 
     /// Store a memory entry with intelligent updating
@@ -199,6 +246,18 @@ impl AgentMemory {
         // Track temporal changes if enabled
         if let Some(ref mut tm) = self.temporal_manager {
             let _ = tm.track_memory_change(&entry, change_type).await;
+        }
+
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            use crate::analytics::{AnalyticsEvent, ModificationType};
+            let event = AnalyticsEvent::MemoryModification {
+                memory_key: key.to_string(),
+                modification_type: ModificationType::ContentUpdate,
+                timestamp: Utc::now(),
+                change_magnitude: 1.0,
+            };
+            let _ = analytics.record_event(event).await;
         }
 
         // Add or update in knowledge graph if enabled (intelligent merging)
@@ -231,11 +290,36 @@ impl AgentMemory {
     pub async fn retrieve(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
         // First check short-term memory
         if let Some(entry) = self.state.get_memory(key) {
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
+                use crate::analytics::{AnalyticsEvent, AccessType};
+                let event = AnalyticsEvent::MemoryAccess {
+                    memory_key: key.to_string(),
+                    access_type: AccessType::Read,
+                    timestamp: Utc::now(),
+                    user_context: None,
+                };
+                let _ = analytics.record_event(event).await;
+            }
             return Ok(Some(entry.clone()));
         }
 
         // Then check storage
-        self.storage.retrieve(key).await
+        let result = self.storage.retrieve(key).await?;
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            if result.is_some() {
+                use crate::analytics::{AnalyticsEvent, AccessType};
+                let event = AnalyticsEvent::MemoryAccess {
+                    memory_key: key.to_string(),
+                    access_type: AccessType::Read,
+                    timestamp: Utc::now(),
+                    user_context: None,
+                };
+                let _ = analytics.record_event(event).await;
+            }
+        }
+        Ok(result)
     }
 
     /// Search memories by content similarity
@@ -308,6 +392,19 @@ impl AgentMemory {
                 relationship_type,
                 None,
             ).await?;
+
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
+                use crate::analytics::AnalyticsEvent;
+                let event = AnalyticsEvent::RelationshipDiscovery {
+                    source_key: from_memory.to_string(),
+                    target_key: to_memory.to_string(),
+                    relationship_strength: 1.0,
+                    timestamp: Utc::now(),
+                };
+                let _ = analytics.record_event(event).await;
+            }
+
             Ok(Some(relationship_id))
         } else {
             Ok(None)
@@ -361,6 +458,41 @@ impl AgentMemory {
     pub fn embedding_stats(&self) -> Option<memory::embeddings::EmbeddingStats> {
         self.embedding_manager.as_ref().map(|em| em.get_stats())
     }
+
+    /// Get analytics metrics (if enabled)
+    #[cfg(feature = "analytics")]
+    pub fn get_analytics_metrics(&self) -> Option<analytics::AnalyticsMetrics> {
+        self.analytics_engine.as_ref().map(|eng| eng.get_usage_stats())
+    }
+
+    /// Get temporal usage statistics (if enabled)
+    pub async fn get_temporal_usage_stats(&self) -> Option<memory::temporal::TemporalUsageStats> {
+        if let Some(ref tm) = self.temporal_manager {
+            tm.get_usage_stats().await.ok()
+        } else {
+            None
+        }
+    }
+
+    /// Get differential metrics from the temporal manager
+    pub fn get_temporal_diff_metrics(&self) -> Option<memory::temporal::DiffMetrics> {
+        self.temporal_manager.as_ref().map(|tm| tm.get_diff_metrics())
+    }
+
+    /// Get global evolution metrics from the temporal manager
+    pub async fn get_global_evolution_metrics(&self) -> Option<memory::temporal::GlobalEvolutionMetrics> {
+        if let Some(ref tm) = self.temporal_manager {
+            tm.get_global_evolution_metrics().await.ok()
+        } else {
+            None
+        }
+
+    /// Check if the multi-modal subsystem is initialized
+    #[cfg(feature = "multimodal")]
+    pub fn multimodal_enabled(&self) -> bool {
+        self.multimodal_memory.is_some()
+
+    }
 }
 
 /// Memory system statistics
@@ -399,6 +531,14 @@ pub struct MemoryConfig {
     pub integrations_config: Option<integrations::IntegrationConfig>,
     pub enable_security: bool,
     pub security_config: Option<security::SecurityConfig>,
+    #[cfg(feature = "multimodal")]
+    pub enable_multimodal: bool,
+    #[cfg(feature = "multimodal")]
+    pub multimodal_config: Option<multimodal::unified::UnifiedMultiModalConfig>,
+    #[cfg(feature = "cross-platform")]
+    pub enable_cross_platform: bool,
+    #[cfg(feature = "cross-platform")]
+    pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -427,6 +567,14 @@ impl Default for MemoryConfig {
             integrations_config: None,
             enable_security: false,
             security_config: None,
+            #[cfg(feature = "multimodal")]
+            enable_multimodal: false,
+            #[cfg(feature = "multimodal")]
+            multimodal_config: None,
+            #[cfg(feature = "cross-platform")]
+            enable_cross_platform: false,
+            #[cfg(feature = "cross-platform")]
+            cross_platform_config: None,
         }
     }
 }

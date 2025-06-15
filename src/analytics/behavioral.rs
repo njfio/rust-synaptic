@@ -525,11 +525,82 @@ impl BehavioralAnalyzer {
     }
 
     /// Find potential collaborators for a memory
-    async fn find_potential_collaborators(&self, _profile: &UserProfile, _memory_key: &str) -> Result<Vec<String>> {
-        // TODO: Implement sophisticated collaborator matching
-        // This could analyze user profiles, search patterns, and memory access patterns
-        // to find users who might be interested in collaborating on a specific memory
-        Ok(Vec::new())
+    async fn find_potential_collaborators(&self, profile: &UserProfile, memory_key: &str) -> Result<Vec<String>> {
+        // Collect memory keys accessed by the target user
+        let user_memories: HashSet<String> = self
+            .memory_patterns
+            .iter()
+            .filter(|(_, pattern)| pattern.users.contains(&profile.user_id))
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        let mut candidates: Vec<(String, f64)> = Vec::new();
+
+        for (other_id, other_profile) in &self.user_profiles {
+            if other_id == &profile.user_id {
+                continue;
+            }
+
+            // Memories accessed by the other user
+            let other_memories: HashSet<String> = self
+                .memory_patterns
+                .iter()
+                .filter(|(_, pattern)| pattern.users.contains(other_id))
+                .map(|(k, _)| k.clone())
+                .collect();
+
+            let access_overlap = user_memories
+                .intersection(&other_memories)
+                .count();
+            let access_similarity = if user_memories.is_empty() || other_memories.is_empty() {
+                0.0
+            } else {
+                access_overlap as f64
+                    / user_memories
+                        .len()
+                        .max(other_memories.len()) as f64
+            };
+
+            // Overlap of search queries
+            let search_overlap = profile
+                .search_patterns
+                .iter()
+                .filter(|q| other_profile.search_patterns.contains(*q))
+                .count();
+            let search_similarity = if profile.search_patterns.is_empty()
+                || other_profile.search_patterns.is_empty()
+            {
+                0.0
+            } else {
+                search_overlap as f64
+                    / profile
+                        .search_patterns
+                        .len()
+                        .max(other_profile.search_patterns.len()) as f64
+            };
+
+            // Check direct interest in the memory key
+            let key_lower = memory_key.to_lowercase();
+            let interest = other_profile
+                .search_patterns
+                .iter()
+                .any(|q| q.to_lowercase().contains(&key_lower))
+                || other_memories
+                    .iter()
+                    .any(|m| m.to_lowercase().contains(&key_lower));
+
+            let mut score = 0.5 * search_similarity + 0.5 * access_similarity;
+            if interest {
+                score += 0.2; // small boost for direct interest
+            }
+
+            if score > 0.5 {
+                candidates.push((other_id.clone(), score.min(1.0)));
+            }
+        }
+
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(candidates.into_iter().map(|(id, _)| id).collect())
     }
 
     /// Generate behavioral insights

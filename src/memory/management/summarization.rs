@@ -196,6 +196,7 @@ impl MemorySummarizer {
     /// Summarize a group of memories
     pub async fn summarize_memories(
         &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_keys: Vec<String>,
         strategy: SummaryStrategy,
     ) -> Result<SummaryResult> {
@@ -203,9 +204,19 @@ impl MemorySummarizer {
             return Err(MemoryError::unexpected("No memories provided for summarization"));
         }
 
-        // TODO: Retrieve actual memory entries from storage
-        // For now, we'll create a placeholder summary
-        let summary_content = self.generate_summary_content(&memory_keys, &strategy).await?;
+        // Load the referenced memories from the provided storage
+        let mut memories = Vec::new();
+        for key in &memory_keys {
+            if let Some(entry) = storage.retrieve(key).await? {
+                memories.push(entry);
+            }
+        }
+
+        if memories.is_empty() {
+            return Err(MemoryError::NotFound { key: "no memories".to_string() });
+        }
+
+        let summary_content = self.generate_summary_content(&memories, &strategy).await?;
         
         // Extract entities if enabled
         let entities = if self.config.enable_entity_extraction {
@@ -216,16 +227,16 @@ impl MemorySummarizer {
 
         // Extract temporal information if enabled
         let temporal_info = if self.config.enable_temporal_analysis {
-            Some(self.extract_temporal_info(&memory_keys).await?)
+            Some(self.extract_temporal_info(&memories).await?)
         } else {
             None
         };
 
         // Calculate quality metrics
-        let quality_metrics = self.calculate_quality_metrics(&summary_content, &memory_keys).await?;
+        let quality_metrics = self.calculate_quality_metrics(&summary_content, &memories).await?;
 
         // Calculate compression ratio
-        let original_size = memory_keys.len() * 100; // Placeholder calculation
+        let original_size: usize = memories.iter().map(|m| m.value.len()).sum();
         let summary_size = summary_content.len();
         let compression_ratio = if summary_size > 0 {
             original_size as f64 / summary_size as f64
@@ -258,95 +269,135 @@ impl MemorySummarizer {
     /// Generate summary content based on strategy
     async fn generate_summary_content(
         &self,
-        memory_keys: &[String],
+        memories: &[MemoryEntry],
         strategy: &SummaryStrategy,
     ) -> Result<String> {
         match strategy {
             SummaryStrategy::KeyPoints => {
-                self.generate_key_points_summary(memory_keys).await
+                self.generate_key_points_summary(memories).await
             }
             SummaryStrategy::Chronological => {
-                self.generate_chronological_summary(memory_keys).await
+                self.generate_chronological_summary(memories).await
             }
             SummaryStrategy::ImportanceBased => {
-                self.generate_importance_based_summary(memory_keys).await
+                self.generate_importance_based_summary(memories).await
             }
             SummaryStrategy::Consolidation => {
-                self.generate_consolidation_summary(memory_keys).await
+                self.generate_consolidation_summary(memories).await
             }
             SummaryStrategy::Hierarchical => {
-                self.generate_hierarchical_summary(memory_keys).await
+                self.generate_hierarchical_summary(memories).await
             }
             SummaryStrategy::Conceptual => {
-                self.generate_conceptual_summary(memory_keys).await
+                self.generate_conceptual_summary(memories).await
             }
             SummaryStrategy::Custom(name) => {
-                self.generate_custom_summary(memory_keys, name).await
+                self.generate_custom_summary(memories, name).await
             }
         }
     }
 
     /// Generate key points summary
-    async fn generate_key_points_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement actual key points extraction
+    async fn generate_key_points_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        let mut lines = Vec::new();
+        for mem in memories {
+            lines.push(format!("• {}", mem.value.trim()));
+        }
         Ok(format!(
-            "Key points summary of {} memories:\n• Main themes identified\n• Important concepts extracted\n• Critical information preserved",
-            memory_keys.len()
+            "Key points summary of {} memories:\n{}",
+            memories.len(),
+            lines.join("\n")
         ))
     }
 
     /// Generate chronological summary
-    async fn generate_chronological_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement chronological ordering and summarization
+    async fn generate_chronological_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        let mut entries: Vec<_> = memories.to_vec();
+        entries.sort_by_key(|m| m.created_at());
+        let mut lines = Vec::new();
+        for mem in entries {
+            lines.push(format!(
+                "{} - {}",
+                mem.created_at().format("%Y-%m-%d %H:%M:%S"),
+                mem.value.trim()
+            ));
+        }
         Ok(format!(
-            "Chronological summary of {} memories:\nTimeline of events and developments in order of occurrence.",
-            memory_keys.len()
+            "Chronological summary of {} memories:\n{}",
+            memories.len(),
+            lines.join("\n")
         ))
     }
 
     /// Generate importance-based summary
-    async fn generate_importance_based_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement importance-based filtering and summarization
+    async fn generate_importance_based_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        let mut entries: Vec<_> = memories.to_vec();
+        entries.sort_by(|a, b| b.metadata.importance.partial_cmp(&a.metadata.importance).unwrap());
+        let mut lines = Vec::new();
+        for mem in entries {
+            lines.push(format!("({:.2}) {}", mem.metadata.importance, mem.value.trim()));
+        }
         Ok(format!(
-            "Importance-based summary of {} memories:\nFocusing on the most critical and high-value information.",
-            memory_keys.len()
+            "Importance-based summary of {} memories:\n{}",
+            memories.len(),
+            lines.join("\n")
         ))
     }
 
     /// Generate consolidation summary
-    async fn generate_consolidation_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement memory consolidation logic
+    async fn generate_consolidation_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        let mut lines = Vec::new();
+        for mem in memories {
+            if seen.insert(mem.value.clone()) {
+                lines.push(mem.value.trim().to_string());
+            }
+        }
         Ok(format!(
-            "Consolidated summary of {} memories:\nSimilar memories merged and redundancy removed.",
-            memory_keys.len()
+            "Consolidated summary of {} memories:\n{}",
+            memories.len(),
+            lines.join("\n")
         ))
     }
 
     /// Generate hierarchical summary
-    async fn generate_hierarchical_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement hierarchical structuring
+    async fn generate_hierarchical_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        use std::collections::HashMap;
+        let mut map: HashMap<MemoryType, Vec<String>> = HashMap::new();
+        for mem in memories {
+            map.entry(mem.memory_type)
+                .or_default()
+                .push(mem.value.trim().to_string());
+        }
+        let mut sections = Vec::new();
+        for (ty, vals) in map {
+            sections.push(format!("{}:\n  - {}", ty, vals.join("\n  - ")));
+        }
         Ok(format!(
-            "Hierarchical summary of {} memories:\nOrganized by topics and subtopics with clear structure.",
-            memory_keys.len()
+            "Hierarchical summary of {} memories:\n{}",
+            memories.len(),
+            sections.join("\n")
         ))
     }
 
     /// Generate conceptual summary
-    async fn generate_conceptual_summary(&self, memory_keys: &[String]) -> Result<String> {
-        // TODO: Implement conceptual abstraction
+    async fn generate_conceptual_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
+        let mut lines = Vec::new();
+        for mem in memories {
+            let words: Vec<&str> = mem.value.split_whitespace().take(5).collect();
+            lines.push(format!("{}...", words.join(" ")));
+        }
         Ok(format!(
-            "Conceptual summary of {} memories:\nAbstract concepts and high-level patterns identified.",
-            memory_keys.len()
+            "Conceptual summary of {} memories:\n{}",
+            memories.len(),
+            lines.join("\n")
         ))
     }
 
     /// Generate custom summary
-    async fn generate_custom_summary(&self, memory_keys: &[String], _strategy_name: &str) -> Result<String> {
-        // TODO: Implement custom summarization strategies
-        Ok(format!(
-            "Custom summary of {} memories using specialized strategy.",
-            memory_keys.len()
-        ))
+    async fn generate_custom_summary(&self, memories: &[MemoryEntry], _strategy_name: &str) -> Result<String> {
+        self.generate_key_points_summary(memories).await
     }
 
     /// Extract entities from text
@@ -373,11 +424,28 @@ impl MemorySummarizer {
     }
 
     /// Extract temporal information
-    async fn extract_temporal_info(&self, _memory_keys: &[String]) -> Result<TemporalInfo> {
-        // TODO: Implement temporal information extraction
+    async fn extract_temporal_info(&self, memories: &[MemoryEntry]) -> Result<TemporalInfo> {
+        if memories.is_empty() {
+            return Ok(TemporalInfo { time_range: None, events: Vec::new(), patterns: Vec::new() });
+        }
+
+        let mut sorted: Vec<_> = memories.to_vec();
+        sorted.sort_by_key(|m| m.created_at());
+        let start = sorted.first().unwrap().created_at();
+        let end = sorted.last().unwrap().created_at();
+        let events = sorted
+            .iter()
+            .map(|m| TemporalEvent {
+                description: m.value.clone(),
+                timestamp: m.created_at(),
+                importance: m.metadata.importance,
+                related_memories: vec![m.key.clone()],
+            })
+            .collect();
+
         Ok(TemporalInfo {
-            time_range: None,
-            events: Vec::new(),
+            time_range: Some((start, end)),
+            events,
             patterns: Vec::new(),
         })
     }
@@ -401,7 +469,7 @@ impl MemorySummarizer {
     async fn calculate_quality_metrics(
         &self,
         summary_content: &str,
-        memory_keys: &[String],
+        memories: &[MemoryEntry],
     ) -> Result<SummaryQualityMetrics> {
         // TODO: Implement proper quality assessment
         let coherence = 0.8; // Placeholder

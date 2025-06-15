@@ -264,6 +264,29 @@ mod embeddings_tests {
         
         Ok(())
     }
+
+    #[cfg(feature = "ml-models")]
+    #[tokio::test]
+    async fn test_ml_embedding_generation() -> Result<(), Box<dyn Error>> {
+        use synaptic::integrations::ml_models::{MLConfig, MLModelManager};
+
+        let config = MLConfig {
+            model_dir: std::path::PathBuf::from("./models"),
+            ..Default::default()
+        };
+
+        match MLModelManager::new(config.clone()).await {
+            Ok(mut manager) => {
+                let vec = manager.generate_embedding("Hello world").await?;
+                assert_eq!(vec.len(), config.embedding_dim);
+            }
+            Err(_) => {
+                println!("ML models not available, skipping test");
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // Tests that run regardless of feature flags

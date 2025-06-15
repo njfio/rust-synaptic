@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("🚀 Synaptic Real External Integrations Demo");
+    println!(" Synaptic Real External Integrations Demo");
     println!("===========================================");
 
     // Check which features are enabled
@@ -54,32 +54,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn check_enabled_features() {
-    println!("\n🔧 Enabled Features:");
+    println!("\n Enabled Features:");
     
     #[cfg(feature = "sql-storage")]
-    println!("   ✅ SQL Database Storage");
+    println!("    SQL Database Storage");
     #[cfg(not(feature = "sql-storage"))]
-    println!("   ❌ SQL Database Storage (disabled)");
+    println!("    SQL Database Storage (disabled)");
 
     #[cfg(feature = "ml-models")]
-    println!("   ✅ ML Models (Candle)");
+    println!("    ML Models (Candle)");
     #[cfg(not(feature = "ml-models"))]
-    println!("   ❌ ML Models (disabled)");
+    println!("    ML Models (disabled)");
 
     #[cfg(feature = "llm-integration")]
-    println!("   ✅ LLM Integration");
+    println!("    LLM Integration");
     #[cfg(not(feature = "llm-integration"))]
-    println!("   ❌ LLM Integration (disabled)");
+    println!("    LLM Integration (disabled)");
 
     #[cfg(feature = "visualization")]
-    println!("   ✅ Real Visualization (Plotters)");
+    println!("    Real Visualization (Plotters)");
     #[cfg(not(feature = "visualization"))]
-    println!("   ❌ Real Visualization (disabled)");
+    println!("    Real Visualization (disabled)");
 
     #[cfg(feature = "external-integrations")]
-    println!("   ✅ Redis Cache");
+    println!("    Redis Cache");
     #[cfg(not(feature = "external-integrations"))]
-    println!("   ❌ Redis Cache (disabled)");
+    println!("    Redis Cache (disabled)");
 }
 
 async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
@@ -104,12 +104,12 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
 
         match DatabaseClient::new(config).await {
             Ok(mut client) => {
-                println!("✅ Connected to PostgreSQL successfully");
+                println!(" Connected to PostgreSQL successfully");
                 
                 // Test health check
                 match client.health_check().await {
-                    Ok(_) => println!("✅ Database health check passed"),
-                    Err(e) => println!("❌ Database health check failed: {}", e),
+                    Ok(_) => println!(" Database health check passed"),
+                    Err(e) => println!(" Database health check failed: {}", e),
                 }
 
                 // Test storing a memory entry
@@ -121,34 +121,34 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match client.store_memory(&memory_entry).await {
                     Ok(_) => {
-                        println!("✅ Stored memory entry in database");
+                        println!(" Stored memory entry in database");
                         
                         // Test retrieving the memory entry
                         match client.get_memory("test_db_key").await {
                             Ok(Some(retrieved)) => {
-                                println!("✅ Retrieved memory entry: {}", retrieved.key);
+                                println!(" Retrieved memory entry: {}", retrieved.key);
                             },
-                            Ok(None) => println!("❌ Memory entry not found"),
-                            Err(e) => println!("❌ Failed to retrieve memory: {}", e),
+                            Ok(None) => println!(" Memory entry not found"),
+                            Err(e) => println!(" Failed to retrieve memory: {}", e),
                         }
                     },
-                    Err(e) => println!("❌ Failed to store memory: {}", e),
+                    Err(e) => println!(" Failed to store memory: {}", e),
                 }
 
                 let metrics = client.get_metrics();
-                println!("📊 Database metrics: {} queries executed", metrics.queries_executed);
+                println!(" Database metrics: {} queries executed", metrics.queries_executed);
             },
             Err(e) => {
-                println!("❌ Failed to connect to PostgreSQL: {}", e);
-                println!("💡 Make sure PostgreSQL is running and DATABASE_URL is set");
+                println!(" Failed to connect to PostgreSQL: {}", e);
+                println!(" Make sure PostgreSQL is running and DATABASE_URL is set");
             }
         }
     }
 
     #[cfg(not(feature = "sql-storage"))]
     {
-        println!("❌ SQL storage feature not enabled");
-        println!("💡 Run with: cargo run --example real_integrations --features sql-storage");
+        println!(" SQL storage feature not enabled");
+        println!(" Run with: cargo run --example real_integrations --features sql-storage");
     }
 
     Ok(())
@@ -169,16 +169,16 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
             quantization: false,
         };
 
-        println!("🔄 Initializing ML models...");
+        println!(" Initializing ML models...");
         
         match MLModelManager::new(config).await {
             Ok(mut manager) => {
-                println!("✅ ML model manager initialized");
+                println!(" ML model manager initialized");
 
                 // Test health check
                 match manager.health_check().await {
-                    Ok(_) => println!("✅ ML models health check passed"),
-                    Err(e) => println!("❌ ML models health check failed: {}", e),
+                    Ok(_) => println!(" ML models health check passed"),
+                    Err(e) => println!(" ML models health check failed: {}", e),
                 }
 
                 // Test embedding generation
@@ -190,14 +190,14 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match manager.generate_memory_embedding(&memory_entry).await {
                     Ok(embedding) => {
-                        println!("✅ Generated embedding with {} dimensions", embedding.len());
+                        println!(" Generated embedding with {} dimensions", embedding.len());
                         
                         // Test similarity calculation
                         let embedding2 = manager.generate_memory_embedding(&memory_entry).await?;
                         let similarity = manager.calculate_similarity(&embedding, &embedding2);
-                        println!("✅ Similarity calculation: {:.3}", similarity);
+                        println!(" Similarity calculation: {:.3}", similarity);
                     },
-                    Err(e) => println!("❌ Failed to generate embedding: {}", e),
+                    Err(e) => println!(" Failed to generate embedding: {}", e),
                 }
 
                 // Test access pattern prediction
@@ -210,7 +210,7 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match manager.predict_access_pattern(&memory_keys, &historical_data).await {
                     Ok(predictions) => {
-                        println!("✅ Generated {} access predictions", predictions.len());
+                        println!(" Generated {} access predictions", predictions.len());
                         for prediction in predictions.iter().take(2) {
                             println!("   • {}: {:.1}% confidence", 
                                 prediction.memory_key, 
@@ -218,33 +218,33 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
                             );
                         }
                     },
-                    Err(e) => println!("❌ Failed to generate predictions: {}", e),
+                    Err(e) => println!(" Failed to generate predictions: {}", e),
                 }
 
                 let metrics = manager.get_metrics();
-                println!("📊 ML metrics: {} embeddings, {} predictions", 
+                println!(" ML metrics: {} embeddings, {} predictions", 
                     metrics.embeddings_generated, 
                     metrics.predictions_made
                 );
             },
             Err(e) => {
-                println!("❌ Failed to initialize ML models: {}", e);
-                println!("💡 Make sure BERT model is available in ./models/bert-base-uncased/");
+                println!(" Failed to initialize ML models: {}", e);
+                println!(" Make sure BERT model is available in ./models/bert-base-uncased/");
             }
         }
     }
 
     #[cfg(not(feature = "ml-models"))]
     {
-        println!("❌ ML models feature not enabled");
-        println!("💡 Run with: cargo run --example real_integrations --features ml-models");
+        println!(" ML models feature not enabled");
+        println!(" Run with: cargo run --example real_integrations --features ml-models");
     }
 
     Ok(())
 }
 
 async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n🧠 LLM Integration Demo");
+    println!("\n LLM Integration Demo");
     println!("----------------------");
 
     #[cfg(feature = "llm-integration")]
@@ -255,8 +255,8 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
         } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             (key, LLMProvider::OpenAI, "gpt-3.5-turbo".to_string())
         } else {
-            println!("❌ No API key found");
-            println!("💡 Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable");
+            println!(" No API key found");
+            println!(" Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable");
             return Ok(());
         };
 
@@ -271,16 +271,16 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
             rate_limit: 10,
         };
 
-        println!("🔄 Initializing LLM client...");
+        println!(" Initializing LLM client...");
 
         match LLMClient::new(config).await {
             Ok(mut client) => {
-                println!("✅ LLM client initialized");
+                println!(" LLM client initialized");
 
                 // Test health check
                 match client.health_check().await {
-                    Ok(_) => println!("✅ LLM health check passed"),
-                    Err(e) => println!("❌ LLM health check failed: {}", e),
+                    Ok(_) => println!(" LLM health check passed"),
+                    Err(e) => println!(" LLM health check failed: {}", e),
                 }
 
                 // Test insight generation
@@ -299,47 +299,47 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match client.generate_insights(&memories, "Software development project").await {
                     Ok(insights) => {
-                        println!("✅ Generated {} insights from LLM", insights.len());
+                        println!(" Generated {} insights from LLM", insights.len());
                         for insight in insights.iter().take(2) {
                             println!("   • {}: {}", insight.title, insight.description.chars().take(50).collect::<String>());
                         }
                     },
-                    Err(e) => println!("❌ Failed to generate insights: {}", e),
+                    Err(e) => println!(" Failed to generate insights: {}", e),
                 }
 
                 // Test memory summarization
                 let memory_to_summarize = &memories[0];
                 match client.summarize_memory(memory_to_summarize).await {
                     Ok(summary) => {
-                        println!("✅ Generated summary: {}", summary.chars().take(100).collect::<String>());
+                        println!(" Generated summary: {}", summary.chars().take(100).collect::<String>());
                     },
-                    Err(e) => println!("❌ Failed to generate summary: {}", e),
+                    Err(e) => println!(" Failed to generate summary: {}", e),
                 }
 
                 let metrics = client.get_metrics();
-                println!("📊 LLM metrics: {} requests, {} tokens consumed, ${:.4} cost", 
+                println!(" LLM metrics: {} requests, {} tokens consumed, ${:.4} cost", 
                     metrics.requests_made, 
                     metrics.tokens_consumed,
                     metrics.total_cost_usd
                 );
             },
             Err(e) => {
-                println!("❌ Failed to initialize LLM client: {}", e);
+                println!(" Failed to initialize LLM client: {}", e);
             }
         }
     }
 
     #[cfg(not(feature = "llm-integration"))]
     {
-        println!("❌ LLM integration feature not enabled");
-        println!("💡 Run with: cargo run --example real_integrations --features llm-integration");
+        println!(" LLM integration feature not enabled");
+        println!(" Run with: cargo run --example real_integrations --features llm-integration");
     }
 
     Ok(())
 }
 
 async fn visualization_integration_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n📊 Visualization Integration Demo");
+    println!("\n Visualization Integration Demo");
     println!("--------------------------------");
 
     #[cfg(feature = "visualization")]
@@ -354,16 +354,16 @@ async fn visualization_integration_demo() -> Result<(), Box<dyn Error>> {
             interactive: false,
         };
 
-        println!("🔄 Initializing visualization engine...");
+        println!(" Initializing visualization engine...");
 
         match RealVisualizationEngine::new(config).await {
             Ok(mut engine) => {
-                println!("✅ Visualization engine initialized");
+                println!(" Visualization engine initialized");
 
                 // Test health check
                 match engine.health_check().await {
-                    Ok(_) => println!("✅ Visualization health check passed"),
-                    Err(e) => println!("❌ Visualization health check failed: {}", e),
+                    Ok(_) => println!(" Visualization health check passed"),
+                    Err(e) => println!(" Visualization health check failed: {}", e),
                 }
 
                 // Test memory network generation
@@ -386,9 +386,9 @@ async fn visualization_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match engine.generate_memory_network(&memories, &relationships).await {
                     Ok(filename) => {
-                        println!("✅ Generated memory network: {}", filename);
+                        println!(" Generated memory network: {}", filename);
                     },
-                    Err(e) => println!("❌ Failed to generate memory network: {}", e),
+                    Err(e) => println!(" Failed to generate memory network: {}", e),
                 }
 
                 // Test analytics timeline
@@ -403,34 +403,34 @@ async fn visualization_integration_demo() -> Result<(), Box<dyn Error>> {
 
                 match engine.generate_analytics_timeline(&events).await {
                     Ok(filename) => {
-                        println!("✅ Generated analytics timeline: {}", filename);
+                        println!(" Generated analytics timeline: {}", filename);
                     },
-                    Err(e) => println!("❌ Failed to generate timeline: {}", e),
+                    Err(e) => println!(" Failed to generate timeline: {}", e),
                 }
 
                 let metrics = engine.get_metrics();
-                println!("📊 Visualization metrics: {} charts generated, {} images exported", 
+                println!(" Visualization metrics: {} charts generated, {} images exported", 
                     metrics.charts_generated, 
                     metrics.images_exported
                 );
             },
             Err(e) => {
-                println!("❌ Failed to initialize visualization engine: {}", e);
+                println!(" Failed to initialize visualization engine: {}", e);
             }
         }
     }
 
     #[cfg(not(feature = "visualization"))]
     {
-        println!("❌ Visualization feature not enabled");
-        println!("💡 Run with: cargo run --example real_integrations --features visualization");
+        println!(" Visualization feature not enabled");
+        println!(" Run with: cargo run --example real_integrations --features visualization");
     }
 
     Ok(())
 }
 
 async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n🔄 Redis Cache Integration Demo");
+    println!("\n Redis Cache Integration Demo");
     println!("------------------------------");
 
     let redis_url = std::env::var("REDIS_URL")
@@ -449,12 +449,12 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
 
     match RedisClient::new(config).await {
         Ok(mut client) => {
-            println!("✅ Connected to Redis successfully");
+            println!(" Connected to Redis successfully");
 
             // Test health check
             match client.health_check().await {
-                Ok(_) => println!("✅ Redis health check passed"),
-                Err(e) => println!("❌ Redis health check failed: {}", e),
+                Ok(_) => println!(" Redis health check passed"),
+                Err(e) => println!(" Redis health check failed: {}", e),
             }
 
             // Test caching
@@ -468,42 +468,42 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
             {
                 match client.cache_memory("test_key", &memory_entry, Some(60)).await {
                     Ok(_) => {
-                        println!("✅ Cached memory entry");
+                        println!(" Cached memory entry");
                         
                         // Test retrieval
                         match client.get_cached_memory("test_key").await {
                             Ok(Some(cached)) => {
-                                println!("✅ Retrieved cached memory: {}", cached.key);
+                                println!(" Retrieved cached memory: {}", cached.key);
                             },
-                            Ok(None) => println!("❌ Cached memory not found"),
-                            Err(e) => println!("❌ Failed to retrieve cached memory: {}", e),
+                            Ok(None) => println!(" Cached memory not found"),
+                            Err(e) => println!(" Failed to retrieve cached memory: {}", e),
                         }
                     },
-                    Err(e) => println!("❌ Failed to cache memory: {}", e),
+                    Err(e) => println!(" Failed to cache memory: {}", e),
                 }
 
                 // Test cache statistics
                 match client.get_cache_stats().await {
                     Ok(stats) => {
-                        println!("📊 Cache stats: {:.1}% hit rate, {} total keys", 
+                        println!(" Cache stats: {:.1}% hit rate, {} total keys", 
                             stats.hit_rate * 100.0, 
                             stats.total_keys
                         );
                     },
-                    Err(e) => println!("❌ Failed to get cache stats: {}", e),
+                    Err(e) => println!(" Failed to get cache stats: {}", e),
                 }
             }
 
             let metrics = client.get_metrics();
-            println!("📊 Redis metrics: {} hits, {} misses, {} operations", 
+            println!(" Redis metrics: {} hits, {} misses, {} operations", 
                 metrics.cache_hits, 
                 metrics.cache_misses,
                 metrics.total_operations
             );
         },
         Err(e) => {
-            println!("❌ Failed to connect to Redis: {}", e);
-            println!("💡 Make sure Redis is running and REDIS_URL is set");
+            println!(" Failed to connect to Redis: {}", e);
+            println!(" Make sure Redis is running and REDIS_URL is set");
         }
     }
 
@@ -541,22 +541,22 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
         compression: false,
     });
 
-    println!("🔄 Initializing integrated system...");
+    println!(" Initializing integrated system...");
 
     match IntegrationManager::new(integration_config.clone()).await {
         Ok(manager) => {
-            println!("✅ Integration manager initialized");
+            println!(" Integration manager initialized");
 
             // Test health check for all integrations
             match manager.health_check().await {
                 Ok(health_status) => {
                     println!("🏥 Health check results:");
                     for (service, healthy) in health_status {
-                        let status = if healthy { "✅" } else { "❌" };
+                        let status = if healthy { "" } else { "" };
                         println!("   {} {}", status, service);
                     }
                 },
-                Err(e) => println!("❌ Health check failed: {}", e),
+                Err(e) => println!(" Health check failed: {}", e),
             }
 
             // Create memory system with integrations
@@ -566,28 +566,28 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
 
             match AgentMemory::new(memory_config).await {
                 Ok(mut memory) => {
-                    println!("✅ Memory system with integrations initialized");
+                    println!(" Memory system with integrations initialized");
 
                     // Test storing and retrieving with all integrations
                     memory.store("integrated_test", "This is a test of the integrated system with real external services").await?;
                     
                     if let Some(retrieved) = memory.retrieve("integrated_test").await? {
-                        println!("✅ Stored and retrieved memory with integrations: {}", retrieved.key);
+                        println!(" Stored and retrieved memory with integrations: {}", retrieved.key);
                     }
 
-                    println!("📊 Memory stats: {:?}", memory.stats());
+                    println!(" Memory stats: {:?}", memory.stats());
                 },
-                Err(e) => println!("❌ Failed to create integrated memory system: {}", e),
+                Err(e) => println!(" Failed to create integrated memory system: {}", e),
             }
         },
         Err(e) => {
-            println!("❌ Failed to initialize integration manager: {}", e);
-            println!("💡 Some external services may not be available");
+            println!(" Failed to initialize integration manager: {}", e);
+            println!(" Some external services may not be available");
         }
     }
 
-    println!("\n🎉 Real integrations demo completed!");
-    println!("💡 To enable all features, run with:");
+    println!("\n Real integrations demo completed!");
+    println!(" To enable all features, run with:");
     println!("   cargo run --example real_integrations --features external-integrations");
 
     Ok(())

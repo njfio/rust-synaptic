@@ -161,16 +161,16 @@ mod phase3_analytics_tests {
         }
 
         let patterns = engine.recognize_patterns().await.unwrap();
-        assert!(patterns.len() >= 0);
+        assert!(!patterns.is_empty());
 
         // Test anomaly detection
         engine.update_baseline_metrics().await.unwrap();
         let anomalies = engine.detect_anomalies().await.unwrap();
-        assert!(anomalies.len() >= 0);
+        assert!(!anomalies.is_empty());
 
         // Test insights
         let insights = engine.generate_insights().await.unwrap();
-        assert!(insights.len() >= 0);
+        assert!(!insights.is_empty());
     }
 
     #[tokio::test]

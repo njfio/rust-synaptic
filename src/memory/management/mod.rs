@@ -703,10 +703,13 @@ impl AdvancedMemoryManager {
     /// Summarize a group of related memories
     pub async fn summarize_memories(
         &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_keys: Vec<String>,
         strategy: SummaryStrategy,
     ) -> Result<SummaryResult> {
-        self.summarizer.summarize_memories(memory_keys, strategy).await
+        self.summarizer
+            .summarize_memories(storage, memory_keys, strategy)
+            .await
     }
 
     /// Optimize memory storage and organization

@@ -11,11 +11,11 @@ use synaptic::security::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Synaptic Complete Unified System Demo");
+    println!(" Synaptic Complete Unified System Demo");
     println!("=========================================\n");
 
     // Phase 1: Initialize the complete memory system
-    println!("📚 Phase 1: Core Memory System");
+    println!(" Phase 1: Core Memory System");
     println!("===============================");
     
     let memory_config = MemoryConfig {
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut memory = AgentMemory::new(memory_config).await?;
-    println!("✅ Core memory system initialized with all features");
+    println!(" Core memory system initialized with all features");
 
     // Phase 2: Initialize security with proper authentication
     println!("\n🔒 Phase 4: Security & Privacy System");
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut security_manager = SecurityManager::new(security_config).await?;
-    println!("✅ Security manager initialized with admin permissions");
+    println!(" Security manager initialized with admin permissions");
 
     // Proper authentication flow
     let credentials = AuthenticationCredentials {
@@ -80,12 +80,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let admin_context = security_manager.access_control
         .authenticate("admin".to_string(), credentials).await?;
-    println!("✅ User authenticated successfully");
+    println!(" User authenticated successfully");
     println!("   Session ID: {}", admin_context.session_id);
     println!("   MFA Verified: {}", admin_context.mfa_verified);
 
     // Phase 3: Create and store memories with security
-    println!("\n💾 Memory Operations with Security");
+    println!("\n Memory Operations with Security");
     println!("===================================");
 
     let sensitive_memory = MemoryEntry::new(
@@ -98,10 +98,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔒 Storing encrypted memory...");
     let encrypted_memory = security_manager.encrypt_memory(&sensitive_memory, &admin_context).await?;
     memory.store("financial_q4", &sensitive_memory.value).await?;
-    println!("✅ Memory stored with encryption: {}", encrypted_memory.encryption_algorithm);
+    println!(" Memory stored with encryption: {}", encrypted_memory.encryption_algorithm);
 
     // Phase 4: Knowledge Graph with Security
-    println!("\n🕸️ Knowledge Graph Operations");
+    println!("\n Knowledge Graph Operations");
     println!("==============================");
 
     let project_value = "AI-powered customer service platform with 95% satisfaction rate";
@@ -114,11 +114,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         synaptic::memory::knowledge_graph::RelationshipType::CausedBy,
     ).await?;
     
-    println!("✅ Knowledge graph relationship created");
+    println!(" Knowledge graph relationship created");
     println!("   Financial data ← CausedBy → Project Alpha");
 
     // Phase 5: Zero-Knowledge Proofs
-    println!("\n🔍 Zero-Knowledge Proof Generation");
+    println!("\n Zero-Knowledge Proof Generation");
     println!("===================================");
 
     let access_proof = security_manager.generate_access_proof(
@@ -127,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AccessType::Read
     ).await?;
     
-    println!("✅ Zero-knowledge access proof generated");
+    println!(" Zero-knowledge access proof generated");
     println!("   Proof ID: {}", access_proof.id);
     println!("   Statement Hash: {}", access_proof.statement_hash);
 
@@ -137,83 +137,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &admin_context
     ).await?;
     
-    println!("✅ Zero-knowledge content proof generated");
+    println!(" Zero-knowledge content proof generated");
     println!("   Proof ID: {}", content_proof.id);
     println!("   Proves content contains 'Revenue' without revealing data");
 
     // Phase 6: Differential Privacy
-    println!("\n📊 Differential Privacy");
+    println!("\n Differential Privacy");
     println!("========================");
 
     let privatized_memory = security_manager.privacy_manager
         .apply_differential_privacy(&sensitive_memory, &admin_context).await?;
     
-    println!("✅ Differential privacy applied");
+    println!(" Differential privacy applied");
     println!("   Original length: {} chars", sensitive_memory.value.len());
     println!("   Privatized length: {} chars", privatized_memory.value.len());
 
     // Phase 7: Advanced Analytics (if enabled)
     #[cfg(feature = "analytics")]
     {
-        println!("\n📈 Advanced Analytics");
+        println!("\n Advanced Analytics");
         println!("=====================");
         
         // Analytics would be integrated here
-        println!("✅ Analytics engine ready for insights generation");
+        println!(" Analytics engine ready for insights generation");
     }
 
     // Phase 8: Distributed Operations (if enabled)
     #[cfg(feature = "distributed")]
     {
-        println!("\n🌐 Distributed System Status");
+        println!("\n Distributed System Status");
         println!("=============================");
         
         // Distributed operations would be shown here
-        println!("✅ Distributed coordination ready");
+        println!(" Distributed coordination ready");
     }
 
     // Phase 9: Security Metrics and Monitoring
-    println!("\n📊 Security Metrics Summary");
+    println!("\n Security Metrics Summary");
     println!("============================");
 
     let security_metrics = security_manager.get_security_metrics(&admin_context).await?;
-    println!("🔍 Security Operations Summary:");
-    println!("   📈 Encryption Operations: {}", security_metrics.encryption_metrics.total_encryptions);
-    println!("   📈 Privacy Operations: {}", security_metrics.privacy_metrics.total_privatizations);
-    println!("   📈 Access Checks: {:.2}ms avg", 
+    println!(" Security Operations Summary:");
+    println!("    Encryption Operations: {}", security_metrics.encryption_metrics.total_encryptions);
+    println!("    Privacy Operations: {}", security_metrics.privacy_metrics.total_privatizations);
+    println!("    Access Checks: {:.2}ms avg", 
              security_metrics.access_metrics.total_access_time_ms as f64 / 
              security_metrics.access_metrics.total_permission_checks.max(1) as f64);
 
     if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("   📈 ZK Proofs Generated: {}", zk_metrics.total_proofs_generated);
-        println!("   📈 ZK Verification Rate: {:.1}%", zk_metrics.verification_success_rate);
+        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs_generated);
+        println!("    ZK Verification Rate: {:.1}%", zk_metrics.verification_success_rate);
     }
 
     // Phase 10: Memory Retrieval and Search
-    println!("\n🔍 Memory Retrieval & Search");
+    println!("\n Memory Retrieval & Search");
     println!("=============================");
 
     let retrieved_memory = memory.retrieve("financial_q4").await?;
     if let Some(memory_entry) = retrieved_memory {
-        println!("✅ Memory retrieved successfully");
+        println!(" Memory retrieved successfully");
         println!("   Key: financial_q4");
         println!("   Type: {:?}", memory_entry.memory_type);
         println!("   Content preview: {}...", &memory_entry.value[..30.min(memory_entry.value.len())]);
     }
 
     // Final Summary
-    println!("\n🎉 COMPLETE UNIFIED SYSTEM DEMO SUCCESSFUL!");
+    println!("\n COMPLETE UNIFIED SYSTEM DEMO SUCCESSFUL!");
     println!("=============================================");
-    println!("✅ All Phase 1-4 features demonstrated:");
-    println!("   🧠 Core Memory System - Storage, retrieval, management");
-    println!("   🕸️  Knowledge Graph - Relationships and reasoning");
-    println!("   ⏰ Temporal Tracking - Change detection and versioning");
+    println!(" All Phase 1-4 features demonstrated:");
+    println!("    Core Memory System - Storage, retrieval, management");
+    println!("     Knowledge Graph - Relationships and reasoning");
+    println!("    Temporal Tracking - Change detection and versioning");
     println!("   🔒 Security & Privacy - Encryption, ZK proofs, differential privacy");
-    println!("   🛡️  Access Control - Authentication and authorization");
-    println!("   📊 Analytics Ready - Performance and behavioral insights");
-    println!("   🌐 Distributed Ready - Scalable multi-node architecture");
+    println!("     Access Control - Authentication and authorization");
+    println!("    Analytics Ready - Performance and behavioral insights");
+    println!("    Distributed Ready - Scalable multi-node architecture");
     
-    println!("\n🚀 The Synaptic AI Agent Memory system is a complete,");
+    println!("\n The Synaptic AI Agent Memory system is a complete,");
     println!("   state-of-the-art memory solution with enterprise-grade");
     println!("   security, privacy, and advanced AI capabilities!");
 

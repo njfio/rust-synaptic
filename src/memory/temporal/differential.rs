@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+use lz4_flex::compress_prepend_size;
+use diff;
 
 /// Detailed difference between two memory entries
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +185,19 @@ pub struct DiffMetrics {
     pub avg_compression_ratio: Option<f64>,
 }
 
+impl Default for DiffMetrics {
+    fn default() -> Self {
+        Self {
+            total_diffs: 0,
+            avg_significance: 0.0,
+            most_common_change: ContentChangeType::Unchanged,
+            avg_content_similarity: 0.0,
+            total_diff_size: 0,
+            avg_compression_ratio: None,
+        }
+    }
+}
+
 /// Differential analyzer for comparing memory states
 pub struct DiffAnalyzer {
     /// Cache of recent diffs
@@ -191,6 +206,10 @@ pub struct DiffAnalyzer {
     change_sets: Vec<ChangeSet>,
     /// Configuration
     config: DiffConfig,
+    /// Running metrics
+    metrics: DiffMetrics,
+    /// Internal counts for change types
+    change_type_counts: HashMap<ContentChangeType, usize>,
 }
 
 /// Configuration for differential analysis
@@ -224,6 +243,8 @@ impl DiffAnalyzer {
             diff_cache: HashMap::new(),
             change_sets: Vec::new(),
             config: DiffConfig::default(),
+            metrics: DiffMetrics::default(),
+            change_type_counts: HashMap::new(),
         }
     }
 
@@ -251,6 +272,19 @@ impl DiffAnalyzer {
         // Calculate diff size
         let diff_size = self.calculate_diff_size(&content_changes, &metadata_changes);
 
+        // Calculate compression ratio if enabled
+        let compression_ratio = if self.config.enable_compression {
+            let serialized = serde_json::to_vec(&(&content_changes, &metadata_changes))?;
+            let compressed = lz4_flex::compress_prepend_size(&serialized);
+            if !compressed.is_empty() {
+                Some(serialized.len() as f64 / compressed.len() as f64)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let diff = MemoryDiff {
             id: Uuid::new_v4(),
             created_at: Utc::now(),
@@ -260,12 +294,34 @@ impl DiffAnalyzer {
             metadata_changes,
             significance_score,
             diff_size,
-            compression_ratio: None, // TODO: Implement compression
+            compression_ratio,
         };
 
         // Cache the diff if significant enough
         if significance_score >= self.config.min_significance_threshold {
             self.cache_diff(cache_key, diff.clone());
+        }
+
+        // Update metrics
+        self.metrics.total_diffs += 1;
+        self.metrics.avg_significance =
+            (self.metrics.avg_significance * (self.metrics.total_diffs - 1) as f64
+                + significance_score)
+                / self.metrics.total_diffs as f64;
+        self.metrics.avg_content_similarity =
+            (self.metrics.avg_content_similarity * (self.metrics.total_diffs - 1) as f64
+                + diff.content_changes.similarity_score)
+                / self.metrics.total_diffs as f64;
+        self.metrics.total_diff_size += diff_size;
+        *self.change_type_counts
+            .entry(diff.content_changes.change_type.clone())
+            .or_insert(0) += 1;
+        if let Some((change, _)) = self
+            .change_type_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+        {
+            self.metrics.most_common_change = change.clone();
         }
 
         Ok(diff)
@@ -447,13 +503,70 @@ impl DiffAnalyzer {
         old_text: &str,
         new_text: &str,
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
-        // This is a simplified implementation
-        // A full implementation would use algorithms like Myers' diff algorithm
-        
-        let additions = Vec::new(); // TODO: Implement detailed diff
-        let deletions = Vec::new(); // TODO: Implement detailed diff
-        let modifications = Vec::new(); // TODO: Implement detailed diff
-        
+        use diff::Result as DiffResult;
+        let mut additions = Vec::new();
+        let mut deletions = Vec::new();
+        let mut modifications = Vec::new();
+
+        let mut old_index = 0usize;
+        let mut new_index = 0usize;
+        let mut iter = diff::chars(old_text, new_text).into_iter().peekable();
+
+        while let Some(change) = iter.next() {
+            match change {
+                DiffResult::Both(_, _) => {
+                    old_index += 1;
+                    new_index += 1;
+                }
+                DiffResult::Left(c) => {
+                    let mut removed = String::new();
+                    removed.push(c);
+                    while let Some(DiffResult::Left(c2)) = iter.peek().cloned() {
+                        removed.push(c2);
+                        iter.next();
+                    }
+                    if let Some(DiffResult::Right(_)) = iter.peek() {
+                        let mut added = String::new();
+                        while let Some(DiffResult::Right(c2)) = iter.peek().cloned() {
+                            added.push(c2);
+                            iter.next();
+                        }
+                        modifications.push(TextModification {
+                            position: new_index,
+                            old_text: removed.clone(),
+                            new_text: added.clone(),
+                            modification_type: ModificationType::Substitution,
+                        });
+                        old_index += removed.len();
+                        new_index += added.len();
+                    } else {
+                        deletions.push(TextSegment {
+                            position: old_index,
+                            length: removed.len(),
+                            content: removed.clone(),
+                            context: None,
+                        });
+                        old_index += removed.len();
+                    }
+                }
+                DiffResult::Right(c) => {
+                    let mut added = String::new();
+                    added.push(c);
+                    while let Some(DiffResult::Right(c2)) = iter.peek().cloned() {
+                        added.push(c2);
+                        iter.next();
+                    }
+                    additions.push(TextSegment {
+                        position: new_index,
+                        length: added.len(),
+                        content: added.clone(),
+                        context: None,
+                    });
+                    new_index += added.len();
+                }
+            }
+        }
+
         Ok((additions, deletions, modifications))
     }
 
@@ -527,63 +640,37 @@ impl DiffAnalyzer {
                 self.diff_cache.remove(&oldest_key);
             }
         }
-        
+
         self.diff_cache.insert(key, diff);
     }
 
+    /// Add a change set to the analyzer
+    pub fn add_change_set(&mut self, change_set: ChangeSet) {
+        self.change_sets.push(change_set);
+    }
+
     /// Analyze changes within a time range
-    pub async fn analyze_changes_in_range(&self, _time_range: &TimeRange) -> Result<Vec<ChangeSet>> {
-        // Filter change sets by time range
-        Ok(self.change_sets.clone()) // TODO: Implement proper filtering
+    pub async fn analyze_changes_in_range(&self, time_range: &TimeRange) -> Result<Vec<ChangeSet>> {
+        let filtered = self
+            .change_sets
+            .iter()
+            .filter(|cs| time_range.contains(cs.timestamp))
+            .cloned()
+            .collect();
+        Ok(filtered)
     }
 
     /// Get differential metrics
     pub fn get_metrics(&self) -> DiffMetrics {
-        let total_diffs = self.diff_cache.len();
-        
-        if total_diffs == 0 {
-            return DiffMetrics {
-                total_diffs: 0,
-                avg_significance: 0.0,
-                most_common_change: ContentChangeType::Unchanged,
-                avg_content_similarity: 0.0,
-                total_diff_size: 0,
-                avg_compression_ratio: None,
-            };
-        }
-        
-        let avg_significance = self.diff_cache.values()
-            .map(|d| d.significance_score)
-            .sum::<f64>() / total_diffs as f64;
-        
-        let avg_content_similarity = self.diff_cache.values()
-            .map(|d| d.content_changes.similarity_score)
-            .sum::<f64>() / total_diffs as f64;
-        
-        let total_diff_size = self.diff_cache.values()
-            .map(|d| d.diff_size)
-            .sum();
-        
-        // Find most common change type
-        let mut change_type_counts = HashMap::new();
-        for diff in self.diff_cache.values() {
-            *change_type_counts.entry(diff.content_changes.change_type.clone()).or_insert(0) += 1;
-        }
-        
-        let most_common_change = change_type_counts
-            .into_iter()
+        let mut metrics = self.metrics.clone();
+        if let Some((change, _)) = self
+            .change_type_counts
+            .iter()
             .max_by_key(|(_, count)| *count)
-            .map(|(change_type, _)| change_type)
-            .unwrap_or(ContentChangeType::Unchanged);
-        
-        DiffMetrics {
-            total_diffs,
-            avg_significance,
-            most_common_change,
-            avg_content_similarity,
-            total_diff_size,
-            avg_compression_ratio: None, // TODO: Implement compression metrics
+        {
+            metrics.most_common_change = change.clone();
         }
+        metrics
     }
 }
 

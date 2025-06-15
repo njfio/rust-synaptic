@@ -179,3 +179,42 @@ async fn test_memory_without_security_features() -> Result<(), Box<dyn std::erro
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_standard_encryption_workflow() -> Result<(), Box<dyn std::error::Error>> {
+    use synaptic::security::{SecurityManager, SecurityConfig, access_control::{AuthenticationCredentials, AuthenticationType}, Permission};
+    use synaptic::memory::types::{MemoryEntry, MemoryType};
+
+    let mut config = SecurityConfig::default();
+    config.access_control_policy.require_mfa = false;
+    config.enable_homomorphic_encryption = false;
+    config.enable_zero_knowledge = false;
+    config.enable_differential_privacy = false;
+    let mut security = SecurityManager::new(config).await?;
+    security.access_control.add_role(
+        "user".to_string(),
+        vec![Permission::ReadMemory, Permission::WriteMemory]
+    ).await?;
+
+    let creds = AuthenticationCredentials {
+        auth_type: AuthenticationType::Password,
+        password: Some("password123".to_string()),
+        api_key: None,
+        certificate: None,
+        mfa_token: None,
+        ip_address: Some("127.0.0.1".to_string()),
+        user_agent: Some("test".to_string()),
+    };
+
+    let ctx = security.access_control.authenticate("user".to_string(), creds).await?;
+
+    let entry = MemoryEntry::new("enc_test".to_string(), "secret data".to_string(), MemoryType::ShortTerm);
+
+    let encrypted = security.encrypt_memory(&entry, &ctx).await?;
+    assert_eq!(encrypted.encryption_algorithm, "AES-256-GCM");
+
+    let decrypted = security.decrypt_memory(&encrypted, &ctx).await?;
+    assert_eq!(decrypted.value, entry.value);
+
+    Ok(())
+}

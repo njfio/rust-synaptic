@@ -15,7 +15,14 @@ pub mod evolution;
 pub use versioning::{MemoryVersion, VersionHistory, VersionManager, ChangeType};
 pub use differential::{MemoryDiff, DiffAnalyzer, ChangeSet, DiffMetrics};
 pub use patterns::{TemporalPattern, PatternDetector, TemporalTrend, AccessPattern};
-pub use evolution::{MemoryEvolution, EvolutionTracker, EvolutionMetrics, EvolutionEvent};
+pub use evolution::{
+    MemoryEvolution,
+    EvolutionTracker,
+    EvolutionMetrics,
+    EvolutionEvent,
+    GlobalEvolutionMetrics,
+    EvolutionData,
+};
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
@@ -131,8 +138,8 @@ pub struct TemporalAnalysis {
     pub changes: Vec<ChangeSet>,
     /// Identified temporal patterns
     pub patterns: Vec<TemporalPattern>,
-    /// Evolution metrics
-    pub evolution_metrics: Option<EvolutionMetrics>,
+    /// Evolution metrics (per-memory or global)
+    pub evolution_metrics: Option<EvolutionData>,
     /// Summary statistics
     pub summary: TemporalSummary,
 }
@@ -152,6 +159,17 @@ pub struct TemporalSummary {
     pub most_common_change_type: Option<ChangeType>,
     /// Stability score (0.0 = very unstable, 1.0 = very stable)
     pub stability_score: f64,
+}
+
+/// Basic usage statistics for the temporal system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemporalUsageStats {
+    /// Total versions stored
+    pub total_versions: usize,
+    /// Total diffs calculated
+    pub total_diffs: usize,
+    /// Total evolution events
+    pub total_evolution_events: usize,
 }
 
 impl TemporalMemoryManager {
@@ -222,12 +240,12 @@ impl TemporalMemoryManager {
 
         // Get evolution metrics if requested
         let evolution_metrics = if query.include_evolution {
-            if let Some(_memory_key) = &query.memory_key {
-                // TODO: Return proper evolution metrics
-                None
+            if let Some(memory_key) = &query.memory_key {
+                let metrics = self.evolution_tracker.get_metrics(memory_key).await?;
+                Some(EvolutionData::PerMemory(metrics))
             } else {
-                // TODO: Return global evolution metrics
-                None
+                let metrics = self.evolution_tracker.get_global_metrics().await?;
+                Some(EvolutionData::Global(metrics))
             }
         } else {
             None
@@ -272,8 +290,36 @@ impl TemporalMemoryManager {
         self.version_manager.cleanup_versions_before(cutoff_date).await
     }
 
+    /// Retrieve aggregated usage statistics
+    pub async fn get_usage_stats(&self) -> Result<TemporalUsageStats> {
+        let total_versions = self.version_manager.total_versions();
+        let diff_metrics = self.diff_analyzer.get_metrics();
+        let evolution_metrics = self.evolution_tracker.get_global_metrics().await?;
+
+        Ok(TemporalUsageStats {
+            total_versions,
+            total_diffs: diff_metrics.total_diffs,
+            total_evolution_events: evolution_metrics.total_events,
+        })
+    }
+
+    /// Get differential analysis metrics
+    pub fn get_diff_metrics(&self) -> DiffMetrics {
+        self.diff_analyzer.get_metrics()
+    }
+
+    /// Get global evolution metrics
+    pub async fn get_global_evolution_metrics(&self) -> Result<GlobalEvolutionMetrics> {
+        self.evolution_tracker.get_global_metrics().await
+    }
+
+    /// Get evolution metrics for a specific memory
+    pub async fn get_evolution_metrics(&self, memory_key: &str) -> Result<EvolutionMetrics> {
+        self.evolution_tracker.get_metrics(memory_key).await
+    }
+
     /// Calculate temporal summary statistics
-    fn calculate_temporal_summary(
+    pub fn calculate_temporal_summary(
         &self,
         version_history: &[MemoryVersion],
         changes: &[ChangeSet],
@@ -307,13 +353,45 @@ impl TemporalMemoryManager {
             1.0
         };
 
+        let bucket_size = Self::determine_bucket_size(time_range);
+        let most_active_period = Self::detect_most_active_period(version_history, bucket_size);
+
         TemporalSummary {
             total_versions,
             total_changes,
-            most_active_period: None, // TODO: Implement period detection
+            most_active_period,
             avg_change_frequency,
             most_common_change_type,
             stability_score,
         }
+    }
+
+    /// Determine bucket size for activity analysis based on overall range
+    fn determine_bucket_size(time_range: &TimeRange) -> Duration {
+        if time_range.duration().num_hours() <= 24 {
+            Duration::hours(1)
+        } else {
+            Duration::days(1)
+        }
+    }
+
+    /// Detect the most active period using the given bucket size
+    fn detect_most_active_period(
+        version_history: &[MemoryVersion],
+        bucket_size: Duration,
+    ) -> Option<TimeRange> {
+        use chrono::NaiveDateTime;
+        let mut counts: HashMap<DateTime<Utc>, usize> = HashMap::new();
+        for version in version_history {
+            let ts = version.created_at.timestamp();
+            let bucket_start = ts - (ts % bucket_size.num_seconds());
+            if let Some(start_naive) = NaiveDateTime::from_timestamp_opt(bucket_start, 0) {
+                let bucket = DateTime::<Utc>::from_utc(start_naive, Utc);
+                *counts.entry(bucket).or_insert(0) += 1;
+            }
+        }
+
+        let (start, _) = counts.into_iter().max_by_key(|(_, c)| *c)?;
+        Some(TimeRange::new(start, start + bucket_size))
     }
 }

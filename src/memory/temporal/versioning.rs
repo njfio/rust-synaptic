@@ -436,4 +436,9 @@ impl VersionManager {
         
         Ok(())
     }
+
+    /// Get total number of versions across all memories
+    pub fn total_versions(&self) -> usize {
+        self.histories.values().map(|h| h.versions.len()).sum()
+    }
 }

@@ -2,7 +2,7 @@
 // Implements actual machine learning models for embeddings and predictions
 
 #[cfg(feature = "ml-models")]
-use candle_core::{Device, Tensor, DType, IndexOp};
+use candle_core::{Device, Tensor, DType};
 #[cfg(feature = "ml-models")]
 use candle_nn::VarBuilder;
 #[cfg(feature = "ml-models")]
@@ -121,12 +121,9 @@ impl MLModelManager {
 
         // Load tokenizer
         let tokenizer_path = model_path.join("tokenizer.json");
-        if tokenizer_path.exists() {
-            self.tokenizer = Some(
-                Tokenizer::from_file(&tokenizer_path)
-                    .map_err(|e| MemoryError::storage(format!("Failed to load tokenizer: {}", e)))?
-            );
-        }
+        let tokenizer = Tokenizer::from_file(&tokenizer_path)
+            .map_err(|e| MemoryError::storage(format!("Failed to load tokenizer: {}", e)))?;
+        self.tokenizer = Some(tokenizer.clone());
 
         // Load BERT configuration
         let config_path = model_path.join("config.json");
@@ -140,18 +137,17 @@ impl MLModelManager {
             // Load model weights
             let weights_path = model_path.join("model.safetensors");
             if weights_path.exists() {
-                println!("✅ Model weights found, loading BERT model...");
+                println!("Model weights found, loading BERT model...");
 
-                // Load the actual model
-                let weights = candle_core::safetensors::load(&weights_path, &self.device)
-                    .map_err(|e| MemoryError::storage(format!("Failed to load model weights: {}", e)))?;
+                let vb = unsafe {
+                    VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &self.device)
+                }?;
+                let model = BertModel::load(vb, &bert_config)?;
 
-                // Create BERT model (simplified for demo)
-                // In a real implementation, you'd use the full BERT architecture
-                self.embedding_model = Some(Box::new(SimpleBertModel::new(weights)?));
-                println!("✅ BERT model loaded successfully");
+                self.embedding_model = Some(Box::new(SimpleBertModel::new(model, tokenizer, self.device.clone())?));
+                println!("BERT model loaded successfully");
             } else {
-                println!("⚠️  Model weights not found at: {}", weights_path.display());
+                println!("Warning: Model weights not found at: {}", weights_path.display());
             }
         }
 
@@ -355,32 +351,43 @@ trait EmbeddingModel {
     fn generate_embedding(&self, text: &str) -> Result<Vec<f32>>;
 }
 
-/// Simplified BERT model for demo purposes
+/// Simplified BERT model wrapper using Candle
 #[cfg(feature = "ml-models")]
 struct SimpleBertModel {
-    weights: std::collections::HashMap<String, Tensor>,
+    model: BertModel,
+    tokenizer: Tokenizer,
+    device: Device,
 }
 
 #[cfg(feature = "ml-models")]
 impl SimpleBertModel {
-    fn new(weights: std::collections::HashMap<String, Tensor>) -> Result<Self> {
-        Ok(SimpleBertModel { weights })
+    fn new(model: BertModel, tokenizer: Tokenizer, device: Device) -> Result<Self> {
+        Ok(SimpleBertModel { model, tokenizer, device })
     }
 }
 
 #[cfg(feature = "ml-models")]
 impl EmbeddingModel for SimpleBertModel {
     fn generate_embedding(&self, text: &str) -> Result<Vec<f32>> {
-        // Simplified embedding generation for demo
-        // In a real implementation, this would use the actual BERT model
-        let mut embedding = vec![0.0f32; 768];
+        let encoding = self
+            .tokenizer
+            .encode(text, true)
+            .map_err(|e| MemoryError::storage(format!("Tokenization failed: {}", e)))?;
 
-        // Simple hash-based embedding for demo
-        let hash = text.chars().fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
-        for i in 0..768 {
-            embedding[i] = ((hash.wrapping_add(i as u64) % 1000) as f32 - 500.0) / 1000.0;
-        }
+        let ids = encoding.get_ids().to_vec();
+        let mask = encoding.get_attention_mask().to_vec();
 
-        Ok(embedding)
+        let token_ids = Tensor::new(ids.as_slice(), &self.device)?.unsqueeze(0)?;
+        let attention = Tensor::new(mask.as_slice(), &self.device)?.unsqueeze(0)?;
+        let token_type_ids = token_ids.zeros_like()?;
+
+        let embeddings = self
+            .model
+            .forward(&token_ids, &token_type_ids, Some(&attention))?;
+
+        let (_, n_tokens, _) = embeddings.dims3()?;
+        let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?.to_dtype(DType::F32)?;
+
+        Ok(embeddings.to_vec1::<f32>()?)
     }
 }

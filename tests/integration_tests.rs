@@ -301,3 +301,41 @@ async fn test_special_characters() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_temporal_metrics_accumulation() -> Result<()> {
+    let config = MemoryConfig::default();
+    let mut memory = AgentMemory::new(config).await?;
+
+    memory.store("metric1", "v1").await?;
+    memory.store("metric1", "v2").await?;
+    memory.store("metric2", "v1").await?;
+
+    let usage = memory
+        .get_temporal_usage_stats()
+        .await
+        .expect("usage stats");
+    assert!(usage.total_versions >= 3);
+    assert!(usage.total_diffs >= 1);
+
+    let diff_metrics = memory.get_temporal_diff_metrics().expect("diff metrics");
+    assert!(diff_metrics.total_diffs >= 1);
+
+    Ok(())
+}
+
+#[cfg(feature = "analytics")]
+#[tokio::test]
+async fn test_analytics_metrics_access() -> Result<()> {
+    let mut config = MemoryConfig::default();
+    config.enable_analytics = true;
+    let mut memory = AgentMemory::new(config).await?;
+
+    memory.store("a_key", "a_val").await?;
+
+    let metrics = memory
+        .get_analytics_metrics()
+        .expect("analytics metrics");
+    assert!(metrics.events_processed >= 1);
+    Ok(())
+}

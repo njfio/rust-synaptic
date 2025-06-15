@@ -11,7 +11,7 @@ use synaptic::integrations::visualization::{VisualizationConfig, RealVisualizati
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("🎨 Synaptic Complex Visualizations Demo");
+    println!(" Synaptic Complex Visualizations Demo");
     println!("=======================================\n");
 
     // Create memory system with knowledge graph enabled
@@ -37,8 +37,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "visualization")]
     generate_complex_visualizations(&memory).await?;
 
-    println!("\n✅ Complex visualizations demo completed!");
-    println!("📊 Check the visualizations/ directory for generated charts");
+    println!("\n Complex visualizations demo completed!");
+    println!(" Check the visualizations/ directory for generated charts");
 
     Ok(())
 }
@@ -163,7 +163,7 @@ async fn create_enterprise_knowledge_graph(memory: &mut AgentMemory) -> Result<(
 
 /// Create complex temporal patterns
 async fn create_temporal_patterns(memory: &mut AgentMemory) -> Result<(), Box<dyn Error>> {
-    println!("\n⏰ Creating Temporal Patterns");
+    println!("\n Creating Temporal Patterns");
     println!("-----------------------------");
 
     // Simulate daily standup meetings
@@ -197,7 +197,7 @@ async fn create_temporal_patterns(memory: &mut AgentMemory) -> Result<(), Box<dy
 
 /// Create multi-layered relationship networks
 async fn create_multilayer_networks(memory: &mut AgentMemory) -> Result<(), Box<dyn Error>> {
-    println!("\n🕸️ Creating Multi-layered Networks");
+    println!("\n Creating Multi-layered Networks");
     println!("----------------------------------");
 
     // Create skill networks
@@ -270,7 +270,7 @@ async fn create_multilayer_networks(memory: &mut AgentMemory) -> Result<(), Box<
 /// Generate sophisticated visualizations
 #[cfg(feature = "visualization")]
 async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box<dyn Error>> {
-    println!("\n🎨 Generating Complex Visualizations");
+    println!("\n Generating Complex Visualizations");
     println!("------------------------------------");
 
     let viz_config = VisualizationConfig {
@@ -304,7 +304,7 @@ async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box
 
     println!("✓ Generating enterprise network visualization...");
     let network_path = viz_engine.generate_memory_network(&all_memories, &relationships).await?;
-    println!("  📊 Saved: {}", network_path);
+    println!("   Saved: {}", network_path);
 
     // Generate temporal analytics
     let stats = memory.stats();
@@ -319,9 +319,9 @@ async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box
     // Generate analytics timeline instead
     let analytics_events = vec![]; // Empty for demo
     let timeline_path = viz_engine.generate_analytics_timeline(&analytics_events).await?;
-    println!("  📊 Saved: {}", timeline_path);
+    println!("   Saved: {}", timeline_path);
 
-    println!("✅ Complex visualizations generated successfully!");
+    println!(" Complex visualizations generated successfully!");
 
     Ok(())
 }

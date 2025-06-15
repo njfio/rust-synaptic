@@ -10,7 +10,7 @@ use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("🚀 Synaptic Phase 1: Advanced AI Integration Demo");
+    println!(" Synaptic Phase 1: Advanced AI Integration Demo");
     println!("==================================================");
     
     // Create memory system with embeddings enabled
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     let mut memory = AgentMemory::new(config).await?;
     
-    println!("\n📝 Example 1: Building Knowledge Base");
+    println!("\n Example 1: Building Knowledge Base");
     println!("------------------------------------");
     
     // Add diverse memories to build a knowledge base
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     // Get basic statistics
     let stats = memory.stats();
-    println!("\n📊 Memory System Statistics:");
+    println!("\n Memory System Statistics:");
     println!("  • Total memories: {}", stats.short_term_count + stats.long_term_count);
     println!("  • Short-term: {}", stats.short_term_count);
     println!("  • Total size: {} bytes", stats.total_size);
@@ -57,14 +57,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Get embedding statistics if available
     #[cfg(feature = "embeddings")]
     if let Some(embedding_stats) = memory.embedding_stats() {
-        println!("\n🧠 Embedding Statistics:");
+        println!("\n Embedding Statistics:");
         println!("  • Total embeddings: {}", embedding_stats.total_embeddings);
         println!("  • Embedding dimension: {}", embedding_stats.embedding_dimension);
         println!("  • Average quality score: {:.3}", embedding_stats.average_quality_score);
         println!("  • Similarity threshold: {:.2}", embedding_stats.similarity_threshold);
     }
     
-    println!("\n🔍 Example 2: Semantic Search Queries");
+    println!("\n Example 2: Semantic Search Queries");
     println!("------------------------------------");
     
     // Perform semantic searches
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         
         // Traditional keyword search
         let keyword_results = memory.search(query, 3).await?;
-        println!("  📝 Keyword search found {} results:", keyword_results.len());
+        println!("   Keyword search found {} results:", keyword_results.len());
         for result in &keyword_results {
             println!("    • {} (score: {:.3})", result.entry.key, result.relevance_score);
         }
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(feature = "embeddings")]
         {
             let semantic_results = memory.semantic_search(query, Some(3))?;
-            println!("  🧠 Semantic search found {} results:", semantic_results.len());
+            println!("   Semantic search found {} results:", semantic_results.len());
             for result in &semantic_results {
                 println!("    • {} (similarity: {:.3}, distance: {:.3})", 
                     result.memory.key, result.similarity, result.distance);
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         
         #[cfg(not(feature = "embeddings"))]
         {
-            println!("  🧠 Semantic search: Not available (embeddings feature disabled)");
+            println!("   Semantic search: Not available (embeddings feature disabled)");
         }
     }
     
@@ -114,7 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     // Get knowledge graph statistics
     if let Some(kg_stats) = memory.knowledge_graph_stats() {
-        println!("\n🕸️ Knowledge Graph Statistics:");
+        println!("\n Knowledge Graph Statistics:");
         println!("  • Total nodes: {}", kg_stats.node_count);
         println!("  • Total edges: {}", kg_stats.edge_count);
         println!("  • Graph density: {:.4}", kg_stats.density);
@@ -124,11 +124,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     
-    println!("\n🧪 Example 4: Advanced Memory Operations");
+    println!("\n Example 4: Advanced Memory Operations");
     println!("---------------------------------------");
     
     // Demonstrate intelligent memory updates
-    println!("📝 Updating existing memory with additional information...");
+    println!(" Updating existing memory with additional information...");
     memory.store("ai_research", 
         "Artificial intelligence research focuses on machine learning algorithms, neural networks, and deep learning models for computer vision and natural language processing").await?;
     
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             result.relationship_type, result.confidence, result.explanation);
     }
     
-    println!("\n🎯 Example 5: Performance Comparison");
+    println!("\n Example 5: Performance Comparison");
     println!("-----------------------------------");
     
     // Compare different search methods
@@ -164,34 +164,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
         (results, time)
     };
     
-    println!("⚡ Performance Results for query: \"{}\"", test_query);
-    println!("  📝 Keyword search: {} results in {:?}", keyword_results.len(), keyword_time);
+    println!(" Performance Results for query: \"{}\"", test_query);
+    println!("   Keyword search: {} results in {:?}", keyword_results.len(), keyword_time);
     
     #[cfg(feature = "embeddings")]
-    println!("  🧠 Semantic search: {} results in {:?}", semantic_results.len(), semantic_time);
+    println!("   Semantic search: {} results in {:?}", semantic_results.len(), semantic_time);
     
     #[cfg(not(feature = "embeddings"))]
-    println!("  🧠 Semantic search: Not available (embeddings feature disabled)");
+    println!("   Semantic search: Not available (embeddings feature disabled)");
     
     let graph_start = std::time::Instant::now();
     let graph_results = memory.find_related_memories("machine_learning", 5).await?;
     let graph_time = graph_start.elapsed();
-    println!("  🕸️ Graph traversal: {} results in {:?}", graph_results.len(), graph_time);
+    println!("   Graph traversal: {} results in {:?}", graph_results.len(), graph_time);
     
-    println!("\n✅ Phase 1 Advanced AI Integration Demo Complete!");
+    println!("\n Phase 1 Advanced AI Integration Demo Complete!");
     println!("\nKey Features Demonstrated:");
-    println!("• ✅ Vector embeddings for semantic understanding");
-    println!("• ✅ Intelligent similarity search beyond keywords");
-    println!("• ✅ Integration with knowledge graph relationships");
-    println!("• ✅ Performance comparison of search methods");
-    println!("• ✅ Automatic relationship inference");
-    println!("• ✅ Smart memory updates and content merging");
+    println!("•  Vector embeddings for semantic understanding");
+    println!("•  Intelligent similarity search beyond keywords");
+    println!("•  Integration with knowledge graph relationships");
+    println!("•  Performance comparison of search methods");
+    println!("•  Automatic relationship inference");
+    println!("•  Smart memory updates and content merging");
     
     #[cfg(feature = "embeddings")]
-    println!("• ✅ Real-time embedding generation and caching");
+    println!("•  Real-time embedding generation and caching");
     
     #[cfg(not(feature = "embeddings"))]
-    println!("• ⚠️  Embeddings feature disabled - enable with --features embeddings");
+    println!("•   Embeddings feature disabled - enable with --features embeddings");
     
     Ok(())
 }

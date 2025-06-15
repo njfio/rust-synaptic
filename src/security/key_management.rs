@@ -9,9 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use aes_gcm::{Aes256Gcm, Key};
+use aes_gcm::aead::{Aead, KeyInit, Payload, generic_array::GenericArray};
 
 /// Key management system
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyManager {
     config: SecurityConfig,
     master_keys: HashMap<String, MasterKey>,
@@ -301,30 +305,35 @@ impl KeyManager {
     // Private helper methods
 
     fn generate_secure_key(&self, length: usize) -> Result<Vec<u8>> {
-        // In production, use a cryptographically secure random number generator
-        // For demo purposes, we'll use a deterministic but varied approach
-        let mut key = Vec::with_capacity(length);
-        for i in 0..length {
-            key.push(((i * 17 + 42 + length) % 256) as u8);
-        }
+        let mut key = vec![0u8; length];
+        OsRng.fill_bytes(&mut key);
         Ok(key)
     }
 
     fn encrypt_with_master_key(&self, plaintext: &[u8], master_key: &MasterKey) -> Result<Vec<u8>> {
-        // Simplified encryption - in production use proper AES-GCM
-        let mut encrypted = plaintext.to_vec();
-        for (i, byte) in encrypted.iter_mut().enumerate() {
-            *byte ^= master_key.key_data[i % master_key.key_data.len()];
-        }
-        Ok(encrypted)
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&master_key.key_data));
+        let mut iv = [0u8; 12];
+        OsRng.fill_bytes(&mut iv);
+        let nonce = GenericArray::from_slice(&iv);
+        let mut encrypted = cipher
+            .encrypt(nonce, Payload { msg: plaintext, aad: &[] })
+            .map_err(|_| MemoryError::key_management("Master key encryption failed"))?;
+        let mut result = Vec::with_capacity(iv.len() + encrypted.len());
+        result.extend_from_slice(&iv);
+        result.append(&mut encrypted);
+        Ok(result)
     }
 
     fn decrypt_with_master_key(&self, ciphertext: &[u8], master_key: &MasterKey) -> Result<Vec<u8>> {
-        // Simplified decryption - reverse of encryption
-        let mut decrypted = ciphertext.to_vec();
-        for (i, byte) in decrypted.iter_mut().enumerate() {
-            *byte ^= master_key.key_data[i % master_key.key_data.len()];
+        if ciphertext.len() < 12 + 16 {
+            return Err(MemoryError::key_management("Ciphertext too short".to_string()));
         }
+        let (iv, data) = ciphertext.split_at(12);
+        let nonce = GenericArray::from_slice(iv);
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&master_key.key_data));
+        let decrypted = cipher
+            .decrypt(nonce, Payload { msg: data, aad: &[] })
+            .map_err(|_| MemoryError::key_management("Master key decryption failed"))?;
         Ok(decrypted)
     }
 
