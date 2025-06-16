@@ -31,11 +31,14 @@ impl PrivacyManager {
     }
 
     /// Apply differential privacy to a memory entry
-    pub async fn apply_differential_privacy(&mut self, 
-        entry: &MemoryEntry, 
+    pub async fn apply_differential_privacy(&mut self,
+        entry: &MemoryEntry,
         context: &SecurityContext
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
+
+        // Validate security context comprehensively
+        context.validate_comprehensive(self.config.access_control_policy.require_mfa)?;
 
         // Check privacy budget
         let epsilon = self.privacy_budget_tracker.allocate_budget(&context.user_id, 0.1)?;

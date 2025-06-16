@@ -1,12 +1,12 @@
 use synaptic::{memory::temporal::{TemporalMemoryManager, TemporalConfig, TimeRange, ChangeType, MemoryVersion}, MemoryEntry, MemoryType};
-use chrono::{DateTime, Utc, Duration, Timelike};
+use chrono::{Utc, Duration, Timelike};
 
 #[tokio::test]
 async fn test_most_active_period_daily() -> Result<(), Box<dyn std::error::Error>> {
     let manager = TemporalMemoryManager::new(TemporalConfig::default());
     let now = Utc::now() - Duration::days(3);
     let start_naive = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-    let start = DateTime::<Utc>::from_utc(start_naive, Utc);
+    let start = start_naive.and_utc();
     let mut versions = Vec::new();
 
     // day 0
@@ -37,7 +37,7 @@ async fn test_most_active_period_daily() -> Result<(), Box<dyn std::error::Error
     let active = summary.most_active_period.expect("period");
 
     let expected_start_naive = (start + Duration::days(1)).date_naive().and_hms_opt(0,0,0).unwrap();
-    let expected_start = DateTime::<Utc>::from_utc(expected_start_naive, Utc);
+    let expected_start = expected_start_naive.and_utc();
     assert_eq!(active.start, expected_start);
     assert_eq!(active.end, expected_start + Duration::days(1));
     Ok(())
@@ -48,7 +48,7 @@ async fn test_most_active_period_hourly() -> Result<(), Box<dyn std::error::Erro
     let manager = TemporalMemoryManager::new(TemporalConfig::default());
     let now = Utc::now() - Duration::hours(6);
     let start_naive = now.date_naive().and_hms_opt(now.hour(), 0, 0).unwrap();
-    let start = DateTime::<Utc>::from_utc(start_naive, Utc);
+    let start = start_naive.and_utc();
     let mut versions = Vec::new();
 
     // hour 1
@@ -74,7 +74,7 @@ async fn test_most_active_period_hourly() -> Result<(), Box<dyn std::error::Erro
 
     let target = start + Duration::hours(3);
     let expected_start_naive = target.date_naive().and_hms_opt(target.hour(), 0, 0).unwrap();
-    let expected_start = DateTime::<Utc>::from_utc(expected_start_naive, Utc);
+    let expected_start = expected_start_naive.and_utc();
     assert_eq!(active.start, expected_start);
     assert_eq!(active.end, expected_start + Duration::hours(1));
     Ok(())

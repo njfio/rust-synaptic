@@ -1,0 +1,46 @@
+# Cargo configuration for Synaptic project
+
+[build]
+# Enable all features by default for development
+# rustflags = ["--cfg", "feature=\"all\""]
+
+[target.'cfg(all())']
+# Test configuration
+rustflags = [
+    # Enable more detailed backtraces in tests
+    "-C", "debug-assertions=on",
+    # Optimize for test performance
+    "-C", "opt-level=1"
+]
+
+# Test aliases for easier execution
+[alias]
+# Quick test commands
+test-quick = "test --lib --test integration_tests"
+test-security = "test --test phase4_security_tests --test security_tests --test zero_knowledge_tests --test homomorphic_encryption_tests"
+test-performance = "test --test real_performance_measurement_tests --test comprehensive_optimization_tests"
+test-multimodal = "test --test phase5_multimodal_tests --test phase5b_document_tests --test data_processor_tests"
+test-temporal = "test --test temporal_evolution_tests --test temporal_summary_tests --test myers_diff_tests --test diff_analyzer_tests"
+test-analytics = "test --test phase3_analytics --test advanced_theme_extraction_tests --test summarization_tests --test knowledge_graph_tests --test enhanced_similarity_search_tests --test real_lifecycle_management_tests"
+test-infrastructure = "test --test external_integrations_tests --test phase1_embeddings_tests --test phase2_distributed_tests --test comprehensive_logging_tests --test enhanced_error_handling_tests --test visualization_tests --test offline_sync_tests"
+
+# Coverage and quality commands
+test-coverage = "llvm-cov --all-features --workspace --html"
+test-bench = "test --test performance_tests -- --ignored"
+test-all-features = "test --all-features"
+
+# Lint and format commands
+check-all = "check --all-targets --all-features"
+fmt-check = "fmt --all -- --check"
+clippy-all = "clippy --all-targets --all-features -- -D warnings"
+
+# Build commands
+build-release = "build --release --all-features"
+build-examples = "build --examples --all-features"
+
+[env]
+# Test environment variables
+RUST_BACKTRACE = "1"
+RUST_LOG = "debug"
+# Increase test timeout for slower tests
+CARGO_TEST_TIMEOUT = "300"

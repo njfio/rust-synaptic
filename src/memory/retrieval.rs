@@ -3,7 +3,6 @@
 use crate::error::{MemoryError, Result};
 use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
 use crate::memory::storage::Storage;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -187,7 +186,7 @@ impl MemoryRetriever {
     }
 
     /// Find memories by semantic similarity using embeddings
-    pub async fn find_similar_by_embedding(&self, embedding: &[f32], limit: usize) -> Result<Vec<MemoryFragment>> {
+    pub async fn find_similar_by_embedding(&self, _embedding: &[f32], _limit: usize) -> Result<Vec<MemoryFragment>> {
         // This would require iterating through all entries and computing cosine similarity
         // For now, we'll return an error indicating this feature needs vector database support
         Err(MemoryError::vector_operation(

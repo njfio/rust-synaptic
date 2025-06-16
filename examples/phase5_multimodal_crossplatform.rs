@@ -6,9 +6,7 @@
 //! - Cross-modal relationship detection
 //! - Platform-optimized performance
 
-use synaptic::{AgentMemory, MemoryConfig};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+
 
 #[cfg(feature = "multimodal")]
 use synaptic::multimodal::{

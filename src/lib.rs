@@ -50,6 +50,7 @@ pub mod distributed;
 pub mod analytics;
 
 pub mod integrations;
+pub mod performance;
 pub mod security;
 
 #[cfg(feature = "multimodal")]
@@ -196,7 +197,7 @@ impl AgentMemory {
         };
 
         // Build base agent without multimodal memory initialized
-        let mut agent = Self {
+        let agent = Self {
             config: config.clone(),
             state,
             storage,

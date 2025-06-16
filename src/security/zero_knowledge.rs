@@ -101,6 +101,9 @@ impl ZeroKnowledgeManager {
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
+        // Validate security context comprehensively
+        user_context.validate_comprehensive(true)?; // ZK proofs always require MFA
+
         // Create the statement to prove
         let statement = AccessStatement {
             memory_key: memory_key.to_string(),
@@ -149,7 +152,7 @@ impl ZeroKnowledgeManager {
         &mut self,
         entry: &MemoryEntry,
         predicate: ContentPredicate,
-        context: &SecurityContext,
+        _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
@@ -199,7 +202,7 @@ impl ZeroKnowledgeManager {
         &mut self,
         entries: &[MemoryEntry],
         aggregate_type: AggregateType,
-        context: &SecurityContext,
+        _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 

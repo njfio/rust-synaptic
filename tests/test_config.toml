@@ -1,0 +1,173 @@
+# Test Suite Configuration for Synaptic AI Agent Memory
+# This file defines test categories, execution order, and CI configuration
+
+[metadata]
+total_tests = 161
+test_files = 31
+last_updated = "2025-06-16"
+
+[categories]
+
+[categories.core]
+name = "Core Library Tests"
+description = "Core memory operations and basic functionality"
+test_count = 29
+files = ["lib.rs"]
+command = "cargo test --lib"
+priority = "critical"
+
+[categories.integration]
+name = "Integration Tests"
+description = "End-to-end integration testing"
+test_count = 13
+files = ["integration_tests.rs"]
+command = "cargo test --test integration_tests"
+priority = "critical"
+
+[categories.security]
+name = "Security & Privacy Tests"
+description = "Security, encryption, and privacy functionality"
+test_count = 28
+files = [
+    "phase4_security_tests.rs",
+    "security_tests.rs",
+    "zero_knowledge_tests.rs",
+    "homomorphic_encryption_tests.rs"
+]
+command = "cargo test --test phase4_security_tests && cargo test --test security_tests && cargo test --test zero_knowledge_tests && cargo test --test homomorphic_encryption_tests"
+priority = "critical"
+
+[categories.performance]
+name = "Performance & Optimization Tests"
+description = "Performance measurement and optimization testing"
+test_count = 28
+files = [
+    "real_performance_measurement_tests.rs",
+    "performance_tests.rs",
+    "comprehensive_optimization_tests.rs",
+    "advanced_performance_optimization_tests.rs"
+]
+command = "cargo test --test real_performance_measurement_tests && cargo test --test performance_tests && cargo test --test comprehensive_optimization_tests && cargo test --test advanced_performance_optimization_tests"
+priority = "high"
+
+[categories.lifecycle]
+name = "Memory Lifecycle Tests"
+description = "Memory lifecycle management and archiving"
+test_count = 11
+files = ["real_lifecycle_management_tests.rs"]
+command = "cargo test --test real_lifecycle_management_tests"
+priority = "high"
+
+[categories.multimodal]
+name = "Multimodal & Document Processing Tests"
+description = "Multimodal processing and document handling"
+test_count = 21
+files = [
+    "phase5_multimodal_tests.rs",
+    "phase5b_document_tests.rs",
+    "data_processor_tests.rs"
+]
+command = "cargo test --test phase5_multimodal_tests && cargo test --test phase5b_document_tests && cargo test --test data_processor_tests"
+priority = "high"
+
+[categories.temporal]
+name = "Temporal Analysis Tests"
+description = "Temporal patterns and differential analysis"
+test_count = 17
+files = [
+    "temporal_evolution_tests.rs",
+    "temporal_summary_tests.rs",
+    "myers_diff_tests.rs",
+    "diff_analyzer_tests.rs"
+]
+command = "cargo test --test temporal_evolution_tests && cargo test --test temporal_summary_tests && cargo test --test myers_diff_tests && cargo test --test diff_analyzer_tests"
+priority = "medium"
+
+[categories.knowledge_graph]
+name = "Knowledge Graph Tests"
+description = "Knowledge graph and reasoning functionality"
+test_count = 6
+files = ["knowledge_graph_tests.rs"]
+command = "cargo test --test knowledge_graph_tests"
+priority = "medium"
+
+[categories.analytics]
+name = "Analytics & Summarization Tests"
+description = "Analytics, theme extraction, and summarization"
+test_count = 19
+files = [
+    "phase3_analytics.rs",
+    "advanced_theme_extraction_tests.rs",
+    "summarization_tests.rs"
+]
+command = "cargo test --test phase3_analytics && cargo test --test advanced_theme_extraction_tests && cargo test --test summarization_tests"
+priority = "medium"
+
+[categories.search]
+name = "Search & Similarity Tests"
+description = "Advanced search and similarity algorithms"
+test_count = 6
+files = ["enhanced_similarity_search_tests.rs"]
+command = "cargo test --test enhanced_similarity_search_tests"
+priority = "medium"
+
+[categories.external_integrations]
+name = "External Integration Tests"
+description = "External service integrations and embeddings"
+test_count = 8
+files = [
+    "external_integrations_tests.rs",
+    "phase1_embeddings_tests.rs",
+    "phase2_distributed_tests.rs"
+]
+command = "cargo test --test external_integrations_tests && cargo test --test phase1_embeddings_tests && cargo test --test phase2_distributed_tests"
+priority = "medium"
+
+[categories.logging_error_handling]
+name = "Logging & Error Handling Tests"
+description = "Comprehensive logging and error handling"
+test_count = 20
+files = [
+    "comprehensive_logging_tests.rs",
+    "enhanced_error_handling_tests.rs"
+]
+command = "cargo test --test comprehensive_logging_tests && cargo test --test enhanced_error_handling_tests"
+priority = "low"
+
+[categories.visualization]
+name = "Visualization Tests"
+description = "Data visualization and rendering"
+test_count = 2
+files = ["visualization_tests.rs"]
+command = "cargo test --test visualization_tests"
+priority = "low"
+
+[categories.sync]
+name = "Synchronization Tests"
+description = "Offline synchronization and cross-platform"
+test_count = 2
+files = ["offline_sync_tests.rs"]
+command = "cargo test --test offline_sync_tests"
+priority = "low"
+
+[ci_configuration]
+fail_on_warnings = true
+coverage_threshold = 90
+timeout_minutes = 30
+parallel_jobs = 4
+
+[ci_configuration.rust_versions]
+stable = true
+beta = true
+nightly = { allow_failure = true }
+
+[ci_configuration.platforms]
+ubuntu = true
+windows = false  # Disabled for now due to complexity
+macos = false    # Disabled for now due to cost
+
+[execution_order]
+# Order of test execution for CI (critical first)
+priority_order = ["critical", "high", "medium", "low"]
+parallel_execution = true
+fail_fast = false  # Continue running other tests even if some fail

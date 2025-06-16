@@ -4,7 +4,6 @@
 //! ensuring 90%+ test coverage and comprehensive validation.
 
 use synaptic::security::{SecurityManager, SecurityConfig, SecurityContext};
-use synaptic::{MemoryEntry, MemoryType};
 use std::error::Error;
 
 #[cfg(feature = "zero-knowledge-proofs")]
@@ -305,9 +304,14 @@ mod fallback_tests {
     async fn test_fallback_zero_knowledge_proofs() -> Result<(), Box<dyn Error>> {
         let mut config = SecurityConfig::default();
         config.enable_zero_knowledge = true;
-        
+
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        let mut context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+
+        // Set MFA verification for the context
+        context.mfa_verified = true;
+        context.session_id = "test_session_123".to_string();
+        context.request_id = "test_request_456".to_string();
 
         let access_statement = synaptic::security::zero_knowledge::AccessStatement {
             memory_key: "fallback_test".to_string(),

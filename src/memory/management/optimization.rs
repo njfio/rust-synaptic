@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::memory::types::{MemoryEntry, MemoryType};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::thread;
+
 use tokio::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use base64::{Engine as _, engine::general_purpose};
@@ -3846,7 +3846,7 @@ mod tests {
         opt.add_entry(MemoryEntry::new("a".into(), repetitive_content, MemoryType::ShortTerm));
         let before = opt.get_performance_metrics().memory_usage_bytes;
         let (count, _) = opt.perform_compression().await.unwrap();
-        assert!(count >= 0); // Allow for 0 or 1 depending on compression effectiveness
+        // Count should be non-negative (usize is always >= 0)
         // Memory usage should be updated regardless
         let after = opt.get_performance_metrics().memory_usage_bytes;
         assert!(after <= before); // Should be same or less

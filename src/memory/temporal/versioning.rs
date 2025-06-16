@@ -5,7 +5,7 @@ use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::{TemporalConfig, TimeRange};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Types of changes that can occur to memory entries

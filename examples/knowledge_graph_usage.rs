@@ -269,6 +269,7 @@ async fn complex_graph_queries() -> Result<()> {
 }
 
 /// Helper function to demonstrate memory entry creation with rich metadata
+#[allow(dead_code)]
 fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>) -> MemoryEntry {
     let mut entry = MemoryEntry::new(
         key.to_string(),

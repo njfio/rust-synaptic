@@ -85,9 +85,6 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use std::io::Read;
 use pdf_extract;
-use zip::read::ZipArchive;
-use quick_xml::Reader;
-use quick_xml::events::Event;
 
 /// Basic document and data memory manager for Phase 5B
 pub struct BasicDocumentDataManager {

@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 /// In-memory storage implementation using DashMap for thread-safe concurrent access
 pub struct MemoryStorage {
