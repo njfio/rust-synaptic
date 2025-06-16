@@ -4,7 +4,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-161%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
 
-**Synaptic** is a comprehensive AI agent memory system implemented in Rust. It provides intelligent memory management, advanced search capabilities, lifecycle automation, knowledge graph functionality, security features, and multi-modal content processing for AI applications.
+**Synaptic** is a comprehensive AI agent memory system implemented in Rust. It provides intelligent memory management, advanced search capabilities, lifecycle automation, knowledge graph functionality, enterprise security features, and multi-modal content processing for AI applications.
+
+## 🚀 Key Highlights
+
+- **161 Passing Tests** across 14 organized categories with priority-based execution
+- **Production-Ready Implementation** with real external integrations (PostgreSQL, Redis, BERT ML models, LLM APIs)
+- **Enterprise Security** featuring AES-256-GCM encryption, zero-knowledge proofs, and differential privacy
+- **Comprehensive Test Organization** with automated CI/CD and development tools
+- **Multi-Modal Processing** supporting PDF, Markdown, DOC, CSV, Parquet, images, audio, and code
+- **Advanced Analytics** with real-time performance monitoring and sophisticated algorithms
+- **Professional Documentation** with API reference, architecture guides, and deployment instructions
 
 ## Features
 
@@ -146,25 +156,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Testing
 
-Run the comprehensive test suite (161 tests):
+### Organized Test Suite (161 Tests)
+
+The project includes a comprehensive test organization system with priority-based execution:
+
+#### Using the Test Runner Script
 
 ```bash
-# Run all tests (161 tests across all modules)
+# Run all tests (161 tests across 14 categories)
+./scripts/run_tests.sh all
+
+# Run by priority level
+./scripts/run_tests.sh critical    # Core, integration, security (70 tests)
+./scripts/run_tests.sh high        # Performance, lifecycle, multimodal (60 tests)
+./scripts/run_tests.sh medium      # Temporal, analytics, search, external (25 tests)
+./scripts/run_tests.sh low         # Logging, visualization, sync (6 tests)
+
+# Run specific test categories
+./scripts/run_tests.sh security     # All security tests
+./scripts/run_tests.sh performance  # All performance tests
+./scripts/run_tests.sh multimodal   # All multimodal tests
+```
+
+#### Using Makefile Targets
+
+```bash
+# Test commands
+make test-all          # All 161 tests
+make test-critical     # Critical priority tests
+make test-security     # Security tests only
+make test-performance  # Performance tests only
+
+# Development commands
+make build clean fmt clippy coverage audit docs
+```
+
+#### Traditional Cargo Commands
+
+```bash
+# Run all tests
 cargo test
 
-# Run tests with all features enabled
-cargo test --all-features
-
-# Run specific test modules
-cargo test --test knowledge_graph_tests          # 6 tests
+# Run specific test files
 cargo test --test integration_tests              # 13 tests
-cargo test --test real_lifecycle_management_tests # 11 tests
 cargo test --test phase4_security_tests          # 9 tests
+cargo test --test real_lifecycle_management_tests # 11 tests
 cargo test --test enhanced_similarity_search_tests # 6 tests
 cargo test --test comprehensive_logging_tests    # 10 tests
 cargo test --test phase5b_document_tests         # 8 tests
 
-# Run performance tests (ignored by default)
+# Run performance benchmarks
 cargo test --test performance_tests -- --ignored
 ```
 
@@ -213,21 +254,29 @@ cargo run --example phase2_distributed_system
 
 ## Test Results & Quality Metrics
 
-### Test Coverage Summary
+### Comprehensive Test Organization
 
-- **161 Total Tests Passing**: All tests pass without failures
-- **29 Unit Tests**: Core library functionality
-- **10+ Integration Tests**: Real-world usage scenarios
-- **Security Tests**: 9 comprehensive security tests covering encryption, zero-knowledge proofs, and access control
-- **Performance Tests**: 10 real performance measurement tests
-- **Multi-Modal Tests**: 8 document processing tests and 2 multimodal tests
+| Priority | Categories | Test Count | Description |
+|----------|------------|------------|-------------|
+| **Critical** | Core, Integration, Security | 70 tests | Essential functionality and security |
+| **High** | Performance, Lifecycle, Multimodal | 60 tests | Performance and advanced features |
+| **Medium** | Temporal, Analytics, Search, External | 25 tests | Specialized algorithms and integrations |
+| **Low** | Logging, Visualization, Sync | 6 tests | Supporting infrastructure |
+| **Total** | **14 Categories** | **161 tests** | **Complete test coverage** |
+
+### Test Execution Tools
+
+- **Organized Test Runner**: `./scripts/run_tests.sh` with priority-based execution
+- **Makefile Integration**: `make test-all`, `make test-critical`, category-specific targets
+- **CI/CD Automation**: GitHub Actions with automated testing and quality checks
+- **Test Configuration**: Structured metadata in `tests/test_config.toml`
 
 ### Implementation Quality
 
-- **Zero Test Failures**: All 161 tests pass consistently
+- **Zero Test Failures**: All 161 tests pass consistently across all categories
 - **Production-Ready Implementation**: Comprehensive functionality with sophisticated algorithms and real integrations
-- **Professional Error Handling**: Comprehensive Result types throughout
-- **Production-Ready Code**: Enterprise-grade implementation suitable for deployment
+- **Professional Error Handling**: Comprehensive Result types throughout with proper error propagation
+- **Enterprise-Grade Code**: Suitable for production deployment with scalable infrastructure
 
 ## Development
 
@@ -243,6 +292,43 @@ cargo build
 
 # Run tests
 cargo test
+```
+
+### Development Tools
+
+The project includes comprehensive development automation:
+
+#### Test Organization
+- **Test Runner Script**: `./scripts/run_tests.sh` - Organized test execution with priority levels
+- **Test Configuration**: `tests/test_config.toml` - Structured test metadata and categorization
+- **Makefile**: Comprehensive development commands and test targets
+
+#### CI/CD Integration
+- **GitHub Actions**: Automated testing with priority-based execution
+- **Coverage Reporting**: Code coverage analysis and reporting
+- **Security Auditing**: Automated dependency and security auditing
+
+#### Quality Assurance
+```bash
+# Code formatting
+make fmt
+cargo fmt --all
+
+# Linting
+make clippy
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Security audit
+make audit
+cargo audit
+
+# Generate documentation
+make docs
+cargo doc --all-features --no-deps --open
+
+# Code coverage
+make coverage
+cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 ```
 
 ## Documentation
