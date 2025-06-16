@@ -74,6 +74,9 @@ sha2 = "0.10"
 rand = "0.8"
 aes-gcm = "0.10"
 
+# Homomorphic Encryption
+tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
+
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
 candle-core = { version = "0.3", optional = true }
@@ -161,7 +164,8 @@ ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
-security = []
+security = ["tfhe"]
+homomorphic-encryption = ["tfhe"]
 
 # Phase 5: Multi-Modal & Cross-Platform Features
 image-memory = ["image", "imageproc", "rusttype", "tesseract", "opencv"]
