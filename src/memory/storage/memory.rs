@@ -109,18 +109,33 @@ impl Default for MemoryStorage {
 
 #[async_trait]
 impl Storage for MemoryStorage {
+    #[tracing::instrument(skip(self, entry), fields(key = %entry.key))]
     async fn store(&self, entry: &MemoryEntry) -> Result<()> {
+        tracing::debug!("Storing entry in memory storage");
         self.entries.insert(entry.key.clone(), entry.clone());
         self.update_stats();
+        tracing::debug!("Entry stored successfully");
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(key = %key))]
     async fn retrieve(&self, key: &str) -> Result<Option<MemoryEntry>> {
-        Ok(self.entries.get(key).map(|entry| entry.value().clone()))
+        tracing::debug!("Retrieving entry from memory storage");
+        let result = self.entries.get(key).map(|entry| entry.value().clone());
+        if result.is_some() {
+            tracing::debug!("Entry found in memory storage");
+        } else {
+            tracing::debug!("Entry not found in memory storage");
+        }
+        Ok(result)
     }
 
+    #[tracing::instrument(skip(self, query), fields(query_len = query.len(), limit = limit))]
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
-        Ok(self.search_entries(query, limit))
+        tracing::debug!("Searching entries in memory storage");
+        let results = self.search_entries(query, limit);
+        tracing::debug!("Search completed, found {} results", results.len());
+        Ok(results)
     }
 
     async fn update(&self, key: &str, entry: &MemoryEntry) -> Result<()> {

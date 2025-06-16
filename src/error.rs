@@ -100,6 +100,98 @@ pub enum MemoryError {
     /// Access control errors
     #[error("Access denied: {message}")]
     AccessDenied { message: String },
+
+    /// Analytics and machine learning errors
+    #[error("Analytics error: {message}")]
+    Analytics { message: String },
+
+    /// Optimization errors
+    #[error("Optimization error: {message}")]
+    Optimization { message: String },
+
+    /// Lifecycle management errors
+    #[error("Lifecycle management error: {message}")]
+    LifecycleManagement { message: String },
+
+    /// Search engine errors
+    #[error("Search engine error: {message}")]
+    SearchEngine { message: String },
+
+    /// Summarization errors
+    #[error("Summarization error: {message}")]
+    Summarization { message: String },
+
+    /// Compression/decompression errors
+    #[error("Compression error: {message}")]
+    Compression { message: String },
+
+    /// Index management errors
+    #[error("Index error: {message}")]
+    Index { message: String },
+
+    /// Cache errors
+    #[error("Cache error: {message}")]
+    Cache { message: String },
+
+    /// Transaction errors
+    #[error("Transaction error: {message}")]
+    Transaction { message: String },
+
+    /// Validation errors
+    #[error("Validation error: {message}")]
+    Validation { message: String },
+
+    /// Timeout errors
+    #[error("Operation timed out: {operation}")]
+    Timeout { operation: String },
+
+    /// Resource exhaustion errors
+    #[error("Resource exhausted: {resource}")]
+    ResourceExhausted { resource: String },
+
+    /// Authentication errors
+    #[error("Authentication error: {message}")]
+    Authentication { message: String },
+
+    /// Authorization errors
+    #[error("Authorization error: {message}")]
+    Authorization { message: String },
+
+    /// Rate limiting errors
+    #[error("Rate limit exceeded: {message}")]
+    RateLimit { message: String },
+
+    /// Processing errors
+    #[error("Processing error: {0}")]
+    ProcessingError(String),
+
+    /// Embedding errors
+    #[error("Embedding error: {message}")]
+    Embedding { message: String },
+
+    /// Knowledge graph errors
+    #[error("Knowledge graph error: {message}")]
+    KnowledgeGraph { message: String },
+
+    /// Temporal tracking errors
+    #[error("Temporal tracking error: {message}")]
+    TemporalTracking { message: String },
+
+    /// Integration errors
+    #[error("Integration error: {message}")]
+    Integration { message: String },
+
+    /// Multi-modal processing errors
+    #[error("Multi-modal processing error: {message}")]
+    MultiModal { message: String },
+
+    /// Cross-platform errors
+    #[error("Cross-platform error: {message}")]
+    CrossPlatform { message: String },
+
+    /// Document processing errors
+    #[error("Document processing error: {message}")]
+    DocumentProcessing { message: String },
 }
 
 impl MemoryError {
@@ -173,6 +265,165 @@ impl MemoryError {
         }
     }
 
+    /// Create an analytics error
+    pub fn analytics<S: Into<String>>(message: S) -> Self {
+        Self::Analytics {
+            message: message.into(),
+        }
+    }
+
+    /// Create an optimization error
+    pub fn optimization<S: Into<String>>(message: S) -> Self {
+        Self::Optimization {
+            message: message.into(),
+        }
+    }
+
+    /// Create a lifecycle management error
+    pub fn lifecycle_management<S: Into<String>>(message: S) -> Self {
+        Self::LifecycleManagement {
+            message: message.into(),
+        }
+    }
+
+    /// Create a search engine error
+    pub fn search_engine<S: Into<String>>(message: S) -> Self {
+        Self::SearchEngine {
+            message: message.into(),
+        }
+    }
+
+    /// Create a summarization error
+    pub fn summarization<S: Into<String>>(message: S) -> Self {
+        Self::Summarization {
+            message: message.into(),
+        }
+    }
+
+    /// Create a compression error
+    pub fn compression<S: Into<String>>(message: S) -> Self {
+        Self::Compression {
+            message: message.into(),
+        }
+    }
+
+    /// Create an index error
+    pub fn index<S: Into<String>>(message: S) -> Self {
+        Self::Index {
+            message: message.into(),
+        }
+    }
+
+    /// Create a cache error
+    pub fn cache<S: Into<String>>(message: S) -> Self {
+        Self::Cache {
+            message: message.into(),
+        }
+    }
+
+    /// Create a transaction error
+    pub fn transaction<S: Into<String>>(message: S) -> Self {
+        Self::Transaction {
+            message: message.into(),
+        }
+    }
+
+    /// Create a validation error
+    pub fn validation<S: Into<String>>(message: S) -> Self {
+        Self::Validation {
+            message: message.into(),
+        }
+    }
+
+    /// Create a timeout error
+    pub fn timeout<S: Into<String>>(operation: S) -> Self {
+        Self::Timeout {
+            operation: operation.into(),
+        }
+    }
+
+    /// Create a resource exhausted error
+    pub fn resource_exhausted<S: Into<String>>(resource: S) -> Self {
+        Self::ResourceExhausted {
+            resource: resource.into(),
+        }
+    }
+
+    /// Create an authentication error
+    pub fn authentication<S: Into<String>>(message: S) -> Self {
+        Self::Authentication {
+            message: message.into(),
+        }
+    }
+
+    /// Create an authorization error
+    pub fn authorization<S: Into<String>>(message: S) -> Self {
+        Self::Authorization {
+            message: message.into(),
+        }
+    }
+
+    /// Create a rate limit error
+    pub fn rate_limit<S: Into<String>>(message: S) -> Self {
+        Self::RateLimit {
+            message: message.into(),
+        }
+    }
+
+    /// Create a processing error
+    pub fn processing_error<S: Into<String>>(message: S) -> Self {
+        Self::ProcessingError(message.into())
+    }
+
+    /// Create an embedding error
+    pub fn embedding<S: Into<String>>(message: S) -> Self {
+        Self::Embedding {
+            message: message.into(),
+        }
+    }
+
+    /// Create a knowledge graph error
+    pub fn knowledge_graph<S: Into<String>>(message: S) -> Self {
+        Self::KnowledgeGraph {
+            message: message.into(),
+        }
+    }
+
+    /// Create a temporal tracking error
+    pub fn temporal_tracking<S: Into<String>>(message: S) -> Self {
+        Self::TemporalTracking {
+            message: message.into(),
+        }
+    }
+
+    /// Create an integration error
+    pub fn integration<S: Into<String>>(message: S) -> Self {
+        Self::Integration {
+            message: message.into(),
+        }
+    }
+
+    /// Create a multi-modal error
+    pub fn multi_modal<S: Into<String>>(message: S) -> Self {
+        Self::MultiModal {
+            message: message.into(),
+        }
+    }
+
+    /// Create a cross-platform error
+    pub fn cross_platform<S: Into<String>>(message: S) -> Self {
+        Self::CrossPlatform {
+            message: message.into(),
+        }
+    }
+
+    /// Create a document processing error
+    pub fn document_processing<S: Into<String>>(message: S) -> Self {
+        Self::DocumentProcessing {
+            message: message.into(),
+        }
+    }
+
     /// Check if this is a not found error
     pub fn is_not_found(&self) -> bool {
         matches!(self, Self::NotFound { .. })
@@ -199,13 +450,34 @@ impl From<anyhow::Error> for MemoryError {
     }
 }
 
-/// Helper trait for converting results
+/// Helper trait for converting results with context
 pub trait MemoryErrorExt<T> {
     /// Convert to a storage error with context
     fn storage_context<S: Into<String>>(self, context: S) -> Result<T>;
-    
+
     /// Convert to a checkpoint error with context
     fn checkpoint_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to an analytics error with context
+    fn analytics_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to an optimization error with context
+    fn optimization_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a search engine error with context
+    fn search_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a summarization error with context
+    fn summarization_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a compression error with context
+    fn compression_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a validation error with context
+    fn validation_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a processing error with context
+    fn processing_context<S: Into<String>>(self, context: S) -> Result<T>;
 }
 
 impl<T, E> MemoryErrorExt<T> for std::result::Result<T, E>
@@ -218,6 +490,34 @@ where
 
     fn checkpoint_context<S: Into<String>>(self, context: S) -> Result<T> {
         self.map_err(|e| MemoryError::checkpoint(format!("{}: {}", context.into(), e)))
+    }
+
+    fn analytics_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::analytics(format!("{}: {}", context.into(), e)))
+    }
+
+    fn optimization_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::optimization(format!("{}: {}", context.into(), e)))
+    }
+
+    fn search_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::search_engine(format!("{}: {}", context.into(), e)))
+    }
+
+    fn summarization_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::summarization(format!("{}: {}", context.into(), e)))
+    }
+
+    fn compression_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::compression(format!("{}: {}", context.into(), e)))
+    }
+
+    fn validation_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::validation(format!("{}: {}", context.into(), e)))
+    }
+
+    fn processing_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::processing_error(format!("{}: {}", context.into(), e)))
     }
 }
 

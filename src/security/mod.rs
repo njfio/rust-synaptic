@@ -471,7 +471,7 @@ pub struct EncryptionMetadata {
 }
 
 /// Secure operations for homomorphic computation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SecureOperation {
     Sum,
     Average,

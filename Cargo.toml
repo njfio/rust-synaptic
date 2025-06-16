@@ -54,7 +54,17 @@ dashmap = "5.5"
 parking_lot = "0.12"
 tokio-tungstenite = { version = "0.20", optional = true }
 futures-util = { version = "0.3", optional = true }
-diff = "0.1"
+# Myers' Diff Algorithm Implementation
+imara-diff = "0.1"
+similar = "2.4"
+
+# Advanced Similarity and Search Algorithms
+strsim = "0.11"
+
+# Advanced Theme Extraction and Topic Modeling
+linfa = "0.7"
+linfa-clustering = "0.7"
+nalgebra = "0.32"
 lz4_flex = "0.11"
 
 # Concurrency (already included above)
@@ -73,6 +83,13 @@ hex = "0.4"
 sha2 = "0.10"
 rand = "0.8"
 aes-gcm = "0.10"
+
+# Homomorphic Encryption
+tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
+
+# Zero-Knowledge Proofs
+bellman = { version = "0.14", optional = true }
+bls12_381 = { version = "0.8", optional = true }
 
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
@@ -147,7 +164,7 @@ criterion = "0.5"
 base64 = "0.21"
 
 [features]
-default = ["file-storage", "memory-storage", "embeddings", "bincode"]
+default = ["file-storage", "memory-storage", "embeddings", "bincode", "base64"]
 file-storage = []
 memory-storage = []
 sql-storage = ["sqlx"]
@@ -161,7 +178,9 @@ ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
-security = []
+security = ["tfhe", "bellman", "bls12_381"]
+homomorphic-encryption = ["tfhe"]
+zero-knowledge-proofs = ["bellman", "bls12_381"]
 
 # Phase 5: Multi-Modal & Cross-Platform Features
 image-memory = ["image", "imageproc", "rusttype", "tesseract", "opencv"]
@@ -184,6 +203,7 @@ document-processing = ["document-memory", "data-memory", "folder-processing"]
 phase5 = ["multimodal", "cross-platform"]
 phase5b = ["document-processing", "multimodal"]
 phase5-complete = ["phase5", "phase5b"]
+base64 = ["dep:base64"]
 
 [[example]]
 name = "basic_usage"
