@@ -662,7 +662,7 @@ impl AdvancedMemoryManager {
         messages.push(format!("Deletion tracked with version: {}", version_id));
 
         // Remove from knowledge graph if provided
-        if let Some(kg) = knowledge_graph {
+        if let Some(_kg) = knowledge_graph {
             // Use existing method to remove the memory node
             // Note: This is a simplified approach - in a full implementation,
             // we would have a dedicated remove method
@@ -1889,7 +1889,7 @@ impl AdvancedMemoryManager {
     /// Clean up related data when a memory is deleted
     async fn cleanup_related_data(
         &self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_key: &str,
     ) -> Result<usize> {
         let mut cleanup_count = 0;
@@ -2322,7 +2322,7 @@ impl AdvancedMemoryManager {
     async fn determine_optimal_summarization_strategy(
         &self,
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
-        target_memory: &MemoryEntry,
+        _target_memory: &MemoryEntry,
         related_keys: &[String],
         related_count: usize,
     ) -> Result<SummaryStrategy> {

@@ -1,13 +1,13 @@
 //! Differential analysis for memory changes
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::{TimeRange, ChangeType};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use lz4_flex::compress_prepend_size;
+use lz4_flex;
 use imara_diff::Algorithm;
 use similar::{ChangeTag, TextDiff};
 

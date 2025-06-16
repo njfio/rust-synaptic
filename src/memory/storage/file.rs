@@ -5,7 +5,6 @@ use crate::memory::storage::{Storage, StorageStats, BatchStorage};
 use crate::memory::types::{MemoryEntry, MemoryFragment};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;

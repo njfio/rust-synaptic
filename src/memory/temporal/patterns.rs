@@ -1,6 +1,6 @@
 //! Temporal pattern detection and analysis
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::TimeRange;
 use chrono::{DateTime, Utc, Duration, Weekday, Timelike, Datelike};
@@ -217,7 +217,7 @@ impl PatternDetector {
     }
 
     /// Update patterns based on new memory activity
-    pub async fn update_patterns(&mut self, memory_key: &str, memory: &MemoryEntry) -> Result<()> {
+    pub async fn update_patterns(&mut self, memory_key: &str, _memory: &MemoryEntry) -> Result<()> {
         // Record the activity
         let evidence = PatternEvidence {
             timestamp: Utc::now(),
@@ -419,7 +419,7 @@ impl PatternDetector {
 
         let mut daily_counts: BTreeMap<i64, u32> = BTreeMap::new();
         for ev in &evidence {
-            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().timestamp();
+            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
             *daily_counts.entry(day).or_insert(0) += 1;
         }
 
@@ -457,8 +457,8 @@ impl PatternDetector {
             pattern_type,
             strength,
             confidence: strength,
-            time_range: TimeRange::new(DateTime::<Utc>::from_utc(chrono::NaiveDateTime::from_timestamp_opt(start, 0).unwrap(), Utc),
-                                         DateTime::<Utc>::from_utc(chrono::NaiveDateTime::from_timestamp_opt(end, 0).unwrap(), Utc)),
+            time_range: TimeRange::new(DateTime::from_timestamp(start, 0).unwrap(),
+                                         DateTime::from_timestamp(end, 0).unwrap()),
             description: "Gradual trend detected".to_string(),
             evidence,
             metadata: HashMap::new(),
@@ -2430,7 +2430,7 @@ impl PatternDetector {
             if let Some(p) = self.detect_daily_pattern(&range).await? {
                 if let Some(h) = p.metadata.get("hour_of_day").and_then(|s| s.parse::<u32>().ok()) {
                     let dt = start.date_naive().and_hms_opt(h, 0, 0).unwrap();
-                    peak_times.push(DateTime::<Utc>::from_utc(dt, Utc));
+                    peak_times.push(dt.and_utc());
                 }
             }
             for burst in self.detect_burst_patterns(&range).await? {
@@ -2510,10 +2510,10 @@ impl Default for PatternDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, NaiveDate};
+    use chrono::NaiveDate;
 
     fn dt(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
-        Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap())
+        NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap().and_utc()
     }
 
     fn evidence_at(ts: DateTime<Utc>) -> PatternEvidence {

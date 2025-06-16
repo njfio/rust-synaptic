@@ -3,7 +3,7 @@
 pub mod memory;
 pub mod file;
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryFragment};
 use crate::StorageBackend;
 use async_trait::async_trait;

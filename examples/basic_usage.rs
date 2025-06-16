@@ -2,11 +2,9 @@
 
 use synaptic::{
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
-    memory::types::MemoryMetadata,
-    memory::retrieval::{MemoryRetriever, SearchQuery, SortBy},
+    memory::retrieval::{SearchQuery, SortBy},
     error::Result,
 };
-use std::sync::Arc;
 use uuid::Uuid;
 
 #[tokio::main]

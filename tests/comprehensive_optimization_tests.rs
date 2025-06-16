@@ -42,7 +42,7 @@ async fn test_optimization_functionality() {
     assert!(result.is_ok());
 
     let optimization_result = result.unwrap();
-    assert!(optimization_result.memories_optimized >= 0);
+    // memories_optimized is usize, always >= 0
     assert!(!optimization_result.id.is_empty());
 }
 
@@ -147,6 +147,6 @@ async fn test_optimization_result() {
     assert!(result.is_ok());
 
     let optimization_result = result.unwrap();
-    assert!(optimization_result.memories_optimized >= 0);
+    // memories_optimized is usize, always >= 0
     assert!(!optimization_result.id.is_empty());
 }

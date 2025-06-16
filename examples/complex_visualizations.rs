@@ -1,10 +1,9 @@
 // Complex Visualizations Example
 // Demonstrates sophisticated visualization capabilities with large-scale data
 
-use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
+use synaptic::{AgentMemory, MemoryConfig};
 use synaptic::memory::knowledge_graph::RelationshipType;
 use std::error::Error;
-use std::collections::HashMap;
 
 #[cfg(feature = "visualization")]
 use synaptic::integrations::visualization::{VisualizationConfig, RealVisualizationEngine, ImageFormat, ColorScheme};

@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+        include:
+          - rust: nightly
+            allow_failure: true
+    continue-on-error: ${{ matrix.allow_failure || false }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-${{ matrix.rust }}-
+          ${{ runner.os }}-cargo-
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+      if: matrix.rust == 'stable'
+    
+    - name: Run clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      if: matrix.rust == 'stable'
+    
+    - name: Build
+      run: cargo build --verbose --all-features
+    
+    - name: Run unit tests
+      run: cargo test --lib --verbose
+    
+    - name: Run integration tests
+      run: cargo test --test integration_tests --verbose
+    
+    - name: Run security tests
+      run: |
+        cargo test --test phase4_security_tests --verbose
+        cargo test --test security_tests --verbose
+        cargo test --test zero_knowledge_tests --verbose
+        cargo test --test homomorphic_encryption_tests --verbose
+    
+    - name: Run performance tests
+      run: |
+        cargo test --test real_performance_measurement_tests --verbose
+        cargo test --test performance_tests --verbose
+        cargo test --test comprehensive_optimization_tests --verbose
+    
+    - name: Run lifecycle tests
+      run: cargo test --test real_lifecycle_management_tests --verbose
+    
+    - name: Run multimodal tests
+      run: |
+        cargo test --test phase5_multimodal_tests --verbose
+        cargo test --test phase5b_document_tests --verbose
+        cargo test --test data_processor_tests --verbose
+    
+    - name: Run temporal tests
+      run: |
+        cargo test --test temporal_evolution_tests --verbose
+        cargo test --test temporal_summary_tests --verbose
+        cargo test --test myers_diff_tests --verbose
+        cargo test --test diff_analyzer_tests --verbose
+    
+    - name: Run knowledge graph tests
+      run: cargo test --test knowledge_graph_tests --verbose
+    
+    - name: Run analytics tests
+      run: |
+        cargo test --test phase3_analytics --verbose
+        cargo test --test advanced_theme_extraction_tests --verbose
+        cargo test --test summarization_tests --verbose
+    
+    - name: Run search tests
+      run: cargo test --test enhanced_similarity_search_tests --verbose
+    
+    - name: Run external integration tests
+      run: |
+        cargo test --test external_integrations_tests --verbose
+        cargo test --test phase1_embeddings_tests --verbose
+        cargo test --test phase2_distributed_tests --verbose
+    
+    - name: Run logging and error handling tests
+      run: |
+        cargo test --test comprehensive_logging_tests --verbose
+        cargo test --test enhanced_error_handling_tests --verbose
+    
+    - name: Run visualization tests
+      run: cargo test --test visualization_tests --verbose
+    
+    - name: Run sync tests
+      run: cargo test --test offline_sync_tests --verbose
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+    
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    
+    - name: Generate code coverage
+      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: lcov.info
+        fail_ci_if_error: true
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+    
+    - name: Run security audit
+      run: cargo audit
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Build documentation
+      run: cargo doc --all-features --no-deps
+    
+    - name: Check for broken links in docs
+      run: cargo doc --all-features --no-deps 2>&1 | grep -i "warning\|error" && exit 1 || exit 0
+
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Run benchmarks
+      run: cargo test --test performance_tests -- --ignored --nocapture

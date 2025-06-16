@@ -1,6 +1,6 @@
 //! Memory analytics and insights
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -708,8 +708,8 @@ impl MemoryAnalytics {
             0.0
         };
 
-        let max_key_length = key_length_distribution.iter().max().unwrap_or(&0);
-        let min_key_length = key_length_distribution.iter().min().unwrap_or(&0);
+        let _max_key_length = key_length_distribution.iter().max().unwrap_or(&0);
+        let _min_key_length = key_length_distribution.iter().min().unwrap_or(&0);
 
         // 4. Analyze temporal content creation patterns
         let mut monthly_content_types = std::collections::HashMap::new();
@@ -1155,7 +1155,7 @@ impl MemoryAnalytics {
         let clusters = self.perform_kmeans_clustering(&access_features, 3).await?;
 
         // Analyze cluster characteristics
-        let cluster_analysis = self.analyze_access_clusters(&clusters, &access_features).await?;
+        let _cluster_analysis = self.analyze_access_clusters(&clusters, &access_features).await?;
 
         // Detect temporal patterns using time series analysis
         let temporal_patterns = self.detect_temporal_patterns(&access_times).await?;

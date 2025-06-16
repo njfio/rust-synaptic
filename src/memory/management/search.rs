@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use strsim::{levenshtein, jaro_winkler, normalized_damerau_levenshtein, sorensen_dice};
 use ndarray::{Array1, Array2};
-use std::sync::Arc;
+
 
 /// Advanced search query with multiple criteria
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +212,7 @@ struct SearchIndex {
 
 /// Index entry for a memory
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct MemoryIndexEntry {
     pub memory_key: String,
     pub content_words: HashSet<String>,
@@ -301,7 +302,7 @@ impl AdvancedSearchEngine {
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         query: SearchQuery,
     ) -> Result<Vec<SearchResult>> {
-        let start_time = std::time::Instant::now();
+        let _start_time = std::time::Instant::now();
         
         // Note: Search history update removed for immutable method
 

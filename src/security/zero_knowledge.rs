@@ -149,7 +149,7 @@ impl ZeroKnowledgeManager {
         &mut self,
         entry: &MemoryEntry,
         predicate: ContentPredicate,
-        context: &SecurityContext,
+        _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
@@ -199,7 +199,7 @@ impl ZeroKnowledgeManager {
         &mut self,
         entries: &[MemoryEntry],
         aggregate_type: AggregateType,
-        context: &SecurityContext,
+        _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 

@@ -230,7 +230,36 @@ required-features = ["security"]
 
 
 
+# Test configuration
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[[test]]
+name = "security_suite"
+path = "tests/phase4_security_tests.rs"
+required-features = ["security"]
+
+[[test]]
+name = "performance_suite"
+path = "tests/real_performance_measurement_tests.rs"
+
+[[test]]
+name = "multimodal_suite"
+path = "tests/phase5_multimodal_tests.rs"
+required-features = ["multimodal"]
+
+[[test]]
+name = "document_suite"
+path = "tests/phase5b_document_tests.rs"
+required-features = ["document-processing"]
+
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.test]
+opt-level = 1
+debug = true
+overflow-checks = true

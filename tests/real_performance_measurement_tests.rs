@@ -4,9 +4,7 @@
 //! systems with real-time metrics collection and regression detection.
 
 use synaptic::memory::management::optimization::{
-    PerformanceMonitor, MetricsCollector, PerformanceProfiler, BenchmarkRunner,
-    BenchmarkSuite, Benchmark, BenchmarkType, AllocationType, PerformanceBaseline,
-    AdvancedPerformanceMetrics, LatencyPercentiles
+    PerformanceMonitor, BenchmarkSuite, Benchmark, BenchmarkType, AllocationType
 };
 use std::time::Duration;
 use std::collections::HashMap;

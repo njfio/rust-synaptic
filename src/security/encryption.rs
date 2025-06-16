@@ -299,7 +299,7 @@ impl EncryptionManager {
         Ok(key)
     }
 
-    async fn get_key(&mut self, key_id: &str, context: &SecurityContext) -> Result<EncryptionKey> {
+    async fn get_key(&mut self, key_id: &str, _context: &SecurityContext) -> Result<EncryptionKey> {
         if let Some(key) = self.key_cache.get(key_id) {
             return Ok(key.clone());
         }

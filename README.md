@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.79+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-168%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
+[![Tests](https://img.shields.io/badge/tests-169%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
 
 **Synaptic** is a comprehensive AI agent memory system implemented in Rust. It provides intelligent memory management, advanced search capabilities, lifecycle automation, knowledge graph functionality, security features, and multi-modal content processing for AI applications.
 
@@ -83,7 +83,7 @@
 
 ### Comprehensive Test Coverage
 
-- **168 Passing Tests**: Extensive test coverage across all modules with functional verification
+- **169 Passing Tests**: Extensive test coverage across all modules with functional verification
 - **Professional Implementation**: Zero mocks or placeholder code in core systems - all real functionality
 - **Robust Error Handling**: Comprehensive Result types and error management throughout the codebase
 - **Multi-Strategy Approaches**: Multiple algorithms implemented for each core system ensuring reliability
@@ -97,7 +97,7 @@
 
 ### Production Quality
 
-- **Clean Compilation**: Codebase compiles with minimal warnings and follows Rust best practices
+- **Clean Compilation**: Codebase compiles successfully with significantly reduced warnings and follows Rust best practices
 - **Comprehensive Documentation**: Inline documentation, examples, and detailed API documentation
 - **Modular Architecture**: Structured, maintainable, and extensible design following professional patterns
 - **Enterprise Ready**: Suitable for production deployment with scalable infrastructure and real integrations
@@ -146,10 +146,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Testing
 
-Run the comprehensive test suite (168 tests):
+Run the comprehensive test suite (169 tests):
 
 ```bash
-# Run all tests (168 tests across all modules)
+# Run all tests (169 tests across all modules)
 cargo test
 
 # Run tests with all features enabled
@@ -215,7 +215,7 @@ cargo run --example phase2_distributed_system
 
 ### Test Coverage Summary
 
-- **168 Total Tests Passing**: All tests pass without failures
+- **169 Total Tests Passing**: All tests pass without failures
 - **29 Unit Tests**: Core library functionality
 - **10+ Integration Tests**: Real-world usage scenarios
 - **Security Tests**: 9 comprehensive security tests covering encryption, zero-knowledge proofs, and access control
@@ -224,7 +224,7 @@ cargo run --example phase2_distributed_system
 
 ### Implementation Quality
 
-- **Zero Test Failures**: All 168 tests pass consistently
+- **Zero Test Failures**: All 169 tests pass consistently
 - **No Mocks or Placeholders**: All functionality is real, working implementation
 - **Professional Error Handling**: Comprehensive Result types throughout
 - **Production-Ready Code**: Enterprise-grade implementation suitable for deployment
@@ -244,6 +244,19 @@ cargo build
 # Run tests
 cargo test
 ```
+
+## Documentation
+
+### Core Documentation
+- [API Documentation](docs/API_DOCUMENTATION.md) - Comprehensive API reference
+- [Architecture Overview](docs/ARCHITECTURE.md) - System architecture and design
+- [Development Guide](docs/DEVELOPMENT_GUIDE.md) - Developer setup and guidelines
+- [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) - Production deployment instructions
+- [Test Organization](docs/TEST_ORGANIZATION.md) - Test suite structure and execution
+
+### Feature Documentation
+- [Phase 5 Multimodal & Cross-Platform](docs/PHASE5_MULTIMODAL_CROSSPLATFORM.md)
+- [Phase 5B Document Processing](docs/PHASE5B_DOCUMENT_PROCESSING.md)
 
 ## Contributing
 

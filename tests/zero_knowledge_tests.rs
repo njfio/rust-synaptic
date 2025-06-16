@@ -4,7 +4,6 @@
 //! ensuring 90%+ test coverage and comprehensive validation.
 
 use synaptic::security::{SecurityManager, SecurityConfig, SecurityContext};
-use synaptic::{MemoryEntry, MemoryType};
 use std::error::Error;
 
 #[cfg(feature = "zero-knowledge-proofs")]

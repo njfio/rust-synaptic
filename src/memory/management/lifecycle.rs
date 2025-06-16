@@ -1,6 +1,6 @@
 //! Memory lifecycle management
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc, Duration, Datelike};
 use serde::{Deserialize, Serialize};
@@ -1658,7 +1658,7 @@ impl MemoryLifecycleManager {
         let now = Utc::now();
 
         // Get memory state and events
-        let memory_state = self.memory_states.get(memory_key);
+        let _memory_state = self.memory_states.get(memory_key);
         let memory_events: Vec<&LifecycleEvent> = self.events.iter()
             .filter(|e| e.memory_key == memory_key)
             .collect();
@@ -2020,7 +2020,7 @@ impl MemoryLifecycleManager {
         let x_sq_sum: f64 = (0..historical_data.daily_sizes.len()).map(|i| (i as f64).powi(2)).sum();
 
         let slope = (n * xy_sum - x_sum * y_sum) / (n * x_sq_sum - x_sum.powi(2));
-        let intercept = (y_sum - slope * x_sum) / n;
+        let _intercept = (y_sum - slope * x_sum) / n;
 
         let current_size = current_analysis.total_size as f64;
         let daily_growth = slope;

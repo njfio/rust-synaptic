@@ -3,12 +3,9 @@
 //! Demonstrates the basic Phase 5 capabilities without heavy external dependencies.
 //! Shows multi-modal content handling, cross-platform adaptation, and relationship detection.
 
-use synaptic::{
-    AgentMemory, MemoryConfig,
-    phase5_basic::{
-        BasicMultiModalManager, BasicMemoryAdapter, BasicContentDetector,
-        BasicContentType, BasicMetadata, BasicCrossPlatformAdapter,
-    },
+use synaptic::phase5_basic::{
+    BasicMultiModalManager, BasicMemoryAdapter, BasicContentDetector,
+    BasicMetadata, BasicCrossPlatformAdapter,
 };
 
 #[tokio::main]
