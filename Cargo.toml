@@ -164,7 +164,7 @@ criterion = "0.5"
 base64 = "0.21"
 
 [features]
-default = ["file-storage", "memory-storage", "embeddings", "bincode"]
+default = ["file-storage", "memory-storage", "embeddings", "bincode", "base64"]
 file-storage = []
 memory-storage = []
 sql-storage = ["sqlx"]
@@ -203,6 +203,7 @@ document-processing = ["document-memory", "data-memory", "folder-processing"]
 phase5 = ["multimodal", "cross-platform"]
 phase5b = ["document-processing", "multimodal"]
 phase5-complete = ["phase5", "phase5b"]
+base64 = ["dep:base64"]
 
 [[example]]
 name = "basic_usage"

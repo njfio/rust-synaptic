@@ -3,7 +3,7 @@
 //! Tests the TFHE-based homomorphic encryption with production-ready algorithms
 //! ensuring 90%+ test coverage and comprehensive validation.
 
-use synaptic::security::{SecurityManager, SecurityConfig, SecurityContext};
+use synaptic::security::{SecurityManager, SecurityConfig};
 use synaptic::{MemoryEntry, MemoryType};
 use std::error::Error;
 
@@ -236,14 +236,41 @@ mod tfhe_tests {
 #[cfg(not(feature = "homomorphic-encryption"))]
 mod fallback_tests {
     use super::*;
+    use synaptic::security::access_control::{AuthenticationCredentials, AuthenticationType};
 
     #[tokio::test]
     async fn test_fallback_homomorphic_encryption() -> Result<(), Box<dyn Error>> {
         let mut config = SecurityConfig::default();
         config.enable_homomorphic_encryption = true;
-        
+        // Disable MFA for testing
+        config.access_control_policy.require_mfa = false;
+
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+
+        // Add required permissions to the user role
+        security_manager.access_control.add_role(
+            "user".to_string(),
+            vec![
+                synaptic::security::Permission::ReadMemory,
+                synaptic::security::Permission::WriteMemory,
+            ]
+        ).await?;
+
+        // Properly authenticate to create a valid session
+        let credentials = AuthenticationCredentials {
+            auth_type: AuthenticationType::Password,
+            password: Some("test_password123".to_string()),
+            api_key: None,
+            certificate: None,
+            mfa_token: None,
+            ip_address: Some("127.0.0.1".to_string()),
+            user_agent: Some("test_agent".to_string()),
+        };
+
+        let context = security_manager.access_control.authenticate(
+            "test_user".to_string(),
+            credentials
+        ).await?;
 
         let memory_entry = MemoryEntry::new(
             "test_data".to_string(),
@@ -253,7 +280,7 @@ mod fallback_tests {
 
         // Should use fallback implementation when feature is not enabled
         let encrypted_entry = security_manager.encrypt_memory(&memory_entry, &context).await?;
-        
+
         assert!(encrypted_entry.is_homomorphic);
         assert!(!encrypted_entry.encrypted_data.is_empty());
 

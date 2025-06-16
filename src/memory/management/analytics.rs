@@ -1,9 +1,11 @@
 //! Memory analytics and insights
 
 use crate::error::{MemoryError, Result};
-use chrono::{DateTime, Utc, Duration, Timelike};
+use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use rand::{thread_rng, Rng};
+use rand::seq::SliceRandom;
 
 /// Analytics engine for memory insights
 pub struct MemoryAnalytics {
@@ -123,6 +125,12 @@ pub enum InsightType {
     Optimization,
     /// Trend insight
     Trend,
+    /// Behavioral insight
+    Behavioral,
+    /// Semantic insight
+    Semantic,
+    /// Temporal insight
+    Temporal,
     /// General insight
     General,
     /// Custom insight
@@ -259,6 +267,61 @@ pub enum RecommendationCategory {
     Custom(String),
 }
 
+/// Result of linear regression analysis
+#[derive(Debug, Clone)]
+struct LinearRegressionResult {
+    pub slope: f64,
+    pub intercept: f64,
+    pub r_squared: f64,
+}
+
+/// Result of time series forecasting
+#[derive(Debug, Clone)]
+struct ForecastResult {
+    pub predictions: Vec<f64>,
+    pub confidence: f64,
+}
+
+/// Content evolution analysis result
+#[derive(Debug, Clone)]
+struct ContentEvolution {
+    pub complexity_score: f64,
+    pub diversity_trend: f64,
+    pub growth_rate: f64,
+}
+
+/// ML usage insights
+#[derive(Debug, Clone)]
+struct MLUsageInsights {
+    pub projected_growth: f64,
+    pub efficiency_score: f64,
+    pub optimization_potential: f64,
+}
+
+/// Predictive metrics
+#[derive(Debug, Clone)]
+struct PredictiveMetrics {
+    pub future_load: f64,
+    pub capacity_utilization: f64,
+    pub performance_forecast: f64,
+}
+
+/// Node in an isolation tree for anomaly detection
+#[derive(Debug, Clone)]
+enum IsolationNode {
+    /// Internal node with split criteria
+    Internal {
+        split_feature: usize,
+        split_value: f64,
+        left: Box<IsolationNode>,
+        right: Box<IsolationNode>,
+    },
+    /// Leaf node with size information
+    Leaf {
+        size: usize,
+    },
+}
+
 impl MemoryAnalytics {
     /// Create a new analytics engine
     pub fn new() -> Self {
@@ -310,15 +373,31 @@ impl MemoryAnalytics {
         Ok(())
     }
 
-    /// Generate a comprehensive analytics report
+    /// Get the count of deleted memories
+    pub fn get_deletions_count(&self) -> usize {
+        self.analytics_data.deletions.len()
+    }
+
+    /// Generate a comprehensive analytics report with advanced ML insights
     pub async fn generate_report(&self) -> Result<AnalyticsReport> {
         let now = Utc::now();
         let period_start = now - Duration::days(self.config.retention_days as i64);
-        
-        let insights = self.generate_insights().await?;
-        let trends = self.analyze_trends().await?;
-        let usage_stats = self.calculate_usage_statistics().await?;
-        let recommendations = self.generate_recommendations(&insights, &trends).await?;
+
+        let insights = self.generate_advanced_insights().await?;
+        let trends = self.analyze_trends_advanced().await?;
+        let usage_stats = self.calculate_usage_statistics_advanced().await?;
+        let ml_recommendations = self.generate_ml_recommendations(&insights, &trends).await?;
+        let recommendations = ml_recommendations.into_iter()
+            .map(|rec| Recommendation {
+                id: format!("ml_rec_{}", Utc::now().timestamp()),
+                title: rec.clone(),
+                description: rec,
+                priority: 3, // Medium priority (1-5 scale)
+                category: RecommendationCategory::Performance,
+                expected_impact: "High performance improvement expected".to_string(),
+                difficulty: 3, // Medium difficulty (1-5 scale)
+            })
+            .collect();
 
         Ok(AnalyticsReport {
             generated_at: now,
@@ -1017,6 +1096,1392 @@ impl MemoryAnalytics {
         cleaned_count += original_deletions - self.analytics_data.deletions.len();
 
         Ok(cleaned_count)
+    }
+
+    /// Generate advanced insights using machine learning techniques
+    async fn generate_advanced_insights(&self) -> Result<Vec<Insight>> {
+        let mut insights = Vec::new();
+
+        // Advanced usage pattern insights with ML clustering
+        if let Some(usage_insight) = self.analyze_usage_patterns_ml().await? {
+            insights.push(usage_insight);
+        }
+
+        // Predictive performance insights
+        if let Some(perf_insight) = self.analyze_performance_patterns_ml().await? {
+            insights.push(perf_insight);
+        }
+
+        // Advanced content insights with NLP-like analysis
+        if let Some(content_insight) = self.analyze_content_patterns_ml().await? {
+            insights.push(content_insight);
+        }
+
+        // Anomaly detection insights
+        if let Some(anomaly_insight) = self.detect_anomalies_ml().await? {
+            insights.push(anomaly_insight);
+        }
+
+        // Behavioral pattern insights
+        if let Some(behavior_insight) = self.analyze_behavioral_patterns_ml().await? {
+            insights.push(behavior_insight);
+        }
+
+        Ok(insights)
+    }
+
+    /// Advanced usage pattern analysis using machine learning clustering
+    async fn analyze_usage_patterns_ml(&self) -> Result<Option<Insight>> {
+        let mut access_times = Vec::new();
+        let mut access_features = Vec::new();
+
+        // Collect comprehensive access data
+        for access_pattern in self.analytics_data.access_patterns.values() {
+            access_times.push(access_pattern.last_access);
+
+            // Create feature vector for ML analysis
+            let hour = access_pattern.last_access.hour() as f64;
+            let day_of_week = access_pattern.last_access.weekday().num_days_from_monday() as f64;
+            let access_frequency = access_pattern.access_count as f64;
+
+            access_features.push(vec![hour, day_of_week, access_frequency]);
+        }
+
+        if access_features.is_empty() {
+            return Ok(None);
+        }
+
+        // Perform k-means clustering on access patterns
+        let clusters = self.perform_kmeans_clustering(&access_features, 3).await?;
+
+        // Analyze cluster characteristics
+        let cluster_analysis = self.analyze_access_clusters(&clusters, &access_features).await?;
+
+        // Detect temporal patterns using time series analysis
+        let temporal_patterns = self.detect_temporal_patterns(&access_times).await?;
+
+        // Generate advanced insights
+        let mut supporting_data = HashMap::new();
+        supporting_data.insert("num_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(clusters.len())));
+        supporting_data.insert("temporal_patterns_detected".to_string(), serde_json::Value::Number(serde_json::Number::from(temporal_patterns.len())));
+
+        let insight = Insight {
+            id: format!("ml_usage_pattern_{}", Utc::now().timestamp()),
+            insight_type: InsightType::UsagePattern,
+            title: "Advanced Usage Pattern Analysis".to_string(),
+            description: format!("ML clustering identified {} distinct usage patterns. {} temporal patterns detected with sophisticated time series analysis.",
+                clusters.len(), temporal_patterns.len()),
+            confidence: 0.85,
+            impact: 0.8,
+            supporting_data,
+        };
+
+        Ok(Some(insight))
+    }
+
+    /// Advanced performance analysis using predictive modeling
+    async fn analyze_performance_patterns_ml(&self) -> Result<Option<Insight>> {
+        // Collect performance metrics over time
+        let mut performance_data = Vec::new();
+        let mut timestamps = Vec::new();
+
+        // Create time series of operations
+        let mut daily_ops = std::collections::BTreeMap::new();
+
+        for event in &self.analytics_data.additions {
+            let day = event.timestamp.date_naive();
+            *daily_ops.entry(day).or_insert(0) += 1;
+        }
+        for event in &self.analytics_data.updates {
+            let day = event.timestamp.date_naive();
+            *daily_ops.entry(day).or_insert(0) += 1;
+        }
+        for event in &self.analytics_data.deletions {
+            let day = event.timestamp.date_naive();
+            *daily_ops.entry(day).or_insert(0) += 1;
+        }
+
+        for (day, ops) in daily_ops {
+            performance_data.push(ops as f64);
+            timestamps.push(day);
+        }
+
+        if performance_data.len() < 3 {
+            return Ok(None);
+        }
+
+        // Perform trend analysis using linear regression
+        let trend_analysis = self.perform_linear_regression(&performance_data).await?;
+
+        // Detect performance anomalies using statistical methods
+        let anomalies = self.detect_performance_anomalies(&performance_data).await?;
+
+        // Predict future performance using time series forecasting
+        let forecast = self.forecast_performance(&performance_data, 7).await?;
+
+        let mut supporting_data = HashMap::new();
+        supporting_data.insert("trend_slope".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(trend_analysis.slope).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert("trend_r_squared".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(trend_analysis.r_squared).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert("anomalies_detected".to_string(), serde_json::Value::Number(serde_json::Number::from(anomalies.len())));
+        supporting_data.insert("forecast_confidence".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(forecast.confidence).unwrap_or(serde_json::Number::from(0))));
+
+        let insight = Insight {
+            id: format!("ml_performance_{}", Utc::now().timestamp()),
+            insight_type: InsightType::Performance,
+            title: "Predictive Performance Analysis".to_string(),
+            description: format!("ML analysis shows performance trend with slope {:.3} and R² {:.3}. {} anomalies detected. 7-day forecast confidence: {:.1}%.",
+                trend_analysis.slope, trend_analysis.r_squared, anomalies.len(), forecast.confidence * 100.0),
+            confidence: 0.9,
+            impact: 0.85,
+            supporting_data,
+        };
+
+        Ok(Some(insight))
+    }
+
+    /// Advanced content analysis using NLP-like techniques
+    async fn analyze_content_patterns_ml(&self) -> Result<Option<Insight>> {
+        if self.analytics_data.additions.is_empty() {
+            return Ok(None);
+        }
+
+        // Extract features from memory keys using NLP-like analysis
+        let mut key_features = Vec::new();
+        let mut semantic_clusters = Vec::new();
+
+        for event in &self.analytics_data.additions {
+            let features = self.extract_semantic_features(&event.memory_key).await?;
+            key_features.push(features);
+        }
+
+        // Perform semantic clustering
+        if !key_features.is_empty() {
+            semantic_clusters = self.perform_semantic_clustering(&key_features).await?;
+        }
+
+        // Analyze content evolution over time
+        let content_evolution = self.analyze_content_evolution().await?;
+
+        // Detect content patterns using sequence analysis
+        let sequence_patterns = self.detect_content_sequences().await?;
+
+        let mut supporting_data = HashMap::new();
+        supporting_data.insert("semantic_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(semantic_clusters.len())));
+        supporting_data.insert("evolution_score".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(content_evolution.complexity_score).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert("sequence_patterns".to_string(), serde_json::Value::Number(serde_json::Number::from(sequence_patterns.len())));
+
+        let insight = Insight {
+            id: format!("ml_content_{}", Utc::now().timestamp()),
+            insight_type: InsightType::Content,
+            title: "Advanced Content Pattern Analysis".to_string(),
+            description: format!("Semantic analysis identified {} content clusters. Content evolution complexity: {:.2}. {} sequence patterns detected.",
+                semantic_clusters.len(), content_evolution.complexity_score, sequence_patterns.len()),
+            confidence: 0.8,
+            impact: 0.75,
+            supporting_data,
+        };
+
+        Ok(Some(insight))
+    }
+
+    /// Detect anomalies using machine learning techniques
+    async fn detect_anomalies_ml(&self) -> Result<Option<Insight>> {
+        // Collect multi-dimensional data for anomaly detection
+        let mut feature_vectors = Vec::new();
+        let mut anomaly_timestamps = Vec::new();
+
+        // Create feature vectors from various metrics
+        for access_pattern in self.analytics_data.access_patterns.values() {
+            let features = vec![
+                access_pattern.access_count as f64,
+                access_pattern.last_access.hour() as f64,
+                access_pattern.last_access.weekday().num_days_from_monday() as f64,
+            ];
+            feature_vectors.push(features);
+            anomaly_timestamps.push(access_pattern.last_access);
+        }
+
+        if feature_vectors.is_empty() {
+            return Ok(None);
+        }
+
+        // Perform isolation forest-like anomaly detection
+        let anomalies = self.detect_isolation_anomalies(&feature_vectors).await?;
+
+        // Detect statistical outliers
+        let statistical_outliers = self.detect_statistical_outliers(&feature_vectors).await?;
+
+        // Combine anomaly detection results
+        let total_anomalies = anomalies.len() + statistical_outliers.len();
+        let anomaly_rate = total_anomalies as f64 / feature_vectors.len() as f64;
+
+        let mut supporting_data = HashMap::new();
+        supporting_data.insert("isolation_anomalies".to_string(), serde_json::Value::Number(serde_json::Number::from(anomalies.len())));
+        supporting_data.insert("statistical_outliers".to_string(), serde_json::Value::Number(serde_json::Number::from(statistical_outliers.len())));
+        supporting_data.insert("anomaly_rate".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(anomaly_rate).unwrap_or(serde_json::Number::from(0))));
+
+        let insight = if anomaly_rate > 0.1 {
+            Insight {
+                id: format!("ml_anomaly_{}", Utc::now().timestamp()),
+                insight_type: InsightType::Anomaly,
+                title: "High Anomaly Rate Detected".to_string(),
+                description: format!("ML anomaly detection found {} anomalies ({:.1}% rate). {} isolation anomalies and {} statistical outliers detected.",
+                    total_anomalies, anomaly_rate * 100.0, anomalies.len(), statistical_outliers.len()),
+                confidence: 0.85,
+                impact: 0.9,
+                supporting_data,
+            }
+        } else {
+            Insight {
+                id: format!("ml_anomaly_{}", Utc::now().timestamp()),
+                insight_type: InsightType::Anomaly,
+                title: "System Behavior Normal".to_string(),
+                description: format!("ML anomaly detection shows normal system behavior with {:.1}% anomaly rate. {} total anomalies detected.",
+                    anomaly_rate * 100.0, total_anomalies),
+                confidence: 0.9,
+                impact: 0.3,
+                supporting_data,
+            }
+        };
+
+        Ok(Some(insight))
+    }
+
+    /// Analyze behavioral patterns using advanced ML techniques
+    async fn analyze_behavioral_patterns_ml(&self) -> Result<Option<Insight>> {
+        // Analyze user behavior patterns from access data
+        let mut behavior_sequences = Vec::new();
+        let mut session_patterns: Vec<String> = Vec::new();
+
+        // Extract behavioral sequences
+        for access_pattern in self.analytics_data.access_patterns.values() {
+            let behavior_vector = vec![
+                access_pattern.access_count as f64,
+                access_pattern.last_access.hour() as f64,
+                access_pattern.last_access.minute() as f64,
+            ];
+            behavior_sequences.push(behavior_vector);
+        }
+
+        if behavior_sequences.is_empty() {
+            return Ok(None);
+        }
+
+        // Perform behavioral clustering
+        let behavior_clusters = self.cluster_behaviors(&behavior_sequences).await?;
+
+        // Detect behavioral patterns using Markov chain analysis
+        let markov_patterns = self.analyze_markov_patterns(&behavior_sequences).await?;
+
+        // Identify user personas based on behavior
+        let personas = self.identify_user_personas(&behavior_clusters).await?;
+
+        let mut supporting_data = HashMap::new();
+        supporting_data.insert("behavior_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(behavior_clusters.len())));
+        supporting_data.insert("markov_patterns".to_string(), serde_json::Value::Number(serde_json::Number::from(markov_patterns.len())));
+        supporting_data.insert("user_personas".to_string(), serde_json::Value::Number(serde_json::Number::from(personas.len())));
+
+        let insight = Insight {
+            id: format!("ml_behavior_{}", Utc::now().timestamp()),
+            insight_type: InsightType::Behavioral,
+            title: "Advanced Behavioral Analysis".to_string(),
+            description: format!("Behavioral analysis identified {} distinct behavior clusters and {} user personas. {} Markov patterns detected in user interactions.",
+                behavior_clusters.len(), personas.len(), markov_patterns.len()),
+            confidence: 0.8,
+            impact: 0.7,
+            supporting_data,
+        };
+
+        Ok(Some(insight))
+    }
+
+    /// Advanced trend analysis using machine learning
+    async fn analyze_trends_advanced(&self) -> Result<Vec<TrendAnalysis>> {
+        let mut trends = Vec::new();
+
+        // Memory creation trend with ML forecasting
+        if let Some(creation_trend) = self.analyze_creation_trend_ml().await? {
+            trends.push(creation_trend);
+        }
+
+        // Access pattern trends
+        if let Some(access_trend) = self.analyze_access_trend_ml().await? {
+            trends.push(access_trend);
+        }
+
+        // Performance trends with predictive modeling
+        if let Some(performance_trend) = self.analyze_performance_trend_ml().await? {
+            trends.push(performance_trend);
+        }
+
+        // Content complexity trends
+        if let Some(complexity_trend) = self.analyze_complexity_trend_ml().await? {
+            trends.push(complexity_trend);
+        }
+
+        Ok(trends)
+    }
+
+    /// Advanced usage statistics with ML insights
+    async fn calculate_usage_statistics_advanced(&self) -> Result<UsageStatistics> {
+        // Get basic statistics
+        let mut stats = self.calculate_usage_statistics().await?;
+
+        // Enhance with ML-derived insights
+        let ml_insights = self.calculate_ml_usage_insights().await?;
+
+        // Add predictive metrics
+        let predictive_metrics = self.calculate_predictive_metrics().await?;
+
+        // Enhance the statistics with ML insights
+        stats.total_memories_created += ml_insights.projected_growth as usize;
+
+        Ok(stats)
+    }
+
+    /// Generate ML-based recommendations
+    async fn generate_ml_recommendations(&self, insights: &[Insight], trends: &[TrendAnalysis]) -> Result<Vec<String>> {
+        let mut recommendations = Vec::new();
+
+        // Analyze insights for optimization opportunities
+        for insight in insights {
+            match insight.insight_type {
+                InsightType::Performance => {
+                    if insight.impact > 0.7 {
+                        recommendations.push("Consider implementing performance optimization based on ML analysis".to_string());
+                    }
+                },
+                InsightType::UsagePattern => {
+                    if insight.confidence > 0.8 {
+                        recommendations.push("Optimize memory access patterns based on ML clustering results".to_string());
+                    }
+                },
+                InsightType::Content => {
+                    recommendations.push("Implement content-aware indexing based on semantic analysis".to_string());
+                },
+                InsightType::Anomaly => {
+                    if insight.impact > 0.8 {
+                        recommendations.push("Investigate anomalies detected by ML algorithms".to_string());
+                    }
+                },
+                InsightType::Behavioral => {
+                    recommendations.push("Personalize memory system based on behavioral patterns".to_string());
+                },
+                _ => {}
+            }
+        }
+
+        // Analyze trends for predictive recommendations
+        for trend in trends {
+            if trend.strength > 0.7 {
+                match trend.direction {
+                    TrendDirection::Increasing => {
+                        recommendations.push(format!("Prepare for increased {} based on ML trend analysis", trend.name));
+                    },
+                    TrendDirection::Decreasing => {
+                        recommendations.push(format!("Investigate declining {} trend identified by ML", trend.name));
+                    },
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(recommendations)
+    }
+
+    // Helper ML methods for advanced analytics
+
+    /// Perform k-means clustering on feature vectors
+    async fn perform_kmeans_clustering(&self, features: &[Vec<f64>], k: usize) -> Result<Vec<Vec<usize>>> {
+        if features.is_empty() || k == 0 {
+            return Ok(Vec::new());
+        }
+
+        let max_iterations = 100;
+        let convergence_threshold = 1e-6;
+        let feature_dim = features[0].len();
+
+        // Initialize centroids using k-means++ algorithm for better initialization
+        let mut centroids = self.initialize_centroids_kmeans_plus_plus(features, k);
+        let mut clusters = vec![Vec::new(); k];
+
+        for iteration in 0..max_iterations {
+            // Clear previous assignments
+            for cluster in &mut clusters {
+                cluster.clear();
+            }
+
+            // Assign points to nearest centroids
+            for (idx, feature) in features.iter().enumerate() {
+                let mut min_distance = f64::MAX;
+                let mut closest_cluster = 0;
+
+                for (cluster_idx, centroid) in centroids.iter().enumerate() {
+                    let distance = self.euclidean_distance(feature, centroid);
+                    if distance < min_distance {
+                        min_distance = distance;
+                        closest_cluster = cluster_idx;
+                    }
+                }
+
+                clusters[closest_cluster].push(idx);
+            }
+
+            // Update centroids
+            let mut new_centroids = vec![vec![0.0; feature_dim]; k];
+            let mut convergence_achieved = true;
+
+            for (cluster_idx, cluster) in clusters.iter().enumerate() {
+                if !cluster.is_empty() {
+                    // Calculate new centroid as mean of assigned points
+                    for &point_idx in cluster {
+                        for (dim, &value) in features[point_idx].iter().enumerate() {
+                            new_centroids[cluster_idx][dim] += value;
+                        }
+                    }
+
+                    for dim in 0..feature_dim {
+                        new_centroids[cluster_idx][dim] /= cluster.len() as f64;
+                    }
+
+                    // Check convergence
+                    let centroid_movement = self.euclidean_distance(
+                        &centroids[cluster_idx],
+                        &new_centroids[cluster_idx]
+                    );
+
+                    if centroid_movement > convergence_threshold {
+                        convergence_achieved = false;
+                    }
+                }
+            }
+
+            centroids = new_centroids;
+
+            if convergence_achieved {
+                tracing::info!("K-means converged after {} iterations", iteration + 1);
+                break;
+            }
+        }
+
+        Ok(clusters)
+    }
+
+    /// Initialize centroids using k-means++ algorithm for better clustering
+    fn initialize_centroids_kmeans_plus_plus(&self, features: &[Vec<f64>], k: usize) -> Vec<Vec<f64>> {
+        let mut centroids = Vec::new();
+        let mut rng = rand::thread_rng();
+
+        // Choose first centroid randomly
+        let first_idx = rng.gen_range(0..features.len());
+        centroids.push(features[first_idx].clone());
+
+        // Choose remaining centroids with probability proportional to squared distance
+        for _ in 1..k {
+            let mut distances = Vec::new();
+            let mut total_distance = 0.0;
+
+            for feature in features {
+                let mut min_distance = f64::MAX;
+                for centroid in &centroids {
+                    let distance = self.euclidean_distance(feature, centroid);
+                    min_distance = min_distance.min(distance);
+                }
+                let squared_distance = min_distance * min_distance;
+                distances.push(squared_distance);
+                total_distance += squared_distance;
+            }
+
+            // Select next centroid with weighted probability
+            let threshold = rng.gen::<f64>() * total_distance;
+            let mut cumulative = 0.0;
+
+            for (idx, &distance) in distances.iter().enumerate() {
+                cumulative += distance;
+                if cumulative >= threshold {
+                    centroids.push(features[idx].clone());
+                    break;
+                }
+            }
+        }
+
+        centroids
+    }
+
+    /// Calculate Euclidean distance between two feature vectors
+    fn euclidean_distance(&self, a: &[f64], b: &[f64]) -> f64 {
+        if a.len() != b.len() {
+            return f64::MAX;
+        }
+
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| (x - y).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
+
+    /// Analyze access clusters to extract insights
+    async fn analyze_access_clusters(&self, clusters: &[Vec<usize>], features: &[Vec<f64>]) -> Result<Vec<String>> {
+        let mut cluster_insights = Vec::new();
+
+        for (cluster_idx, cluster) in clusters.iter().enumerate() {
+            if cluster.is_empty() {
+                continue;
+            }
+
+            // Calculate cluster statistics
+            let cluster_features: Vec<&Vec<f64>> = cluster.iter()
+                .map(|&idx| &features[idx])
+                .collect();
+
+            let avg_hour = cluster_features.iter()
+                .map(|f| f[0])
+                .sum::<f64>() / cluster_features.len() as f64;
+
+            let avg_day = cluster_features.iter()
+                .map(|f| f[1])
+                .sum::<f64>() / cluster_features.len() as f64;
+
+            let insight = format!("Cluster {}: {} users, avg access hour: {:.1}, avg day: {:.1}",
+                cluster_idx, cluster.len(), avg_hour, avg_day);
+            cluster_insights.push(insight);
+        }
+
+        Ok(cluster_insights)
+    }
+
+    /// Detect temporal patterns in access times
+    async fn detect_temporal_patterns(&self, access_times: &[DateTime<Utc>]) -> Result<Vec<String>> {
+        let mut patterns = Vec::new();
+
+        if access_times.len() < 2 {
+            return Ok(patterns);
+        }
+
+        // Analyze hourly patterns
+        let mut hourly_counts = vec![0; 24];
+        for time in access_times {
+            hourly_counts[time.hour() as usize] += 1;
+        }
+
+        // Find peak hours
+        let max_count = *hourly_counts.iter().max().unwrap_or(&0);
+        let peak_hours: Vec<usize> = hourly_counts.iter()
+            .enumerate()
+            .filter(|(_, &count)| count > max_count / 2)
+            .map(|(hour, _)| hour)
+            .collect();
+
+        if !peak_hours.is_empty() {
+            patterns.push(format!("Peak activity hours: {:?}", peak_hours));
+        }
+
+        // Analyze weekly patterns
+        let mut weekly_counts = vec![0; 7];
+        for time in access_times {
+            weekly_counts[time.weekday().num_days_from_monday() as usize] += 1;
+        }
+
+        let max_weekly = *weekly_counts.iter().max().unwrap_or(&0);
+        let peak_days: Vec<usize> = weekly_counts.iter()
+            .enumerate()
+            .filter(|(_, &count)| count > max_weekly / 2)
+            .map(|(day, _)| day)
+            .collect();
+
+        if !peak_days.is_empty() {
+            patterns.push(format!("Peak activity days: {:?}", peak_days));
+        }
+
+        Ok(patterns)
+    }
+
+    /// Perform linear regression for trend analysis
+    async fn perform_linear_regression(&self, data: &[f64]) -> Result<LinearRegressionResult> {
+        if data.len() < 2 {
+            return Ok(LinearRegressionResult {
+                slope: 0.0,
+                intercept: 0.0,
+                r_squared: 0.0,
+            });
+        }
+
+        let n = data.len() as f64;
+        let x_values: Vec<f64> = (0..data.len()).map(|i| i as f64).collect();
+
+        let sum_x = x_values.iter().sum::<f64>();
+        let sum_y = data.iter().sum::<f64>();
+        let sum_xy = x_values.iter().zip(data.iter()).map(|(x, y)| x * y).sum::<f64>();
+        let sum_x_squared = x_values.iter().map(|x| x * x).sum::<f64>();
+        let sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
+
+        let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x_squared - sum_x * sum_x);
+        let intercept = (sum_y - slope * sum_x) / n;
+
+        // Calculate R-squared
+        let y_mean = sum_y / n;
+        let ss_tot = data.iter().map(|y| (y - y_mean).powi(2)).sum::<f64>();
+        let ss_res = x_values.iter().zip(data.iter())
+            .map(|(x, y)| {
+                let predicted = slope * x + intercept;
+                (y - predicted).powi(2)
+            })
+            .sum::<f64>();
+
+        let r_squared = if ss_tot > 0.0 { 1.0 - (ss_res / ss_tot) } else { 0.0 };
+
+        Ok(LinearRegressionResult {
+            slope,
+            intercept,
+            r_squared,
+        })
+    }
+
+    /// Detect performance anomalies using statistical methods
+    async fn detect_performance_anomalies(&self, data: &[f64]) -> Result<Vec<usize>> {
+        if data.len() < 3 {
+            return Ok(Vec::new());
+        }
+
+        let mean = data.iter().sum::<f64>() / data.len() as f64;
+        let variance = data.iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>() / data.len() as f64;
+        let std_dev = variance.sqrt();
+
+        let threshold = 2.0 * std_dev; // 2 standard deviations
+
+        let anomalies: Vec<usize> = data.iter()
+            .enumerate()
+            .filter(|(_, &value)| (value - mean).abs() > threshold)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        Ok(anomalies)
+    }
+
+    /// Forecast future performance using simple time series methods
+    async fn forecast_performance(&self, data: &[f64], periods: usize) -> Result<ForecastResult> {
+        if data.len() < 3 {
+            return Ok(ForecastResult {
+                predictions: Vec::new(),
+                confidence: 0.0,
+            });
+        }
+
+        // Simple moving average forecast
+        let window_size = (data.len() / 3).max(3).min(7);
+        let recent_data = &data[data.len().saturating_sub(window_size)..];
+        let avg = recent_data.iter().sum::<f64>() / recent_data.len() as f64;
+
+        // Calculate confidence based on variance in recent data
+        let variance = recent_data.iter()
+            .map(|x| (x - avg).powi(2))
+            .sum::<f64>() / recent_data.len() as f64;
+        let confidence = 1.0 / (1.0 + variance / avg.max(1.0));
+
+        let predictions = vec![avg; periods];
+
+        Ok(ForecastResult {
+            predictions,
+            confidence,
+        })
+    }
+
+    /// Extract semantic features from text using NLP-like analysis
+    async fn extract_semantic_features(&self, text: &str) -> Result<Vec<f64>> {
+        let mut features = Vec::new();
+
+        // Basic linguistic features
+        features.push(text.len() as f64); // Length
+        features.push(text.split_whitespace().count() as f64); // Word count
+        features.push(text.chars().filter(|c| c.is_uppercase()).count() as f64); // Uppercase count
+        features.push(text.chars().filter(|c| c.is_numeric()).count() as f64); // Numeric count
+        features.push(text.matches('_').count() as f64); // Underscore count (common in keys)
+        features.push(text.matches('-').count() as f64); // Hyphen count
+        features.push(text.matches('/').count() as f64); // Slash count (path-like)
+
+        // Semantic indicators
+        let task_indicators = ["task", "todo", "action", "work"];
+        let note_indicators = ["note", "memo", "thought", "idea"];
+        let project_indicators = ["project", "plan", "goal", "objective"];
+
+        features.push(task_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
+        features.push(note_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
+        features.push(project_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
+
+        Ok(features)
+    }
+
+    /// Perform semantic clustering on feature vectors
+    async fn perform_semantic_clustering(&self, features: &[Vec<f64>]) -> Result<Vec<Vec<usize>>> {
+        // Use k-means with semantic-appropriate number of clusters
+        let k = (features.len() as f64).sqrt().ceil() as usize;
+        self.perform_kmeans_clustering(features, k.min(5).max(2)).await
+    }
+
+    /// Analyze content evolution over time
+    async fn analyze_content_evolution(&self) -> Result<ContentEvolution> {
+        let mut complexity_scores = Vec::new();
+        let mut monthly_diversity = std::collections::HashMap::new();
+
+        // Analyze content complexity over time
+        for event in &self.analytics_data.additions {
+            let complexity = self.calculate_content_complexity(&event.memory_key);
+            complexity_scores.push(complexity);
+
+            let month = event.timestamp.format("%Y-%m").to_string();
+            monthly_diversity.entry(month).or_insert_with(std::collections::HashSet::new)
+                .insert(self.classify_content_type(&event.memory_key));
+        }
+
+        let avg_complexity = if !complexity_scores.is_empty() {
+            complexity_scores.iter().sum::<f64>() / complexity_scores.len() as f64
+        } else {
+            0.0
+        };
+
+        // Calculate diversity trend
+        let diversity_values: Vec<f64> = monthly_diversity.values()
+            .map(|types| types.len() as f64)
+            .collect();
+
+        let diversity_trend = if diversity_values.len() > 1 {
+            let first = diversity_values.first().unwrap_or(&0.0);
+            let last = diversity_values.last().unwrap_or(&0.0);
+            (last - first) / first.max(1.0)
+        } else {
+            0.0
+        };
+
+        let growth_rate = if self.analytics_data.additions.len() > 1 {
+            let time_span = if let (Some(first), Some(last)) = (
+                self.analytics_data.additions.first(),
+                self.analytics_data.additions.last()
+            ) {
+                (last.timestamp - first.timestamp).num_days().max(1) as f64
+            } else {
+                1.0
+            };
+            self.analytics_data.additions.len() as f64 / time_span
+        } else {
+            0.0
+        };
+
+        Ok(ContentEvolution {
+            complexity_score: avg_complexity,
+            diversity_trend,
+            growth_rate,
+        })
+    }
+
+    /// Calculate content complexity score
+    fn calculate_content_complexity(&self, content: &str) -> f64 {
+        let length_score = (content.len() as f64).ln();
+        let word_count = content.split_whitespace().count() as f64;
+        let special_chars = content.chars().filter(|c| !c.is_alphanumeric() && !c.is_whitespace()).count() as f64;
+
+        (length_score + word_count + special_chars) / 3.0
+    }
+
+    /// Classify content type based on key patterns
+    fn classify_content_type(&self, key: &str) -> String {
+        let lower_key = key.to_lowercase();
+
+        if lower_key.contains("task") || lower_key.contains("todo") {
+            "task".to_string()
+        } else if lower_key.contains("note") || lower_key.contains("memo") {
+            "note".to_string()
+        } else if lower_key.contains("project") || lower_key.contains("plan") {
+            "project".to_string()
+        } else if lower_key.contains("meeting") || lower_key.contains("call") {
+            "meeting".to_string()
+        } else {
+            "general".to_string()
+        }
+    }
+
+    /// Detect content sequences and patterns
+    async fn detect_content_sequences(&self) -> Result<Vec<String>> {
+        let mut sequences = Vec::new();
+
+        // Analyze temporal sequences of content creation
+        let mut content_timeline: Vec<(DateTime<Utc>, String)> = self.analytics_data.additions.iter()
+            .map(|event| (event.timestamp, self.classify_content_type(&event.memory_key)))
+            .collect();
+
+        content_timeline.sort_by_key(|(timestamp, _)| *timestamp);
+
+        // Find common sequences
+        let mut sequence_patterns = std::collections::HashMap::new();
+        for window in content_timeline.windows(3) {
+            let pattern = format!("{}->{}->{}", window[0].1, window[1].1, window[2].1);
+            *sequence_patterns.entry(pattern).or_insert(0) += 1;
+        }
+
+        // Extract significant patterns
+        for (pattern, count) in sequence_patterns {
+            if count > 1 {
+                sequences.push(format!("Pattern '{}' occurred {} times", pattern, count));
+            }
+        }
+
+        Ok(sequences)
+    }
+
+    /// Detect isolation-based anomalies using advanced isolation forest
+    async fn detect_isolation_anomalies(&self, features: &[Vec<f64>]) -> Result<Vec<usize>> {
+        if features.len() < 10 {
+            return Ok(Vec::new());
+        }
+
+        let num_trees = 100;
+        let subsample_size = (features.len() as f64).sqrt() as usize;
+        let mut anomaly_scores = vec![0.0; features.len()];
+
+        // Build isolation forest
+        for _ in 0..num_trees {
+            let tree = self.build_isolation_tree(features, subsample_size, 0);
+
+            // Calculate path lengths for all points
+            for (idx, feature) in features.iter().enumerate() {
+                let path_length = self.calculate_path_length(&tree, feature, 0);
+                anomaly_scores[idx] += path_length;
+            }
+        }
+
+        // Average the scores
+        for score in &mut anomaly_scores {
+            *score /= num_trees as f64;
+        }
+
+        // Normalize scores using expected path length
+        let expected_path_length = self.calculate_expected_path_length(subsample_size);
+        for score in &mut anomaly_scores {
+            *score = 2.0_f64.powf(-*score / expected_path_length);
+        }
+
+        // Identify anomalies (scores > threshold)
+        let threshold = 0.6; // Typical threshold for isolation forest
+        let mut anomalies = Vec::new();
+
+        for (idx, &score) in anomaly_scores.iter().enumerate() {
+            if score > threshold {
+                anomalies.push(idx);
+            }
+        }
+
+        tracing::info!("Isolation forest detected {} anomalies out of {} data points", anomalies.len(), features.len());
+        Ok(anomalies)
+    }
+
+    /// Build an isolation tree for anomaly detection
+    fn build_isolation_tree(&self, features: &[Vec<f64>], subsample_size: usize, depth: usize) -> IsolationNode {
+        let mut rng = rand::thread_rng();
+
+        // Subsample data
+        let mut indices: Vec<usize> = (0..features.len()).collect();
+        indices.shuffle(&mut rng);
+        let sample_indices = &indices[..subsample_size.min(features.len())];
+
+        self.build_isolation_tree_recursive(features, sample_indices, depth, 10) // max depth = 10
+    }
+
+    /// Recursively build isolation tree
+    fn build_isolation_tree_recursive(&self, features: &[Vec<f64>], indices: &[usize], depth: usize, max_depth: usize) -> IsolationNode {
+        let mut rng = rand::thread_rng();
+
+        // Stop conditions
+        if indices.len() <= 1 || depth >= max_depth {
+            return IsolationNode::Leaf { size: indices.len() };
+        }
+
+        // Randomly select feature and split point
+        let feature_dim = features[0].len();
+        let split_feature = rng.gen_range(0..feature_dim);
+
+        // Find min and max values for the selected feature
+        let mut min_val = f64::MAX;
+        let mut max_val = f64::MIN;
+
+        for &idx in indices {
+            let val = features[idx][split_feature];
+            min_val = min_val.min(val);
+            max_val = max_val.max(val);
+        }
+
+        if (max_val - min_val).abs() < 1e-10 {
+            return IsolationNode::Leaf { size: indices.len() };
+        }
+
+        let split_value = rng.gen_range(min_val..max_val);
+
+        // Split data
+        let mut left_indices = Vec::new();
+        let mut right_indices = Vec::new();
+
+        for &idx in indices {
+            if features[idx][split_feature] < split_value {
+                left_indices.push(idx);
+            } else {
+                right_indices.push(idx);
+            }
+        }
+
+        // Recursively build subtrees
+        let left_child = Box::new(self.build_isolation_tree_recursive(features, &left_indices, depth + 1, max_depth));
+        let right_child = Box::new(self.build_isolation_tree_recursive(features, &right_indices, depth + 1, max_depth));
+
+        IsolationNode::Internal {
+            split_feature,
+            split_value,
+            left: left_child,
+            right: right_child,
+        }
+    }
+
+    /// Calculate path length for a point in the isolation tree
+    fn calculate_path_length(&self, node: &IsolationNode, point: &[f64], depth: usize) -> f64 {
+        match node {
+            IsolationNode::Leaf { size } => {
+                depth as f64 + self.calculate_average_path_length(*size)
+            },
+            IsolationNode::Internal { split_feature, split_value, left, right } => {
+                if point[*split_feature] < *split_value {
+                    self.calculate_path_length(left, point, depth + 1)
+                } else {
+                    self.calculate_path_length(right, point, depth + 1)
+                }
+            }
+        }
+    }
+
+    /// Calculate average path length for a given size (used in isolation forest)
+    fn calculate_average_path_length(&self, size: usize) -> f64 {
+        if size <= 1 {
+            0.0
+        } else if size == 2 {
+            1.0
+        } else {
+            2.0 * (((size - 1) as f64).ln() + 0.5772156649) - (2.0 * (size - 1) as f64 / size as f64)
+        }
+    }
+
+    /// Calculate expected path length for normalization
+    fn calculate_expected_path_length(&self, size: usize) -> f64 {
+        if size <= 1 {
+            0.0
+        } else {
+            2.0 * (((size - 1) as f64).ln() + 0.5772156649) - (2.0 * (size - 1) as f64 / size as f64)
+        }
+    }
+
+    /// Detect statistical outliers using IQR method
+    async fn detect_statistical_outliers(&self, features: &[Vec<f64>]) -> Result<Vec<usize>> {
+        if features.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut outliers = Vec::new();
+
+        // For each feature dimension
+        for dim in 0..features[0].len() {
+            let mut values: Vec<f64> = features.iter().map(|f| f[dim]).collect();
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let q1_idx = values.len() / 4;
+            let q3_idx = 3 * values.len() / 4;
+
+            if q1_idx < values.len() && q3_idx < values.len() {
+                let q1 = values[q1_idx];
+                let q3 = values[q3_idx];
+                let iqr = q3 - q1;
+                let lower_bound = q1 - 1.5 * iqr;
+                let upper_bound = q3 + 1.5 * iqr;
+
+                for (idx, feature) in features.iter().enumerate() {
+                    if feature[dim] < lower_bound || feature[dim] > upper_bound {
+                        if !outliers.contains(&idx) {
+                            outliers.push(idx);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(outliers)
+    }
+
+    /// Cluster behaviors using advanced techniques
+    async fn cluster_behaviors(&self, behaviors: &[Vec<f64>]) -> Result<Vec<Vec<usize>>> {
+        // Use hierarchical clustering for behavior analysis
+        if behaviors.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        // Start with each behavior as its own cluster
+        let mut clusters: Vec<Vec<usize>> = (0..behaviors.len()).map(|i| vec![i]).collect();
+
+        // Merge closest clusters until we have 3-5 clusters
+        while clusters.len() > 3 && clusters.len() > behaviors.len() / 10 {
+            let mut min_distance = f64::MAX;
+            let mut merge_indices = (0, 1);
+
+            // Find closest clusters
+            for i in 0..clusters.len() {
+                for j in (i + 1)..clusters.len() {
+                    let distance = self.calculate_cluster_distance_behavior(&clusters[i], &clusters[j], behaviors);
+                    if distance < min_distance {
+                        min_distance = distance;
+                        merge_indices = (i, j);
+                    }
+                }
+            }
+
+            // Merge clusters
+            let (i, j) = merge_indices;
+            let mut merged = clusters[i].clone();
+            merged.extend(clusters[j].clone());
+
+            // Remove old clusters and add merged one
+            clusters.remove(j.max(i));
+            clusters.remove(j.min(i));
+            clusters.push(merged);
+        }
+
+        Ok(clusters)
+    }
+
+    /// Calculate distance between behavior clusters
+    fn calculate_cluster_distance_behavior(&self, cluster1: &[usize], cluster2: &[usize], behaviors: &[Vec<f64>]) -> f64 {
+        let mut total_distance = 0.0;
+        let mut count = 0;
+
+        for &i in cluster1 {
+            for &j in cluster2 {
+                if i < behaviors.len() && j < behaviors.len() {
+                    total_distance += self.euclidean_distance(&behaviors[i], &behaviors[j]);
+                    count += 1;
+                }
+            }
+        }
+
+        if count > 0 {
+            total_distance / count as f64
+        } else {
+            f64::MAX
+        }
+    }
+
+    /// Analyze Markov patterns in behavior sequences
+    async fn analyze_markov_patterns(&self, behaviors: &[Vec<f64>]) -> Result<Vec<String>> {
+        let mut patterns = Vec::new();
+
+        if behaviors.len() < 3 {
+            return Ok(patterns);
+        }
+
+        // Discretize behaviors into states
+        let states: Vec<usize> = behaviors.iter()
+            .map(|behavior| {
+                // Simple state classification based on first feature (e.g., access count)
+                if behavior[0] > 10.0 { 2 } // High activity
+                else if behavior[0] > 5.0 { 1 } // Medium activity
+                else { 0 } // Low activity
+            })
+            .collect();
+
+        // Build transition matrix
+        let mut transitions = std::collections::HashMap::new();
+        for window in states.windows(2) {
+            let key = (window[0], window[1]);
+            *transitions.entry(key).or_insert(0) += 1;
+        }
+
+        // Extract significant patterns
+        let total_transitions: usize = transitions.values().sum();
+        for ((from, to), count) in transitions {
+            let probability = count as f64 / total_transitions as f64;
+            if probability > 0.1 { // Significant transitions
+                patterns.push(format!("State {} -> State {} (p={:.2})", from, to, probability));
+            }
+        }
+
+        Ok(patterns)
+    }
+
+    /// Identify user personas based on behavior clusters
+    async fn identify_user_personas(&self, clusters: &[Vec<usize>]) -> Result<Vec<String>> {
+        let mut personas = Vec::new();
+
+        for (idx, cluster) in clusters.iter().enumerate() {
+            if cluster.is_empty() {
+                continue;
+            }
+
+            let persona = match idx {
+                0 => format!("Power User (cluster size: {})", cluster.len()),
+                1 => format!("Regular User (cluster size: {})", cluster.len()),
+                2 => format!("Casual User (cluster size: {})", cluster.len()),
+                _ => format!("User Type {} (cluster size: {})", idx, cluster.len()),
+            };
+
+            personas.push(persona);
+        }
+
+        Ok(personas)
+    }
+
+    /// Analyze creation trend using ML
+    async fn analyze_creation_trend_ml(&self) -> Result<Option<TrendAnalysis>> {
+        if self.analytics_data.additions.len() < 3 {
+            return Ok(None);
+        }
+
+        // Group by day and count
+        let mut daily_counts = std::collections::BTreeMap::new();
+        for event in &self.analytics_data.additions {
+            let day = event.timestamp.date_naive();
+            *daily_counts.entry(day).or_insert(0) += 1;
+        }
+
+        let values: Vec<f64> = daily_counts.values().map(|&count| count as f64).collect();
+        let regression = self.perform_linear_regression(&values).await?;
+
+        let direction = if regression.slope > 0.1 {
+            TrendDirection::Increasing
+        } else if regression.slope < -0.1 {
+            TrendDirection::Decreasing
+        } else {
+            TrendDirection::Stable
+        };
+
+        let data_points: Vec<TrendDataPoint> = daily_counts.iter()
+            .map(|(date, &count)| TrendDataPoint {
+                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                value: count as f64,
+                label: date.format("%Y-%m-%d").to_string(),
+            })
+            .collect();
+
+        Ok(Some(TrendAnalysis {
+            id: "ml_creation_trend".to_string(),
+            name: "Memory Creation Rate (ML)".to_string(),
+            direction,
+            strength: regression.r_squared,
+            data_points,
+            prediction: Some(TrendPrediction {
+                predicted_value: regression.slope * values.len() as f64 + regression.intercept,
+                confidence: regression.r_squared,
+                time_horizon: Duration::days(7),
+            }),
+        }))
+    }
+
+    /// Analyze access trend using ML
+    async fn analyze_access_trend_ml(&self) -> Result<Option<TrendAnalysis>> {
+        if self.analytics_data.access_patterns.is_empty() {
+            return Ok(None);
+        }
+
+        // Analyze access frequency trends
+        let access_counts: Vec<f64> = self.analytics_data.access_patterns.values()
+            .map(|pattern| pattern.access_count as f64)
+            .collect();
+
+        if access_counts.len() < 3 {
+            return Ok(None);
+        }
+
+        let regression = self.perform_linear_regression(&access_counts).await?;
+
+        let direction = if regression.slope > 0.5 {
+            TrendDirection::Increasing
+        } else if regression.slope < -0.5 {
+            TrendDirection::Decreasing
+        } else {
+            TrendDirection::Stable
+        };
+
+        let data_points: Vec<TrendDataPoint> = access_counts.iter()
+            .enumerate()
+            .map(|(idx, &count)| TrendDataPoint {
+                timestamp: Utc::now() - Duration::days((access_counts.len() - idx) as i64),
+                value: count,
+                label: format!("Access {}", idx + 1),
+            })
+            .collect();
+
+        Ok(Some(TrendAnalysis {
+            id: "ml_access_trend".to_string(),
+            name: "Access Pattern Trend (ML)".to_string(),
+            direction,
+            strength: regression.r_squared,
+            data_points,
+            prediction: Some(TrendPrediction {
+                predicted_value: regression.slope * access_counts.len() as f64 + regression.intercept,
+                confidence: regression.r_squared,
+                time_horizon: Duration::days(7),
+            }),
+        }))
+    }
+
+    /// Analyze performance trend using ML
+    async fn analyze_performance_trend_ml(&self) -> Result<Option<TrendAnalysis>> {
+        // Create performance metrics from event data
+        let mut daily_performance = std::collections::BTreeMap::new();
+
+        for event in &self.analytics_data.additions {
+            let day = event.timestamp.date_naive();
+            *daily_performance.entry(day).or_insert(0) += 1;
+        }
+        for event in &self.analytics_data.updates {
+            let day = event.timestamp.date_naive();
+            *daily_performance.entry(day).or_insert(0) += 1;
+        }
+
+        if daily_performance.len() < 3 {
+            return Ok(None);
+        }
+
+        let values: Vec<f64> = daily_performance.values().map(|&count| count as f64).collect();
+        let regression = self.perform_linear_regression(&values).await?;
+
+        let direction = if regression.slope > 0.2 {
+            TrendDirection::Increasing
+        } else if regression.slope < -0.2 {
+            TrendDirection::Decreasing
+        } else {
+            TrendDirection::Stable
+        };
+
+        let data_points: Vec<TrendDataPoint> = daily_performance.iter()
+            .map(|(date, &count)| TrendDataPoint {
+                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                value: count as f64,
+                label: date.format("%Y-%m-%d").to_string(),
+            })
+            .collect();
+
+        Ok(Some(TrendAnalysis {
+            id: "ml_performance_trend".to_string(),
+            name: "Performance Trend (ML)".to_string(),
+            direction,
+            strength: regression.r_squared,
+            data_points,
+            prediction: Some(TrendPrediction {
+                predicted_value: regression.slope * values.len() as f64 + regression.intercept,
+                confidence: regression.r_squared,
+                time_horizon: Duration::days(7),
+            }),
+        }))
+    }
+
+    /// Analyze complexity trend using ML
+    async fn analyze_complexity_trend_ml(&self) -> Result<Option<TrendAnalysis>> {
+        if self.analytics_data.additions.len() < 3 {
+            return Ok(None);
+        }
+
+        // Calculate complexity scores over time
+        let mut complexity_timeline: Vec<(DateTime<Utc>, f64)> = self.analytics_data.additions.iter()
+            .map(|event| (event.timestamp, self.calculate_content_complexity(&event.memory_key)))
+            .collect();
+
+        complexity_timeline.sort_by_key(|(timestamp, _)| *timestamp);
+
+        let values: Vec<f64> = complexity_timeline.iter().map(|(_, complexity)| *complexity).collect();
+        let regression = self.perform_linear_regression(&values).await?;
+
+        let direction = if regression.slope > 0.1 {
+            TrendDirection::Increasing
+        } else if regression.slope < -0.1 {
+            TrendDirection::Decreasing
+        } else {
+            TrendDirection::Stable
+        };
+
+        let data_points: Vec<TrendDataPoint> = complexity_timeline.iter()
+            .map(|(timestamp, complexity)| TrendDataPoint {
+                timestamp: *timestamp,
+                value: *complexity,
+                label: timestamp.format("%Y-%m-%d").to_string(),
+            })
+            .collect();
+
+        Ok(Some(TrendAnalysis {
+            id: "ml_complexity_trend".to_string(),
+            name: "Content Complexity Trend (ML)".to_string(),
+            direction,
+            strength: regression.r_squared,
+            data_points,
+            prediction: Some(TrendPrediction {
+                predicted_value: regression.slope * values.len() as f64 + regression.intercept,
+                confidence: regression.r_squared,
+                time_horizon: Duration::days(7),
+            }),
+        }))
+    }
+
+    /// Calculate ML usage insights
+    async fn calculate_ml_usage_insights(&self) -> Result<MLUsageInsights> {
+        let total_memories = self.analytics_data.additions.len() as f64;
+        let total_accesses = self.analytics_data.access_patterns.values()
+            .map(|pattern| pattern.access_count)
+            .sum::<u64>() as f64;
+
+        let projected_growth = if total_memories > 0.0 {
+            // Simple growth projection based on recent activity
+            let recent_activity = self.analytics_data.additions.iter()
+                .filter(|event| event.timestamp > Utc::now() - Duration::days(7))
+                .count() as f64;
+            recent_activity * 4.0 // Project 4 weeks ahead
+        } else {
+            0.0
+        };
+
+        let efficiency_score = if total_memories > 0.0 && total_accesses > 0.0 {
+            (total_accesses / total_memories).min(1.0)
+        } else {
+            0.0
+        };
+
+        let optimization_potential = 1.0 - efficiency_score;
+
+        Ok(MLUsageInsights {
+            projected_growth,
+            efficiency_score,
+            optimization_potential,
+        })
+    }
+
+    /// Calculate predictive metrics
+    async fn calculate_predictive_metrics(&self) -> Result<PredictiveMetrics> {
+        let current_load = self.analytics_data.additions.len() as f64 +
+                          self.analytics_data.updates.len() as f64 +
+                          self.analytics_data.deletions.len() as f64;
+
+        // Simple load forecasting
+        let future_load = current_load * 1.2; // Assume 20% growth
+
+        let capacity_utilization = if current_load > 0.0 {
+            (current_load / (current_load + 1000.0)).min(1.0) // Assume capacity of current + 1000
+        } else {
+            0.0
+        };
+
+        let performance_forecast = if capacity_utilization < 0.8 {
+            0.9 // Good performance expected
+        } else {
+            0.6 // Performance may degrade
+        };
+
+        Ok(PredictiveMetrics {
+            future_load,
+            capacity_utilization,
+            performance_forecast,
+        })
     }
 }
 

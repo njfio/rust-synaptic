@@ -57,16 +57,22 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Add or update a memory entry in the knowledge graph
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key))]
     pub async fn add_or_update_memory_node(&mut self, memory: &MemoryEntry) -> Result<Uuid> {
+        tracing::debug!("Adding or updating memory node in knowledge graph");
+
         // Check if this memory already has a node
         if let Some(existing_node_id) = self.memory_to_node.get(&memory.key) {
+            tracing::debug!("Updating existing node: {}", existing_node_id);
             // Update existing node
             self.update_existing_node(*existing_node_id, memory).await
         } else {
             // Check for similar existing nodes that should be merged
             if let Some(similar_node_id) = self.find_similar_node(memory).await? {
+                tracing::debug!("Merging with similar node: {}", similar_node_id);
                 self.merge_with_existing_node(similar_node_id, memory).await
             } else {
+                tracing::debug!("Creating new node");
                 // Create new node
                 self.create_new_node(memory).await
             }
@@ -79,6 +85,11 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Create a relationship between two memory entries
+    #[tracing::instrument(skip(self, properties), fields(
+        from_memory = %from_memory_key,
+        to_memory = %to_memory_key,
+        relationship_type = ?relationship_type
+    ))]
     pub async fn create_relationship(
         &mut self,
         from_memory_key: &str,
@@ -86,14 +97,21 @@ impl MemoryKnowledgeGraph {
         relationship_type: RelationshipType,
         properties: Option<HashMap<String, String>>,
     ) -> Result<Uuid> {
+        tracing::debug!("Creating relationship between memories");
+
         let from_node_id = self.memory_to_node.get(from_memory_key)
             .ok_or_else(|| MemoryError::NotFound { key: from_memory_key.to_string() })?;
-        
+
         let to_node_id = self.memory_to_node.get(to_memory_key)
             .ok_or_else(|| MemoryError::NotFound { key: to_memory_key.to_string() })?;
 
+        tracing::debug!("Found nodes: {} -> {}", from_node_id, to_node_id);
+
         let edge = Edge::new(*from_node_id, *to_node_id, relationship_type, properties);
-        self.graph.add_edge(edge).await
+        let edge_id = self.graph.add_edge(edge).await?;
+
+        tracing::debug!("Created relationship edge: {}", edge_id);
+        Ok(edge_id)
     }
 
     /// Find related memories using graph traversal
@@ -419,6 +437,46 @@ impl MemoryKnowledgeGraph {
 
         println!("Created new node {} for memory '{}'", node_id, memory.key);
         Ok(node_id)
+    }
+
+    /// Find all memories within a specified graph distance from a reference memory
+    pub async fn find_memories_within_distance(
+        &self,
+        reference_memory_key: &str,
+        max_distance: usize,
+    ) -> Result<Vec<(String, usize)>> {
+        // Get the node ID for the reference memory
+        let reference_node_id = self.memory_to_node.get(reference_memory_key)
+            .ok_or_else(|| MemoryError::NotFound { key: reference_memory_key.to_string() })?;
+
+        // Use graph traversal to find all reachable nodes within max_distance
+        let traversal_options = crate::memory::knowledge_graph::query::TraversalOptions {
+            max_depth: max_distance,
+            direction: crate::memory::knowledge_graph::query::TraversalDirection::Both,
+            relationship_types: None, // Include all relationship types
+            allow_cycles: false,
+            sort_by_distance: true,
+            limit: None,
+            min_strength: None,
+            min_confidence: None,
+        };
+
+        let reachable_nodes = self.graph.traverse_from_node(*reference_node_id, traversal_options).await?;
+
+        // Convert node IDs back to memory keys with distances
+        let mut result = Vec::new();
+        for (node_id, path) in reachable_nodes {
+            if let Some(memory_key) = self.node_to_memory.get(&node_id) {
+                let distance = path.edges.len(); // Path length as distance
+                if distance <= max_distance {
+                    result.push((memory_key.clone(), distance));
+                }
+            }
+        }
+
+        // Sort by distance
+        result.sort_by_key(|(_, distance)| *distance);
+        Ok(result)
     }
 
     /// Calculate relationship strength based on path

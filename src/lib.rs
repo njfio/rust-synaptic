@@ -41,6 +41,7 @@
 
 pub mod error;
 pub mod memory;
+pub mod logging;
 
 #[cfg(feature = "distributed")]
 pub mod distributed;
@@ -98,14 +99,21 @@ pub struct AgentMemory {
 
 impl AgentMemory {
     /// Create a new agent memory system with the given configuration
+    #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
+        tracing::info!("Initializing AgentMemory with configuration");
+
         let storage = memory::storage::create_storage(&config.storage_backend).await?;
+        tracing::debug!("Storage backend initialized: {:?}", config.storage_backend);
+
         let checkpoint_manager = memory::checkpoint::CheckpointManager::new(
             config.checkpoint_interval,
             storage.clone(),
         );
+        tracing::debug!("Checkpoint manager initialized with interval: {:?}", config.checkpoint_interval);
 
         let state = memory::state::AgentState::new(config.session_id.unwrap_or_else(Uuid::new_v4));
+        tracing::debug!("Agent state initialized");
 
         // Initialize knowledge graph if enabled
         let knowledge_graph = if config.enable_knowledge_graph {
@@ -229,7 +237,10 @@ impl AgentMemory {
     }
 
     /// Store a memory entry with intelligent updating
+    #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
+        tracing::debug!("Storing memory entry");
+
         let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::ShortTerm);
 
         // Check if this is an update to existing memory
@@ -240,8 +251,11 @@ impl AgentMemory {
             memory::temporal::ChangeType::Created
         };
 
+        tracing::debug!("Memory operation type: {:?}", change_type);
+
         self.state.add_memory(entry.clone());
         self.storage.store(&entry).await?;
+        tracing::debug!("Memory stored in state and storage");
 
         // Track temporal changes if enabled
         if let Some(ref mut tm) = self.temporal_manager {
@@ -287,9 +301,13 @@ impl AgentMemory {
     }
 
     /// Retrieve a memory by key
+    #[tracing::instrument(skip(self), fields(key = %key))]
     pub async fn retrieve(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
+        tracing::debug!("Retrieving memory entry");
+
         // First check short-term memory
         if let Some(entry) = self.state.get_memory(key) {
+            tracing::debug!("Memory found in short-term memory");
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
@@ -305,7 +323,14 @@ impl AgentMemory {
         }
 
         // Then check storage
+        tracing::debug!("Memory not found in short-term, checking storage");
         let result = self.storage.retrieve(key).await?;
+
+        if result.is_some() {
+            tracing::debug!("Memory found in storage");
+        } else {
+            tracing::debug!("Memory not found");
+        }
         #[cfg(feature = "analytics")]
         if let Some(ref mut analytics) = self.analytics_engine {
             if result.is_some() {
@@ -323,8 +348,12 @@ impl AgentMemory {
     }
 
     /// Search memories by content similarity
+    #[tracing::instrument(skip(self, query), fields(query_len = query.len(), limit = limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
-        self.storage.search(query, limit).await
+        tracing::debug!("Searching memories by content similarity");
+        let results = self.storage.search(query, limit).await?;
+        tracing::debug!("Search completed, found {} results", results.len());
+        Ok(results)
     }
 
     /// Create a checkpoint of the current state
