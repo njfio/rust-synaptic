@@ -4,7 +4,7 @@ This document provides a comprehensive overview of the Synaptic test suite organ
 
 ## Test Statistics
 
-- **Total Tests**: 169 passing tests
+- **Total Tests**: 161 passing tests
 - **Test Files**: 30 test files
 - **Coverage**: Comprehensive coverage across all modules
 - **Categories**: 8 main test categories
