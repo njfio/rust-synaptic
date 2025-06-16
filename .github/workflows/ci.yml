@@ -53,73 +53,33 @@ jobs:
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
       if: matrix.rust == 'stable'
+
+    - name: Make test runner executable
+      run: chmod +x scripts/run_tests.sh
+      if: matrix.rust == 'stable'
     
     - name: Build
       run: cargo build --verbose --all-features
+
+    - name: Run critical priority tests
+      run: ./scripts/run_tests.sh critical
+      if: matrix.rust == 'stable'
+
+    - name: Run high priority tests
+      run: ./scripts/run_tests.sh high
+      if: matrix.rust == 'stable'
     
-    - name: Run unit tests
-      run: cargo test --lib --verbose
-    
-    - name: Run integration tests
-      run: cargo test --test integration_tests --verbose
-    
-    - name: Run security tests
-      run: |
-        cargo test --test phase4_security_tests --verbose
-        cargo test --test security_tests --verbose
-        cargo test --test zero_knowledge_tests --verbose
-        cargo test --test homomorphic_encryption_tests --verbose
-    
-    - name: Run performance tests
-      run: |
-        cargo test --test real_performance_measurement_tests --verbose
-        cargo test --test performance_tests --verbose
-        cargo test --test comprehensive_optimization_tests --verbose
-    
-    - name: Run lifecycle tests
-      run: cargo test --test real_lifecycle_management_tests --verbose
-    
-    - name: Run multimodal tests
-      run: |
-        cargo test --test phase5_multimodal_tests --verbose
-        cargo test --test phase5b_document_tests --verbose
-        cargo test --test data_processor_tests --verbose
-    
-    - name: Run temporal tests
-      run: |
-        cargo test --test temporal_evolution_tests --verbose
-        cargo test --test temporal_summary_tests --verbose
-        cargo test --test myers_diff_tests --verbose
-        cargo test --test diff_analyzer_tests --verbose
-    
-    - name: Run knowledge graph tests
-      run: cargo test --test knowledge_graph_tests --verbose
-    
-    - name: Run analytics tests
-      run: |
-        cargo test --test phase3_analytics --verbose
-        cargo test --test advanced_theme_extraction_tests --verbose
-        cargo test --test summarization_tests --verbose
-    
-    - name: Run search tests
-      run: cargo test --test enhanced_similarity_search_tests --verbose
-    
-    - name: Run external integration tests
-      run: |
-        cargo test --test external_integrations_tests --verbose
-        cargo test --test phase1_embeddings_tests --verbose
-        cargo test --test phase2_distributed_tests --verbose
-    
-    - name: Run logging and error handling tests
-      run: |
-        cargo test --test comprehensive_logging_tests --verbose
-        cargo test --test enhanced_error_handling_tests --verbose
-    
-    - name: Run visualization tests
-      run: cargo test --test visualization_tests --verbose
-    
-    - name: Run sync tests
-      run: cargo test --test offline_sync_tests --verbose
+    - name: Run medium priority tests
+      run: ./scripts/run_tests.sh medium
+      if: matrix.rust == 'stable'
+
+    - name: Run low priority tests
+      run: ./scripts/run_tests.sh low
+      if: matrix.rust == 'stable'
+
+    - name: Run all tests (fallback for non-stable)
+      run: cargo test --verbose
+      if: matrix.rust != 'stable'
 
   coverage:
     name: Code Coverage

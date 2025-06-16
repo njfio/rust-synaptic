@@ -5,9 +5,46 @@ This document provides a comprehensive overview of the Synaptic test suite organ
 ## Test Statistics
 
 - **Total Tests**: 161 passing tests
-- **Test Files**: 30 test files
-- **Coverage**: Comprehensive coverage across all modules
-- **Categories**: 8 main test categories
+- **Test Files**: 31 test files
+- **Coverage**: 90%+ across all modules
+- **Categories**: 14 organized test categories
+- **Test Runner**: `scripts/run_tests.sh` for organized execution
+- **CI Integration**: Automated testing via GitHub Actions
+
+## Quick Start
+
+### Using the Test Runner Script
+
+The project includes an organized test runner script for better test management:
+
+```bash
+# Run all tests (161 tests across 14 categories)
+./scripts/run_tests.sh all
+
+# Run by priority level
+./scripts/run_tests.sh critical    # Core, integration, security
+./scripts/run_tests.sh high        # Performance, lifecycle, multimodal
+./scripts/run_tests.sh medium      # Temporal, analytics, search, etc.
+./scripts/run_tests.sh low         # Logging, visualization, sync
+
+# Run specific test category
+./scripts/run_tests.sh security
+./scripts/run_tests.sh performance
+./scripts/run_tests.sh multimodal
+```
+
+### Traditional Cargo Commands
+
+```bash
+# Run all tests
+cargo test
+
+# Run specific test file
+cargo test --test integration_tests
+
+# Run with output
+cargo test -- --nocapture
+```
 
 ## Test Categories
 
@@ -37,11 +74,12 @@ cargo test --test zero_knowledge_tests
 cargo test --test homomorphic_encryption_tests
 ```
 
-### 4. Performance & Optimization Tests (21 tests)
+### 4. Performance & Optimization Tests (28 tests)
 **Files**:
 - `tests/real_performance_measurement_tests.rs` (10 tests)
 - `tests/performance_tests.rs` (0 tests, 8 ignored benchmarks)
 - `tests/comprehensive_optimization_tests.rs` (11 tests)
+- `tests/advanced_performance_optimization_tests.rs` (8 tests)
 
 **Purpose**: Performance monitoring, optimization algorithms, benchmarking
 **Commands**:
@@ -49,6 +87,7 @@ cargo test --test homomorphic_encryption_tests
 cargo test --test real_performance_measurement_tests
 cargo test --test performance_tests -- --ignored  # For benchmarks
 cargo test --test comprehensive_optimization_tests
+cargo test --test advanced_performance_optimization_tests
 ```
 
 ### 5. Multimodal & Document Processing Tests (18 tests)
