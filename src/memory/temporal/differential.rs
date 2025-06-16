@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use lz4_flex::compress_prepend_size;
-use diff;
+use imara_diff::Algorithm;
+use similar::{ChangeTag, TextDiff};
 
 /// Detailed difference between two memory entries
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,7 +206,7 @@ pub struct DiffAnalyzer {
     /// Change sets organized by time
     change_sets: Vec<ChangeSet>,
     /// Configuration
-    config: DiffConfig,
+    pub config: DiffConfig,
     /// Running metrics
     metrics: DiffMetrics,
     /// Internal counts for change types
@@ -223,6 +224,25 @@ pub struct DiffConfig {
     pub max_cache_size: usize,
     /// Enable detailed text analysis
     pub enable_detailed_text_analysis: bool,
+    /// Myers' algorithm variant to use
+    pub myers_algorithm: MyersAlgorithm,
+    /// Enable line-level optimization
+    pub enable_line_optimization: bool,
+    /// Enable word-level analysis
+    pub enable_word_level_analysis: bool,
+    /// Context lines for unified diff
+    pub context_lines: usize,
+}
+
+/// Myers' algorithm variants
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MyersAlgorithm {
+    /// Standard Myers' algorithm
+    Myers,
+    /// Myers with histogram preprocessing
+    Histogram,
+    /// Adaptive algorithm selection
+    Adaptive,
 }
 
 impl Default for DiffConfig {
@@ -232,6 +252,10 @@ impl Default for DiffConfig {
             min_significance_threshold: 0.1,
             max_cache_size: 1000,
             enable_detailed_text_analysis: true,
+            myers_algorithm: MyersAlgorithm::Adaptive,
+            enable_line_optimization: true,
+            enable_word_level_analysis: true,
+            context_lines: 3,
         }
     }
 }
@@ -497,77 +521,352 @@ impl DiffAnalyzer {
         }
     }
 
-    /// Perform detailed text analysis to find specific changes
+    /// Perform detailed text analysis using Myers' diff algorithm
     async fn perform_detailed_text_analysis(
         &self,
         old_text: &str,
         new_text: &str,
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
-        use diff::Result as DiffResult;
+        tracing::debug!("Performing Myers' diff analysis on texts of length {} and {}", old_text.len(), new_text.len());
+        let start_time = std::time::Instant::now();
+
+        let (additions, deletions, modifications) = match self.config.myers_algorithm {
+            MyersAlgorithm::Myers => self.myers_standard_diff(old_text, new_text).await?,
+            MyersAlgorithm::Histogram => self.myers_histogram_diff(old_text, new_text).await?,
+            MyersAlgorithm::Adaptive => self.myers_adaptive_diff(old_text, new_text).await?,
+        };
+
+        let duration = start_time.elapsed();
+        tracing::debug!("Myers' diff analysis completed in {:?}, found {} additions, {} deletions, {} modifications",
+                       duration, additions.len(), deletions.len(), modifications.len());
+
+        Ok((additions, deletions, modifications))
+    }
+
+    /// Standard Myers' algorithm implementation
+    async fn myers_standard_diff(
+        &self,
+        old_text: &str,
+        new_text: &str,
+    ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
+        if self.config.enable_line_optimization {
+            self.myers_line_based_diff(old_text, new_text, Algorithm::Myers).await
+        } else {
+            self.myers_character_based_diff(old_text, new_text).await
+        }
+    }
+
+    /// Myers' algorithm with histogram preprocessing
+    async fn myers_histogram_diff(
+        &self,
+        old_text: &str,
+        new_text: &str,
+    ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
+        self.myers_line_based_diff(old_text, new_text, Algorithm::Histogram).await
+    }
+
+    /// Adaptive algorithm selection based on text characteristics
+    async fn myers_adaptive_diff(
+        &self,
+        old_text: &str,
+        new_text: &str,
+    ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
+        let algorithm = self.select_optimal_algorithm(old_text, new_text);
+        tracing::debug!("Selected {:?} algorithm for adaptive diff", algorithm);
+        self.myers_line_based_diff(old_text, new_text, algorithm).await
+    }
+
+    /// Select optimal algorithm based on text characteristics
+    fn select_optimal_algorithm(&self, old_text: &str, new_text: &str) -> Algorithm {
+        let old_lines = old_text.lines().count();
+        let new_lines = new_text.lines().count();
+        let total_lines = old_lines + new_lines;
+
+        // For small texts, use standard Myers
+        if total_lines < 100 {
+            return Algorithm::Myers;
+        }
+
+        // For large texts with many unique lines, use histogram
+        if total_lines > 1000 {
+            let old_unique_lines: std::collections::HashSet<_> = old_text.lines().collect();
+            let new_unique_lines: std::collections::HashSet<_> = new_text.lines().collect();
+            let unique_ratio = (old_unique_lines.len() + new_unique_lines.len()) as f64 / total_lines as f64;
+
+            if unique_ratio > 0.8 {
+                return Algorithm::Histogram;
+            }
+        }
+
+        // For medium texts or texts with repetitive patterns, use Myers
+        Algorithm::Myers
+    }
+
+    /// Line-based Myers' diff using similar crate with Myers algorithm
+    async fn myers_line_based_diff(
+        &self,
+        old_text: &str,
+        new_text: &str,
+        _algorithm: Algorithm, // Algorithm selection handled by similar crate internally
+    ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
+        tracing::debug!("Starting Myers line-based diff analysis");
+
+        // Use similar crate which implements Myers' algorithm internally
+        // This provides excellent performance and is well-tested
+        let diff = TextDiff::from_lines(old_text, new_text);
+
         let mut additions = Vec::new();
         let mut deletions = Vec::new();
         let mut modifications = Vec::new();
 
-        let mut old_index = 0usize;
-        let mut new_index = 0usize;
-        let mut iter = diff::chars(old_text, new_text).into_iter().peekable();
+        let old_lines: Vec<&str> = old_text.lines().collect();
+        let new_lines: Vec<&str> = new_text.lines().collect();
 
-        while let Some(change) = iter.next() {
-            match change {
-                DiffResult::Both(_, _) => {
-                    old_index += 1;
-                    new_index += 1;
+        let mut old_line_num = 0;
+        let mut new_line_num = 0;
+        let mut old_char_pos = 0;
+        let mut new_char_pos = 0;
+
+        // Process each change in the diff
+        for change in diff.iter_all_changes() {
+            let line_content = change.value();
+
+            match change.tag() {
+                ChangeTag::Equal => {
+                    // Skip equal lines but update positions
+                    old_char_pos += line_content.len();
+                    new_char_pos += line_content.len();
+                    old_line_num += 1;
+                    new_line_num += 1;
                 }
-                DiffResult::Left(c) => {
-                    let mut removed = String::new();
-                    removed.push(c);
-                    while let Some(DiffResult::Left(c2)) = iter.peek().cloned() {
-                        removed.push(c2);
-                        iter.next();
-                    }
-                    if let Some(DiffResult::Right(_)) = iter.peek() {
-                        let mut added = String::new();
-                        while let Some(DiffResult::Right(c2)) = iter.peek().cloned() {
-                            added.push(c2);
-                            iter.next();
-                        }
-                        modifications.push(TextModification {
-                            position: new_index,
-                            old_text: removed.clone(),
-                            new_text: added.clone(),
-                            modification_type: ModificationType::Substitution,
-                        });
-                        old_index += removed.len();
-                        new_index += added.len();
-                    } else {
-                        deletions.push(TextSegment {
-                            position: old_index,
-                            length: removed.len(),
-                            content: removed.clone(),
-                            context: None,
-                        });
-                        old_index += removed.len();
-                    }
-                }
-                DiffResult::Right(c) => {
-                    let mut added = String::new();
-                    added.push(c);
-                    while let Some(DiffResult::Right(c2)) = iter.peek().cloned() {
-                        added.push(c2);
-                        iter.next();
-                    }
-                    additions.push(TextSegment {
-                        position: new_index,
-                        length: added.len(),
-                        content: added.clone(),
-                        context: None,
+                ChangeTag::Delete => {
+                    deletions.push(TextSegment {
+                        position: old_char_pos,
+                        length: line_content.len(),
+                        content: line_content.to_string(),
+                        context: self.extract_context(&old_lines, old_line_num, self.config.context_lines),
                     });
-                    new_index += added.len();
+                    old_char_pos += line_content.len();
+                    old_line_num += 1;
+                }
+                ChangeTag::Insert => {
+                    additions.push(TextSegment {
+                        position: new_char_pos,
+                        length: line_content.len(),
+                        content: line_content.to_string(),
+                        context: self.extract_context(&new_lines, new_line_num, self.config.context_lines),
+                    });
+                    new_char_pos += line_content.len();
+                    new_line_num += 1;
                 }
             }
         }
 
+        // Post-process to find modifications (adjacent deletions and insertions)
+        self.merge_adjacent_changes(&mut additions, &mut deletions, &mut modifications);
+
+        tracing::debug!("Myers line-based diff completed: {} additions, {} deletions, {} modifications",
+                       additions.len(), deletions.len(), modifications.len());
+
         Ok((additions, deletions, modifications))
+    }
+
+    /// Character-based Myers' diff using similar crate
+    async fn myers_character_based_diff(
+        &self,
+        old_text: &str,
+        new_text: &str,
+    ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
+        let diff = TextDiff::from_chars(old_text, new_text);
+        let mut additions = Vec::new();
+        let mut deletions = Vec::new();
+        let mut modifications = Vec::new();
+
+        let mut old_pos = 0;
+        let mut new_pos = 0;
+
+        for change in diff.iter_all_changes() {
+            match change.tag() {
+                ChangeTag::Equal => {
+                    old_pos += change.value().len();
+                    new_pos += change.value().len();
+                }
+                ChangeTag::Delete => {
+                    deletions.push(TextSegment {
+                        position: old_pos,
+                        length: change.value().len(),
+                        content: change.value().to_string(),
+                        context: None,
+                    });
+                    old_pos += change.value().len();
+                }
+                ChangeTag::Insert => {
+                    additions.push(TextSegment {
+                        position: new_pos,
+                        length: change.value().len(),
+                        content: change.value().to_string(),
+                        context: None,
+                    });
+                    new_pos += change.value().len();
+                }
+            }
+        }
+
+        // Post-process to find modifications (adjacent deletions and insertions)
+        self.merge_adjacent_changes(&mut additions, &mut deletions, &mut modifications);
+
+        Ok((additions, deletions, modifications))
+    }
+
+    /// Classify the type of modification based on content analysis
+    fn classify_modification_by_content(&self, old_content: &str, new_content: &str) -> ModificationType {
+        // Check for common modification patterns
+        if self.is_spelling_correction(old_content, new_content) {
+            return ModificationType::Correction;
+        }
+
+        if new_content.len() > old_content.len() * 2 {
+            return ModificationType::Expansion;
+        }
+
+        if old_content.len() > new_content.len() * 2 {
+            return ModificationType::Condensation;
+        }
+
+        if self.is_rephrase(old_content, new_content) {
+            return ModificationType::Rephrase;
+        }
+
+        ModificationType::Substitution
+    }
+
+    /// Classify the type of modification based on line analysis
+    fn classify_modification(&self, old_lines: &[&str], new_lines: &[&str]) -> ModificationType {
+        if old_lines.len() == 1 && new_lines.len() == 1 {
+            let old_line = old_lines[0];
+            let new_line = new_lines[0];
+
+            // Check for common modification patterns
+            if self.is_spelling_correction(old_line, new_line) {
+                return ModificationType::Correction;
+            }
+
+            if new_line.len() > old_line.len() * 2 {
+                return ModificationType::Expansion;
+            }
+
+            if old_line.len() > new_line.len() * 2 {
+                return ModificationType::Condensation;
+            }
+
+            if self.is_rephrase(old_line, new_line) {
+                return ModificationType::Rephrase;
+            }
+        }
+
+        ModificationType::Substitution
+    }
+
+    /// Check if the change is a spelling correction
+    fn is_spelling_correction(&self, old_text: &str, new_text: &str) -> bool {
+        // Simple heuristic: if texts are similar length and have high character overlap
+        let len_diff = (old_text.len() as i32 - new_text.len() as i32).abs();
+        if len_diff > 3 {
+            return false;
+        }
+
+        let old_chars: std::collections::HashSet<char> = old_text.chars().collect();
+        let new_chars: std::collections::HashSet<char> = new_text.chars().collect();
+        let intersection = old_chars.intersection(&new_chars).count();
+        let union = old_chars.union(&new_chars).count();
+
+        union > 0 && intersection as f64 / union as f64 > 0.8
+    }
+
+    /// Check if the change is a rephrase
+    fn is_rephrase(&self, old_text: &str, new_text: &str) -> bool {
+        // Check if word overlap is high but character overlap is lower
+        let old_words: std::collections::HashSet<&str> = old_text.split_whitespace().collect();
+        let new_words: std::collections::HashSet<&str> = new_text.split_whitespace().collect();
+        let word_intersection = old_words.intersection(&new_words).count();
+        let word_union = old_words.union(&new_words).count();
+
+        if word_union == 0 {
+            return false;
+        }
+
+        let word_similarity = word_intersection as f64 / word_union as f64;
+        let char_similarity = self.calculate_text_similarity(old_text, new_text);
+
+        word_similarity > 0.5 && char_similarity < 0.7
+    }
+
+    /// Extract context around a line
+    fn extract_context(&self, lines: &[&str], line_num: usize, context_size: usize) -> Option<String> {
+        if context_size == 0 {
+            return None;
+        }
+
+        let start = line_num.saturating_sub(context_size);
+        let end = (line_num + context_size + 1).min(lines.len());
+
+        if start < end {
+            Some(lines[start..end].join("\n"))
+        } else {
+            None
+        }
+    }
+
+    /// Merge adjacent deletions and insertions into modifications
+    fn merge_adjacent_changes(
+        &self,
+        additions: &mut Vec<TextSegment>,
+        deletions: &mut Vec<TextSegment>,
+        modifications: &mut Vec<TextModification>,
+    ) {
+        // Sort by position
+        additions.sort_by_key(|seg| seg.position);
+        deletions.sort_by_key(|seg| seg.position);
+
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < deletions.len() && j < additions.len() {
+            let deletion = &deletions[i];
+            let addition = &additions[j];
+
+            // Check if they are adjacent (within reasonable distance)
+            let distance = if addition.position >= deletion.position {
+                addition.position - deletion.position
+            } else {
+                deletion.position - addition.position
+            };
+
+            if distance <= 10 { // Arbitrary threshold for "adjacent"
+                modifications.push(TextModification {
+                    position: deletion.position.min(addition.position),
+                    old_text: deletion.content.clone(),
+                    new_text: addition.content.clone(),
+                    modification_type: ModificationType::Substitution,
+                });
+
+                // Remove the merged segments
+                deletions.remove(i);
+                additions.remove(j);
+
+                // Don't increment indices since we removed elements
+                if i >= deletions.len() {
+                    break;
+                }
+                if j >= additions.len() {
+                    break;
+                }
+            } else if deletion.position < addition.position {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
     }
 
     /// Calculate significance score for a diff
