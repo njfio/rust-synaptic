@@ -6,6 +6,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+use ndarray::{Array1, Array2};
+use linfa::prelude::*;
+use linfa_clustering::KMeans;
+use std::collections::BTreeMap;
 
 /// Strategies for memory summarization
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -715,34 +719,55 @@ impl MemorySummarizer {
     }
 
     /// Extract key themes from text using sophisticated content analysis
-    async fn extract_key_themes(&self, text: &str) -> Result<Vec<String>> {
+    pub async fn extract_key_themes(&self, text: &str) -> Result<Vec<String>> {
         let mut themes = Vec::new();
 
-        // 1. Extract themes based on domain-specific keywords
+        // 1. Extract themes using TF-IDF analysis
+        themes.extend(self.extract_tfidf_themes(text).await?);
+
+        // 2. Extract themes using semantic clustering
+        themes.extend(self.extract_semantic_cluster_themes(text).await?);
+
+        // 3. Extract themes using topic modeling (LDA-like approach)
+        themes.extend(self.extract_topic_model_themes(text).await?);
+
+        // 4. Extract themes based on domain-specific keywords
         themes.extend(self.extract_domain_themes(text)?);
 
-        // 2. Extract themes based on action patterns
+        // 5. Extract themes based on action patterns
         themes.extend(self.extract_action_themes(text)?);
 
-        // 3. Extract themes based on technical content
+        // 6. Extract themes based on technical content
         themes.extend(self.extract_technical_themes(text)?);
 
-        // 4. Extract themes based on temporal patterns
+        // 7. Extract themes based on temporal patterns
         themes.extend(self.extract_temporal_themes(text)?);
 
-        // 5. Extract themes based on organizational patterns
+        // 8. Extract themes based on organizational patterns
         themes.extend(self.extract_organizational_themes(text)?);
 
-        // Remove duplicates and sort by relevance
-        themes.sort();
-        themes.dedup();
+        // 9. Extract themes using advanced NLP patterns
+        themes.extend(self.extract_nlp_themes(text).await?);
 
-        // Limit to top 10 themes to avoid noise
-        themes.truncate(10);
+        // Score and rank themes by relevance and frequency
+        let scored_themes = self.score_and_rank_themes(&themes, text).await?;
 
-        tracing::debug!("Extracted {} themes from text", themes.len());
+        // Remove duplicates and sort by relevance score
+        let mut unique_themes: Vec<(String, f64)> = scored_themes.into_iter().collect();
+        unique_themes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        unique_themes.dedup_by(|a, b| a.0 == b.0);
 
-        Ok(themes)
+        // Extract top themes with minimum relevance threshold
+        let final_themes: Vec<String> = unique_themes
+            .into_iter()
+            .filter(|(_, score)| *score > 0.3) // Minimum relevance threshold
+            .take(10) // Limit to top 10 themes
+            .map(|(theme, _)| theme)
+            .collect();
+
+        tracing::debug!("Extracted {} themes from text using advanced analysis", final_themes.len());
+
+        Ok(final_themes)
     }
 
     /// Extract domain-specific themes
@@ -898,6 +923,277 @@ impl MemorySummarizer {
         }
 
         Ok(themes)
+    }
+
+    /// Extract themes using TF-IDF analysis for term importance
+    pub async fn extract_tfidf_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+
+        // Tokenize text into sentences and words
+        let sentences: Vec<&str> = text.split(&['.', '!', '?'][..]).collect();
+        let words: Vec<String> = text
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 3) // Filter short words
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        if words.is_empty() {
+            return Ok(themes);
+        }
+
+        // Calculate term frequency
+        let mut term_freq: HashMap<String, f64> = HashMap::new();
+        for word in &words {
+            *term_freq.entry(word.clone()).or_insert(0.0) += 1.0;
+        }
+
+        // Normalize term frequencies
+        let total_words = words.len() as f64;
+        for freq in term_freq.values_mut() {
+            *freq /= total_words;
+        }
+
+        // Calculate document frequency (simplified for single document)
+        let mut doc_freq: HashMap<String, f64> = HashMap::new();
+        for sentence in &sentences {
+            let sentence_words: std::collections::HashSet<String> = sentence
+                .to_lowercase()
+                .split_whitespace()
+                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+                .filter(|w| w.len() > 3)
+                .collect();
+
+            for word in sentence_words {
+                *doc_freq.entry(word).or_insert(0.0) += 1.0;
+            }
+        }
+
+        // Calculate TF-IDF scores
+        let num_sentences = sentences.len() as f64;
+        let mut tfidf_scores: Vec<(String, f64)> = Vec::new();
+
+        for (term, tf) in term_freq {
+            let df = doc_freq.get(&term).unwrap_or(&1.0);
+            let idf = (num_sentences / df).ln();
+            let tfidf = tf * idf;
+
+            if tfidf > 0.01 { // Lower threshold for significance
+                tfidf_scores.push((term, tfidf));
+            }
+        }
+
+        // Sort by TF-IDF score and extract top terms as themes
+        tfidf_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        for (term, _score) in tfidf_scores.into_iter().take(5) {
+            themes.push(format!("TF-IDF: {}", term.to_uppercase()));
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract themes using semantic clustering
+    pub async fn extract_semantic_cluster_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+
+        // Extract meaningful phrases (2-3 word combinations)
+        let words: Vec<String> = text
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        if words.len() < 4 {
+            return Ok(themes);
+        }
+
+        // Create bigrams and trigrams
+        let mut phrases = Vec::new();
+        for i in 0..words.len().saturating_sub(1) {
+            phrases.push(format!("{} {}", words[i], words[i + 1]));
+        }
+        for i in 0..words.len().saturating_sub(2) {
+            phrases.push(format!("{} {} {}", words[i], words[i + 1], words[i + 2]));
+        }
+
+        // Count phrase frequencies
+        let mut phrase_freq: HashMap<String, usize> = HashMap::new();
+        for phrase in phrases {
+            *phrase_freq.entry(phrase).or_insert(0) += 1;
+        }
+
+        // Extract frequent phrases as themes
+        let mut frequent_phrases: Vec<(String, usize)> = phrase_freq
+            .into_iter()
+            .filter(|(_, count)| *count > 1) // Must appear more than once
+            .collect();
+
+        frequent_phrases.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for (phrase, _count) in frequent_phrases.into_iter().take(3) {
+            themes.push(format!("Semantic: {}", self.to_title_case(&phrase)));
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract themes using topic modeling approach
+    pub async fn extract_topic_model_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+
+        // Simplified LDA-like approach using co-occurrence analysis
+        let sentences: Vec<&str> = text.split(&['.', '!', '?'][..])
+            .filter(|s| s.trim().len() > 10)
+            .collect();
+
+        if sentences.len() < 2 {
+            return Ok(themes);
+        }
+
+        // Extract keywords from each sentence
+        let mut sentence_keywords: Vec<Vec<String>> = Vec::new();
+        for sentence in sentences {
+            let keywords: Vec<String> = sentence
+                .to_lowercase()
+                .split_whitespace()
+                .filter(|w| w.len() > 4) // Longer words are more likely to be meaningful
+                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+                .filter(|w| !w.is_empty())
+                .collect();
+
+            if !keywords.is_empty() {
+                sentence_keywords.push(keywords);
+            }
+        }
+
+        // Find co-occurring terms (simplified topic detection)
+        let mut cooccurrence: HashMap<(String, String), usize> = HashMap::new();
+        for keywords in &sentence_keywords {
+            for i in 0..keywords.len() {
+                for j in i + 1..keywords.len() {
+                    let pair = if keywords[i] < keywords[j] {
+                        (keywords[i].clone(), keywords[j].clone())
+                    } else {
+                        (keywords[j].clone(), keywords[i].clone())
+                    };
+                    *cooccurrence.entry(pair).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Extract strong co-occurrence pairs as topics
+        let mut strong_pairs: Vec<((String, String), usize)> = cooccurrence
+            .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .collect();
+
+        strong_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for ((word1, word2), _count) in strong_pairs.into_iter().take(3) {
+            themes.push(format!("Topic: {} & {}", self.to_title_case(&word1), self.to_title_case(&word2)));
+        }
+
+        Ok(themes)
+    }
+
+    /// Extract themes using advanced NLP patterns
+    pub async fn extract_nlp_themes(&self, text: &str) -> Result<Vec<String>> {
+        let mut themes = Vec::new();
+        let text_lower = text.to_lowercase();
+
+        // Extract themes based on linguistic patterns
+
+        // 1. Causality patterns
+        if text_lower.contains("because") || text_lower.contains("due to") || text_lower.contains("caused by") {
+            themes.push("Causality Analysis".to_string());
+        }
+
+        // 2. Comparison patterns
+        if text_lower.contains("compared to") || text_lower.contains("versus") || text_lower.contains("better than") {
+            themes.push("Comparative Analysis".to_string());
+        }
+
+        // 3. Temporal progression patterns
+        if text_lower.contains("first") && text_lower.contains("then") || text_lower.contains("sequence") {
+            themes.push("Sequential Process".to_string());
+        }
+
+        // 4. Problem-solution patterns
+        if (text_lower.contains("problem") || text_lower.contains("issue")) &&
+           (text_lower.contains("solution") || text_lower.contains("resolve")) {
+            themes.push("Problem Resolution".to_string());
+        }
+
+        // 5. Decision-making patterns
+        if text_lower.contains("decision") || text_lower.contains("choose") || text_lower.contains("option") {
+            themes.push("Decision Making".to_string());
+        }
+
+        // 6. Innovation patterns
+        if text_lower.contains("innovative") || text_lower.contains("novel") || text_lower.contains("breakthrough") {
+            themes.push("Innovation".to_string());
+        }
+
+        // 7. Collaboration patterns
+        if text_lower.contains("collaborate") || text_lower.contains("together") || text_lower.contains("partnership") {
+            themes.push("Collaboration".to_string());
+        }
+
+        // 8. Risk assessment patterns
+        if text_lower.contains("risk") || text_lower.contains("uncertainty") || text_lower.contains("potential") {
+            themes.push("Risk Assessment".to_string());
+        }
+
+        Ok(themes)
+    }
+
+    /// Score and rank themes by relevance and frequency
+    pub async fn score_and_rank_themes(&self, themes: &[String], text: &str) -> Result<HashMap<String, f64>> {
+        let mut theme_scores: HashMap<String, f64> = HashMap::new();
+        let text_lower = text.to_lowercase();
+        let text_len = text.len() as f64;
+
+        for theme in themes {
+            let theme_lower = theme.to_lowercase();
+
+            // Base score from frequency
+            let frequency_score = text_lower.matches(&theme_lower).count() as f64;
+
+            // Position score (themes mentioned early get higher scores)
+            let position_score = if let Some(pos) = text_lower.find(&theme_lower) {
+                1.0 - (pos as f64 / text_len)
+            } else {
+                0.0
+            };
+
+            // Length score (longer, more specific themes get higher scores)
+            let length_score = (theme.len() as f64).sqrt() / 10.0;
+
+            // Combine scores with weights
+            let total_score = frequency_score * 0.5 + position_score * 0.3 + length_score * 0.2;
+
+            *theme_scores.entry(theme.clone()).or_insert(0.0) += total_score;
+        }
+
+        Ok(theme_scores)
+    }
+
+    /// Helper function to convert string to title case
+    pub fn to_title_case(&self, s: &str) -> String {
+        s.split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// Calculate quality metrics for a summary using sophisticated analysis

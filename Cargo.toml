@@ -60,6 +60,11 @@ similar = "2.4"
 
 # Advanced Similarity and Search Algorithms
 strsim = "0.11"
+
+# Advanced Theme Extraction and Topic Modeling
+linfa = "0.7"
+linfa-clustering = "0.7"
+nalgebra = "0.32"
 lz4_flex = "0.11"
 
 # Concurrency (already included above)
