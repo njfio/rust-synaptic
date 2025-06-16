@@ -285,8 +285,8 @@ impl EncryptionManager {
         }
 
         // Generate new key using key manager
-        let data_key_id = self.key_manager.generate_data_key("default").await?;
-        let key_data = self.key_manager.get_data_key(&data_key_id).await?;
+        let data_key_id = self.key_manager.generate_data_key("default", context).await?;
+        let key_data = self.key_manager.get_data_key(&data_key_id, context).await?;
         let key = EncryptionKey {
             id: data_key_id.clone(),
             data: key_data,
@@ -299,13 +299,13 @@ impl EncryptionManager {
         Ok(key)
     }
 
-    async fn get_key(&mut self, key_id: &str, _context: &SecurityContext) -> Result<EncryptionKey> {
+    async fn get_key(&mut self, key_id: &str, context: &SecurityContext) -> Result<EncryptionKey> {
         if let Some(key) = self.key_cache.get(key_id) {
             return Ok(key.clone());
         }
 
         // Attempt to retrieve key from key manager
-        let key_bytes = self.key_manager.get_data_key(key_id).await?;
+        let key_bytes = self.key_manager.get_data_key(key_id, context).await?;
         let info = self.key_manager.get_key_info(key_id).await?;
 
         let key = EncryptionKey {

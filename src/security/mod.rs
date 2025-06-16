@@ -238,6 +238,36 @@ impl SecurityContext {
     pub fn is_mfa_satisfied(&self, require_mfa: bool) -> bool {
         !require_mfa || self.mfa_verified
     }
+
+    /// Comprehensive security context validation
+    pub fn validate_comprehensive(&self, require_mfa: bool) -> Result<()> {
+        // Check session validity
+        if !self.is_session_valid() {
+            return Err(MemoryError::access_denied("Session has expired".to_string()));
+        }
+
+        // Check MFA requirements
+        if !self.is_mfa_satisfied(require_mfa) {
+            return Err(MemoryError::access_denied("MFA verification required".to_string()));
+        }
+
+        // Validate user ID is not empty
+        if self.user_id.is_empty() {
+            return Err(MemoryError::access_denied("Invalid user ID".to_string()));
+        }
+
+        // Validate session ID is not empty
+        if self.session_id.is_empty() {
+            return Err(MemoryError::access_denied("Invalid session ID".to_string()));
+        }
+
+        // Validate request ID is not empty
+        if self.request_id.is_empty() {
+            return Err(MemoryError::access_denied("Invalid request ID".to_string()));
+        }
+
+        Ok(())
+    }
 }
 
 /// Main security manager

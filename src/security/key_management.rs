@@ -64,7 +64,12 @@ impl KeyManager {
     }
 
     /// Generate a new data encryption key
-    pub async fn generate_data_key(&mut self, master_key_id: &str) -> Result<String> {
+    pub async fn generate_data_key(&mut self, master_key_id: &str, context: &crate::security::SecurityContext) -> Result<String> {
+        // Validate security context
+        if !context.is_session_valid() {
+            return Err(MemoryError::access_denied("Invalid session for key generation".to_string()));
+        }
+
         // Check master key status first
         {
             let master_key = self.master_keys.get(master_key_id)
@@ -108,7 +113,12 @@ impl KeyManager {
     }
 
     /// Get a data key for encryption/decryption
-    pub async fn get_data_key(&mut self, key_id: &str) -> Result<Vec<u8>> {
+    pub async fn get_data_key(&mut self, key_id: &str, context: &crate::security::SecurityContext) -> Result<Vec<u8>> {
+        // Validate security context
+        if !context.is_session_valid() {
+            return Err(MemoryError::access_denied("Invalid session for key retrieval".to_string()));
+        }
+
         // First check if we need to decrypt the key
         let needs_decryption = {
             let data_key = self.data_keys.get(key_id)
