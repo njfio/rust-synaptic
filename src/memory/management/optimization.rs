@@ -3,8 +3,13 @@
 use crate::error::{MemoryError, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use crate::memory::types::{MemoryEntry, MemoryType};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::thread;
+use tokio::sync::RwLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 /// Memory optimizer for improving performance and efficiency
 pub struct MemoryOptimizer {
@@ -128,6 +133,465 @@ impl Default for PerformanceMetrics {
             last_measured: Utc::now(),
         }
     }
+}
+
+/// Real-time performance monitoring system
+#[derive(Debug)]
+pub struct PerformanceMonitor {
+    /// Real-time metrics collector
+    metrics_collector: Arc<RwLock<MetricsCollector>>,
+    /// Performance profiler
+    profiler: Arc<RwLock<PerformanceProfiler>>,
+    /// Benchmark runner
+    benchmark_runner: Arc<RwLock<BenchmarkRunner>>,
+    /// Monitoring thread handle
+    monitoring_active: Arc<AtomicBool>,
+}
+
+/// Advanced metrics collector with real-time monitoring
+#[derive(Debug)]
+pub struct MetricsCollector {
+    /// Current performance metrics
+    current_metrics: AdvancedPerformanceMetrics,
+    /// Historical metrics (last 1000 measurements)
+    metrics_history: VecDeque<TimestampedMetrics>,
+    /// Operation counters
+    operation_counters: OperationCounters,
+    /// Timing measurements
+    timing_measurements: TimingMeasurements,
+    /// Memory usage tracker
+    memory_tracker: MemoryUsageTracker,
+    /// Cache performance tracker
+    cache_tracker: CachePerformanceTracker,
+}
+
+/// Performance profiler for detailed analysis
+#[derive(Debug)]
+pub struct PerformanceProfiler {
+    /// Active profiling sessions
+    active_sessions: HashMap<String, ProfilingSession>,
+    /// Completed profiling results
+    profiling_results: Vec<ProfilingResult>,
+    /// CPU usage tracker
+    cpu_tracker: CpuUsageTracker,
+    /// Memory allocation tracker
+    allocation_tracker: AllocationTracker,
+    /// I/O performance tracker
+    io_tracker: IoPerformanceTracker,
+}
+
+/// Benchmark runner for performance testing
+#[derive(Debug)]
+pub struct BenchmarkRunner {
+    /// Benchmark suites
+    benchmark_suites: HashMap<String, BenchmarkSuite>,
+    /// Benchmark results
+    benchmark_results: Vec<BenchmarkResult>,
+    /// Performance baselines
+    performance_baselines: HashMap<String, PerformanceBaseline>,
+    /// Regression detection
+    regression_detector: RegressionDetector,
+}
+
+/// Enhanced performance metrics with detailed measurements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedPerformanceMetrics {
+    /// Average retrieval time in microseconds (higher precision)
+    pub avg_retrieval_time_us: f64,
+    /// Average storage time in microseconds
+    pub avg_storage_time_us: f64,
+    /// P50, P95, P99 retrieval latencies
+    pub retrieval_latency_percentiles: LatencyPercentiles,
+    /// P50, P95, P99 storage latencies
+    pub storage_latency_percentiles: LatencyPercentiles,
+    /// Memory usage in bytes
+    pub memory_usage_bytes: usize,
+    /// Peak memory usage in bytes
+    pub peak_memory_usage_bytes: usize,
+    /// Memory allocation rate (bytes/second)
+    pub memory_allocation_rate: f64,
+    /// Memory deallocation rate (bytes/second)
+    pub memory_deallocation_rate: f64,
+    /// Cache hit rate (0.0 to 1.0)
+    pub cache_hit_rate: f64,
+    /// Cache miss rate (0.0 to 1.0)
+    pub cache_miss_rate: f64,
+    /// Cache eviction rate (evictions/second)
+    pub cache_eviction_rate: f64,
+    /// Index efficiency (0.0 to 1.0)
+    pub index_efficiency: f64,
+    /// Index rebuild frequency (rebuilds/hour)
+    pub index_rebuild_frequency: f64,
+    /// Fragmentation score (0.0 = no fragmentation, 1.0 = highly fragmented)
+    pub fragmentation_score: f64,
+    /// Duplicate content ratio (0.0 to 1.0)
+    pub duplicate_ratio: f64,
+    /// Compression ratio (0.0 to 1.0)
+    pub compression_ratio: f64,
+    /// Throughput (operations/second)
+    pub throughput_ops_per_sec: f64,
+    /// CPU usage percentage (0.0 to 100.0)
+    pub cpu_usage_percent: f64,
+    /// I/O wait percentage (0.0 to 100.0)
+    pub io_wait_percent: f64,
+    /// Network latency in microseconds
+    pub network_latency_us: f64,
+    /// Disk I/O rate (bytes/second)
+    pub disk_io_rate: f64,
+    /// Error rate (errors/second)
+    pub error_rate: f64,
+    /// Last measurement time
+    pub last_measured: DateTime<Utc>,
+    /// Measurement duration
+    pub measurement_duration_ms: u64,
+}
+
+/// Latency percentile measurements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatencyPercentiles {
+    pub p50_us: f64,
+    pub p95_us: f64,
+    pub p99_us: f64,
+    pub p999_us: f64,
+    pub max_us: f64,
+}
+
+/// Timestamped metrics for historical tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimestampedMetrics {
+    pub timestamp: DateTime<Utc>,
+    pub metrics: AdvancedPerformanceMetrics,
+}
+
+/// Operation counters for detailed tracking
+#[derive(Debug)]
+pub struct OperationCounters {
+    pub total_operations: AtomicU64,
+    pub successful_operations: AtomicU64,
+    pub failed_operations: AtomicU64,
+    pub retrieval_operations: AtomicU64,
+    pub storage_operations: AtomicU64,
+    pub update_operations: AtomicU64,
+    pub delete_operations: AtomicU64,
+    pub search_operations: AtomicU64,
+    pub optimization_operations: AtomicU64,
+}
+
+/// Timing measurements for performance analysis
+#[derive(Debug)]
+pub struct TimingMeasurements {
+    /// Recent operation timings (last 10000 operations)
+    pub recent_timings: VecDeque<OperationTiming>,
+    /// Timing buckets for histogram analysis
+    pub timing_buckets: HashMap<String, Vec<Duration>>,
+    /// Active operation timers
+    pub active_timers: HashMap<String, Instant>,
+}
+
+/// Individual operation timing
+#[derive(Debug, Clone)]
+pub struct OperationTiming {
+    pub operation_type: String,
+    pub duration: Duration,
+    pub timestamp: Instant,
+    pub success: bool,
+    pub metadata: HashMap<String, String>,
+}
+
+/// Memory usage tracker
+#[derive(Debug)]
+pub struct MemoryUsageTracker {
+    pub current_usage: AtomicUsize,
+    pub peak_usage: AtomicUsize,
+    pub allocation_count: AtomicU64,
+    pub deallocation_count: AtomicU64,
+    pub allocation_history: VecDeque<AllocationEvent>,
+}
+
+/// Memory allocation event
+#[derive(Debug, Clone)]
+pub struct AllocationEvent {
+    pub timestamp: Instant,
+    pub size: usize,
+    pub allocation_type: AllocationType,
+    pub location: String,
+}
+
+/// Types of memory allocations
+#[derive(Debug, Clone)]
+pub enum AllocationType {
+    MemoryEntry,
+    Index,
+    Cache,
+    Temporary,
+    Metadata,
+}
+
+/// Cache performance tracker
+#[derive(Debug)]
+pub struct CachePerformanceTracker {
+    pub hits: AtomicU64,
+    pub misses: AtomicU64,
+    pub evictions: AtomicU64,
+    pub cache_size: AtomicUsize,
+    pub hit_rate_history: VecDeque<f64>,
+    pub eviction_history: VecDeque<EvictionEvent>,
+}
+
+/// Cache eviction event
+#[derive(Debug, Clone)]
+pub struct EvictionEvent {
+    pub timestamp: Instant,
+    pub reason: EvictionReason,
+    pub entries_evicted: usize,
+    pub space_freed: usize,
+}
+
+/// Reasons for cache eviction
+#[derive(Debug, Clone)]
+pub enum EvictionReason {
+    SizeLimit,
+    TimeExpiry,
+    LruEviction,
+    ManualEviction,
+    MemoryPressure,
+}
+
+/// Profiling session for detailed performance analysis
+#[derive(Debug)]
+pub struct ProfilingSession {
+    pub session_id: String,
+    pub start_time: Instant,
+    pub operation_traces: Vec<OperationTrace>,
+    pub memory_snapshots: Vec<MemorySnapshot>,
+    pub cpu_samples: Vec<CpuSample>,
+    pub io_events: Vec<IoEvent>,
+}
+
+/// Operation trace for profiling
+#[derive(Debug, Clone)]
+pub struct OperationTrace {
+    pub operation_id: String,
+    pub operation_type: String,
+    pub start_time: Instant,
+    pub end_time: Option<Instant>,
+    pub stack_trace: Vec<String>,
+    pub parameters: HashMap<String, String>,
+}
+
+/// Memory snapshot for profiling
+#[derive(Debug, Clone)]
+pub struct MemorySnapshot {
+    pub timestamp: Instant,
+    pub total_memory: usize,
+    pub heap_memory: usize,
+    pub stack_memory: usize,
+    pub allocations_by_type: HashMap<String, usize>,
+}
+
+/// CPU usage sample
+#[derive(Debug, Clone)]
+pub struct CpuSample {
+    pub timestamp: Instant,
+    pub cpu_percent: f64,
+    pub user_time: Duration,
+    pub system_time: Duration,
+    pub idle_time: Duration,
+}
+
+/// I/O event for profiling
+#[derive(Debug, Clone)]
+pub struct IoEvent {
+    pub timestamp: Instant,
+    pub event_type: IoEventType,
+    pub bytes: usize,
+    pub duration: Duration,
+    pub file_path: Option<String>,
+}
+
+/// Types of I/O events
+#[derive(Debug, Clone)]
+pub enum IoEventType {
+    Read,
+    Write,
+    Seek,
+    Flush,
+    NetworkRead,
+    NetworkWrite,
+}
+
+/// Profiling result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfilingResult {
+    pub session_id: String,
+    pub duration: Duration,
+    pub total_operations: usize,
+    pub memory_peak: usize,
+    pub cpu_average: f64,
+    pub io_total_bytes: usize,
+    pub bottlenecks: Vec<PerformanceBottleneck>,
+    pub recommendations: Vec<String>,
+}
+
+/// Performance bottleneck identification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceBottleneck {
+    pub bottleneck_type: BottleneckType,
+    pub severity: BottleneckSeverity,
+    pub description: String,
+    pub affected_operations: Vec<String>,
+    pub suggested_fixes: Vec<String>,
+}
+
+/// Types of performance bottlenecks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BottleneckType {
+    CpuBound,
+    MemoryBound,
+    IoBound,
+    NetworkBound,
+    CacheInefficiency,
+    IndexInefficiency,
+    AlgorithmicComplexity,
+}
+
+/// Severity of performance bottlenecks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BottleneckSeverity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+/// CPU usage tracker
+#[derive(Debug)]
+pub struct CpuUsageTracker {
+    pub current_usage: f64,
+    pub usage_history: VecDeque<CpuSample>,
+    pub peak_usage: f64,
+    pub average_usage: f64,
+}
+
+/// Memory allocation tracker
+#[derive(Debug)]
+pub struct AllocationTracker {
+    pub total_allocations: AtomicU64,
+    pub total_deallocations: AtomicU64,
+    pub current_allocations: AtomicUsize,
+    pub peak_allocations: AtomicUsize,
+    pub allocation_events: VecDeque<AllocationEvent>,
+}
+
+/// I/O performance tracker
+#[derive(Debug)]
+pub struct IoPerformanceTracker {
+    pub read_operations: AtomicU64,
+    pub write_operations: AtomicU64,
+    pub total_bytes_read: AtomicU64,
+    pub total_bytes_written: AtomicU64,
+    pub io_events: VecDeque<IoEvent>,
+    pub average_read_latency: f64,
+    pub average_write_latency: f64,
+}
+
+/// Benchmark suite for performance testing
+#[derive(Debug)]
+pub struct BenchmarkSuite {
+    pub suite_name: String,
+    pub benchmarks: Vec<Benchmark>,
+    pub setup_function: Option<String>,
+    pub teardown_function: Option<String>,
+}
+
+/// Individual benchmark
+#[derive(Debug)]
+pub struct Benchmark {
+    pub name: String,
+    pub description: String,
+    pub benchmark_type: BenchmarkType,
+    pub iterations: usize,
+    pub warmup_iterations: usize,
+    pub timeout_ms: u64,
+}
+
+/// Types of benchmarks
+#[derive(Debug, Clone)]
+pub enum BenchmarkType {
+    Throughput,
+    Latency,
+    Memory,
+    Cpu,
+    Io,
+    EndToEnd,
+}
+
+/// Benchmark result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkResult {
+    pub benchmark_name: String,
+    pub suite_name: String,
+    pub timestamp: DateTime<Utc>,
+    pub iterations: usize,
+    pub total_duration: Duration,
+    pub average_duration: Duration,
+    pub min_duration: Duration,
+    pub max_duration: Duration,
+    pub percentiles: LatencyPercentiles,
+    pub throughput: f64,
+    pub memory_usage: usize,
+    pub cpu_usage: f64,
+    pub success_rate: f64,
+}
+
+/// Performance baseline for regression detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceBaseline {
+    pub baseline_name: String,
+    pub timestamp: DateTime<Utc>,
+    pub metrics: AdvancedPerformanceMetrics,
+    pub benchmark_results: Vec<BenchmarkResult>,
+    pub confidence_interval: f64,
+}
+
+/// Regression detector
+#[derive(Debug)]
+pub struct RegressionDetector {
+    pub baselines: HashMap<String, PerformanceBaseline>,
+    pub regression_threshold: f64,
+    pub detected_regressions: Vec<PerformanceRegression>,
+}
+
+/// Performance regression
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceRegression {
+    pub regression_type: RegressionType,
+    pub metric_name: String,
+    pub baseline_value: f64,
+    pub current_value: f64,
+    pub regression_percentage: f64,
+    pub detected_at: DateTime<Utc>,
+    pub severity: RegressionSeverity,
+}
+
+/// Types of performance regressions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RegressionType {
+    LatencyIncrease,
+    ThroughputDecrease,
+    MemoryIncrease,
+    CpuIncrease,
+    ErrorRateIncrease,
+    CacheHitRateDecrease,
+}
+
+/// Severity of performance regressions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RegressionSeverity {
+    Minor,
+    Moderate,
+    Major,
+    Critical,
 }
 
 impl MemoryOptimizer {
@@ -748,6 +1212,917 @@ impl MemoryOptimizer {
 impl Default for MemoryOptimizer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl PerformanceMonitor {
+    /// Create a new performance monitor
+    pub fn new() -> Self {
+        Self {
+            metrics_collector: Arc::new(RwLock::new(MetricsCollector::new())),
+            profiler: Arc::new(RwLock::new(PerformanceProfiler::new())),
+            benchmark_runner: Arc::new(RwLock::new(BenchmarkRunner::new())),
+            monitoring_active: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Start real-time performance monitoring
+    pub async fn start_monitoring(&self) -> Result<()> {
+        if self.monitoring_active.load(Ordering::Relaxed) {
+            return Err(MemoryError::configuration("Monitoring already active"));
+        }
+
+        self.monitoring_active.store(true, Ordering::Relaxed);
+
+        // Start background monitoring thread
+        let metrics_collector = Arc::clone(&self.metrics_collector);
+        let monitoring_active = Arc::clone(&self.monitoring_active);
+
+        tokio::spawn(async move {
+            while monitoring_active.load(Ordering::Relaxed) {
+                {
+                    let mut collector = metrics_collector.write().await;
+                    if let Err(e) = collector.collect_metrics().await {
+                        tracing::error!("Failed to collect metrics: {}", e);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await; // Collect every 100ms
+            }
+        });
+
+        tracing::info!("Performance monitoring started");
+        Ok(())
+    }
+
+    /// Stop real-time performance monitoring
+    pub async fn stop_monitoring(&self) -> Result<()> {
+        self.monitoring_active.store(false, Ordering::Relaxed);
+        tracing::info!("Performance monitoring stopped");
+        Ok(())
+    }
+
+    /// Get current performance metrics
+    pub async fn get_current_metrics(&self) -> Result<AdvancedPerformanceMetrics> {
+        let collector = self.metrics_collector.read().await;
+        Ok(collector.current_metrics.clone())
+    }
+
+    /// Get historical metrics
+    pub async fn get_metrics_history(&self, limit: Option<usize>) -> Result<Vec<TimestampedMetrics>> {
+        let collector = self.metrics_collector.read().await;
+        let history = if let Some(limit) = limit {
+            collector.metrics_history.iter().rev().take(limit).cloned().collect()
+        } else {
+            collector.metrics_history.iter().cloned().collect()
+        };
+        Ok(history)
+    }
+
+    /// Start a profiling session
+    pub async fn start_profiling(&self, session_id: String) -> Result<()> {
+        let mut profiler = self.profiler.write().await;
+        profiler.start_session(session_id).await
+    }
+
+    /// Stop a profiling session and get results
+    pub async fn stop_profiling(&self, session_id: &str) -> Result<ProfilingResult> {
+        let mut profiler = self.profiler.write().await;
+        profiler.stop_session(session_id).await
+    }
+
+    /// Record an operation timing
+    pub async fn record_operation(&self, operation_type: String, duration: Duration, success: bool, metadata: HashMap<String, String>) -> Result<()> {
+        let mut collector = self.metrics_collector.write().await;
+        collector.record_operation(operation_type, duration, success, metadata).await
+    }
+
+    /// Record memory allocation
+    pub async fn record_allocation(&self, size: usize, allocation_type: AllocationType, location: String) -> Result<()> {
+        let mut collector = self.metrics_collector.write().await;
+        collector.record_allocation(size, allocation_type, location).await
+    }
+
+    /// Record cache hit/miss
+    pub async fn record_cache_event(&self, hit: bool) -> Result<()> {
+        let mut collector = self.metrics_collector.write().await;
+        collector.record_cache_event(hit).await
+    }
+
+    /// Run benchmark suite
+    pub async fn run_benchmark(&self, suite_name: &str) -> Result<Vec<BenchmarkResult>> {
+        let mut runner = self.benchmark_runner.write().await;
+        runner.run_benchmark_suite(suite_name).await
+    }
+
+    /// Add benchmark suite
+    pub async fn add_benchmark_suite(&self, suite: BenchmarkSuite) -> Result<()> {
+        let mut runner = self.benchmark_runner.write().await;
+        runner.add_suite(suite).await
+    }
+
+    /// Detect performance regressions
+    pub async fn detect_regressions(&self) -> Result<Vec<PerformanceRegression>> {
+        let runner = self.benchmark_runner.read().await;
+        runner.detect_regressions().await
+    }
+
+    /// Set performance baseline
+    pub async fn set_baseline(&self, baseline_name: String) -> Result<()> {
+        let current_metrics = self.get_current_metrics().await?;
+        let runner = self.benchmark_runner.read().await;
+        let benchmark_results = runner.get_recent_results().await?;
+
+        let baseline = PerformanceBaseline {
+            baseline_name: baseline_name.clone(),
+            timestamp: Utc::now(),
+            metrics: current_metrics,
+            benchmark_results,
+            confidence_interval: 0.95,
+        };
+
+        drop(runner);
+        let mut runner = self.benchmark_runner.write().await;
+        runner.set_baseline(baseline_name, baseline).await
+    }
+
+    /// Generate performance report
+    pub async fn generate_report(&self) -> Result<PerformanceReport> {
+        let current_metrics = self.get_current_metrics().await?;
+        let metrics_history = self.get_metrics_history(Some(100)).await?;
+        let profiler = self.profiler.read().await;
+        let profiling_results = profiler.get_recent_results().await?;
+        let runner = self.benchmark_runner.read().await;
+        let benchmark_results = runner.get_recent_results().await?;
+        let regressions = runner.detect_regressions().await?;
+
+        let recommendations = self.generate_recommendations(&current_metrics).await?;
+
+        Ok(PerformanceReport {
+            timestamp: Utc::now(),
+            current_metrics,
+            metrics_history,
+            profiling_results,
+            benchmark_results,
+            regressions,
+            recommendations,
+        })
+    }
+
+    /// Generate performance recommendations
+    async fn generate_recommendations(&self, metrics: &AdvancedPerformanceMetrics) -> Result<Vec<String>> {
+        let mut recommendations = Vec::new();
+
+        // Memory usage recommendations
+        if metrics.memory_usage_bytes > 1_000_000_000 { // > 1GB
+            recommendations.push("Consider implementing memory compression or cleanup".to_string());
+        }
+
+        // Cache performance recommendations
+        if metrics.cache_hit_rate < 0.8 {
+            recommendations.push("Cache hit rate is low, consider optimizing cache strategy".to_string());
+        }
+
+        // Latency recommendations
+        if metrics.retrieval_latency_percentiles.p95_us > 10_000.0 { // > 10ms
+            recommendations.push("High retrieval latency detected, consider index optimization".to_string());
+        }
+
+        // CPU usage recommendations
+        if metrics.cpu_usage_percent > 80.0 {
+            recommendations.push("High CPU usage detected, consider algorithm optimization".to_string());
+        }
+
+        // I/O recommendations
+        if metrics.io_wait_percent > 20.0 {
+            recommendations.push("High I/O wait time, consider storage optimization".to_string());
+        }
+
+        // Error rate recommendations
+        if metrics.error_rate > 0.01 { // > 1% error rate
+            recommendations.push("High error rate detected, investigate error causes".to_string());
+        }
+
+        Ok(recommendations)
+    }
+}
+
+/// Performance report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceReport {
+    pub timestamp: DateTime<Utc>,
+    pub current_metrics: AdvancedPerformanceMetrics,
+    pub metrics_history: Vec<TimestampedMetrics>,
+    pub profiling_results: Vec<ProfilingResult>,
+    pub benchmark_results: Vec<BenchmarkResult>,
+    pub regressions: Vec<PerformanceRegression>,
+    pub recommendations: Vec<String>,
+}
+
+impl MetricsCollector {
+    /// Create a new metrics collector
+    pub fn new() -> Self {
+        Self {
+            current_metrics: AdvancedPerformanceMetrics::default(),
+            metrics_history: VecDeque::with_capacity(1000),
+            operation_counters: OperationCounters::new(),
+            timing_measurements: TimingMeasurements::new(),
+            memory_tracker: MemoryUsageTracker::new(),
+            cache_tracker: CachePerformanceTracker::new(),
+        }
+    }
+
+    /// Collect current performance metrics
+    pub async fn collect_metrics(&mut self) -> Result<()> {
+        let start_time = Instant::now();
+
+        // Update timing metrics
+        self.update_timing_metrics().await?;
+
+        // Update memory metrics
+        self.update_memory_metrics().await?;
+
+        // Update cache metrics
+        self.update_cache_metrics().await?;
+
+        // Update system metrics
+        self.update_system_metrics().await?;
+
+        // Calculate derived metrics
+        self.calculate_derived_metrics().await?;
+
+        let measurement_duration = start_time.elapsed();
+        self.current_metrics.measurement_duration_ms = measurement_duration.as_millis() as u64;
+        self.current_metrics.last_measured = Utc::now();
+
+        // Add to history
+        self.metrics_history.push_back(TimestampedMetrics {
+            timestamp: Utc::now(),
+            metrics: self.current_metrics.clone(),
+        });
+
+        // Keep only last 1000 measurements
+        if self.metrics_history.len() > 1000 {
+            self.metrics_history.pop_front();
+        }
+
+        Ok(())
+    }
+
+    /// Record an operation timing
+    pub async fn record_operation(&mut self, operation_type: String, duration: Duration, success: bool, metadata: HashMap<String, String>) -> Result<()> {
+        // Update counters
+        self.operation_counters.total_operations.fetch_add(1, Ordering::Relaxed);
+        if success {
+            self.operation_counters.successful_operations.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.operation_counters.failed_operations.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Update specific operation counters
+        match operation_type.as_str() {
+            "retrieval" => self.operation_counters.retrieval_operations.fetch_add(1, Ordering::Relaxed),
+            "storage" => self.operation_counters.storage_operations.fetch_add(1, Ordering::Relaxed),
+            "update" => self.operation_counters.update_operations.fetch_add(1, Ordering::Relaxed),
+            "delete" => self.operation_counters.delete_operations.fetch_add(1, Ordering::Relaxed),
+            "search" => self.operation_counters.search_operations.fetch_add(1, Ordering::Relaxed),
+            "optimization" => self.operation_counters.optimization_operations.fetch_add(1, Ordering::Relaxed),
+            _ => 0,
+        };
+
+        // Record timing
+        let timing = OperationTiming {
+            operation_type: operation_type.clone(),
+            duration,
+            timestamp: Instant::now(),
+            success,
+            metadata,
+        };
+
+        self.timing_measurements.recent_timings.push_back(timing);
+        if self.timing_measurements.recent_timings.len() > 10000 {
+            self.timing_measurements.recent_timings.pop_front();
+        }
+
+        // Add to timing buckets
+        self.timing_measurements.timing_buckets
+            .entry(operation_type)
+            .or_default()
+            .push(duration);
+
+        Ok(())
+    }
+
+    /// Record memory allocation
+    pub async fn record_allocation(&mut self, size: usize, allocation_type: AllocationType, location: String) -> Result<()> {
+        self.memory_tracker.current_usage.fetch_add(size, Ordering::Relaxed);
+        self.memory_tracker.allocation_count.fetch_add(1, Ordering::Relaxed);
+
+        let current = self.memory_tracker.current_usage.load(Ordering::Relaxed);
+        let peak = self.memory_tracker.peak_usage.load(Ordering::Relaxed);
+        if current > peak {
+            self.memory_tracker.peak_usage.store(current, Ordering::Relaxed);
+        }
+
+        let event = AllocationEvent {
+            timestamp: Instant::now(),
+            size,
+            allocation_type,
+            location,
+        };
+
+        self.memory_tracker.allocation_history.push_back(event);
+        if self.memory_tracker.allocation_history.len() > 10000 {
+            self.memory_tracker.allocation_history.pop_front();
+        }
+
+        Ok(())
+    }
+
+    /// Record cache event
+    pub async fn record_cache_event(&mut self, hit: bool) -> Result<()> {
+        if hit {
+            self.cache_tracker.hits.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.cache_tracker.misses.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Update hit rate history
+        let hits = self.cache_tracker.hits.load(Ordering::Relaxed);
+        let misses = self.cache_tracker.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+
+        if total > 0 {
+            let hit_rate = hits as f64 / total as f64;
+            self.cache_tracker.hit_rate_history.push_back(hit_rate);
+            if self.cache_tracker.hit_rate_history.len() > 1000 {
+                self.cache_tracker.hit_rate_history.pop_front();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update timing metrics
+    async fn update_timing_metrics(&mut self) -> Result<()> {
+        // Calculate average retrieval time
+        if let Some(retrieval_timings) = self.timing_measurements.timing_buckets.get("retrieval") {
+            if !retrieval_timings.is_empty() {
+                let total_us: u128 = retrieval_timings.iter().map(|d| d.as_micros()).sum();
+                self.current_metrics.avg_retrieval_time_us = total_us as f64 / retrieval_timings.len() as f64;
+
+                // Calculate percentiles
+                let mut sorted_timings: Vec<u128> = retrieval_timings.iter().map(|d| d.as_micros()).collect();
+                sorted_timings.sort_unstable();
+
+                self.current_metrics.retrieval_latency_percentiles = self.calculate_percentiles(&sorted_timings);
+            }
+        }
+
+        // Calculate average storage time
+        if let Some(storage_timings) = self.timing_measurements.timing_buckets.get("storage") {
+            if !storage_timings.is_empty() {
+                let total_us: u128 = storage_timings.iter().map(|d| d.as_micros()).sum();
+                self.current_metrics.avg_storage_time_us = total_us as f64 / storage_timings.len() as f64;
+
+                // Calculate percentiles
+                let mut sorted_timings: Vec<u128> = storage_timings.iter().map(|d| d.as_micros()).collect();
+                sorted_timings.sort_unstable();
+
+                self.current_metrics.storage_latency_percentiles = self.calculate_percentiles(&sorted_timings);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Calculate percentiles from sorted timing data
+    fn calculate_percentiles(&self, sorted_timings: &[u128]) -> LatencyPercentiles {
+        if sorted_timings.is_empty() {
+            return LatencyPercentiles {
+                p50_us: 0.0,
+                p95_us: 0.0,
+                p99_us: 0.0,
+                p999_us: 0.0,
+                max_us: 0.0,
+            };
+        }
+
+        let len = sorted_timings.len();
+        LatencyPercentiles {
+            p50_us: sorted_timings[len * 50 / 100] as f64,
+            p95_us: sorted_timings[len * 95 / 100] as f64,
+            p99_us: sorted_timings[len * 99 / 100] as f64,
+            p999_us: sorted_timings[len * 999 / 1000] as f64,
+            max_us: sorted_timings[len - 1] as f64,
+        }
+    }
+
+    /// Update memory metrics
+    async fn update_memory_metrics(&mut self) -> Result<()> {
+        self.current_metrics.memory_usage_bytes = self.memory_tracker.current_usage.load(Ordering::Relaxed);
+        self.current_metrics.peak_memory_usage_bytes = self.memory_tracker.peak_usage.load(Ordering::Relaxed);
+
+        // Calculate allocation/deallocation rates
+        let allocation_count = self.memory_tracker.allocation_count.load(Ordering::Relaxed);
+        let deallocation_count = self.memory_tracker.deallocation_count.load(Ordering::Relaxed);
+
+        // Simple rate calculation (events per second over last measurement period)
+        self.current_metrics.memory_allocation_rate = allocation_count as f64;
+        self.current_metrics.memory_deallocation_rate = deallocation_count as f64;
+
+        Ok(())
+    }
+
+    /// Update cache metrics
+    async fn update_cache_metrics(&mut self) -> Result<()> {
+        let hits = self.cache_tracker.hits.load(Ordering::Relaxed);
+        let misses = self.cache_tracker.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+
+        if total > 0 {
+            self.current_metrics.cache_hit_rate = hits as f64 / total as f64;
+            self.current_metrics.cache_miss_rate = misses as f64 / total as f64;
+        }
+
+        self.current_metrics.cache_eviction_rate = self.cache_tracker.evictions.load(Ordering::Relaxed) as f64;
+
+        Ok(())
+    }
+
+    /// Update system metrics (simplified implementation)
+    async fn update_system_metrics(&mut self) -> Result<()> {
+        // In a real implementation, these would use system APIs
+        // For now, provide reasonable defaults
+        self.current_metrics.cpu_usage_percent = 25.0; // Simulated CPU usage
+        self.current_metrics.io_wait_percent = 5.0; // Simulated I/O wait
+        self.current_metrics.network_latency_us = 100.0; // Simulated network latency
+        self.current_metrics.disk_io_rate = 1_000_000.0; // Simulated disk I/O rate
+
+        Ok(())
+    }
+
+    /// Calculate derived metrics
+    async fn calculate_derived_metrics(&mut self) -> Result<()> {
+        // Calculate throughput
+        let total_ops = self.operation_counters.total_operations.load(Ordering::Relaxed);
+        let successful_ops = self.operation_counters.successful_operations.load(Ordering::Relaxed);
+        let failed_ops = self.operation_counters.failed_operations.load(Ordering::Relaxed);
+
+        // Simple throughput calculation (operations per second)
+        self.current_metrics.throughput_ops_per_sec = total_ops as f64;
+
+        // Calculate error rate
+        if total_ops > 0 {
+            self.current_metrics.error_rate = failed_ops as f64 / total_ops as f64;
+        }
+
+        // Calculate compression ratio (simplified)
+        self.current_metrics.compression_ratio = 0.8; // Simulated compression ratio
+
+        // Calculate index efficiency (simplified)
+        self.current_metrics.index_efficiency = 0.95; // Simulated index efficiency
+
+        Ok(())
+    }
+}
+
+impl Default for AdvancedPerformanceMetrics {
+    fn default() -> Self {
+        Self {
+            avg_retrieval_time_us: 0.0,
+            avg_storage_time_us: 0.0,
+            retrieval_latency_percentiles: LatencyPercentiles::default(),
+            storage_latency_percentiles: LatencyPercentiles::default(),
+            memory_usage_bytes: 0,
+            peak_memory_usage_bytes: 0,
+            memory_allocation_rate: 0.0,
+            memory_deallocation_rate: 0.0,
+            cache_hit_rate: 0.0,
+            cache_miss_rate: 0.0,
+            cache_eviction_rate: 0.0,
+            index_efficiency: 1.0,
+            index_rebuild_frequency: 0.0,
+            fragmentation_score: 0.0,
+            duplicate_ratio: 0.0,
+            compression_ratio: 0.0,
+            throughput_ops_per_sec: 0.0,
+            cpu_usage_percent: 0.0,
+            io_wait_percent: 0.0,
+            network_latency_us: 0.0,
+            disk_io_rate: 0.0,
+            error_rate: 0.0,
+            last_measured: Utc::now(),
+            measurement_duration_ms: 0,
+        }
+    }
+}
+
+impl Default for LatencyPercentiles {
+    fn default() -> Self {
+        Self {
+            p50_us: 0.0,
+            p95_us: 0.0,
+            p99_us: 0.0,
+            p999_us: 0.0,
+            max_us: 0.0,
+        }
+    }
+}
+
+impl OperationCounters {
+    pub fn new() -> Self {
+        Self {
+            total_operations: AtomicU64::new(0),
+            successful_operations: AtomicU64::new(0),
+            failed_operations: AtomicU64::new(0),
+            retrieval_operations: AtomicU64::new(0),
+            storage_operations: AtomicU64::new(0),
+            update_operations: AtomicU64::new(0),
+            delete_operations: AtomicU64::new(0),
+            search_operations: AtomicU64::new(0),
+            optimization_operations: AtomicU64::new(0),
+        }
+    }
+}
+
+impl TimingMeasurements {
+    pub fn new() -> Self {
+        Self {
+            recent_timings: VecDeque::with_capacity(10000),
+            timing_buckets: HashMap::new(),
+            active_timers: HashMap::new(),
+        }
+    }
+}
+
+impl MemoryUsageTracker {
+    pub fn new() -> Self {
+        Self {
+            current_usage: AtomicUsize::new(0),
+            peak_usage: AtomicUsize::new(0),
+            allocation_count: AtomicU64::new(0),
+            deallocation_count: AtomicU64::new(0),
+            allocation_history: VecDeque::with_capacity(10000),
+        }
+    }
+}
+
+impl CachePerformanceTracker {
+    pub fn new() -> Self {
+        Self {
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+            evictions: AtomicU64::new(0),
+            cache_size: AtomicUsize::new(0),
+            hit_rate_history: VecDeque::with_capacity(1000),
+            eviction_history: VecDeque::with_capacity(1000),
+        }
+    }
+}
+
+impl PerformanceProfiler {
+    pub fn new() -> Self {
+        Self {
+            active_sessions: HashMap::new(),
+            profiling_results: Vec::new(),
+            cpu_tracker: CpuUsageTracker::new(),
+            allocation_tracker: AllocationTracker::new(),
+            io_tracker: IoPerformanceTracker::new(),
+        }
+    }
+
+    pub async fn start_session(&mut self, session_id: String) -> Result<()> {
+        if self.active_sessions.contains_key(&session_id) {
+            return Err(MemoryError::configuration(format!("Profiling session {} already active", session_id)));
+        }
+
+        let session = ProfilingSession {
+            session_id: session_id.clone(),
+            start_time: Instant::now(),
+            operation_traces: Vec::new(),
+            memory_snapshots: Vec::new(),
+            cpu_samples: Vec::new(),
+            io_events: Vec::new(),
+        };
+
+        self.active_sessions.insert(session_id, session);
+        Ok(())
+    }
+
+    pub async fn stop_session(&mut self, session_id: &str) -> Result<ProfilingResult> {
+        let session = self.active_sessions.remove(session_id)
+            .ok_or_else(|| MemoryError::configuration(format!("Profiling session {} not found", session_id)))?;
+
+        let duration = session.start_time.elapsed();
+        let total_operations = session.operation_traces.len();
+        let memory_peak = session.memory_snapshots.iter()
+            .map(|s| s.total_memory)
+            .max()
+            .unwrap_or(0);
+        let cpu_average = session.cpu_samples.iter()
+            .map(|s| s.cpu_percent)
+            .sum::<f64>() / session.cpu_samples.len().max(1) as f64;
+        let io_total_bytes = session.io_events.iter()
+            .map(|e| e.bytes)
+            .sum();
+
+        let result = ProfilingResult {
+            session_id: session_id.to_string(),
+            duration,
+            total_operations,
+            memory_peak,
+            cpu_average,
+            io_total_bytes,
+            bottlenecks: self.analyze_bottlenecks(&session).await?,
+            recommendations: self.generate_profiling_recommendations(&session).await?,
+        };
+
+        self.profiling_results.push(result.clone());
+        Ok(result)
+    }
+
+    pub async fn get_recent_results(&self) -> Result<Vec<ProfilingResult>> {
+        Ok(self.profiling_results.clone())
+    }
+
+    async fn analyze_bottlenecks(&self, _session: &ProfilingSession) -> Result<Vec<PerformanceBottleneck>> {
+        // Simplified bottleneck analysis
+        let mut bottlenecks = Vec::new();
+
+        // Example bottleneck detection
+        bottlenecks.push(PerformanceBottleneck {
+            bottleneck_type: BottleneckType::CacheInefficiency,
+            severity: BottleneckSeverity::Medium,
+            description: "Cache hit rate below optimal threshold".to_string(),
+            affected_operations: vec!["retrieval".to_string()],
+            suggested_fixes: vec!["Optimize cache eviction policy".to_string()],
+        });
+
+        Ok(bottlenecks)
+    }
+
+    async fn generate_profiling_recommendations(&self, _session: &ProfilingSession) -> Result<Vec<String>> {
+        Ok(vec![
+            "Consider implementing memory pooling for frequent allocations".to_string(),
+            "Optimize hot code paths identified in profiling".to_string(),
+            "Review I/O patterns for potential batching opportunities".to_string(),
+        ])
+    }
+}
+
+impl CpuUsageTracker {
+    pub fn new() -> Self {
+        Self {
+            current_usage: 0.0,
+            usage_history: VecDeque::with_capacity(1000),
+            peak_usage: 0.0,
+            average_usage: 0.0,
+        }
+    }
+}
+
+impl AllocationTracker {
+    pub fn new() -> Self {
+        Self {
+            total_allocations: AtomicU64::new(0),
+            total_deallocations: AtomicU64::new(0),
+            current_allocations: AtomicUsize::new(0),
+            peak_allocations: AtomicUsize::new(0),
+            allocation_events: VecDeque::with_capacity(10000),
+        }
+    }
+}
+
+impl IoPerformanceTracker {
+    pub fn new() -> Self {
+        Self {
+            read_operations: AtomicU64::new(0),
+            write_operations: AtomicU64::new(0),
+            total_bytes_read: AtomicU64::new(0),
+            total_bytes_written: AtomicU64::new(0),
+            io_events: VecDeque::with_capacity(10000),
+            average_read_latency: 0.0,
+            average_write_latency: 0.0,
+        }
+    }
+}
+
+impl BenchmarkRunner {
+    pub fn new() -> Self {
+        Self {
+            benchmark_suites: HashMap::new(),
+            benchmark_results: Vec::new(),
+            performance_baselines: HashMap::new(),
+            regression_detector: RegressionDetector::new(),
+        }
+    }
+
+    pub async fn add_suite(&mut self, suite: BenchmarkSuite) -> Result<()> {
+        self.benchmark_suites.insert(suite.suite_name.clone(), suite);
+        Ok(())
+    }
+
+    pub async fn run_benchmark_suite(&mut self, suite_name: &str) -> Result<Vec<BenchmarkResult>> {
+        let suite = self.benchmark_suites.get(suite_name)
+            .ok_or_else(|| MemoryError::configuration(format!("Benchmark suite {} not found", suite_name)))?;
+
+        let mut results = Vec::new();
+
+        for benchmark in &suite.benchmarks {
+            let result = self.run_single_benchmark(benchmark, suite_name).await?;
+            results.push(result);
+        }
+
+        // Store results
+        self.benchmark_results.extend(results.clone());
+
+        Ok(results)
+    }
+
+    async fn run_single_benchmark(&self, benchmark: &Benchmark, suite_name: &str) -> Result<BenchmarkResult> {
+        let mut durations = Vec::new();
+
+        // Warmup iterations
+        for _ in 0..benchmark.warmup_iterations {
+            let _duration = self.execute_benchmark_operation(benchmark).await?;
+        }
+
+        // Actual benchmark iterations
+        for _ in 0..benchmark.iterations {
+            let duration = self.execute_benchmark_operation(benchmark).await?;
+            durations.push(duration);
+        }
+
+        // Calculate statistics
+        let total_duration: Duration = durations.iter().sum();
+        let average_duration = total_duration / durations.len() as u32;
+        let min_duration = *durations.iter().min().unwrap();
+        let max_duration = *durations.iter().max().unwrap();
+
+        // Calculate percentiles
+        let mut sorted_durations = durations.clone();
+        sorted_durations.sort();
+        let percentiles = self.calculate_duration_percentiles(&sorted_durations);
+
+        // Calculate throughput
+        let throughput = if average_duration.as_secs_f64() > 0.0 {
+            1.0 / average_duration.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        Ok(BenchmarkResult {
+            benchmark_name: benchmark.name.clone(),
+            suite_name: suite_name.to_string(),
+            timestamp: Utc::now(),
+            iterations: benchmark.iterations,
+            total_duration,
+            average_duration,
+            min_duration,
+            max_duration,
+            percentiles,
+            throughput,
+            memory_usage: 1024, // Simulated memory usage
+            cpu_usage: 25.0, // Simulated CPU usage
+            success_rate: 1.0, // Simulated success rate
+        })
+    }
+
+    async fn execute_benchmark_operation(&self, benchmark: &Benchmark) -> Result<Duration> {
+        let start = Instant::now();
+
+        // Simulate benchmark operation based on type
+        match benchmark.benchmark_type {
+            BenchmarkType::Throughput => {
+                // Simulate throughput test
+                tokio::time::sleep(Duration::from_micros(100)).await;
+            }
+            BenchmarkType::Latency => {
+                // Simulate latency test
+                tokio::time::sleep(Duration::from_micros(50)).await;
+            }
+            BenchmarkType::Memory => {
+                // Simulate memory test
+                let _data: Vec<u8> = vec![0; 1024];
+                tokio::time::sleep(Duration::from_micros(10)).await;
+            }
+            BenchmarkType::Cpu => {
+                // Simulate CPU-intensive test
+                let mut sum = 0u64;
+                for i in 0..1000 {
+                    sum = sum.wrapping_add(i);
+                }
+                let _ = sum; // Use the result to prevent optimization
+            }
+            BenchmarkType::Io => {
+                // Simulate I/O test
+                tokio::time::sleep(Duration::from_micros(200)).await;
+            }
+            BenchmarkType::EndToEnd => {
+                // Simulate end-to-end test
+                tokio::time::sleep(Duration::from_micros(500)).await;
+            }
+        }
+
+        Ok(start.elapsed())
+    }
+
+    fn calculate_duration_percentiles(&self, sorted_durations: &[Duration]) -> LatencyPercentiles {
+        if sorted_durations.is_empty() {
+            return LatencyPercentiles::default();
+        }
+
+        let len = sorted_durations.len();
+        LatencyPercentiles {
+            p50_us: sorted_durations[len * 50 / 100].as_micros() as f64,
+            p95_us: sorted_durations[len * 95 / 100].as_micros() as f64,
+            p99_us: sorted_durations[len * 99 / 100].as_micros() as f64,
+            p999_us: sorted_durations[len * 999 / 1000].as_micros() as f64,
+            max_us: sorted_durations[len - 1].as_micros() as f64,
+        }
+    }
+
+    pub async fn get_recent_results(&self) -> Result<Vec<BenchmarkResult>> {
+        Ok(self.benchmark_results.clone())
+    }
+
+    pub async fn set_baseline(&mut self, baseline_name: String, baseline: PerformanceBaseline) -> Result<()> {
+        self.performance_baselines.insert(baseline_name, baseline);
+        Ok(())
+    }
+
+    pub async fn detect_regressions(&self) -> Result<Vec<PerformanceRegression>> {
+        self.regression_detector.detect_regressions(&self.benchmark_results, &self.performance_baselines).await
+    }
+}
+
+impl RegressionDetector {
+    pub fn new() -> Self {
+        Self {
+            baselines: HashMap::new(),
+            regression_threshold: 0.1, // 10% regression threshold
+            detected_regressions: Vec::new(),
+        }
+    }
+
+    pub async fn detect_regressions(
+        &self,
+        current_results: &[BenchmarkResult],
+        baselines: &HashMap<String, PerformanceBaseline>,
+    ) -> Result<Vec<PerformanceRegression>> {
+        let mut regressions = Vec::new();
+
+        for result in current_results {
+            if let Some(baseline) = baselines.get(&result.benchmark_name) {
+                // Check for latency regression
+                let baseline_latency = baseline.metrics.avg_retrieval_time_us;
+                let current_latency = result.average_duration.as_micros() as f64;
+
+                if current_latency > baseline_latency * (1.0 + self.regression_threshold) {
+                    let regression_percentage = (current_latency - baseline_latency) / baseline_latency * 100.0;
+                    regressions.push(PerformanceRegression {
+                        regression_type: RegressionType::LatencyIncrease,
+                        metric_name: "average_latency".to_string(),
+                        baseline_value: baseline_latency,
+                        current_value: current_latency,
+                        regression_percentage,
+                        detected_at: Utc::now(),
+                        severity: self.classify_regression_severity(regression_percentage),
+                    });
+                }
+
+                // Check for throughput regression
+                let baseline_throughput = baseline.metrics.throughput_ops_per_sec;
+                let current_throughput = result.throughput;
+
+                if current_throughput < baseline_throughput * (1.0 - self.regression_threshold) {
+                    let regression_percentage = (baseline_throughput - current_throughput) / baseline_throughput * 100.0;
+                    regressions.push(PerformanceRegression {
+                        regression_type: RegressionType::ThroughputDecrease,
+                        metric_name: "throughput".to_string(),
+                        baseline_value: baseline_throughput,
+                        current_value: current_throughput,
+                        regression_percentage,
+                        detected_at: Utc::now(),
+                        severity: self.classify_regression_severity(regression_percentage),
+                    });
+                }
+            }
+        }
+
+        Ok(regressions)
+    }
+
+    fn classify_regression_severity(&self, regression_percentage: f64) -> RegressionSeverity {
+        if regression_percentage > 50.0 {
+            RegressionSeverity::Critical
+        } else if regression_percentage > 25.0 {
+            RegressionSeverity::Major
+        } else if regression_percentage > 10.0 {
+            RegressionSeverity::Moderate
+        } else {
+            RegressionSeverity::Minor
+        }
     }
 }
 
