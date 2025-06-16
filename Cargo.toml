@@ -57,6 +57,9 @@ futures-util = { version = "0.3", optional = true }
 # Myers' Diff Algorithm Implementation
 imara-diff = "0.1"
 similar = "2.4"
+
+# Advanced Similarity and Search Algorithms
+strsim = "0.11"
 lz4_flex = "0.11"
 
 # Concurrency (already included above)

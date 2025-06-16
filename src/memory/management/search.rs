@@ -6,6 +6,9 @@ use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+use strsim::{levenshtein, jaro_winkler, normalized_damerau_levenshtein, sorensen_dice};
+use ndarray::{Array1, Array2};
+use std::sync::Arc;
 
 /// Advanced search query with multiple criteria
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -623,30 +626,127 @@ impl AdvancedSearchEngine {
         Ok(matches)
     }
 
-    /// Calculate string similarity (simple Levenshtein-based)
-    fn calculate_string_similarity(&self, s1: &str, s2: &str) -> f64 {
+    /// Calculate advanced string similarity using multiple algorithms
+    pub fn calculate_string_similarity(&self, s1: &str, s2: &str) -> f64 {
         if s1 == s2 {
             return 1.0;
         }
-        
+
         let len1 = s1.len();
         let len2 = s2.len();
-        
+
         if len1 == 0 || len2 == 0 {
             return 0.0;
         }
-        
-        // Simple character overlap similarity
-        let chars1: std::collections::HashSet<char> = s1.chars().collect();
-        let chars2: std::collections::HashSet<char> = s2.chars().collect();
-        
-        let intersection = chars1.intersection(&chars2).count();
-        let union = chars1.union(&chars2).count();
-        
-        if union == 0 {
-            0.0
-        } else {
+
+        // Use multiple similarity algorithms and combine them
+        let similarities = self.calculate_multi_dimensional_similarity(s1, s2);
+
+        // Weighted combination of different similarity measures
+        let weights = [0.3, 0.25, 0.2, 0.15, 0.1]; // Jaro-Winkler, Levenshtein, Dice, N-gram, Semantic
+
+        similarities.iter()
+            .zip(weights.iter())
+            .map(|(sim, weight)| sim * weight)
+            .sum()
+    }
+
+    /// Calculate multi-dimensional similarity using various algorithms
+    pub fn calculate_multi_dimensional_similarity(&self, s1: &str, s2: &str) -> Vec<f64> {
+        let mut similarities = Vec::new();
+
+        // 1. Jaro-Winkler similarity (good for names and short strings)
+        let jaro_winkler_sim = jaro_winkler(s1, s2);
+        similarities.push(jaro_winkler_sim);
+
+        // 2. Normalized Damerau-Levenshtein distance
+        let damerau_lev_sim = 1.0 - normalized_damerau_levenshtein(s1, s2);
+        similarities.push(damerau_lev_sim);
+
+        // 3. Sørensen-Dice coefficient (good for longer texts)
+        let dice_sim = sorensen_dice(s1, s2);
+        similarities.push(dice_sim);
+
+        // 4. N-gram similarity (character-level)
+        let ngram_sim = self.calculate_ngram_similarity(s1, s2, 3);
+        similarities.push(ngram_sim);
+
+        // 5. Semantic similarity (word-level overlap with weights)
+        let semantic_sim = self.calculate_semantic_similarity_words(s1, s2);
+        similarities.push(semantic_sim);
+
+        similarities
+    }
+
+    /// Calculate N-gram similarity
+    pub fn calculate_ngram_similarity(&self, s1: &str, s2: &str, n: usize) -> f64 {
+        if s1.len() < n || s2.len() < n {
+            return if s1 == s2 { 1.0 } else { 0.0 };
+        }
+
+        let ngrams1: HashSet<String> = s1.chars()
+            .collect::<Vec<_>>()
+            .windows(n)
+            .map(|window| window.iter().collect())
+            .collect();
+
+        let ngrams2: HashSet<String> = s2.chars()
+            .collect::<Vec<_>>()
+            .windows(n)
+            .map(|window| window.iter().collect())
+            .collect();
+
+        let intersection = ngrams1.intersection(&ngrams2).count();
+        let union = ngrams1.union(&ngrams2).count();
+
+        if union > 0 {
             intersection as f64 / union as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate semantic similarity based on word overlap and importance
+    fn calculate_semantic_similarity_words(&self, s1: &str, s2: &str) -> f64 {
+        let words1: HashSet<String> = s1.to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2) // Filter out very short words
+            .map(|w| w.to_string())
+            .collect();
+
+        let words2: HashSet<String> = s2.to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(|w| w.to_string())
+            .collect();
+
+        if words1.is_empty() || words2.is_empty() {
+            return 0.0;
+        }
+
+        // Calculate weighted word overlap
+        let mut similarity_score = 0.0;
+        let mut total_weight = 0.0;
+
+        for word1 in &words1 {
+            let mut best_match = 0.0;
+            for word2 in &words2 {
+                let word_sim = jaro_winkler(word1, word2);
+                if word_sim > best_match {
+                    best_match = word_sim;
+                }
+            }
+
+            // Weight longer words more heavily
+            let word_weight = (word1.len() as f64).sqrt();
+            similarity_score += best_match * word_weight;
+            total_weight += word_weight;
+        }
+
+        if total_weight > 0.0 {
+            similarity_score / total_weight
+        } else {
+            0.0
         }
     }
 
