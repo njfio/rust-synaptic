@@ -8,6 +8,7 @@ pub mod selective_replay;
 pub mod consolidation_strategies;
 pub mod elastic_weight_consolidation;
 pub mod synaptic_intelligence;
+pub mod gradual_forgetting;
 
 use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryType};
@@ -148,6 +149,8 @@ pub struct MemoryConsolidationSystem {
     ewc: elastic_weight_consolidation::ElasticWeightConsolidation,
     /// Synaptic Intelligence implementation
     synaptic_intelligence: synaptic_intelligence::SynapticIntelligence,
+    /// Gradual Forgetting Algorithm implementation
+    gradual_forgetting: gradual_forgetting::GradualForgettingAlgorithm,
     /// Consolidation history
     consolidation_history: Vec<ConsolidationResult>,
     /// Last consolidation timestamp
@@ -162,6 +165,10 @@ impl MemoryConsolidationSystem {
         let strategies = consolidation_strategies::ConsolidationStrategies::new(&config)?;
         let ewc = elastic_weight_consolidation::ElasticWeightConsolidation::new(&config)?;
         let synaptic_intelligence = synaptic_intelligence::SynapticIntelligence::new(&config)?;
+        let gradual_forgetting = gradual_forgetting::GradualForgettingAlgorithm::new(
+            gradual_forgetting::ForgettingConfig::default(),
+            config.clone(),
+        )?;
 
         Ok(Self {
             config,
@@ -170,6 +177,7 @@ impl MemoryConsolidationSystem {
             strategies,
             ewc,
             synaptic_intelligence,
+            gradual_forgetting,
             consolidation_history: Vec::new(),
             last_consolidation: None,
         })
@@ -226,6 +234,17 @@ impl MemoryConsolidationSystem {
         let task_id = format!("consolidation_{}", operation_id);
         self.synaptic_intelligence.consolidate_task(&task_id, memories).await?;
 
+        // Apply Gradual Forgetting evaluation
+        if self.gradual_forgetting.should_evaluate() {
+            let forgetting_decisions = self.gradual_forgetting.evaluate_memories(memories, &importance_scores).await?;
+            let forgotten_by_gradual = forgetting_decisions.iter()
+                .filter(|d| d.should_forget)
+                .count();
+
+            tracing::info!("Gradual forgetting evaluated {} memories, {} marked for forgetting",
+                          forgetting_decisions.len(), forgotten_by_gradual);
+        }
+
         let processing_time = start_time.elapsed().as_millis() as u64;
         let avg_importance = if consolidated_count > 0 {
             total_importance / consolidated_count as f64
@@ -238,6 +257,7 @@ impl MemoryConsolidationSystem {
             strategy: ConsolidationStrategy::Hybrid(vec![
                 ConsolidationStrategy::ElasticWeightConsolidation,
                 ConsolidationStrategy::SynapticIntelligence,
+                ConsolidationStrategy::GradualForgetting,
                 ConsolidationStrategy::SelectiveReplay,
                 ConsolidationStrategy::ImportanceWeighted,
             ]),
