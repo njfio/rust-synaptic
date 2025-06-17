@@ -606,7 +606,12 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!("Using fallback sum - homomorphic-encryption feature not enabled");
+            tracing::warn!(
+                operation = "homomorphic_sum",
+                entry_count = entries.len(),
+                feature_enabled = false,
+                "Using fallback sum - homomorphic-encryption feature not enabled"
+            );
             let mut result = vec![0u8; 64];
             for entry in entries {
                 for (i, &byte) in entry.encrypted_data.iter().enumerate() {

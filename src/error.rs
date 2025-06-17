@@ -12,6 +12,12 @@ pub enum MemoryError {
     #[error("Storage error: {message}")]
     Storage { message: String },
 
+    #[error("Invalid configuration: {message}")]
+    InvalidConfiguration { message: String },
+
+    #[error("Invalid input: {message}")]
+    InvalidInput { message: String },
+
     /// Serialization/deserialization errors
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -478,6 +484,15 @@ pub trait MemoryErrorExt<T> {
 
     /// Convert to a processing error with context
     fn processing_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a multi-modal error with context
+    fn multimodal_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a cross-platform error with context
+    fn cross_platform_context<S: Into<String>>(self, context: S) -> Result<T>;
+
+    /// Convert to a key management error with context
+    fn key_management_context<S: Into<String>>(self, context: S) -> Result<T>;
 }
 
 impl<T, E> MemoryErrorExt<T> for std::result::Result<T, E>
@@ -518,6 +533,21 @@ where
 
     fn processing_context<S: Into<String>>(self, context: S) -> Result<T> {
         self.map_err(|e| MemoryError::processing_error(format!("{}: {}", context.into(), e)))
+    }
+
+    /// Convert to a multi-modal error with context
+    fn multimodal_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::multi_modal(format!("{}: {}", context.into(), e)))
+    }
+
+    /// Convert to a cross-platform error with context
+    fn cross_platform_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::cross_platform(format!("{}: {}", context.into(), e)))
+    }
+
+    /// Convert to a key management error with context
+    fn key_management_context<S: Into<String>>(self, context: S) -> Result<T> {
+        self.map_err(|e| MemoryError::key_management(format!("{}: {}", context.into(), e)))
     }
 }
 

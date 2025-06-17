@@ -613,22 +613,30 @@ impl MemoryKnowledgeGraph {
         }
     }
 
-    /// Merge similar content by combining unique information
+    /// Merge similar content by combining unique information (optimized)
     async fn merge_similar_content(&self, existing: &str, new: &str) -> Result<String> {
-        // Simple approach: combine sentences that don't overlap significantly
-        let existing_sentences: Vec<&str> = existing.split('.').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        let new_sentences: Vec<&str> = new.split('.').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        // Optimized approach: use iterators and avoid unnecessary allocations
+        let existing_sentences: Vec<&str> = existing
+            .split('.')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        let mut merged_sentences = existing_sentences.clone();
+        let new_sentences: Vec<&str> = new
+            .split('.')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
 
+        // Pre-allocate with estimated capacity to reduce reallocations
+        let mut merged_sentences = Vec::with_capacity(existing_sentences.len() + new_sentences.len());
+        merged_sentences.extend_from_slice(&existing_sentences);
+
+        // Use iterator approach to avoid nested loops where possible
         for new_sentence in new_sentences {
-            let mut is_duplicate = false;
-            for existing_sentence in &existing_sentences {
-                if self.calculate_text_similarity(existing_sentence, new_sentence) > 0.8 {
-                    is_duplicate = true;
-                    break;
-                }
-            }
+            let is_duplicate = existing_sentences
+                .iter()
+                .any(|&existing_sentence| self.calculate_text_similarity(existing_sentence, new_sentence) > 0.8);
 
             if !is_duplicate {
                 merged_sentences.push(new_sentence);

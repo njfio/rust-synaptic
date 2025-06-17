@@ -3,8 +3,46 @@
 //! This module provides various similarity and distance metrics
 //! for comparing embedding vectors.
 
-/// Calculate cosine similarity between two vectors
-/// Returns a value between -1.0 and 1.0, where 1.0 means identical direction
+/// Calculate cosine similarity between two embedding vectors.
+///
+/// Cosine similarity measures the cosine of the angle between two vectors,
+/// providing a metric of orientation rather than magnitude. This makes it
+/// particularly useful for comparing text embeddings where the direction
+/// of the vector is more important than its length.
+///
+/// # Arguments
+///
+/// * `a` - First embedding vector
+/// * `b` - Second embedding vector
+///
+/// # Returns
+///
+/// A similarity score between -1.0 and 1.0 where:
+/// - `1.0` indicates identical direction (most similar)
+/// - `0.0` indicates orthogonal vectors (no similarity)
+/// - `-1.0` indicates opposite directions (most dissimilar)
+/// - `0.0` is returned if vectors have different lengths or zero magnitude
+///
+/// # Examples
+///
+/// ```rust
+/// use synaptic::memory::embeddings::similarity::cosine_similarity;
+///
+/// let vec1 = vec![1.0, 2.0, 3.0];
+/// let vec2 = vec![2.0, 4.0, 6.0]; // Same direction, different magnitude
+/// let similarity = cosine_similarity(&vec1, &vec2);
+/// assert!((similarity - 1.0).abs() < 1e-10); // Should be very close to 1.0
+///
+/// let vec3 = vec![1.0, 0.0, 0.0];
+/// let vec4 = vec![0.0, 1.0, 0.0]; // Orthogonal vectors
+/// let orthogonal_sim = cosine_similarity(&vec3, &vec4);
+/// assert!((orthogonal_sim - 0.0).abs() < 1e-10); // Should be very close to 0.0
+/// ```
+///
+/// # Performance
+///
+/// Time complexity: O(n) where n is the vector dimension
+/// Space complexity: O(1)
 pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     if a.len() != b.len() {
         return 0.0;
@@ -13,7 +51,7 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     let dot_product: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let magnitude_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
     let magnitude_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    
+
     if magnitude_a == 0.0 || magnitude_b == 0.0 {
         0.0
     } else {

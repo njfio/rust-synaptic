@@ -323,18 +323,83 @@ impl EvolutionTracker {
                 *change_frequency.entry(event.change_type.clone()).or_insert(0) += 1;
             }
 
+            // Detect most active period
+            let most_active_period = Self::detect_most_active_period(&evolution.timeline);
+
             evolution.metrics = EvolutionMetrics {
                 total_changes,
                 avg_change_interval,
                 growth_rate,
                 stability_score,
                 complexity_score,
-                most_active_period: None, // TODO: Implement period detection
+                most_active_period,
                 change_frequency,
             };
         }
 
         Ok(())
+    }
+
+    /// Detect the most active period in a timeline of events
+    fn detect_most_active_period(timeline: &[EvolutionEvent]) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+        if timeline.len() < 2 {
+            return None;
+        }
+
+        // Sort events by timestamp
+        let mut sorted_events = timeline.to_vec();
+        sorted_events.sort_by_key(|e| e.timestamp);
+
+        // Define sliding window size (7 days)
+        let window_duration = Duration::days(7);
+        let mut max_activity_score = 0.0;
+        let mut most_active_period = None;
+
+        // Use sliding window approach to find the most active period
+        for i in 0..sorted_events.len() {
+            let window_start = sorted_events[i].timestamp;
+            let window_end = window_start + window_duration;
+
+            // Count events and calculate activity score within this window
+            let mut activity_score = 0.0;
+            let mut event_count = 0;
+            let mut total_impact = 0.0;
+
+            for event in &sorted_events[i..] {
+                if event.timestamp <= window_end {
+                    event_count += 1;
+                    total_impact += event.impact_score;
+
+                    // Weight recent events more heavily
+                    let recency_factor = 1.0 - (event.timestamp - window_start).num_hours() as f64 / (window_duration.num_hours() as f64);
+                    activity_score += event.impact_score * recency_factor.max(0.1);
+                } else {
+                    break;
+                }
+            }
+
+            // Bonus for high event density
+            if event_count > 1 {
+                activity_score *= (event_count as f64).sqrt();
+            }
+
+            // Update most active period if this window has higher activity
+            if activity_score > max_activity_score && event_count >= 2 {
+                max_activity_score = activity_score;
+
+                // Find the actual span of events in this window
+                let events_in_window: Vec<_> = sorted_events[i..]
+                    .iter()
+                    .take_while(|e| e.timestamp <= window_end)
+                    .collect();
+
+                if let (Some(first), Some(last)) = (events_in_window.first(), events_in_window.last()) {
+                    most_active_period = Some((first.timestamp, last.timestamp));
+                }
+            }
+        }
+
+        most_active_period
     }
 
     /// Update global metrics

@@ -1,5 +1,5 @@
 //! Comprehensive logging and tracing infrastructure for the Synaptic memory system
-//! 
+//!
 //! This module provides centralized logging configuration, structured logging,
 //! performance tracing, and audit logging capabilities.
 
@@ -13,6 +13,54 @@ use tracing::{Level, Span};
 // Tracing subscriber is used in the initialize method
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+
+/// Standardized logging macros for consistent log formatting across the codebase
+#[macro_export]
+macro_rules! log_operation_start {
+    ($operation:expr, $($key:ident = $value:expr),*) => {
+        tracing::info!(
+            operation = $operation,
+            $($key = $value,)*
+            "Starting operation"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_operation_success {
+    ($operation:expr, $duration:expr, $($key:ident = $value:expr),*) => {
+        tracing::info!(
+            operation = $operation,
+            duration_ms = $duration.as_millis(),
+            $($key = $value,)*
+            "Operation completed successfully"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_operation_error {
+    ($operation:expr, $error:expr, $($key:ident = $value:expr),*) => {
+        tracing::error!(
+            operation = $operation,
+            error = %$error,
+            $($key = $value,)*
+            "Operation failed"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_performance_metric {
+    ($metric_name:expr, $value:expr, $unit:expr) => {
+        tracing::info!(
+            metric_name = $metric_name,
+            value = $value,
+            unit = $unit,
+            "Performance metric recorded"
+        );
+    };
+}
 
 /// Comprehensive logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +179,68 @@ impl Default for LoggingConfig {
             trace_sampling_rate: 1.0,
             enable_log_streaming: false,
             stream_buffer_size: 1000,
+        }
+    }
+}
+
+impl LoggingConfig {
+    /// Create a development-friendly logging configuration
+    pub fn development() -> Self {
+        Self {
+            level: LogLevel::Debug,
+            structured_logging: false,
+            enable_performance_tracing: true,
+            enable_audit_logging: false,
+            enable_metrics: true,
+            log_file: None,
+            max_file_size: 50 * 1024 * 1024, // 50MB
+            max_files: 5,
+            compress_logs: false,
+            log_format: LogFormat::Pretty,
+            enable_distributed_tracing: false,
+            trace_sampling_rate: 1.0,
+            enable_log_streaming: false,
+            stream_buffer_size: 100,
+        }
+    }
+
+    /// Create a production-optimized logging configuration
+    pub fn production() -> Self {
+        Self {
+            level: LogLevel::Info,
+            structured_logging: true,
+            enable_performance_tracing: true,
+            enable_audit_logging: true,
+            enable_metrics: true,
+            log_file: Some(PathBuf::from("synaptic.log")),
+            max_file_size: 500 * 1024 * 1024, // 500MB
+            max_files: 20,
+            compress_logs: true,
+            log_format: LogFormat::Json,
+            enable_distributed_tracing: true,
+            trace_sampling_rate: 0.1, // Sample 10% for performance
+            enable_log_streaming: true,
+            stream_buffer_size: 10000,
+        }
+    }
+
+    /// Create a high-performance logging configuration with minimal overhead
+    pub fn high_performance() -> Self {
+        Self {
+            level: LogLevel::Warn,
+            structured_logging: false,
+            enable_performance_tracing: false,
+            enable_audit_logging: false,
+            enable_metrics: false,
+            log_file: None,
+            max_file_size: 10 * 1024 * 1024, // 10MB
+            max_files: 3,
+            compress_logs: false,
+            log_format: LogFormat::Compact,
+            enable_distributed_tracing: false,
+            trace_sampling_rate: 0.01, // Sample 1% only
+            enable_log_streaming: false,
+            stream_buffer_size: 50,
         }
     }
 }
@@ -332,10 +442,22 @@ impl LoggingManager {
             }
         }
 
+        // Log performance metrics with structured data
         if success {
-            tracing::info!("Performance trace completed successfully for operation_id: {}", operation_id);
+            tracing::info!(
+                operation_id = %operation_id,
+                duration_ms = ?(end_time - Utc::now()).num_milliseconds(),
+                success = true,
+                "Performance trace completed successfully"
+            );
         } else {
-            tracing::error!("Performance trace completed with error for operation_id: {}: {:?}", operation_id, error_message);
+            tracing::warn!(
+                operation_id = %operation_id,
+                duration_ms = ?(end_time - Utc::now()).num_milliseconds(),
+                success = false,
+                error = ?error_message,
+                "Performance trace completed with error"
+            );
         }
 
         Ok(())
@@ -360,8 +482,8 @@ impl LoggingManager {
             id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             operation: operation.to_string(),
-            user_id,
-            session_id,
+            user_id: user_id.clone(),
+            session_id: session_id.clone(),
             resource: resource.to_string(),
             action: action.to_string(),
             success,
@@ -374,11 +496,52 @@ impl LoggingManager {
             audit_logs.push(audit_entry.clone());
         }
 
+        // Log with structured context for better monitoring and alerting
         match risk_level {
-            RiskLevel::Low => tracing::info!("Audit event: {} - {} on {}", operation, action, resource),
-            RiskLevel::Medium => tracing::warn!("Audit event (MEDIUM): {} - {} on {}", operation, action, resource),
-            RiskLevel::High => tracing::error!("Audit event (HIGH): {} - {} on {}", operation, action, resource),
-            RiskLevel::Critical => tracing::error!("Audit event (CRITICAL): {} - {} on {}", operation, action, resource),
+            RiskLevel::Low => tracing::info!(
+                audit_id = %audit_entry.id,
+                operation = %operation,
+                action = %action,
+                resource = %resource,
+                success = success,
+                risk_level = "LOW",
+                user_id = ?user_id,
+                session_id = ?session_id,
+                "Audit event recorded"
+            ),
+            RiskLevel::Medium => tracing::warn!(
+                audit_id = %audit_entry.id,
+                operation = %operation,
+                action = %action,
+                resource = %resource,
+                success = success,
+                risk_level = "MEDIUM",
+                user_id = ?user_id,
+                session_id = ?session_id,
+                "Medium risk audit event"
+            ),
+            RiskLevel::High => tracing::error!(
+                audit_id = %audit_entry.id,
+                operation = %operation,
+                action = %action,
+                resource = %resource,
+                success = success,
+                risk_level = "HIGH",
+                user_id = ?user_id,
+                session_id = ?session_id,
+                "High risk audit event"
+            ),
+            RiskLevel::Critical => tracing::error!(
+                audit_id = %audit_entry.id,
+                operation = %operation,
+                action = %action,
+                resource = %resource,
+                success = success,
+                risk_level = "CRITICAL",
+                user_id = ?user_id,
+                session_id = ?session_id,
+                "CRITICAL SECURITY EVENT - Immediate attention required"
+            ),
         }
 
         Ok(())

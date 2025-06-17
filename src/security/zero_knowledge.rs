@@ -602,17 +602,35 @@ impl ProofSystem {
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]
         {
-            tracing::warn!("Using fallback proof verification - zero-knowledge-proofs feature not enabled");
+            tracing::warn!(
+                operation = "verify_proof",
+                proof_id = %proof.id,
+                feature_enabled = false,
+                "Using fallback proof verification - zero-knowledge-proofs feature not enabled"
+            );
             let statement_hash = self.hash_statement(statement)?;
 
             // Check if statement hash matches
             if proof.statement_hash != statement_hash {
+                tracing::debug!(
+                    proof_id = %proof.id,
+                    expected_hash = %statement_hash,
+                    actual_hash = %proof.statement_hash,
+                    "Proof verification failed: statement hash mismatch"
+                );
                 return Ok(false);
             }
 
             // Verify proof data (simplified verification)
             let is_valid = proof.proof_data.len() > 0 &&
                           proof.proving_key_id == self.proving_key.id;
+
+            tracing::info!(
+                proof_id = %proof.id,
+                is_valid = is_valid,
+                proof_data_length = proof.proof_data.len(),
+                "Fallback proof verification completed"
+            );
 
             Ok(is_valid)
         }

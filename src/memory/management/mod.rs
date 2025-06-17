@@ -27,23 +27,72 @@ use crate::memory::knowledge_graph::{MemoryKnowledgeGraph, RelationshipType};
 use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
 
-/// Advanced memory management system
+/// Advanced memory management system providing sophisticated memory operations.
+///
+/// The `AdvancedMemoryManager` is the central orchestrator for all advanced memory
+/// operations in the Synaptic system. It integrates multiple specialized components
+/// to provide intelligent memory management, optimization, and analytics.
+///
+/// # Components
+///
+/// - **Summarizer**: Intelligent memory consolidation and summarization
+/// - **Search Engine**: Advanced multi-strategy search with relevance ranking
+/// - **Lifecycle Manager**: Automated memory archiving and cleanup policies
+/// - **Optimizer**: Performance optimization and resource management
+/// - **Analytics**: Usage patterns, insights, and predictive analytics
+/// - **Temporal Manager**: Version tracking and temporal pattern analysis
+///
+/// # Features
+///
+/// - **Intelligent Consolidation**: Automatically merge and summarize related memories
+/// - **Advanced Search**: Multi-dimensional search with semantic understanding
+/// - **Lifecycle Management**: Automated archiving based on usage patterns
+/// - **Performance Optimization**: Dynamic optimization of storage and retrieval
+/// - **Analytics & Insights**: Deep analysis of memory usage and patterns
+/// - **Temporal Intelligence**: Track changes and detect patterns over time
+///
+/// # Examples
+///
+/// ```rust
+/// use synaptic::memory::management::{AdvancedMemoryManager, MemoryManagementConfig};
+/// use synaptic::memory::storage::create_storage;
+///
+/// async fn setup_advanced_manager() -> Result<AdvancedMemoryManager, Box<dyn std::error::Error>> {
+///     let storage = create_storage("advanced_memory.db").await?;
+///     let config = MemoryManagementConfig::default();
+///     let manager = AdvancedMemoryManager::new(storage, config).await?;
+///
+///     // Perform intelligent optimization
+///     manager.optimize_all().await?;
+///
+///     // Get comprehensive analytics
+///     let analytics = manager.get_comprehensive_analytics().await?;
+///     println!("Memory efficiency: {:.2}%", analytics.efficiency_score * 100.0);
+///
+///     Ok(manager)
+/// }
+/// ```
+///
+/// # Performance Considerations
+///
+/// The advanced memory manager is designed for high-performance scenarios with
+/// large memory datasets. It uses sophisticated caching, indexing, and optimization
+/// strategies to maintain excellent performance even with millions of memory entries.
 pub struct AdvancedMemoryManager {
-    /// Memory summarizer for consolidation
+    /// Memory summarizer for intelligent consolidation and summarization
     summarizer: MemorySummarizer,
-    /// Advanced search engine
+    /// Advanced search engine with multi-strategy capabilities
     search_engine: AdvancedSearchEngine,
-    /// Lifecycle manager
+    /// Lifecycle manager for automated memory management policies
     lifecycle_manager: MemoryLifecycleManager,
-    /// Memory optimizer
+    /// Memory optimizer for performance and resource optimization
     optimizer: MemoryOptimizer,
-    /// Analytics engine
+    /// Analytics engine for insights and pattern detection
     analytics: MemoryAnalytics,
-    /// Temporal manager for tracking changes
+    /// Temporal manager for tracking changes and evolution over time
     temporal_manager: TemporalMemoryManager,
-    /// Configuration
+    /// Configuration parameters for memory management behavior
     config: MemoryManagementConfig,
 }
 

@@ -647,7 +647,9 @@ impl DataMemoryProcessor {
     }
 
     /// Detect data patterns
+    #[tracing::instrument(skip(self, schema), fields(row_count = schema.row_count, column_count = schema.columns.len()))]
     pub async fn detect_patterns(&self, schema: &DataSchema) -> MultiModalResult<Vec<DataPattern>> {
+        tracing::debug!("Starting pattern detection for schema with {} rows and {} columns", schema.row_count, schema.columns.len());
         let mut patterns = Vec::new();
 
         // Check for missing data patterns
@@ -680,6 +682,7 @@ impl DataMemoryProcessor {
             }
         }
 
+        tracing::info!("Pattern detection completed: found {} patterns", patterns.len());
         Ok(patterns)
     }
 

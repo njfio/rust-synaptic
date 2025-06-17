@@ -2,13 +2,13 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.79+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-161%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
+[![Tests](https://img.shields.io/badge/tests-165%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
 
 **Synaptic** is a comprehensive AI agent memory system implemented in Rust. It provides intelligent memory management, advanced search capabilities, lifecycle automation, knowledge graph functionality, enterprise security features, and multi-modal content processing for AI applications.
 
 ## 🚀 Key Highlights
 
-- **161 Passing Tests** across 14 organized categories with priority-based execution
+- **165 Passing Tests** across 14 organized categories with priority-based execution
 - **Production-Ready Implementation** with real external integrations (PostgreSQL, Redis, BERT ML models, LLM APIs)
 - **Enterprise Security** featuring AES-256-GCM encryption, zero-knowledge proofs, and differential privacy
 - **Comprehensive Test Organization** with automated CI/CD and development tools
@@ -93,7 +93,7 @@
 
 ### Comprehensive Test Coverage
 
-- **161 Passing Tests**: Extensive test coverage across all modules with functional verification
+- **165 Passing Tests**: Extensive test coverage across all modules with functional verification
 - **Professional Implementation**: Production-ready functionality with minimal placeholders - comprehensive real implementations
 - **Robust Error Handling**: Comprehensive Result types and error management throughout the codebase
 - **Multi-Strategy Approaches**: Multiple algorithms implemented for each core system ensuring reliability
@@ -156,19 +156,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Testing
 
-### Organized Test Suite (161 Tests)
+### Organized Test Suite (165 Tests)
 
 The project includes a comprehensive test organization system with priority-based execution:
 
 #### Using the Test Runner Script
 
 ```bash
-# Run all tests (161 tests across 14 categories)
+# Run all tests (165 tests across 14 categories)
 ./scripts/run_tests.sh all
 
 # Run by priority level
-./scripts/run_tests.sh critical    # Core, integration, security (70 tests)
-./scripts/run_tests.sh high        # Performance, lifecycle, multimodal (60 tests)
+./scripts/run_tests.sh critical    # Core, integration, security (72 tests)
+./scripts/run_tests.sh high        # Performance, lifecycle, multimodal (62 tests)
 ./scripts/run_tests.sh medium      # Temporal, analytics, search, external (25 tests)
 ./scripts/run_tests.sh low         # Logging, visualization, sync (6 tests)
 
@@ -182,7 +182,7 @@ The project includes a comprehensive test organization system with priority-base
 
 ```bash
 # Test commands
-make test-all          # All 161 tests
+make test-all          # All 165 tests
 make test-critical     # Critical priority tests
 make test-security     # Security tests only
 make test-performance  # Performance tests only
@@ -258,11 +258,11 @@ cargo run --example phase2_distributed_system
 
 | Priority | Categories | Test Count | Description |
 |----------|------------|------------|-------------|
-| **Critical** | Core, Integration, Security | 70 tests | Essential functionality and security |
-| **High** | Performance, Lifecycle, Multimodal | 60 tests | Performance and advanced features |
+| **Critical** | Core, Integration, Security | 72 tests | Essential functionality and security |
+| **High** | Performance, Lifecycle, Multimodal | 62 tests | Performance and advanced features |
 | **Medium** | Temporal, Analytics, Search, External | 25 tests | Specialized algorithms and integrations |
 | **Low** | Logging, Visualization, Sync | 6 tests | Supporting infrastructure |
-| **Total** | **14 Categories** | **161 tests** | **Complete test coverage** |
+| **Total** | **14 Categories** | **165 tests** | **Complete test coverage** |
 
 ### Test Execution Tools
 
@@ -273,7 +273,7 @@ cargo run --example phase2_distributed_system
 
 ### Implementation Quality
 
-- **Zero Test Failures**: All 161 tests pass consistently across all categories
+- **Zero Test Failures**: All 165 tests pass consistently across all categories
 - **Production-Ready Implementation**: Comprehensive functionality with sophisticated algorithms and real integrations
 - **Professional Error Handling**: Comprehensive Result types throughout with proper error propagation
 - **Enterprise-Grade Code**: Suitable for production deployment with scalable infrastructure

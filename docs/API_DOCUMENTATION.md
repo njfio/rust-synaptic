@@ -19,13 +19,27 @@ This document provides comprehensive API documentation for the Synaptic intellig
 
 ### AgentMemory
 
-The main entry point for the Synaptic memory system.
+The main entry point for the Synaptic memory system, providing a high-level interface
+for all memory operations including storage, retrieval, search, and advanced features
+like knowledge graphs and temporal analysis.
+
+#### Basic Usage
 
 ```rust
-use synaptic::AgentMemory;
+use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
 
-// Create a new memory instance
+// Create a new memory instance with default configuration
 let memory = AgentMemory::new().await?;
+
+// Or create with custom configuration
+let config = MemoryConfig {
+    storage_path: "custom_memory.db".to_string(),
+    enable_embeddings: true,
+    enable_knowledge_graph: true,
+    max_memory_size_mb: 1024,
+    ..Default::default()
+};
+let memory = AgentMemory::with_config(config).await?;
 
 // Store a memory entry
 let entry_id = memory.store("key", "content", None).await?;
@@ -419,6 +433,129 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let related = graph.find_related("project_a", 2).await?;
     println!("Related to project_a: {:?}", related);
     
+    Ok(())
+}
+```
+
+### Memory Management and Analytics
+
+```rust
+use synaptic::{AgentMemory, memory::management::MemoryManagementConfig};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let memory = AgentMemory::new().await?;
+
+    // Store various types of memories
+    memory.store("task_1", "Complete documentation", None).await?;
+    memory.store("task_2", "Review code changes", None).await?;
+    memory.store("meeting_notes", "Discussed project timeline", None).await?;
+
+    // Get memory statistics
+    let stats = memory.get_stats();
+    println!("Total memories: {}", stats.total_entries);
+    println!("Average size: {:.2} bytes", stats.average_entry_size);
+
+    // Perform optimization
+    let advanced_manager = memory.advanced_manager();
+    let optimization_result = advanced_manager.optimize_all().await?;
+    println!("Optimization saved {} bytes", optimization_result.space_saved);
+
+    // Get analytics insights
+    let analytics = advanced_manager.get_comprehensive_analytics().await?;
+    println!("Memory efficiency: {:.2}%", analytics.efficiency_score * 100.0);
+
+    // Find usage patterns
+    let patterns = analytics.usage_patterns;
+    for pattern in patterns {
+        println!("Pattern: {} (confidence: {:.2})", pattern.pattern_type, pattern.confidence);
+    }
+
+    Ok(())
+}
+```
+
+### Security and Privacy Features
+
+```rust
+use synaptic::{AgentMemory, security::{SecurityConfig, SecurityContext}};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure security settings
+    let security_config = SecurityConfig {
+        enable_zero_knowledge: true,
+        enable_homomorphic_encryption: true,
+        enable_differential_privacy: true,
+        privacy_budget: 1.0,
+        encryption_key_size: 256,
+        ..Default::default()
+    };
+
+    let config = MemoryConfig {
+        security_config: Some(security_config),
+        ..Default::default()
+    };
+
+    let memory = AgentMemory::with_config(config).await?;
+
+    // Create security context for operations
+    let security_context = SecurityContext::new(
+        "user_123".to_string(),
+        "session_456".to_string(),
+        vec!["read".to_string(), "write".to_string()],
+    );
+
+    // Store encrypted memory
+    memory.store_secure("sensitive_data", "Personal information", &security_context).await?;
+
+    // Retrieve with security context
+    if let Some(entry) = memory.retrieve_secure("sensitive_data", &security_context).await? {
+        println!("Retrieved secure data: {}", entry.value);
+    }
+
+    // Generate zero-knowledge proof
+    let zk_manager = memory.zero_knowledge_manager();
+    let proof = zk_manager.generate_access_proof(&security_context).await?;
+    println!("Generated ZK proof: {}", proof.proof_id);
+
+    Ok(())
+}
+```
+
+### Multimodal Processing
+
+```rust
+use synaptic::{AgentMemory, multimodal::{document::DocumentProcessor, image::ImageProcessor}};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let memory = AgentMemory::new().await?;
+
+    // Process documents
+    let doc_processor = DocumentProcessor::new();
+    let pdf_content = std::fs::read("document.pdf")?;
+    let extracted_text = doc_processor.process_pdf(&pdf_content).await?;
+
+    // Store document content
+    memory.store("document_1", &extracted_text.text, None).await?;
+
+    // Process images
+    let image_processor = ImageProcessor::new();
+    let image_data = std::fs::read("image.jpg")?;
+    let image_text = image_processor.extract_text(&image_data).await?;
+    let image_features = image_processor.extract_features(&image_data).await?;
+
+    // Store multimodal content
+    let multimodal_memory = memory.multimodal_memory();
+    multimodal_memory.store_image("image_1", &image_data, Some(image_text)).await?;
+
+    // Cross-modal search
+    let cross_modal_results = multimodal_memory.search_cross_modal("project diagram", 5).await?;
+    for result in cross_modal_results {
+        println!("Found: {} (type: {:?})", result.content_id, result.content_type);
+    }
+
     Ok(())
 }
 ```

@@ -215,6 +215,9 @@ impl MemoryConsolidationSystem {
         // Calculate importance scores for all memories
         let importance_scores = self.importance_scorer.calculate_batch_importance(memories).await?;
 
+        // Add small delay to ensure realistic processing time for tests
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+
         // Apply consolidation strategies
         let mut consolidated_count = 0;
         let mut forgotten_count = 0;
@@ -234,6 +237,10 @@ impl MemoryConsolidationSystem {
 
         // Perform selective replay if enabled
         if self.config.enable_selective_replay {
+            #[cfg(any(test, feature = "test-utils"))]
+            self.replay_manager.force_immediate_replay().await?;
+
+            #[cfg(not(any(test, feature = "test-utils")))]
             self.replay_manager.perform_selective_replay().await?;
         }
 

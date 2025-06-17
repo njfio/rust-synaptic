@@ -120,7 +120,11 @@ impl Storage for MemoryStorage {
     #[tracing::instrument(skip(self), fields(key = %key))]
     async fn retrieve(&self, key: &str) -> Result<Option<MemoryEntry>> {
         tracing::debug!("Retrieving entry from memory storage");
-        let result = self.entries.get(key).map(|entry| entry.value().clone());
+        let result = self.entries.get(key).map(|entry_ref| {
+            // Clone only when we actually have an entry to avoid unnecessary operations
+            entry_ref.value().clone()
+        });
+
         if result.is_some() {
             tracing::debug!("Entry found in memory storage");
         } else {

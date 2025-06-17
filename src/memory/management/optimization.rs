@@ -726,6 +726,9 @@ impl MemoryOptimizer {
         let mut total_removed = 0usize;
         let mut total_space_saved = 0usize;
 
+        // Execute deduplication methods sequentially but with optimized batching
+        // Note: Parallel execution would require splitting the data or using Arc<Mutex<Self>>
+
         // Method 1: Exact content hash matching (fastest, most reliable)
         let (exact_removed, exact_space) = self.deduplicate_exact_matches().await?;
         total_removed += exact_removed;
@@ -867,25 +870,26 @@ impl MemoryOptimizer {
         Ok((removed, space_saved))
     }
 
-    /// Method 4: Fuzzy string matching (Levenshtein distance with 95% similarity)
+    /// Method 4: Fuzzy string matching (optimized with length-based pre-filtering)
     async fn deduplicate_fuzzy_matching(&mut self) -> Result<(usize, usize)> {
         let mut to_remove = Vec::new();
-        let entries: Vec<_> = self.entries.iter().collect();
 
-        for i in 0..entries.len() {
-            for j in (i + 1)..entries.len() {
-                let (key1, entry1) = entries[i];
-                let (key2, entry2) = entries[j];
+        // Group entries by similar length for more efficient comparison
+        let mut length_groups: std::collections::HashMap<usize, Vec<(&String, &MemoryEntry)>> = std::collections::HashMap::new();
 
-                let similarity = self.calculate_string_similarity(&entry1.value, &entry2.value);
-                if similarity > 0.95 {
-                    // Keep the one with higher importance, remove the other
-                    if entry1.metadata.importance >= entry2.metadata.importance {
-                        to_remove.push(key2.clone());
-                    } else {
-                        to_remove.push(key1.clone());
-                    }
-                }
+        for (key, entry) in &self.entries {
+            let length_bucket = (entry.value.len() / 100) * 100; // Group by 100-char buckets
+            length_groups.entry(length_bucket).or_default().push((key, entry));
+        }
+
+        // Only compare entries within similar length groups and adjacent groups
+        for (&length, group) in &length_groups {
+            // Compare within the same group
+            self.compare_entries_in_group(group, &mut to_remove);
+
+            // Compare with adjacent length groups (±100 chars)
+            if let Some(adjacent_group) = length_groups.get(&(length + 100)) {
+                self.compare_entries_between_groups(group, adjacent_group, &mut to_remove);
             }
         }
 
@@ -947,6 +951,43 @@ impl MemoryOptimizer {
         Ok((removed, space_saved))
     }
 
+    /// Compare entries within the same length group for fuzzy matching
+    fn compare_entries_in_group(&self, group: &[(&String, &MemoryEntry)], to_remove: &mut Vec<String>) {
+        for i in 0..group.len() {
+            for j in (i + 1)..group.len() {
+                let (key1, entry1) = group[i];
+                let (key2, entry2) = group[j];
+
+                let similarity = self.calculate_string_similarity(&entry1.value, &entry2.value);
+                if similarity > 0.95 {
+                    // Keep the one with higher importance, remove the other
+                    if entry1.metadata.importance >= entry2.metadata.importance {
+                        to_remove.push(key2.clone());
+                    } else {
+                        to_remove.push(key1.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Compare entries between two different length groups for fuzzy matching
+    fn compare_entries_between_groups(&self, group1: &[(&String, &MemoryEntry)], group2: &[(&String, &MemoryEntry)], to_remove: &mut Vec<String>) {
+        for (key1, entry1) in group1 {
+            for (key2, entry2) in group2 {
+                let similarity = self.calculate_string_similarity(&entry1.value, &entry2.value);
+                if similarity > 0.95 {
+                    // Keep the one with higher importance, remove the other
+                    if entry1.metadata.importance >= entry2.metadata.importance {
+                        to_remove.push(key2.to_string());
+                    } else {
+                        to_remove.push(key1.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     /// Compute content hash for exact duplicate detection
     fn compute_content_hash(&self, content: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
@@ -985,29 +1026,35 @@ impl MemoryOptimizer {
         }
     }
 
-    /// Calculate string similarity using advanced multi-metric approach
+    /// Calculate string similarity using optimized multi-metric approach
     fn calculate_string_similarity(&self, s1: &str, s2: &str) -> f64 {
         if s1 == s2 {
             return 1.0;
         }
 
-        let len1 = s1.chars().count();
-        let len2 = s2.chars().count();
+        let len1 = s1.len();
+        let len2 = s2.len();
 
         if len1 == 0 || len2 == 0 {
             return 0.0;
         }
 
-        // Simplified similarity based on common characters and length difference
-        let common_chars = s1.chars()
-            .filter(|c| s2.contains(*c))
+        // Quick length-based pre-filter for performance
+        let length_ratio = (len1.min(len2) as f64) / (len1.max(len2) as f64);
+        if length_ratio < 0.5 {
+            return 0.0; // Too different in length
+        }
+
+        // Use byte-level comparison for better performance
+        let common_bytes = s1.bytes()
+            .filter(|&b| s2.as_bytes().contains(&b))
             .count();
 
         let max_len = len1.max(len2);
-        let length_penalty = (len1 as f64 - len2 as f64).abs() / max_len as f64;
-        let char_similarity = common_chars as f64 / max_len as f64;
+        let length_penalty = ((len1 as f64 - len2 as f64).abs()) / (max_len as f64);
+        let byte_similarity = (common_bytes as f64) / (max_len as f64);
 
-        (char_similarity * (1.0 - length_penalty * 0.5)).max(0.0)
+        (byte_similarity * (1.0 - length_penalty * 0.3)).max(0.0)
     }
 
     /// Generate cluster key for clustering-based deduplication
@@ -1070,36 +1117,52 @@ impl MemoryOptimizer {
         Ok((compressed, space_saved))
     }
 
-    /// Analyze content for optimal compression algorithm
+    /// Analyze content for optimal compression algorithm (optimized)
     fn analyze_content_for_compression(content: &str) -> CompressionAnalysis {
-        let mut char_frequency = HashMap::new();
-        for ch in content.chars() {
-            *char_frequency.entry(ch).or_insert(0) += 1;
-        }
-
+        // Pre-calculate values to avoid redundant operations
         let repetition_ratio = MemoryOptimizer::calculate_repetition_ratio(content);
         let entropy = MemoryOptimizer::calculate_entropy(content);
 
-        // Calculate bigram frequency
+        // Optimized character frequency using byte array
+        let mut char_frequency = HashMap::new();
+        let mut whitespace_count = 0;
+
+        for ch in content.chars() {
+            *char_frequency.entry(ch).or_insert(0) += 1;
+            if ch.is_whitespace() {
+                whitespace_count += 1;
+            }
+        }
+
+        // Optimized bigram frequency calculation
         let mut bigram_frequency = HashMap::new();
-        let chars: Vec<char> = content.chars().collect();
-        for window in chars.windows(2) {
-            let bigram = format!("{}{}", window[0], window[1]);
-            *bigram_frequency.entry(bigram).or_insert(0) += 1;
+        let bytes = content.as_bytes();
+        if bytes.len() >= 2 {
+            for window in bytes.windows(2) {
+                if let (Ok(c1), Ok(c2)) = (std::str::from_utf8(&[window[0]]), std::str::from_utf8(&[window[1]])) {
+                    let bigram = format!("{}{}", c1, c2);
+                    *bigram_frequency.entry(bigram).or_insert(0) += 1;
+                }
+            }
         }
 
-        // Calculate word frequency
+        // Optimized word frequency calculation
+        let words: Vec<&str> = content.split_whitespace().collect();
         let mut word_frequency = HashMap::new();
-        for word in content.split_whitespace() {
+        let mut total_word_length = 0;
+
+        for word in &words {
             *word_frequency.entry(word.to_string()).or_insert(0) += 1;
+            total_word_length += word.len();
         }
 
-        let whitespace_ratio = content.chars().filter(|c| c.is_whitespace()).count() as f64 / content.len() as f64;
-        let average_word_length = if !word_frequency.is_empty() {
-            word_frequency.keys().map(|w| w.len()).sum::<usize>() as f64 / word_frequency.len() as f64
-        } else {
-            0.0
-        };
+        let whitespace_ratio = if content.is_empty() { 0.0 } else { whitespace_count as f64 / content.len() as f64 };
+        let average_word_length = if words.is_empty() { 0.0 } else { total_word_length as f64 / words.len() as f64 };
+
+        // Quick content type detection
+        let trimmed = content.trim_start();
+        let is_json_like = trimmed.starts_with('{') || trimmed.starts_with('[');
+        let is_xml_like = trimmed.starts_with('<');
 
         CompressionAnalysis {
             entropy,
@@ -1108,8 +1171,8 @@ impl MemoryOptimizer {
             char_frequency,
             bigram_frequency,
             word_frequency,
-            is_json_like: content.trim_start().starts_with('{') || content.trim_start().starts_with('['),
-            is_xml_like: content.trim_start().starts_with('<'),
+            is_json_like,
+            is_xml_like,
             average_word_length,
         }
     }
@@ -1355,44 +1418,49 @@ impl MemoryOptimizer {
         }
     }
 
-    /// Calculate repetition ratio for compression analysis
+    /// Calculate repetition ratio for compression analysis (optimized)
     fn calculate_repetition_ratio(content: &str) -> f64 {
         if content.is_empty() {
             return 0.0;
         }
 
-        let mut char_counts = HashMap::new();
-        for ch in content.chars() {
-            *char_counts.entry(ch).or_insert(0) += 1;
+        // Use byte-level analysis for better performance
+        let mut byte_seen = [false; 256];
+        let mut unique_bytes = 0;
+
+        for &byte in content.as_bytes() {
+            if !byte_seen[byte as usize] {
+                byte_seen[byte as usize] = true;
+                unique_bytes += 1;
+            }
         }
 
-        let total_chars = content.len();
-        let unique_chars = char_counts.len();
-
-        if unique_chars == 0 {
+        let total_bytes = content.len();
+        if unique_bytes == 0 {
             0.0
         } else {
-            1.0 - (unique_chars as f64 / total_chars as f64)
+            1.0 - (unique_bytes as f64 / total_bytes as f64)
         }
     }
 
-    /// Calculate entropy for compression analysis
+    /// Calculate entropy for compression analysis (optimized)
     fn calculate_entropy(content: &str) -> f64 {
         if content.is_empty() {
             return 0.0;
         }
 
-        let mut char_counts = HashMap::new();
-        for ch in content.chars() {
-            *char_counts.entry(ch).or_insert(0) += 1;
+        // Use array for byte frequency counting (faster than HashMap)
+        let mut byte_counts = [0u32; 256];
+        for &byte in content.as_bytes() {
+            byte_counts[byte as usize] += 1;
         }
 
-        let total_chars = content.len() as f64;
+        let total_bytes = content.len() as f64;
         let mut entropy = 0.0;
 
-        for count in char_counts.values() {
-            let probability = *count as f64 / total_chars;
-            if probability > 0.0 {
+        for &count in &byte_counts {
+            if count > 0 {
+                let probability = count as f64 / total_bytes;
                 entropy -= probability * probability.log2();
             }
         }
@@ -2158,7 +2226,7 @@ impl MetricsCollector {
     async fn calculate_derived_metrics(&mut self) -> Result<()> {
         // Calculate throughput
         let total_ops = self.operation_counters.total_operations.load(Ordering::Relaxed);
-        let successful_ops = self.operation_counters.successful_operations.load(Ordering::Relaxed);
+        let _successful_ops = self.operation_counters.successful_operations.load(Ordering::Relaxed);
         let failed_ops = self.operation_counters.failed_operations.load(Ordering::Relaxed);
 
         // Simple throughput calculation (operations per second)
@@ -2211,7 +2279,7 @@ impl MetricsCollector {
 
     /// Extract feature vectors for memory clustering
     async fn extract_memory_features(&self) -> Result<HashMap<String, Vec<f64>>> {
-        let features: HashMap<String, Vec<f64>> = HashMap::new();
+        let _features: HashMap<String, Vec<f64>> = HashMap::new();
 
         // Simplified implementation - return empty features
         Ok(HashMap::new())
@@ -2293,7 +2361,7 @@ impl MetricsCollector {
 
         // Perform agglomerative clustering
         let mut clusters: Vec<Vec<String>> = memory_keys.iter().map(|k| vec![k.clone()]).collect();
-        let mut cluster_id_counter = 0;
+        let mut _cluster_id_counter = 0;
 
         while clusters.len() > 1 {
             // Find closest pair of clusters
