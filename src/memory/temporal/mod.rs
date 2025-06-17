@@ -10,6 +10,7 @@ pub mod versioning;
 pub mod differential;
 pub mod patterns;
 pub mod evolution;
+pub mod decay_models;
 
 // Re-export commonly used types
 pub use versioning::{MemoryVersion, VersionHistory, VersionManager, ChangeType};
@@ -22,6 +23,14 @@ pub use evolution::{
     EvolutionEvent,
     GlobalEvolutionMetrics,
     EvolutionData,
+};
+pub use decay_models::{
+    TemporalDecayModels,
+    DecayModelType,
+    DecayConfig,
+    DecayParameters,
+    DecayContext,
+    DecayResult,
 };
 
 use crate::error::Result;
