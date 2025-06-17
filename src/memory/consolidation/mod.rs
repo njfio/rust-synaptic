@@ -91,6 +91,10 @@ pub enum ConsolidationStrategy {
     SelectiveReplay,
     /// Gradual Forgetting
     GradualForgetting,
+    /// Knowledge Distillation
+    KnowledgeDistillation,
+    /// Hierarchical Compression
+    HierarchicalCompression,
     /// Importance-Weighted Updates
     ImportanceWeighted,
     /// Hybrid approach combining multiple strategies
