@@ -9,6 +9,7 @@ pub mod consolidation_strategies;
 pub mod elastic_weight_consolidation;
 pub mod synaptic_intelligence;
 pub mod gradual_forgetting;
+pub mod adaptive_replay;
 
 use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryType};
@@ -151,6 +152,8 @@ pub struct MemoryConsolidationSystem {
     synaptic_intelligence: synaptic_intelligence::SynapticIntelligence,
     /// Gradual Forgetting Algorithm implementation
     gradual_forgetting: gradual_forgetting::GradualForgettingAlgorithm,
+    /// Adaptive Replay Mechanisms implementation
+    adaptive_replay: adaptive_replay::AdaptiveReplayMechanisms,
     /// Consolidation history
     consolidation_history: Vec<ConsolidationResult>,
     /// Last consolidation timestamp
@@ -169,6 +172,10 @@ impl MemoryConsolidationSystem {
             gradual_forgetting::ForgettingConfig::default(),
             config.clone(),
         )?;
+        let adaptive_replay = adaptive_replay::AdaptiveReplayMechanisms::new(
+            adaptive_replay::AdaptiveReplayConfig::default(),
+            config.clone(),
+        )?;
 
         Ok(Self {
             config,
@@ -178,6 +185,7 @@ impl MemoryConsolidationSystem {
             ewc,
             synaptic_intelligence,
             gradual_forgetting,
+            adaptive_replay,
             consolidation_history: Vec::new(),
             last_consolidation: None,
         })
@@ -244,6 +252,31 @@ impl MemoryConsolidationSystem {
             tracing::info!("Gradual forgetting evaluated {} memories, {} marked for forgetting",
                           forgetting_decisions.len(), forgotten_by_gradual);
         }
+
+        // Apply Adaptive Replay Mechanisms
+        let mut adaptive_decisions = Vec::new();
+        for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
+            // Create context for adaptive replay
+            let context = adaptive_replay::ReplayContext {
+                learning_phase: "consolidation".to_string(),
+                memory_domain: "general".to_string(),
+                activity_level: 0.8, // High during consolidation
+                system_load: 0.3,    // Assume moderate load
+                time_of_day_factor: 0.7,
+                performance_trends: vec![0.7, 0.8, 0.75], // Recent performance
+                timestamp: Utc::now(),
+            };
+
+            let decision = self.adaptive_replay.make_adaptive_decision(memory, importance, &context).await?;
+            adaptive_decisions.push(decision);
+        }
+
+        let high_priority_replays = adaptive_decisions.iter()
+            .filter(|d| d.replay_priority > 0.7)
+            .count();
+
+        tracing::info!("Adaptive replay evaluated {} memories, {} high-priority replays scheduled",
+                      adaptive_decisions.len(), high_priority_replays);
 
         let processing_time = start_time.elapsed().as_millis() as u64;
         let avg_importance = if consolidated_count > 0 {
