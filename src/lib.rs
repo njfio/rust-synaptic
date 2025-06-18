@@ -102,6 +102,14 @@ impl AgentMemory {
     /// Create a new agent memory system with the given configuration
     #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
+        // Initialize logging system first
+        if let Some(ref logging_config) = config.logging_config {
+            let logging_manager = logging::LoggingManager::new(logging_config.clone());
+            if let Err(e) = logging_manager.initialize() {
+                eprintln!("Warning: Failed to initialize logging: {}", e);
+            }
+        }
+
         tracing::info!("Initializing AgentMemory with configuration");
 
         let storage = memory::storage::create_storage(&config.storage_backend).await?;
@@ -569,6 +577,8 @@ pub struct MemoryConfig {
     pub enable_cross_platform: bool,
     #[cfg(feature = "cross-platform")]
     pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
+    /// Logging and monitoring configuration
+    pub logging_config: Option<logging::LoggingConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -605,6 +615,7 @@ impl Default for MemoryConfig {
             enable_cross_platform: false,
             #[cfg(feature = "cross-platform")]
             cross_platform_config: None,
+            logging_config: Some(logging::LoggingConfig::default()),
         }
     }
 }

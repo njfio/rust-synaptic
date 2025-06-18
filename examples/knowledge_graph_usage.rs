@@ -1,10 +1,14 @@
 //! Knowledge graph usage example for the AI Agent Memory system
 
 use synaptic::{
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
-    memory::knowledge_graph::{RelationshipType, NodeType},
+    AgentMemory, MemoryConfig,
+    memory::knowledge_graph::RelationshipType,
     error::Result,
 };
+
+// Only import these when needed for the helper function
+#[allow(unused_imports)]
+use synaptic::{MemoryEntry, MemoryType};
 
 #[tokio::main]
 async fn main() -> Result<()> {

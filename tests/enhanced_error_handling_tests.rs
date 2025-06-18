@@ -114,7 +114,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Loading configuration"));
             assert!(message.contains("File not found"));
         }
-        _ => panic!("Expected storage error with context"),
+        _ => assert!(false, "Expected storage error with context"),
     }
 
     // Test analytics context
@@ -170,7 +170,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Data compression"));
             assert!(message.contains("Algorithm not supported"));
         }
-        _ => panic!("Expected compression error with context"),
+        _ => assert!(false, "Expected compression error with context"),
     }
 
     // Test validation context
@@ -181,7 +181,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Input validation"));
             assert!(message.contains("Schema mismatch"));
         }
-        _ => panic!("Expected validation error with context"),
+        _ => assert!(false, "Expected validation error with context"),
     }
 
     // Test processing context
@@ -241,7 +241,7 @@ async fn test_error_chaining() {
             assert!(message.contains("Reading file"));
             assert!(message.contains("Access denied"));
         }
-        _ => panic!("Expected storage error"),
+        _ => assert!(false, "Expected storage error"),
     }
 
     // Test validation context

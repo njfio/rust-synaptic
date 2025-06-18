@@ -19,30 +19,74 @@ pub mod audit;
 pub mod key_management;
 pub mod zero_knowledge;
 
-/// Security configuration for the memory system
+/// Comprehensive security configuration for the Synaptic memory system.
+///
+/// This configuration structure controls all security and privacy features,
+/// including encryption, access control, audit logging, and advanced privacy
+/// technologies like zero-knowledge proofs and homomorphic encryption.
+///
+/// # Security Features
+///
+/// - **Zero-Knowledge Architecture**: Enables privacy-preserving operations
+/// - **Homomorphic Encryption**: Allows computation on encrypted data
+/// - **Differential Privacy**: Provides mathematical privacy guarantees
+/// - **Access Control**: Role-based and attribute-based access control
+/// - **Audit Logging**: Comprehensive security event logging
+/// - **Key Management**: Automatic key rotation and secure key storage
+///
+/// # Examples
+///
+/// ```rust
+/// use synaptic::security::{SecurityConfig, AccessControlPolicy, AuditConfig};
+///
+/// // High-security configuration for sensitive data
+/// let high_security_config = SecurityConfig {
+///     enable_zero_knowledge: true,
+///     enable_homomorphic_encryption: true,
+///     enable_differential_privacy: true,
+///     privacy_budget: 0.5, // Conservative privacy budget
+///     encryption_key_size: 256,
+///     key_rotation_interval_hours: 12, // Rotate keys twice daily
+///     enable_secure_mpc: true,
+///     enable_homomorphic_ops: true,
+///     ..Default::default()
+/// };
+///
+/// // Performance-optimized configuration
+/// let performance_config = SecurityConfig {
+///     enable_zero_knowledge: false,
+///     enable_homomorphic_encryption: false,
+///     enable_differential_privacy: false,
+///     encryption_key_size: 128,
+///     key_rotation_interval_hours: 168, // Weekly rotation
+///     enable_secure_mpc: false,
+///     enable_homomorphic_ops: false,
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    /// Enable zero-knowledge architecture
+    /// Enable zero-knowledge architecture for privacy-preserving operations
     pub enable_zero_knowledge: bool,
-    /// Enable homomorphic encryption
+    /// Enable homomorphic encryption for computation on encrypted data
     pub enable_homomorphic_encryption: bool,
-    /// Enable differential privacy
+    /// Enable differential privacy for mathematical privacy guarantees
     pub enable_differential_privacy: bool,
-    /// Privacy budget for differential privacy
+    /// Privacy budget for differential privacy (lower = more private)
     pub privacy_budget: f64,
-    /// Encryption key size in bits
+    /// Encryption key size in bits (128, 192, or 256)
     pub encryption_key_size: usize,
-    /// Access control policy
+    /// Access control policy configuration
     pub access_control_policy: AccessControlPolicy,
     /// Audit logging configuration
     pub audit_config: AuditConfig,
-    /// Key rotation interval in hours
+    /// Key rotation interval in hours (recommended: 24-168)
     pub key_rotation_interval_hours: u64,
-    /// Enable secure multi-party computation
+    /// Enable secure multi-party computation capabilities
     pub enable_secure_mpc: bool,
-    /// Enable homomorphic operations
+    /// Enable homomorphic operations on encrypted memory data
     pub enable_homomorphic_ops: bool,
-    /// Zero-knowledge configuration
+    /// Zero-knowledge proof system configuration
     pub zero_knowledge_config: zero_knowledge::ZeroKnowledgeConfig,
 }
 

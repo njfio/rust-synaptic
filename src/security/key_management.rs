@@ -85,7 +85,8 @@ impl KeyManager {
 
         // Encrypt the data key with the master key
         let encrypted_key = {
-            let master_key = self.master_keys.get(master_key_id).unwrap();
+            let master_key = self.master_keys.get(master_key_id)
+                .ok_or_else(|| MemoryError::key_management("Master key not found for data key creation".to_string()))?;
             self.encrypt_with_master_key(&plaintext_key, master_key)?
         };
 
@@ -138,7 +139,8 @@ impl KeyManager {
         // If plaintext key is not available, decrypt it
         if needs_decryption {
             let (master_key_id, encrypted_key) = {
-                let data_key = self.data_keys.get(key_id).unwrap();
+                let data_key = self.data_keys.get(key_id)
+                    .ok_or_else(|| MemoryError::key_management("Data key not found for decryption".to_string()))?;
                 (data_key.master_key_id.clone(), data_key.encrypted_key.clone())
             };
 
@@ -155,9 +157,12 @@ impl KeyManager {
 
         // Update usage count and return the key
         let result = {
-            let data_key = self.data_keys.get_mut(key_id).unwrap();
+            let data_key = self.data_keys.get_mut(key_id)
+                .ok_or_else(|| MemoryError::key_management("Data key not found for usage update".to_string()))?;
             data_key.usage_count += 1;
-            data_key.plaintext_key.as_ref().unwrap().clone()
+            data_key.plaintext_key.as_ref()
+                .ok_or_else(|| MemoryError::key_management("Plaintext key not available".to_string()))?
+                .clone()
         };
 
         self.metrics.total_key_operations += 1;

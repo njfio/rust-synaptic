@@ -41,12 +41,14 @@ impl AsyncExecutor {
     }
     
     /// Submit a task for execution
+    #[tracing::instrument(skip(self, _task_fn), fields(task_id, priority = ?priority))]
     pub async fn submit_task<F, T>(&self, _task_fn: F, priority: TaskPriority) -> Result<String>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         let task_id = Uuid::new_v4().to_string();
+        tracing::debug!("Submitting compute task with ID: {}", task_id);
         
         let task = Task {
             id: task_id.clone(),
@@ -56,27 +58,34 @@ impl AsyncExecutor {
             estimated_duration: Duration::from_millis(100), // Default estimate
         };
         
-        // Add to queue
-        let mut queue = self.task_queue.write().await;
-        queue.push_back(task);
-        
-        // Update statistics
-        let mut stats = self.executor_stats.write().await;
-        stats.tasks_submitted += 1;
-        
+        // Parallelize queue addition and stats update using join!
+        let (_queue_result, _stats_result) = tokio::join!(
+            async {
+                let mut queue = self.task_queue.write().await;
+                queue.push_back(task);
+            },
+            async {
+                let mut stats = self.executor_stats.write().await;
+                stats.tasks_submitted += 1;
+            }
+        );
+
         // Schedule task execution
         self.schedule_next_task().await?;
-        
+
+        tracing::info!("Task submitted successfully with ID: {}", task_id);
         Ok(task_id)
     }
     
     /// Submit a blocking task
+    #[tracing::instrument(skip(self, _task_fn), fields(task_id, priority = ?priority))]
     pub async fn submit_blocking_task<F, T>(&self, _task_fn: F, priority: TaskPriority) -> Result<String>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         let task_id = Uuid::new_v4().to_string();
+        tracing::debug!("Submitting blocking task with ID: {}", task_id);
         
         let task = Task {
             id: task_id.clone(),
@@ -86,20 +95,61 @@ impl AsyncExecutor {
             estimated_duration: Duration::from_millis(500), // Longer estimate for blocking
         };
         
-        // Add to queue
-        let mut queue = self.task_queue.write().await;
-        queue.push_back(task);
-        
-        // Update statistics
-        let mut stats = self.executor_stats.write().await;
-        stats.blocking_tasks_submitted += 1;
+        // Parallelize queue addition and stats update using join!
+        let (_queue_result, _stats_result) = tokio::join!(
+            async {
+                let mut queue = self.task_queue.write().await;
+                queue.push_back(task);
+            },
+            async {
+                let mut stats = self.executor_stats.write().await;
+                stats.blocking_tasks_submitted += 1;
+            }
+        );
         
         // Schedule task execution
         self.schedule_next_task().await?;
         
         Ok(task_id)
     }
-    
+
+    /// Submit multiple tasks in batch for optimized processing
+    pub async fn submit_batch_tasks<F, T>(&self, task_count: usize, priority: TaskPriority) -> Result<Vec<String>>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let task_ids: Vec<String> = (0..task_count).map(|_| Uuid::new_v4().to_string()).collect();
+
+        // Create tasks in parallel
+        let tasks_to_queue: Vec<Task> = task_ids.iter().map(|id| Task {
+            id: id.clone(),
+            priority,
+            task_type: TaskType::Compute,
+            submitted_at: Instant::now(),
+            estimated_duration: Duration::from_millis(100),
+        }).collect();
+
+        // Batch queue operations for better performance
+        {
+            let mut queue = self.task_queue.write().await;
+            for task in tasks_to_queue {
+                queue.push_back(task);
+            }
+        }
+
+        // Update statistics in batch
+        {
+            let mut stats = self.executor_stats.write().await;
+            stats.tasks_submitted += task_count as u64;
+        }
+
+        // Schedule batch execution
+        self.schedule_next_task().await?;
+
+        Ok(task_ids)
+    }
+
     /// Get executor statistics
     pub async fn get_statistics(&self) -> Result<ExecutorStatistics> {
         Ok(self.executor_stats.read().await.clone())
@@ -160,10 +210,13 @@ impl AsyncExecutor {
     }
     
     /// Execute a compute task
+    #[tracing::instrument(skip(self, task), fields(task_id = %task.id, priority = ?task.priority))]
     async fn execute_compute_task(&self, task: Task) -> Result<()> {
         let _permit = self.worker_semaphore.acquire().await.unwrap();
         let task_id = task.id.clone();
         let start_time = Instant::now();
+
+        tracing::debug!("Starting execution of compute task: {}", task_id);
 
         // Add to active tasks
         let active_task = ActiveTask {
@@ -179,6 +232,9 @@ impl AsyncExecutor {
 
         // Task completed
         self.complete_task(&task_id, start_time).await?;
+
+        let duration = start_time.elapsed();
+        tracing::info!("Compute task {} completed in {:?}", task_id, duration);
 
         Ok(())
     }

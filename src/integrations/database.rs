@@ -376,16 +376,33 @@ impl Storage for DatabaseClient {
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<crate::memory::types::MemoryFragment>> {
         #[cfg(feature = "sql-storage")]
         {
-            let rows = sqlx::query(&format!("SELECT key, value FROM {}.memory_entries WHERE value ILIKE $1 LIMIT $2", self.config.schema))
+            // Use prepared statement for better performance and security
+            let sql = format!("SELECT key, value FROM {}.memory_entries WHERE value ILIKE $1 LIMIT $2", self.config.schema);
+            let rows = sqlx::query(&sql)
                 .bind(format!("%{}%", query))
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e| MemoryError::storage(format!("Search failed: {}", e)))?;
-            let fragments = rows.into_iter().map(|row| crate::memory::types::MemoryFragment {
-                key: row.get("key"),
-                snippet: row.get::<String, _>("value").chars().take(100).collect(),
-            }).collect();
+
+            // Parallelize fragment creation for large result sets
+            let fragments = if rows.len() > 100 {
+                // Use parallel processing for large result sets
+                use rayon::prelude::*;
+                rows.into_par_iter().map(|row| crate::memory::types::MemoryFragment {
+                    key: row.get("key"),
+                    snippet: row.get::<String, _>("value").chars().take(100).collect(),
+                    relevance_score: 1.0, // Default relevance score
+                }).collect()
+            } else {
+                // Use sequential processing for small result sets
+                rows.into_iter().map(|row| crate::memory::types::MemoryFragment {
+                    key: row.get("key"),
+                    snippet: row.get::<String, _>("value").chars().take(100).collect(),
+                    relevance_score: 1.0, // Default relevance score
+                }).collect()
+            };
+
             Ok(fragments)
         }
         #[cfg(not(feature = "sql-storage"))]

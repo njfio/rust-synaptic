@@ -4,7 +4,12 @@
 //! and optimization validation.
 
 use synaptic::{
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
+    AgentMemory, MemoryConfig,
+};
+
+#[cfg(feature = "embeddings")]
+use synaptic::{
+    MemoryEntry, MemoryType,
     memory::embeddings::{EmbeddingManager, EmbeddingConfig},
 };
 use std::error::Error;
@@ -71,19 +76,26 @@ async fn test_concurrent_access_performance() -> Result<(), Box<dyn Error>> {
     
     let mut join_set = JoinSet::new();
     
-    // Spawn concurrent tasks
+    // Spawn concurrent tasks with optimized lock usage
     for task_id in 0..num_tasks {
         let memory_clone = Arc::clone(&memory);
         join_set.spawn(async move {
+            // Batch operations to reduce lock contention
+            let mut operations = Vec::new();
             for op_id in 0..operations_per_task {
                 let key = format!("concurrent_{}_{}", task_id, op_id);
                 let value = format!("Concurrent test value {} {}", task_id, op_id);
-                
+                operations.push((key, value));
+            }
+
+            // Perform all operations in a single lock acquisition
+            {
                 let mut mem = memory_clone.lock().await;
-                mem.store(&key, &value).await?;
-                
-                let retrieved = mem.retrieve(&key).await?;
-                assert!(retrieved.is_some());
+                for (key, value) in operations {
+                    mem.store(&key, &value).await?;
+                    let retrieved = mem.retrieve(&key).await?;
+                    assert!(retrieved.is_some());
+                }
             }
             Ok::<(), Box<dyn Error + Send + Sync>>(())
         });

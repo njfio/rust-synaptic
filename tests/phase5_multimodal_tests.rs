@@ -252,10 +252,16 @@ async fn test_code_function_extraction() {
 #[tokio::test]
 async fn test_cross_modal_analyzer() {
     let config = CrossModalConfig::default();
-    let analyzer = CrossModalAnalyzer::new(config);
-    
-    // Test analyzer creation
-    assert!(true); // Placeholder - would test relationship detection
+    let analyzer = CrossModalAnalyzer::new(config.clone());
+
+    // Test analyzer creation and configuration
+    assert_eq!(config.min_confidence_threshold, 0.7);
+    assert_eq!(config.similarity_threshold, 0.8);
+    assert!(config.enable_text_extraction);
+    assert!(config.enable_semantic_similarity);
+    assert!(config.enable_temporal_relationships);
+    assert!(config.enable_generation_relationships);
+    assert_eq!(config.max_relationships_per_memory, 10);
 }
 
 #[cfg(feature = "multimodal")]
@@ -409,45 +415,55 @@ async fn test_integrated_multimodal_cross_platform() {
 #[tokio::test]
 async fn test_phase5_feature_flags() {
     // Test that the system works correctly with different feature combinations
-    
+
     #[cfg(feature = "multimodal")]
     {
-        // Multimodal features should be available
-        assert!(true);
+        // Test multimodal config creation
+        let config = UnifiedMultiModalConfig::default();
+        assert!(config.enable_cross_modal_analysis);
+        assert!(config.enable_relationship_detection);
     }
-    
+
     #[cfg(feature = "cross-platform")]
     {
-        // Cross-platform features should be available
-        assert!(true);
+        // Test cross-platform config creation
+        let config = CrossPlatformConfig::default();
+        assert!(config.enable_offline_mode);
+        assert!(config.enable_sync);
     }
-    
+
     #[cfg(feature = "image-memory")]
     {
-        // Image memory should be available
-        assert!(true);
+        // Test image processor creation
+        let processor = ImageMemoryProcessor::new(Default::default());
+        assert!(processor.is_ok());
     }
-    
+
     #[cfg(feature = "audio-memory")]
     {
-        // Audio memory should be available
-        assert!(true);
+        // Test audio processor creation
+        let processor = AudioMemoryProcessor::new(Default::default());
+        assert!(processor.is_ok());
     }
-    
+
     #[cfg(feature = "code-memory")]
     {
-        // Code memory should be available
-        assert!(true);
+        // Test code processor creation
+        let processor = CodeMemoryProcessor::new(Default::default());
+        assert!(processor.is_ok());
     }
-    
+
     #[cfg(feature = "wasm-support")]
     {
-        // WebAssembly support should be available
-        assert!(true);
+        // Test WebAssembly feature availability
+        let wasm_enabled = cfg!(feature = "wasm-support");
+        assert!(wasm_enabled);
     }
-    
-    // This test always passes, but ensures compilation works with different feature sets
-    assert!(true);
+
+    // Verify basic memory system functionality
+    let memory_config = MemoryConfig::default();
+    let memory = AgentMemory::new(memory_config).await;
+    assert!(memory.is_ok());
 }
 
 #[tokio::test]

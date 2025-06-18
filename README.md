@@ -2,281 +2,258 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.79+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-161%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
+[![Tests](https://img.shields.io/badge/tests-115%20passing-brightgreen.svg)](https://github.com/njfio/rust-synaptic)
 
-**Synaptic** is a comprehensive AI agent memory system implemented in Rust. It provides intelligent memory management, advanced search capabilities, lifecycle automation, knowledge graph functionality, enterprise security features, and multi-modal content processing for AI applications.
+**Synaptic** is an intelligent AI agent memory system implemented in Rust. It provides sophisticated memory management, advanced search capabilities, knowledge graph functionality, temporal tracking, and multi-modal content processing for AI applications.
 
-## 🚀 Key Highlights
+## 🚀 Key Features
 
-- **161 Passing Tests** across 14 organized categories with priority-based execution
-- **Production-Ready Implementation** with real external integrations (PostgreSQL, Redis, BERT ML models, LLM APIs)
-- **Enterprise Security** featuring AES-256-GCM encryption, zero-knowledge proofs, and differential privacy
-- **Comprehensive Test Organization** with automated CI/CD and development tools
-- **Multi-Modal Processing** supporting PDF, Markdown, DOC, CSV, Parquet, images, audio, and code
-- **Advanced Analytics** with real-time performance monitoring and sophisticated algorithms
-- **Professional Documentation** with API reference, architecture guides, and deployment instructions
+- **115 Passing Tests** with comprehensive library and integration test coverage
+- **Core Memory Operations** with intelligent storage, retrieval, search, and lifecycle management
+- **Knowledge Graph Integration** with relationship discovery and graph-based queries
+- **Advanced Search Engine** with multiple similarity algorithms and ranking strategies
+- **Temporal Intelligence** with memory evolution tracking and pattern detection
+- **Security Features** including AES-256-GCM encryption and access control
+- **CLI Interface** with SyQL (Synaptic Query Language) support
+- **Multi-Modal Processing** for documents, images, audio, and code analysis
+- **External Integrations** with PostgreSQL, Redis, and ML model support
 
-## Features
+## Core Features
 
-### Core Memory Management
+### Memory Operations
 
-- **Intelligent Memory Updates**: Smart content merging and evolution tracking to prevent duplicates
-- **Advanced Deduplication**: Multiple detection methods including content hashing, semantic similarity, fuzzy matching, and clustering algorithms
-- **Lifecycle Management**: Automated policies with 11 comprehensive tests covering archival, compression, deletion, and optimization
-- **Memory Optimization**: LRU, LFU, age-based, and hybrid cleanup strategies with real-time performance monitoring
+- **Storage & Retrieval**: Store, retrieve, update, and delete memory entries with full async support
+- **Advanced Search**: Text-based search with similarity scoring and relevance ranking
+- **Memory Types**: Support for short-term and long-term memory classification
+- **Metadata Management**: Rich metadata including tags, importance scores, and access tracking
 
-### Advanced Search & Retrieval
+### Knowledge Graph
 
-- **Multi-Strategy Search**: Text search, semantic search, graph-based search with 6 comprehensive similarity algorithms
-- **Enhanced Similarity**: N-gram, Jaro-Winkler, Damerau-Levenshtein, and Sørensen-Dice algorithms with weighted combinations
-- **Ranking System**: Multiple ranking strategies including relevance, importance, recency, frequency, and combined scoring
-- **Search Analytics**: Performance metrics, search history, and optimization insights with real-time monitoring
-
-### Intelligent Summarization
-
-- **Advanced Trigger Strategies**: Six trigger strategies including related count, age threshold, similarity clustering, importance accumulation, tag-based rules, and temporal patterns
-- **Content Consolidation**: Automated summarization with configurable thresholds and comprehensive event tracking
-- **Theme Extraction**: 10 comprehensive tests covering TF-IDF, NLP patterns, semantic clustering, and topic modeling
-
-### Dynamic Knowledge Graph
-
-- **Intelligent Relationship Discovery**: Multi-strategy relationship detection with strength scoring and type classification
-- **Graph Analysis**: Centrality measures, connectivity analysis, and relationship reasoning with 6 comprehensive tests
-- **Graph Traversal**: Advanced algorithms for finding related memories with configurable distance limits
-- **Graph Analytics**: Real-time statistics, insights, and performance monitoring
+- **Relationship Discovery**: Automatic detection of relationships between memory entries
+- **Graph Traversal**: Find related memories through graph connections
+- **Centrality Analysis**: Calculate importance based on graph position and connectivity
+- **Relationship Types**: Support for various relationship types (semantic, temporal, causal)
 
 ### Temporal Intelligence
 
-- **Advanced Pattern Detection**: Nine temporal pattern types including daily, weekly, monthly, seasonal, cyclical, burst, gradual, irregular, and custom patterns
-- **Evolution Tracking**: Myers' diff algorithm implementation with 10 comprehensive tests for change detection and compression
-- **Access Pattern Analysis**: Behavioral analysis with trend detection and 2 temporal summary tests
-- **Temporal Proximity**: Time-decay based similarity for temporal relationships
+- **Memory Evolution**: Track changes to memory entries over time using Myers' diff algorithm
+- **Pattern Detection**: Identify temporal patterns in memory access and creation
+- **Decay Models**: Implement forgetting curves and memory decay algorithms
+- **Temporal Queries**: Search memories based on time-based criteria
 
-### Enterprise Security
+### Advanced Management
 
-- **Multi-Layer Encryption**: AES-256-GCM, ChaCha20-Poly1305, and homomorphic encryption with fallback support
-- **Zero-Knowledge Proofs**: Privacy-preserving access control with cryptographic verification and 1 comprehensive test
-- **Differential Privacy**: Statistical privacy protection with configurable epsilon values and 9 security tests
-- **Comprehensive Audit Logging**: Security event tracking with tamper-evident logs and 10 logging tests
+- **Memory Summarization**: Intelligent consolidation of related memories
+- **Lifecycle Management**: Automated archiving and cleanup policies
+- **Performance Optimization**: Dynamic optimization of storage and retrieval operations
+- **Analytics Engine**: Comprehensive analysis of memory usage patterns and performance
 
-### Multi-Modal Content Processing
+### Security & Privacy
 
-- **Document Processing**: PDF, Markdown, DOC, CSV, and Parquet file support with 8 comprehensive tests
-- **Content Detection**: Advanced format detection using magic bytes and content analysis
-- **Cross-Modal Relationships**: Intelligent relationship detection across different content types
-- **Feature Extraction**: Professional algorithms for content analysis and similarity calculation
+- **AES-256-GCM Encryption**: Strong encryption for sensitive memory data
+- **Access Control**: Role-based access control with security contexts
+- **Audit Logging**: Comprehensive logging of all memory operations
+- **Data Privacy**: Privacy-preserving operations with differential privacy support
+
+### Multi-Modal Processing
+
+- **Document Processing**: Extract content from PDF, Markdown, CSV, and other document formats
+- **Image Analysis**: Basic image processing and feature extraction capabilities
+- **Audio Processing**: Audio content analysis and transcription support
+- **Code Analysis**: Parse and analyze source code using tree-sitter
 
 ## Architecture
 
-### Production-Ready Storage Infrastructure
+### Storage Backends
 
-- **Multi-Backend Support**: In-memory, file-based, and SQL database storage with 13 integration tests
-- **Advanced Indexing**: Search indices with inverted word indexing and metadata optimization
-- **Professional Compression**: LZ4, ZSTD, and Brotli compression with storage middleware and 8 optimization tests
-- **Distributed Coordination**: Redis-based caching and coordination for scalable deployments
+- **In-Memory Storage**: Fast, volatile storage for development and testing
+- **File-Based Storage**: Persistent storage using Sled embedded database
+- **SQL Database Support**: PostgreSQL integration with connection pooling (optional feature)
+- **Storage Middleware**: Compression and encryption layers for enhanced storage
 
-### Real External Integrations
+### CLI Interface
 
-- **ML Model Integration**: BERT embeddings, vector similarity, and semantic search with actual model implementations
-- **LLM Integration**: Content analysis, summarization, and processing with real API integrations
-- **Database Connectivity**: PostgreSQL integration with connection pooling, transaction management, and real database operations
-- **Advanced Visualization**: Memory visualization with graphs, analytics dashboards, and complex visualization support
+- **Interactive Shell**: Full-featured shell with command history and auto-completion
+- **SyQL Query Language**: SQL-like query language for memory operations
+- **Memory Commands**: Direct memory management through CLI commands
+- **Performance Profiling**: Built-in profiling and benchmarking tools
 
-### Comprehensive Analytics
+### External Integrations
 
-- **Memory Analytics**: Usage patterns, access frequency, and behavioral analysis with 10 performance measurement tests
-- **Performance Monitoring**: Real-time metrics, search performance, and optimization insights
-- **Trend Analysis**: Pattern recognition, forecasting, and predictive analytics
-- **Professional Reporting**: Analytics reports with actionable insights and recommendations
+- **Database Integration**: PostgreSQL support with async connection pooling
+- **Redis Caching**: Optional Redis integration for distributed caching
+- **ML Model Support**: Framework for integrating machine learning models
+- **Visualization**: Basic plotting and visualization capabilities
 
 ## Implementation Status
 
-### Comprehensive Test Coverage
+### Test Coverage
 
-- **161 Passing Tests**: Extensive test coverage across all modules with functional verification
-- **Professional Implementation**: Production-ready functionality with minimal placeholders - comprehensive real implementations
-- **Robust Error Handling**: Comprehensive Result types and error management throughout the codebase
-- **Multi-Strategy Approaches**: Multiple algorithms implemented for each core system ensuring reliability
+- **115 Library Tests**: Comprehensive unit tests covering core functionality
+- **1 Integration Test**: Basic integration testing for key workflows
+- **15 Documentation Tests**: All code examples in documentation are tested
+- **Clean Compilation**: All code compiles without errors
 
-### Delivered Core Features
+### Core Features Status
 
-- **Advanced Memory Management**: Related memory counting, intelligent summarization, professional deduplication, automated lifecycle management, and sophisticated search capabilities
-- **Multi-Strategy Implementations**: Each system implements multiple strategies for robustness and performance
-- **Real-Time Performance Optimization**: Production-grade algorithms with comprehensive monitoring and analytics
-- **Enterprise Security**: Full encryption, zero-knowledge proofs, differential privacy, and audit logging
+- **✅ Memory Operations**: Store, retrieve, update, delete operations fully implemented
+- **✅ Search Engine**: Text-based search with similarity scoring working
+- **✅ Knowledge Graph**: Relationship discovery and graph operations implemented
+- **✅ Temporal Tracking**: Memory evolution and pattern detection functional
+- **✅ Security**: AES-256-GCM encryption and access control implemented
+- **✅ CLI Interface**: Interactive shell and SyQL query language working
+- **✅ Storage Backends**: In-memory, file-based, and SQL storage options available
 
-### Production Quality
+### Optional Features
 
-- **Clean Compilation**: Codebase compiles successfully with minimal warnings and follows Rust best practices
-- **Comprehensive Documentation**: Inline documentation, examples, and detailed API documentation
-- **Modular Architecture**: Structured, maintainable, and extensible design following professional patterns
-- **Enterprise Ready**: Suitable for production deployment with scalable infrastructure and real integrations
+- **🔧 Multi-Modal Processing**: Document, image, and audio processing (requires feature flags)
+- **🔧 External Integrations**: PostgreSQL, Redis, ML models (requires feature flags)
+- **🔧 Advanced Security**: Homomorphic encryption, zero-knowledge proofs (requires feature flags)
+- **🔧 Distributed Features**: Kafka, clustering support (requires feature flags)
 
-## Quick Start
-
-### Installation
+## Installation
 
 Add Synaptic to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 synaptic = "0.1.0"
+
+# For additional features
+synaptic = { version = "0.1.0", features = ["sql-storage", "analytics", "security"] }
 ```
 
-### Basic Usage
+## Quick Start
+
+### Basic Memory Operations
 
 ```rust
-use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
+use synaptic::memory::{MemoryEntry, MemoryType};
+use synaptic::memory::storage::create_storage;
+use synaptic::StorageBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create memory system with basic configuration
-    let config = MemoryConfig::default();
-    let mut memory = AgentMemory::new(config).await?;
+    // Create storage backend
+    let storage = create_storage(StorageBackend::Memory).await?;
 
-    // Store a memory entry
+    // Create a memory entry
     let entry = MemoryEntry::new(
-        "project_alpha".to_string(),
-        "AI project using machine learning for data analysis".to_string(),
-        MemoryType::LongTerm
+        "user_preference".to_string(),
+        "Dark mode enabled".to_string(),
+        MemoryType::ShortTerm,
     );
-    memory.store("project_alpha", entry).await?;
+
+    // Store the memory
+    storage.store(&entry).await?;
 
     // Retrieve the memory
-    let retrieved = memory.retrieve("project_alpha").await?;
-    println!("Retrieved: {:?}", retrieved);
+    if let Some(retrieved) = storage.retrieve("user_preference").await? {
+        println!("Retrieved: {}", retrieved.value);
+    }
 
-    // Search for related memories
-    let results = memory.search("machine learning", 5).await?;
+    // Search for memories
+    let results = storage.search("dark mode", 10).await?;
     println!("Found {} related memories", results.len());
 
     Ok(())
 }
 ```
 
+### Using the CLI
+
+```bash
+# Start interactive shell
+synaptic shell
+
+# Execute SyQL queries
+synaptic query "SELECT * FROM memories WHERE type = 'long_term' LIMIT 5"
+
+# Memory operations
+synaptic memory list --limit 10
+synaptic memory show --id "user_preference"
+```
+
 ## Testing
 
-### Organized Test Suite (161 Tests)
-
-The project includes a comprehensive test organization system with priority-based execution:
-
-#### Using the Test Runner Script
-
-```bash
-# Run all tests (161 tests across 14 categories)
-./scripts/run_tests.sh all
-
-# Run by priority level
-./scripts/run_tests.sh critical    # Core, integration, security (70 tests)
-./scripts/run_tests.sh high        # Performance, lifecycle, multimodal (60 tests)
-./scripts/run_tests.sh medium      # Temporal, analytics, search, external (25 tests)
-./scripts/run_tests.sh low         # Logging, visualization, sync (6 tests)
-
-# Run specific test categories
-./scripts/run_tests.sh security     # All security tests
-./scripts/run_tests.sh performance  # All performance tests
-./scripts/run_tests.sh multimodal   # All multimodal tests
-```
-
-#### Using Makefile Targets
-
-```bash
-# Test commands
-make test-all          # All 161 tests
-make test-critical     # Critical priority tests
-make test-security     # Security tests only
-make test-performance  # Performance tests only
-
-# Development commands
-make build clean fmt clippy coverage audit docs
-```
-
-#### Traditional Cargo Commands
+### Running Tests
 
 ```bash
 # Run all tests
 cargo test
 
-# Run specific test files
-cargo test --test integration_tests              # 13 tests
-cargo test --test phase4_security_tests          # 9 tests
-cargo test --test real_lifecycle_management_tests # 11 tests
-cargo test --test enhanced_similarity_search_tests # 6 tests
-cargo test --test comprehensive_logging_tests    # 10 tests
-cargo test --test phase5b_document_tests         # 8 tests
+# Run library tests only
+cargo test --lib
 
-# Run performance benchmarks
-cargo test --test performance_tests -- --ignored
+# Run with specific features
+cargo test --features "analytics security"
+
+# Run documentation tests
+cargo test --doc
+
+# Run integration tests
+cargo test --test integration_tests
 ```
+
+### Test Coverage
+
+- **115 Library Tests**: Core functionality and unit tests
+- **1 Integration Test**: End-to-end workflow testing
+- **15 Documentation Tests**: Code examples in documentation
+- **Clean Compilation**: All tests compile and run successfully
 
 ## Examples
 
-The repository includes examples demonstrating functionality:
+### Available Examples
 
-### Core Functionality
-
-- **[Basic Usage](examples/basic_usage.rs)**: Getting started with memory operations and basic features
+- **[Basic Usage](examples/basic_usage.rs)**: Core memory operations and basic functionality
 - **[Knowledge Graph](examples/knowledge_graph_usage.rs)**: Relationship management and graph operations
-- **[Intelligent Updates](examples/intelligent_updates.rs)**: Memory updates with deduplication and optimization
+- **[Intelligent Updates](examples/intelligent_updates.rs)**: Smart memory updates and deduplication
+- **[Security Demo](examples/simple_security_demo.rs)**: Encryption and security features
+- **[Real Integrations](examples/real_integrations.rs)**: External service integrations
+- **[Enhanced Statistics](examples/enhanced_memory_statistics.rs)**: Memory analytics and monitoring
 
-### Advanced Features
-
-- **[Real Integrations](examples/real_integrations.rs)**: Production external service integration with PostgreSQL, Redis, BERT ML models, and LLM APIs
-- **[Security Demo](examples/simple_security_demo.rs)**: Enterprise security features including encryption, zero-knowledge proofs, and access control
-- **[Complex Visualizations](examples/complex_visualizations.rs)**: Advanced analytics and visualization capabilities with real chart generation
-
-### Specialized Systems
-
-- **[Phase 5 Multimodal](examples/phase5_multimodal_crossplatform.rs)**: Cross-platform multimodal memory management with image, audio, and code processing
-- **[Document Processing](examples/phase5_basic_demo.rs)**: Professional document processing and content extraction for multiple formats
-- **[Enhanced Memory Statistics](examples/enhanced_memory_statistics.rs)**: Comprehensive memory analytics and performance monitoring
-- **[Distributed Systems](examples/phase2_distributed_system.rs)**: Distributed memory coordination and scaling infrastructure
-
-Run examples with:
+### Running Examples
 
 ```bash
-# Core functionality
+# Basic functionality
 cargo run --example basic_usage
 cargo run --example knowledge_graph_usage
-cargo run --example intelligent_updates
 
 # Advanced features
-cargo run --example real_integrations
+cargo run --example intelligent_updates
 cargo run --example simple_security_demo
-cargo run --example complex_visualizations
 
-# Specialized systems
-cargo run --example phase5_multimodal_crossplatform
-cargo run --example phase5_basic_demo
-cargo run --example enhanced_memory_statistics
-cargo run --example phase2_distributed_system
+# With optional features
+cargo run --example real_integrations --features "sql-storage"
+cargo run --example enhanced_memory_statistics --features "analytics"
 ```
 
-## Test Results & Quality Metrics
+## Features by Category
 
-### Comprehensive Test Organization
+### Core Features (Default)
 
-| Priority | Categories | Test Count | Description |
-|----------|------------|------------|-------------|
-| **Critical** | Core, Integration, Security | 70 tests | Essential functionality and security |
-| **High** | Performance, Lifecycle, Multimodal | 60 tests | Performance and advanced features |
-| **Medium** | Temporal, Analytics, Search, External | 25 tests | Specialized algorithms and integrations |
-| **Low** | Logging, Visualization, Sync | 6 tests | Supporting infrastructure |
-| **Total** | **14 Categories** | **161 tests** | **Complete test coverage** |
+- Memory operations (store, retrieve, update, delete)
+- In-memory and file-based storage
+- Basic search and retrieval
+- Memory metadata and tagging
 
-### Test Execution Tools
+### Optional Features
 
-- **Organized Test Runner**: `./scripts/run_tests.sh` with priority-based execution
-- **Makefile Integration**: `make test-all`, `make test-critical`, category-specific targets
-- **CI/CD Automation**: GitHub Actions with automated testing and quality checks
-- **Test Configuration**: Structured metadata in `tests/test_config.toml`
+Enable additional functionality with feature flags:
 
-### Implementation Quality
+```toml
+[dependencies]
+synaptic = { version = "0.1.0", features = ["analytics", "security", "sql-storage"] }
+```
 
-- **Zero Test Failures**: All 161 tests pass consistently across all categories
-- **Production-Ready Implementation**: Comprehensive functionality with sophisticated algorithms and real integrations
-- **Professional Error Handling**: Comprehensive Result types throughout with proper error propagation
-- **Enterprise-Grade Code**: Suitable for production deployment with scalable infrastructure
+- **`analytics`**: Advanced memory analytics and performance monitoring
+- **`security`**: AES-256-GCM encryption and access control
+- **`sql-storage`**: PostgreSQL database backend support
+- **`multimodal`**: Document, image, and audio processing
+- **`distributed`**: Redis caching and distributed coordination
+- **`ml-models`**: Machine learning model integration
+- **`visualization`**: Plotting and visualization capabilities
 
 ## Development
 
@@ -294,59 +271,52 @@ cargo build
 cargo test
 ```
 
-### Development Tools
+### Development Commands
 
-The project includes comprehensive development automation:
-
-#### Test Organization
-- **Test Runner Script**: `./scripts/run_tests.sh` - Organized test execution with priority levels
-- **Test Configuration**: `tests/test_config.toml` - Structured test metadata and categorization
-- **Makefile**: Comprehensive development commands and test targets
-
-#### CI/CD Integration
-- **GitHub Actions**: Automated testing with priority-based execution
-- **Coverage Reporting**: Code coverage analysis and reporting
-- **Security Auditing**: Automated dependency and security auditing
-
-#### Quality Assurance
 ```bash
 # Code formatting
-make fmt
-cargo fmt --all
+cargo fmt
 
 # Linting
-make clippy
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Security audit
-make audit
-cargo audit
+cargo clippy --all-targets --all-features
 
 # Generate documentation
-make docs
 cargo doc --all-features --no-deps --open
 
-# Code coverage
-make coverage
-cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+# Run with specific features
+cargo run --features "analytics security"
+
+# Build for release
+cargo build --release
 ```
 
-## Documentation
+## API Reference
 
-### Core Documentation
-- [API Documentation](docs/API_DOCUMENTATION.md) - Comprehensive API reference
-- [Architecture Overview](docs/ARCHITECTURE.md) - System architecture and design
-- [Development Guide](docs/DEVELOPMENT_GUIDE.md) - Developer setup and guidelines
-- [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) - Production deployment instructions
-- [Test Organization](docs/TEST_ORGANIZATION.md) - Test suite structure and execution
+Generate and view the API documentation:
 
-### Feature Documentation
-- [Phase 5 Multimodal & Cross-Platform](docs/PHASE5_MULTIMODAL_CROSSPLATFORM.md)
-- [Phase 5B Document Processing](docs/PHASE5B_DOCUMENT_PROCESSING.md)
+```bash
+cargo doc --all-features --no-deps --open
+```
+
+Key modules:
+
+- `synaptic::memory` - Core memory operations and types
+- `synaptic::memory::storage` - Storage backend implementations
+- `synaptic::memory::knowledge_graph` - Knowledge graph functionality
+- `synaptic::memory::temporal` - Temporal tracking and analysis
+- `synaptic::cli` - Command-line interface
+- `synaptic::security` - Security and encryption features
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass: `cargo test`
+6. Submit a pull request
 
 ## License
 

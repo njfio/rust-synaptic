@@ -203,7 +203,7 @@ impl MemoryIntelligenceEngine {
     pub async fn analyze_memory_intelligence(&mut self, memory_key: &str, memory_entry: &MemoryEntry, relationships: &[(String, f64)]) -> Result<MemoryIntelligence> {
         let complexity = self.analyze_complexity(memory_entry).await?;
         let relationship_intelligence = self.analyze_relationship_intelligence(memory_key, relationships).await?;
-        let usage_intelligence = self.analyze_usage_intelligence(memory_key).await?;
+        let usage_intelligence = self.analyze_usage_intelligence(memory_key, memory_entry).await?;
         let content_intelligence = self.analyze_content_intelligence(memory_entry).await?;
 
         // Calculate overall intelligence score
@@ -312,7 +312,7 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Analyze usage intelligence
-    async fn analyze_usage_intelligence(&self, memory_key: &str) -> Result<UsageIntelligence> {
+    async fn analyze_usage_intelligence(&self, memory_key: &str, memory_entry: &MemoryEntry) -> Result<UsageIntelligence> {
         // Count access events for this memory
         let access_count = self.analysis_history
             .iter()
@@ -322,18 +322,31 @@ impl MemoryIntelligenceEngine {
             .count();
 
         let access_frequency = (access_count as f64 / 10.0).min(1.0);
-        
+
+        // Filter events related to this memory
+        let memory_events: Vec<AnalyticsEvent> = self.analysis_history
+            .iter()
+            .filter(|event| {
+                match event {
+                    AnalyticsEvent::MemoryAccess { memory_key: key, .. } => key == memory_key,
+                    AnalyticsEvent::MemoryModification { memory_key: key, .. } => key == memory_key,
+                    _ => false,
+                }
+            })
+            .cloned()
+            .collect();
+
         // Temporal consistency using sophisticated analysis
-        let temporal_consistency = self.calculate_temporal_consistency(memory_entry, events).await?;
+        let temporal_consistency = self.calculate_temporal_consistency(memory_entry, &memory_events).await?;
 
         // User diversity using access pattern analysis
-        let user_diversity = self.calculate_user_diversity(events).await?;
+        let user_diversity = self.calculate_user_diversity(&memory_events).await?;
 
         // Context diversity using content and metadata analysis
-        let context_diversity = self.calculate_context_diversity(memory_entry, events).await?;
+        let context_diversity = self.calculate_context_diversity(memory_entry, &memory_events).await?;
 
         // Collaboration score using interaction pattern analysis
-        let collaboration_score = self.calculate_collaboration_score(events).await?;
+        let collaboration_score = self.calculate_collaboration_score(&memory_events).await?;
 
         Ok(UsageIntelligence {
             access_frequency,
@@ -807,8 +820,8 @@ impl MemoryIntelligenceEngine {
 
     /// Calculate temporal consistency using sophisticated analysis
     async fn calculate_temporal_consistency(&self, memory_entry: &MemoryEntry, events: &[AnalyticsEvent]) -> Result<f64> {
-        let memory_events: Vec<_> = events.iter()
-            .filter(|e| e.memory_key().as_ref() == Some(&memory_entry.key))
+        let memory_events: Vec<&AnalyticsEvent> = events.iter()
+            .filter(|e| e.memory_key() == Some(&memory_entry.key))
             .collect();
 
         if memory_events.len() < 2 {
@@ -932,7 +945,7 @@ impl MemoryIntelligenceEngine {
         diversity_factors.push(temporal_diversity);
 
         // 4. Content type diversity (based on content characteristics)
-        let content = &memory_entry.content;
+        let content = &memory_entry.value;
         let has_numbers = content.chars().any(|c| c.is_numeric());
         let has_special_chars = content.chars().any(|c| !c.is_alphanumeric() && !c.is_whitespace());
         let has_uppercase = content.chars().any(|c| c.is_uppercase());
@@ -1012,7 +1025,7 @@ impl MemoryIntelligenceEngine {
 
     /// Calculate content uniqueness using sophisticated content analysis
     async fn calculate_content_uniqueness(&self, memory_entry: &MemoryEntry) -> Result<f64> {
-        let content = &memory_entry.content;
+        let content = &memory_entry.value;
         let mut uniqueness_factors = Vec::new();
 
         // 1. Content length uniqueness (very short or very long content is more unique)

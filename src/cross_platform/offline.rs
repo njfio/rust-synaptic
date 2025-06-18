@@ -545,10 +545,15 @@ impl CrossPlatformAdapter for OfflineAdapter {
         storage.store(key, data)?;
 
         // Queue sync operation
+        let version = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+            .as_secs();
+
         self.queue_sync_operation(SyncOperation::Upload {
             key: key.to_string(),
             data: data.to_vec(),
-            version: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            version,
         })?;
 
         Ok(())
