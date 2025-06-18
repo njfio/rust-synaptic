@@ -40,6 +40,9 @@ impl AuditLogger {
             return Ok(());
         }
 
+        let mut details = HashMap::new();
+        details.insert("request_id".to_string(), context.request_id.clone());
+
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),
             event_type: AuditEventType::MemoryOperation,
@@ -51,7 +54,7 @@ impl AuditLogger {
             timestamp: Utc::now(),
             ip_address: None,
             user_agent: None,
-            details: HashMap::new(),
+            details,
             risk_level: if success { RiskLevel::Low } else { RiskLevel::Medium },
         };
 
@@ -60,9 +63,9 @@ impl AuditLogger {
     }
 
     /// Log an authentication event
-    pub async fn log_authentication_event(&mut self, 
-        user_id: &str, 
-        auth_type: &str, 
+    pub async fn log_authentication_event(&mut self,
+        user_id: &str,
+        auth_type: &str,
         success: bool,
         ip_address: Option<String>
     ) -> Result<()> {
@@ -72,6 +75,7 @@ impl AuditLogger {
 
         let mut details = HashMap::new();
         details.insert("auth_type".to_string(), auth_type.to_string());
+        details.insert("request_id".to_string(), Uuid::new_v4().to_string());
 
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),
@@ -111,6 +115,7 @@ impl AuditLogger {
         let mut details = HashMap::new();
         details.insert("permission".to_string(), permission.to_string());
         details.insert("roles".to_string(), context.roles.join(","));
+        details.insert("request_id".to_string(), context.request_id.clone());
 
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),
@@ -147,6 +152,9 @@ impl AuditLogger {
             return Ok(());
         }
 
+        let mut details = HashMap::new();
+        details.insert("request_id".to_string(), context.request_id.clone());
+
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),
             event_type: AuditEventType::Encryption,
@@ -158,7 +166,7 @@ impl AuditLogger {
             timestamp: Utc::now(),
             ip_address: None,
             user_agent: None,
-            details: HashMap::new(),
+            details,
             risk_level: if success { RiskLevel::Low } else { RiskLevel::High },
         };
 
@@ -180,6 +188,7 @@ impl AuditLogger {
     ) -> Result<()> {
         let mut details = HashMap::new();
         details.insert("operation_type".to_string(), format!("{:?}", operation));
+        details.insert("request_id".to_string(), context.request_id.clone());
 
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),

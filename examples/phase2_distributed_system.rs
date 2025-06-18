@@ -19,9 +19,7 @@ use synaptic::{
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 use std::collections::HashMap;
-use std::sync::Arc;
-use uuid::Uuid;
-use chrono::Utc;
+
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 #[tokio::main]

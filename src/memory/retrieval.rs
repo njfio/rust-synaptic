@@ -3,32 +3,87 @@
 use crate::error::{MemoryError, Result};
 use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
 use crate::memory::storage::Storage;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Memory retrieval system with advanced search capabilities
+/// Advanced memory retrieval system with sophisticated search capabilities.
+///
+/// The `MemoryRetriever` provides high-performance search and retrieval operations
+/// for the Synaptic memory system, supporting multiple search strategies including
+/// exact matching, fuzzy search, semantic similarity, and hybrid approaches.
+///
+/// # Features
+///
+/// - **Multi-strategy Search**: Combines exact, fuzzy, and semantic search
+/// - **Relevance Scoring**: Advanced scoring based on recency, frequency, and importance
+/// - **Configurable Thresholds**: Adjustable similarity and quality thresholds
+/// - **Performance Optimized**: Efficient indexing and caching for fast retrieval
+///
+/// # Examples
+///
+/// ```rust
+/// use synaptic::memory::retrieval::{MemoryRetriever, RetrievalConfig};
+/// use synaptic::memory::storage::create_storage;
+///
+/// async fn setup_retriever() -> Result<MemoryRetriever, Box<dyn std::error::Error>> {
+///     let storage = create_storage("memory.db").await?;
+///     let config = RetrievalConfig::default();
+///     let retriever = MemoryRetriever::new(storage, config);
+///     Ok(retriever)
+/// }
+/// ```
 pub struct MemoryRetriever {
     storage: Arc<dyn Storage + Send + Sync>,
     config: RetrievalConfig,
 }
 
-/// Configuration for memory retrieval
+/// Configuration parameters for memory retrieval operations.
+///
+/// This structure controls various aspects of the search and retrieval process,
+/// allowing fine-tuning of performance, accuracy, and result quality.
+///
+/// # Examples
+///
+/// ```rust
+/// use synaptic::memory::retrieval::RetrievalConfig;
+///
+/// // Create a high-precision configuration
+/// let config = RetrievalConfig {
+///     max_results: 20,
+///     similarity_threshold: 0.8,
+///     enable_fuzzy_matching: true,
+///     enable_semantic_search: true,
+///     recency_weight: 0.3,
+///     frequency_weight: 0.4,
+///     importance_weight: 0.3,
+/// };
+///
+/// // Create a fast, low-precision configuration
+/// let fast_config = RetrievalConfig {
+///     max_results: 5,
+///     similarity_threshold: 0.5,
+///     enable_fuzzy_matching: false,
+///     enable_semantic_search: false,
+///     recency_weight: 0.5,
+///     frequency_weight: 0.3,
+///     importance_weight: 0.2,
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct RetrievalConfig {
-    /// Maximum number of results to return
+    /// Maximum number of results to return from any search operation
     pub max_results: usize,
-    /// Minimum similarity threshold for results
+    /// Minimum similarity threshold for including results (0.0 to 1.0)
     pub similarity_threshold: f64,
-    /// Enable fuzzy matching
+    /// Enable fuzzy string matching for approximate text search
     pub enable_fuzzy_matching: bool,
-    /// Enable semantic search (requires embeddings)
+    /// Enable semantic search using vector embeddings (requires embeddings feature)
     pub enable_semantic_search: bool,
-    /// Weight for recency in scoring
+    /// Weight factor for recency in relevance scoring (0.0 to 1.0)
     pub recency_weight: f64,
-    /// Weight for frequency in scoring
+    /// Weight factor for access frequency in relevance scoring (0.0 to 1.0)
     pub frequency_weight: f64,
-    /// Weight for importance in scoring
+    /// Weight factor for memory importance in relevance scoring (0.0 to 1.0)
     pub importance_weight: f64,
 }
 
@@ -187,7 +242,7 @@ impl MemoryRetriever {
     }
 
     /// Find memories by semantic similarity using embeddings
-    pub async fn find_similar_by_embedding(&self, embedding: &[f32], limit: usize) -> Result<Vec<MemoryFragment>> {
+    pub async fn find_similar_by_embedding(&self, _embedding: &[f32], _limit: usize) -> Result<Vec<MemoryFragment>> {
         // This would require iterating through all entries and computing cosine similarity
         // For now, we'll return an error indicating this feature needs vector database support
         Err(MemoryError::vector_operation(

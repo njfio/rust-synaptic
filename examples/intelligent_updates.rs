@@ -7,9 +7,7 @@
 use synaptic::{
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
     memory::knowledge_graph::{RelationshipType},
-    memory::temporal::ChangeType,
 };
-use chrono::Utc;
 use std::error::Error;
 
 #[tokio::main]
@@ -197,6 +195,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Helper function to create a rich memory entry with metadata
+#[allow(dead_code)]
 fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance: f64) -> MemoryEntry {
     let mut entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::LongTerm);
     entry = entry.with_tags(tags.into_iter().map(|s| s.to_string()).collect());
@@ -205,6 +204,7 @@ fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance:
 }
 
 /// Simulate an error handling scenario
+#[allow(dead_code)]
 async fn error_handling_example() -> Result<(), Box<dyn Error>> {
     let config = MemoryConfig::default();
     let mut memory = AgentMemory::new(config).await?;

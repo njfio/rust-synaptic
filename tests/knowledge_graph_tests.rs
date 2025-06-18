@@ -4,7 +4,7 @@
 //! relationship management, and basic graph operations.
 
 use synaptic::{
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
+    AgentMemory, MemoryConfig,
     memory::knowledge_graph::RelationshipType,
 };
 use std::error::Error;

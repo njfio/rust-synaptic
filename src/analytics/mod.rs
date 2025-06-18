@@ -83,6 +83,28 @@ pub enum AnalyticsEvent {
     },
 }
 
+impl AnalyticsEvent {
+    /// Get the memory key associated with this event (if any)
+    pub fn memory_key(&self) -> Option<&String> {
+        match self {
+            AnalyticsEvent::MemoryAccess { memory_key, .. } => Some(memory_key),
+            AnalyticsEvent::MemoryModification { memory_key, .. } => Some(memory_key),
+            AnalyticsEvent::SearchQuery { .. } => None,
+            AnalyticsEvent::RelationshipDiscovery { source_key, .. } => Some(source_key),
+        }
+    }
+
+    /// Get the timestamp of this event
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        match self {
+            AnalyticsEvent::MemoryAccess { timestamp, .. } => *timestamp,
+            AnalyticsEvent::MemoryModification { timestamp, .. } => *timestamp,
+            AnalyticsEvent::SearchQuery { timestamp, .. } => *timestamp,
+            AnalyticsEvent::RelationshipDiscovery { timestamp, .. } => *timestamp,
+        }
+    }
+}
+
 /// Types of memory access
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AccessType {

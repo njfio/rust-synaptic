@@ -41,6 +41,7 @@
 
 pub mod error;
 pub mod memory;
+pub mod logging;
 
 #[cfg(feature = "distributed")]
 pub mod distributed;
@@ -49,6 +50,7 @@ pub mod distributed;
 pub mod analytics;
 
 pub mod integrations;
+pub mod performance;
 pub mod security;
 
 #[cfg(feature = "multimodal")]
@@ -98,14 +100,29 @@ pub struct AgentMemory {
 
 impl AgentMemory {
     /// Create a new agent memory system with the given configuration
+    #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
+        // Initialize logging system first
+        if let Some(ref logging_config) = config.logging_config {
+            let logging_manager = logging::LoggingManager::new(logging_config.clone());
+            if let Err(e) = logging_manager.initialize() {
+                eprintln!("Warning: Failed to initialize logging: {}", e);
+            }
+        }
+
+        tracing::info!("Initializing AgentMemory with configuration");
+
         let storage = memory::storage::create_storage(&config.storage_backend).await?;
+        tracing::debug!("Storage backend initialized: {:?}", config.storage_backend);
+
         let checkpoint_manager = memory::checkpoint::CheckpointManager::new(
             config.checkpoint_interval,
             storage.clone(),
         );
+        tracing::debug!("Checkpoint manager initialized with interval: {:?}", config.checkpoint_interval);
 
         let state = memory::state::AgentState::new(config.session_id.unwrap_or_else(Uuid::new_v4));
+        tracing::debug!("Agent state initialized");
 
         // Initialize knowledge graph if enabled
         let knowledge_graph = if config.enable_knowledge_graph {
@@ -188,7 +205,7 @@ impl AgentMemory {
         };
 
         // Build base agent without multimodal memory initialized
-        let mut agent = Self {
+        let agent = Self {
             config: config.clone(),
             state,
             storage,
@@ -229,7 +246,10 @@ impl AgentMemory {
     }
 
     /// Store a memory entry with intelligent updating
+    #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
+        tracing::debug!("Storing memory entry");
+
         let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::ShortTerm);
 
         // Check if this is an update to existing memory
@@ -240,8 +260,11 @@ impl AgentMemory {
             memory::temporal::ChangeType::Created
         };
 
+        tracing::debug!("Memory operation type: {:?}", change_type);
+
         self.state.add_memory(entry.clone());
         self.storage.store(&entry).await?;
+        tracing::debug!("Memory stored in state and storage");
 
         // Track temporal changes if enabled
         if let Some(ref mut tm) = self.temporal_manager {
@@ -267,7 +290,7 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am.add_memory(entry.clone(), self.knowledge_graph.as_mut()).await;
+            let _ = am.add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut()).await;
         }
 
         // Generate embeddings if enabled
@@ -287,9 +310,13 @@ impl AgentMemory {
     }
 
     /// Retrieve a memory by key
+    #[tracing::instrument(skip(self), fields(key = %key))]
     pub async fn retrieve(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
+        tracing::debug!("Retrieving memory entry");
+
         // First check short-term memory
         if let Some(entry) = self.state.get_memory(key) {
+            tracing::debug!("Memory found in short-term memory");
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
@@ -305,7 +332,14 @@ impl AgentMemory {
         }
 
         // Then check storage
+        tracing::debug!("Memory not found in short-term, checking storage");
         let result = self.storage.retrieve(key).await?;
+
+        if result.is_some() {
+            tracing::debug!("Memory found in storage");
+        } else {
+            tracing::debug!("Memory not found");
+        }
         #[cfg(feature = "analytics")]
         if let Some(ref mut analytics) = self.analytics_engine {
             if result.is_some() {
@@ -323,8 +357,12 @@ impl AgentMemory {
     }
 
     /// Search memories by content similarity
+    #[tracing::instrument(skip(self, query), fields(query_len = query.len(), limit = limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
-        self.storage.search(query, limit).await
+        tracing::debug!("Searching memories by content similarity");
+        let results = self.storage.search(query, limit).await?;
+        tracing::debug!("Search completed, found {} results", results.len());
+        Ok(results)
     }
 
     /// Create a checkpoint of the current state
@@ -486,12 +524,12 @@ impl AgentMemory {
         } else {
             None
         }
+    }
 
     /// Check if the multi-modal subsystem is initialized
     #[cfg(feature = "multimodal")]
     pub fn multimodal_enabled(&self) -> bool {
         self.multimodal_memory.is_some()
-
     }
 }
 
@@ -539,6 +577,8 @@ pub struct MemoryConfig {
     pub enable_cross_platform: bool,
     #[cfg(feature = "cross-platform")]
     pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
+    /// Logging and monitoring configuration
+    pub logging_config: Option<logging::LoggingConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -575,6 +615,7 @@ impl Default for MemoryConfig {
             enable_cross_platform: false,
             #[cfg(feature = "cross-platform")]
             cross_platform_config: None,
+            logging_config: Some(logging::LoggingConfig::default()),
         }
     }
 }

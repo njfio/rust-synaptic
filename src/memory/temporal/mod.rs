@@ -10,6 +10,7 @@ pub mod versioning;
 pub mod differential;
 pub mod patterns;
 pub mod evolution;
+pub mod decay_models;
 
 // Re-export commonly used types
 pub use versioning::{MemoryVersion, VersionHistory, VersionManager, ChangeType};
@@ -23,12 +24,20 @@ pub use evolution::{
     GlobalEvolutionMetrics,
     EvolutionData,
 };
+pub use decay_models::{
+    TemporalDecayModels,
+    DecayModelType,
+    DecayConfig,
+    DecayParameters,
+    DecayContext,
+    DecayResult,
+};
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Temporal memory manager that tracks changes over time
@@ -380,13 +389,12 @@ impl TemporalMemoryManager {
         version_history: &[MemoryVersion],
         bucket_size: Duration,
     ) -> Option<TimeRange> {
-        use chrono::NaiveDateTime;
+
         let mut counts: HashMap<DateTime<Utc>, usize> = HashMap::new();
         for version in version_history {
             let ts = version.created_at.timestamp();
             let bucket_start = ts - (ts % bucket_size.num_seconds());
-            if let Some(start_naive) = NaiveDateTime::from_timestamp_opt(bucket_start, 0) {
-                let bucket = DateTime::<Utc>::from_utc(start_naive, Utc);
+            if let Some(bucket) = DateTime::from_timestamp(bucket_start, 0) {
                 *counts.entry(bucket).or_insert(0) += 1;
             }
         }

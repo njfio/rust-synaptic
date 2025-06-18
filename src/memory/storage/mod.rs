@@ -3,7 +3,7 @@
 pub mod memory;
 pub mod file;
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryFragment};
 use crate::StorageBackend;
 use async_trait::async_trait;
@@ -80,16 +80,22 @@ impl StorageStats {
 }
 
 /// Create a storage backend based on the configuration
+#[tracing::instrument(skip(backend))]
 pub async fn create_storage(backend: &StorageBackend) -> Result<Arc<dyn Storage + Send + Sync>> {
+    tracing::info!("Creating storage backend: {:?}", backend);
+
     match backend {
         StorageBackend::Memory => {
+            tracing::debug!("Initializing in-memory storage");
             Ok(Arc::new(memory::MemoryStorage::new()))
         }
         StorageBackend::File { path } => {
+            tracing::debug!("Initializing file storage at path: {:?}", path);
             Ok(Arc::new(file::FileStorage::new(path).await?))
         }
         #[cfg(feature = "sql-storage")]
         StorageBackend::Sql { connection_string } => {
+            tracing::debug!("Initializing SQL storage with connection string");
             Ok(Arc::new(crate::integrations::database::DatabaseClient::new(
                 crate::integrations::database::DatabaseConfig {
                     database_url: connection_string.to_string(),

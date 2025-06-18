@@ -377,19 +377,18 @@ impl SyncManager {
         {
             let mut state = self.sync_state.write().await;
             state.is_syncing = false;
-            
+
             if result.is_ok() {
-                state.last_sync = Some(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                );
-                
+                let current_time = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+                    .as_secs();
+                state.last_sync = Some(current_time);
+
                 // Update average sync time
                 if let Ok(duration) = start_time.elapsed() {
                     let sync_time_ms = duration.as_millis() as u64;
-                    state.stats.average_sync_time_ms = 
+                    state.stats.average_sync_time_ms =
                         (state.stats.average_sync_time_ms + sync_time_ms) / 2;
                 }
             }
@@ -623,7 +622,7 @@ mod tests {
         if let ConflictResolution::Merge(merged) = resolution {
             assert!(merged.len() > b"local_data".len() + b"remote_data".len());
         } else {
-            panic!("Expected merge resolution");
+            assert!(false, "Expected merge resolution");
         }
     }
 }

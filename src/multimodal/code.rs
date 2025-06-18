@@ -294,18 +294,188 @@ impl CodeMemoryProcessor {
         })
     }
 
-    /// Extract Python functions (placeholder implementation)
+    /// Extract Python functions using tree-sitter
     #[cfg(feature = "code-memory")]
-    fn extract_python_functions(&self, _node: &Node, _content: &str, _functions: &mut Vec<FunctionInfo>) -> MultiModalResult<()> {
-        // Similar implementation for Python using tree-sitter-python
+    fn extract_python_functions(&self, node: &Node, content: &str, functions: &mut Vec<FunctionInfo>) -> MultiModalResult<()> {
+        let mut cursor = node.walk();
+
+        for child in node.children(&mut cursor) {
+            if child.kind() == "function_definition" {
+                let function_info = self.parse_python_function(&child, content)?;
+                functions.push(function_info);
+            }
+
+            // Recursively search child nodes
+            self.extract_python_functions(&child, content, functions)?;
+        }
+
         Ok(())
     }
 
-    /// Extract JavaScript functions (placeholder implementation)
+    /// Parse a Python function node
     #[cfg(feature = "code-memory")]
-    fn extract_javascript_functions(&self, _node: &Node, _content: &str, _functions: &mut Vec<FunctionInfo>) -> MultiModalResult<()> {
-        // Similar implementation for JavaScript using tree-sitter-javascript
+    fn parse_python_function(&self, node: &Node, content: &str) -> MultiModalResult<FunctionInfo> {
+        let start_line = node.start_position().row as u32 + 1;
+        let end_line = node.end_position().row as u32 + 1;
+
+        // Extract function name
+        let name = if let Some(name_node) = node.child_by_field_name("name") {
+            name_node.utf8_text(content.as_bytes())
+                .map_err(|e| SynapticError::ProcessingError(format!("Failed to extract function name: {}", e)))?
+                .to_string()
+        } else {
+            "unknown".to_string()
+        };
+
+        // Extract parameters
+        let mut parameters = Vec::new();
+        if let Some(params_node) = node.child_by_field_name("parameters") {
+            for param in params_node.children(&mut params_node.walk()) {
+                if param.kind() == "identifier" || param.kind() == "typed_parameter" || param.kind() == "default_parameter" {
+                    if let Ok(param_text) = param.utf8_text(content.as_bytes()) {
+                        parameters.push(param_text.to_string());
+                    }
+                }
+            }
+        }
+
+        // Extract return type (Python type hints)
+        let return_type = if let Some(return_node) = node.child_by_field_name("return_type") {
+            return_node.utf8_text(content.as_bytes()).ok().map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        // Calculate complexity using Python-specific patterns
+        let complexity = self.calculate_python_function_complexity(node, content)?;
+
+        Ok(FunctionInfo {
+            name,
+            parameters,
+            return_type,
+            line_start: start_line,
+            line_end: end_line,
+            complexity,
+        })
+    }
+
+    /// Calculate function complexity for Python
+    #[cfg(feature = "code-memory")]
+    fn calculate_python_function_complexity(&self, node: &Node, content: &str) -> MultiModalResult<u32> {
+        let mut complexity = 1; // Base complexity
+        let mut cursor = node.walk();
+
+        // Count decision points (if, while, for, try, etc.)
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "if_statement" | "while_statement" | "for_statement" | "try_statement" |
+                "with_statement" | "elif_clause" | "except_clause" => {
+                    complexity += 1;
+                }
+                "and" | "or" => {
+                    complexity += 1; // Logical operators add complexity
+                }
+                _ => {}
+            }
+
+            // Recursively count in child nodes
+            complexity += self.calculate_python_function_complexity(&child, content).unwrap_or(0);
+        }
+
+        Ok(complexity)
+    }
+
+    /// Extract JavaScript functions using tree-sitter
+    #[cfg(feature = "code-memory")]
+    fn extract_javascript_functions(&self, node: &Node, content: &str, functions: &mut Vec<FunctionInfo>) -> MultiModalResult<()> {
+        let mut cursor = node.walk();
+
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "function_declaration" | "function_expression" | "arrow_function" | "method_definition" => {
+                    let function_info = self.parse_javascript_function(&child, content)?;
+                    functions.push(function_info);
+                }
+                _ => {}
+            }
+
+            // Recursively search child nodes
+            self.extract_javascript_functions(&child, content, functions)?;
+        }
+
         Ok(())
+    }
+
+    /// Parse a JavaScript function node
+    #[cfg(feature = "code-memory")]
+    fn parse_javascript_function(&self, node: &Node, content: &str) -> MultiModalResult<FunctionInfo> {
+        let start_line = node.start_position().row as u32 + 1;
+        let end_line = node.end_position().row as u32 + 1;
+
+        // Extract function name
+        let name = if let Some(name_node) = node.child_by_field_name("name") {
+            name_node.utf8_text(content.as_bytes())
+                .map_err(|e| SynapticError::ProcessingError(format!("Failed to extract function name: {}", e)))?
+                .to_string()
+        } else if node.kind() == "arrow_function" {
+            "anonymous_arrow".to_string()
+        } else {
+            "anonymous".to_string()
+        };
+
+        // Extract parameters
+        let mut parameters = Vec::new();
+        if let Some(params_node) = node.child_by_field_name("parameters") {
+            for param in params_node.children(&mut params_node.walk()) {
+                if param.kind() == "identifier" || param.kind() == "formal_parameter" || param.kind() == "rest_parameter" {
+                    if let Ok(param_text) = param.utf8_text(content.as_bytes()) {
+                        parameters.push(param_text.to_string());
+                    }
+                }
+            }
+        }
+
+        // JavaScript doesn't have explicit return types (unless TypeScript)
+        let return_type = None;
+
+        // Calculate complexity using JavaScript-specific patterns
+        let complexity = self.calculate_javascript_function_complexity(node, content)?;
+
+        Ok(FunctionInfo {
+            name,
+            parameters,
+            return_type,
+            line_start: start_line,
+            line_end: end_line,
+            complexity,
+        })
+    }
+
+    /// Calculate function complexity for JavaScript
+    #[cfg(feature = "code-memory")]
+    fn calculate_javascript_function_complexity(&self, node: &Node, content: &str) -> MultiModalResult<u32> {
+        let mut complexity = 1; // Base complexity
+        let mut cursor = node.walk();
+
+        // Count decision points (if, while, for, switch, etc.)
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "if_statement" | "while_statement" | "for_statement" | "for_in_statement" |
+                "for_of_statement" | "switch_statement" | "try_statement" | "catch_clause" |
+                "conditional_expression" => {
+                    complexity += 1;
+                }
+                "&&" | "||" => {
+                    complexity += 1; // Logical operators add complexity
+                }
+                _ => {}
+            }
+
+            // Recursively count in child nodes
+            complexity += self.calculate_javascript_function_complexity(&child, content).unwrap_or(0);
+        }
+
+        Ok(complexity)
     }
 
     /// Generic function extraction for unsupported languages
@@ -315,21 +485,22 @@ impl CodeMemoryProcessor {
         Ok(())
     }
 
-    /// Calculate function complexity
+    /// Calculate function complexity (generic version for Rust)
     #[cfg(feature = "code-memory")]
     fn calculate_function_complexity(&self, node: &Node, content: &str) -> MultiModalResult<u32> {
         let mut complexity = 1; // Base complexity
         let mut cursor = node.walk();
 
-        // Count decision points (if, while, for, match, etc.)
+        // Count decision points (if, while, for, match, etc.) - Rust specific
         for child in node.children(&mut cursor) {
             match child.kind() {
-                "if_expression" | "while_expression" | "for_expression" | "match_expression" => {
+                "if_expression" | "while_expression" | "for_expression" | "match_expression" |
+                "loop_expression" | "if_let_expression" | "while_let_expression" => {
                     complexity += 1;
                 }
                 _ => {}
             }
-            
+
             // Recursively count in child nodes
             complexity += self.calculate_function_complexity(&child, content).unwrap_or(0);
         }
@@ -577,7 +748,9 @@ impl MultiModalProcessor for CodeMemoryProcessor {
             },
             extracted_features: {
                 let mut features = HashMap::new();
-                features.insert("semantic_features".to_string(), serde_json::to_value(semantic_features).unwrap());
+                let semantic_value = serde_json::to_value(semantic_features)
+                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to serialize semantic features: {}", e)))?;
+                features.insert("semantic_features".to_string(), semantic_value);
                 features
             },
             cross_modal_links: vec![],

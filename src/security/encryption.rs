@@ -17,6 +17,15 @@ use rand::RngCore;
 use aes_gcm::{Aes256Gcm, Key};
 use aes_gcm::aead::{Aead, KeyInit, Payload, generic_array::GenericArray};
 
+#[cfg(feature = "homomorphic-encryption")]
+use tfhe::{
+    ClientKey, ServerKey,
+    FheUint32,
+    generate_keys,
+    ConfigBuilder,
+    prelude::{FheEncrypt, FheDecrypt},
+};
+
 /// Encryption manager for advanced cryptographic operations
 #[derive(Debug)]
 pub struct EncryptionManager {
@@ -276,8 +285,8 @@ impl EncryptionManager {
         }
 
         // Generate new key using key manager
-        let data_key_id = self.key_manager.generate_data_key("default").await?;
-        let key_data = self.key_manager.get_data_key(&data_key_id).await?;
+        let data_key_id = self.key_manager.generate_data_key("default", context).await?;
+        let key_data = self.key_manager.get_data_key(&data_key_id, context).await?;
         let key = EncryptionKey {
             id: data_key_id.clone(),
             data: key_data,
@@ -296,7 +305,7 @@ impl EncryptionManager {
         }
 
         // Attempt to retrieve key from key manager
-        let key_bytes = self.key_manager.get_data_key(key_id).await?;
+        let key_bytes = self.key_manager.get_data_key(key_id, context).await?;
         let info = self.key_manager.get_key_info(key_id).await?;
 
         let key = EncryptionKey {
@@ -404,65 +413,251 @@ struct EncryptionKey {
     expires_at: DateTime<Utc>,
 }
 
-/// Homomorphic encryption context
-#[derive(Debug)]
+/// Homomorphic encryption context with real TFHE implementation
 struct HomomorphicContext {
     key_id: String,
+    #[cfg(feature = "homomorphic-encryption")]
+    client_key: ClientKey,
+    #[cfg(feature = "homomorphic-encryption")]
+    server_key: ServerKey,
+    #[cfg(not(feature = "homomorphic-encryption"))]
     parameters: HomomorphicParameters,
+}
+
+impl std::fmt::Debug for HomomorphicContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HomomorphicContext")
+            .field("key_id", &self.key_id)
+            .finish()
+    }
 }
 
 impl HomomorphicContext {
     async fn new(config: &SecurityConfig) -> Result<Self> {
-        Ok(Self {
-            key_id: Uuid::new_v4().to_string(),
-            parameters: HomomorphicParameters::new(config.encryption_key_size),
-        })
+        let key_id = Uuid::new_v4().to_string();
+
+        #[cfg(feature = "homomorphic-encryption")]
+        {
+            tracing::info!("Initializing real TFHE homomorphic encryption with key size: {}", config.encryption_key_size);
+
+            // Generate TFHE integer keys with appropriate configuration
+            let config = ConfigBuilder::default().build();
+            let (client_key, server_key) = generate_keys(config);
+
+            tracing::info!("TFHE keys generated successfully for key_id: {}", key_id);
+
+            Ok(Self {
+                key_id,
+                client_key,
+                server_key,
+            })
+        }
+
+        #[cfg(not(feature = "homomorphic-encryption"))]
+        {
+            tracing::warn!("Homomorphic encryption feature not enabled, using fallback parameters");
+            Ok(Self {
+                key_id,
+                parameters: HomomorphicParameters::new(config.encryption_key_size),
+            })
+        }
     }
 
     async fn encrypt_vector(&self, data: &[f64]) -> Result<Vec<u8>> {
-        // Simulated homomorphic encryption
-        let mut encrypted = Vec::new();
-        for &value in data {
-            let encrypted_value = (value * 1.5 + 42.0) as u64; // Simplified transformation
-            encrypted.extend_from_slice(&encrypted_value.to_le_bytes());
+        #[cfg(feature = "homomorphic-encryption")]
+        {
+            tracing::debug!("Encrypting vector of {} elements with TFHE", data.len());
+            let start_time = std::time::Instant::now();
+
+            let mut encrypted_data = Vec::new();
+
+            // Convert f64 values to u32 for TFHE encryption (scale by 1000 for precision)
+            for &value in data {
+                let scaled_value = (value * 1000.0).abs() as u32;
+                let encrypted_value = FheUint32::encrypt(scaled_value, &self.client_key);
+
+                // Serialize the encrypted value
+                let serialized = bincode::serialize(&encrypted_value)
+                    .map_err(|e| MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e)))?;
+
+                // Store length prefix for deserialization
+                encrypted_data.extend_from_slice(&(serialized.len() as u32).to_le_bytes());
+                encrypted_data.extend_from_slice(&serialized);
+            }
+
+            let duration = start_time.elapsed();
+            tracing::debug!("TFHE vector encryption completed in {:?}", duration);
+
+            Ok(encrypted_data)
         }
-        Ok(encrypted)
+
+        #[cfg(not(feature = "homomorphic-encryption"))]
+        {
+            tracing::warn!("Using fallback encryption - homomorphic-encryption feature not enabled");
+            let mut encrypted = Vec::new();
+            for &value in data {
+                let encrypted_value = (value * 1.5 + 42.0) as u64;
+                encrypted.extend_from_slice(&encrypted_value.to_le_bytes());
+            }
+            Ok(encrypted)
+        }
     }
 
     async fn decrypt_vector(&self, encrypted_data: &[u8]) -> Result<Vec<f64>> {
-        // Simulated homomorphic decryption
-        let mut decrypted = Vec::new();
-        for chunk in encrypted_data.chunks(8) {
-            if chunk.len() == 8 {
-                let encrypted_value = u64::from_le_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3],
-                    chunk[4], chunk[5], chunk[6], chunk[7]
-                ]);
-                let value = (encrypted_value as f64 - 42.0) / 1.5;
-                decrypted.push(value);
+        #[cfg(feature = "homomorphic-encryption")]
+        {
+            tracing::debug!("Decrypting TFHE encrypted vector");
+            let start_time = std::time::Instant::now();
+
+            let mut decrypted = Vec::new();
+            let mut offset = 0;
+
+            while offset < encrypted_data.len() {
+                if offset + 4 > encrypted_data.len() {
+                    break;
+                }
+
+                // Read length prefix
+                let length = u32::from_le_bytes([
+                    encrypted_data[offset],
+                    encrypted_data[offset + 1],
+                    encrypted_data[offset + 2],
+                    encrypted_data[offset + 3],
+                ]) as usize;
+                offset += 4;
+
+                if offset + length > encrypted_data.len() {
+                    return Err(MemoryError::encryption("Invalid encrypted data format".to_string()));
+                }
+
+                // Deserialize encrypted value
+                let encrypted_value: FheUint32 = bincode::deserialize(&encrypted_data[offset..offset + length])
+                    .map_err(|e| MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e)))?;
+
+                // Decrypt the value
+                let decrypted_value: u32 = encrypted_value.decrypt(&self.client_key);
+                let original_value = decrypted_value as f64 / 1000.0; // Unscale
+
+                decrypted.push(original_value);
+                offset += length;
             }
+
+            let duration = start_time.elapsed();
+            tracing::debug!("TFHE vector decryption completed in {:?}", duration);
+
+            Ok(decrypted)
         }
-        Ok(decrypted)
+
+        #[cfg(not(feature = "homomorphic-encryption"))]
+        {
+            tracing::warn!("Using fallback decryption - homomorphic-encryption feature not enabled");
+            let mut decrypted = Vec::new();
+            for chunk in encrypted_data.chunks(8) {
+                if chunk.len() == 8 {
+                    let encrypted_value = u64::from_le_bytes([
+                        chunk[0], chunk[1], chunk[2], chunk[3],
+                        chunk[4], chunk[5], chunk[6], chunk[7]
+                    ]);
+                    let value = (encrypted_value as f64 - 42.0) / 1.5;
+                    decrypted.push(value);
+                }
+            }
+            Ok(decrypted)
+        }
     }
 
     async fn homomorphic_sum(&self, entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
-        // Simulated homomorphic sum
-        let mut result = vec![0u8; 64]; // Fixed size result
-        for entry in entries {
-            for (i, &byte) in entry.encrypted_data.iter().enumerate() {
-                if i < result.len() {
-                    result[i] = result[i].wrapping_add(byte);
+        #[cfg(feature = "homomorphic-encryption")]
+        {
+            tracing::debug!("Performing homomorphic sum on {} entries", entries.len());
+            let start_time = std::time::Instant::now();
+
+            if entries.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            // Parse first entry to get the structure
+            let first_entry = &entries[0];
+            let mut encrypted_values = self.parse_encrypted_vector(&first_entry.encrypted_data)?;
+
+            // Add remaining entries
+            for entry in &entries[1..] {
+                let entry_values = self.parse_encrypted_vector(&entry.encrypted_data)?;
+
+                // Ensure same length
+                if encrypted_values.len() != entry_values.len() {
+                    return Err(MemoryError::encryption("Mismatched vector lengths for homomorphic sum".to_string()));
+                }
+
+                // Perform homomorphic addition
+                for (i, entry_val) in entry_values.into_iter().enumerate() {
+                    encrypted_values[i] = &encrypted_values[i] + &entry_val;
                 }
             }
+
+            // Serialize result
+            let result = self.serialize_encrypted_vector(&encrypted_values)?;
+
+            let duration = start_time.elapsed();
+            tracing::debug!("Homomorphic sum completed in {:?}", duration);
+
+            Ok(result)
         }
-        Ok(result)
+
+        #[cfg(not(feature = "homomorphic-encryption"))]
+        {
+            tracing::warn!(
+                operation = "homomorphic_sum",
+                entry_count = entries.len(),
+                feature_enabled = false,
+                "Using fallback sum - homomorphic-encryption feature not enabled"
+            );
+            let mut result = vec![0u8; 64];
+            for entry in entries {
+                for (i, &byte) in entry.encrypted_data.iter().enumerate() {
+                    if i < result.len() {
+                        result[i] = result[i].wrapping_add(byte);
+                    }
+                }
+            }
+            Ok(result)
+        }
     }
 
     async fn homomorphic_average(&self, entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
-        let sum = self.homomorphic_sum(entries).await?;
-        let count = entries.len() as u8;
-        let average: Vec<u8> = sum.iter().map(|&x| x / count.max(1)).collect();
-        Ok(average)
+        #[cfg(feature = "homomorphic-encryption")]
+        {
+            tracing::debug!("Performing homomorphic average on {} entries", entries.len());
+
+            if entries.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            // Get the sum first
+            let sum_data = self.homomorphic_sum(entries).await?;
+            let mut sum_values = self.parse_encrypted_vector(&sum_data)?;
+
+            // Create encrypted count
+            let count = entries.len() as u32;
+            let encrypted_count = FheUint32::encrypt(count, &self.client_key);
+
+            // Divide each sum value by count (homomorphic division)
+            for sum_val in &mut sum_values {
+                *sum_val = &*sum_val / &encrypted_count;
+            }
+
+            // Serialize result
+            self.serialize_encrypted_vector(&sum_values)
+        }
+
+        #[cfg(not(feature = "homomorphic-encryption"))]
+        {
+            tracing::warn!("Using fallback average - homomorphic-encryption feature not enabled");
+            let sum = self.homomorphic_sum(entries).await?;
+            let count = entries.len() as u8;
+            let average: Vec<u8> = sum.iter().map(|&x| x / count.max(1)).collect();
+            Ok(average)
+        }
     }
 
     async fn homomorphic_count(&self, entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
@@ -502,6 +697,56 @@ impl HomomorphicContext {
             "count" => self.homomorphic_count(entries).await,
             _ => Err(MemoryError::encryption(format!("Unknown aggregate function: {}", function))),
         }
+    }
+
+    #[cfg(feature = "homomorphic-encryption")]
+    fn parse_encrypted_vector(&self, encrypted_data: &[u8]) -> Result<Vec<FheUint32>> {
+        let mut encrypted_values = Vec::new();
+        let mut offset = 0;
+
+        while offset < encrypted_data.len() {
+            if offset + 4 > encrypted_data.len() {
+                break;
+            }
+
+            // Read length prefix
+            let length = u32::from_le_bytes([
+                encrypted_data[offset],
+                encrypted_data[offset + 1],
+                encrypted_data[offset + 2],
+                encrypted_data[offset + 3],
+            ]) as usize;
+            offset += 4;
+
+            if offset + length > encrypted_data.len() {
+                return Err(MemoryError::encryption("Invalid encrypted data format".to_string()));
+            }
+
+            // Deserialize encrypted value
+            let encrypted_value: FheUint32 = bincode::deserialize(&encrypted_data[offset..offset + length])
+                .map_err(|e| MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e)))?;
+
+            encrypted_values.push(encrypted_value);
+            offset += length;
+        }
+
+        Ok(encrypted_values)
+    }
+
+    #[cfg(feature = "homomorphic-encryption")]
+    fn serialize_encrypted_vector(&self, encrypted_values: &[FheUint32]) -> Result<Vec<u8>> {
+        let mut result = Vec::new();
+
+        for encrypted_value in encrypted_values {
+            let serialized = bincode::serialize(encrypted_value)
+                .map_err(|e| MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e)))?;
+
+            // Store length prefix
+            result.extend_from_slice(&(serialized.len() as u32).to_le_bytes());
+            result.extend_from_slice(&serialized);
+        }
+
+        Ok(result)
     }
 }
 

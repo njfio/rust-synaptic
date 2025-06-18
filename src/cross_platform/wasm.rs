@@ -109,14 +109,29 @@ impl WasmAdapter {
 
         // Set up upgrade handler
         let upgrade_closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
-            let target = event.target().unwrap();
-            let request: IdbOpenDbRequest = target.dyn_into().unwrap();
-            let db = request.result().unwrap().dyn_into::<IdbDatabase>().unwrap();
-            
-            // Create object store if it doesn't exist
-            if !db.object_store_names().contains(&"memories".into()) {
-                let store = db.create_object_store("memories").unwrap();
-                console::log_1(&"Created object store".into());
+            if let Some(target) = event.target() {
+                if let Ok(request) = target.dyn_into::<IdbOpenDbRequest>() {
+                    if let Ok(result) = request.result() {
+                        if let Ok(db) = result.dyn_into::<IdbDatabase>() {
+                            // Create object store if it doesn't exist
+                            if !db.object_store_names().contains(&"memories".into()) {
+                                if let Ok(_store) = db.create_object_store("memories") {
+                                    console::log_1(&"Created object store".into());
+                                } else {
+                                    console::log_1(&"Failed to create object store".into());
+                                }
+                            }
+                        } else {
+                            console::log_1(&"Failed to cast to IdbDatabase".into());
+                        }
+                    } else {
+                        console::log_1(&"Failed to get request result".into());
+                    }
+                } else {
+                    console::log_1(&"Failed to cast to IdbOpenDbRequest".into());
+                }
+            } else {
+                console::log_1(&"Event target is None".into());
             }
         }) as Box<dyn FnMut(_)>);
 

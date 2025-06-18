@@ -1,13 +1,11 @@
 //! Agent state management for memory system
 
 use crate::error::{MemoryError, Result};
-use crate::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
+use crate::memory::types::{MemoryEntry, MemoryType};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use dashmap::DashMap;
-use parking_lot::RwLock;
 
 /// The complete state of an AI agent's memory system
 #[derive(Debug, Clone, Serialize, Deserialize)]

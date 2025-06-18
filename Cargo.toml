@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/njfio/rust-synaptic"
 keywords = ["ai", "memory", "knowledge-graph", "agent", "intelligent"]
 categories = ["data-structures", "algorithms", "science"]
+resolver = "2"
 
 [dependencies]
 # Serialization
@@ -54,7 +55,17 @@ dashmap = "5.5"
 parking_lot = "0.12"
 tokio-tungstenite = { version = "0.20", optional = true }
 futures-util = { version = "0.3", optional = true }
-diff = "0.1"
+# Myers' Diff Algorithm Implementation
+imara-diff = "0.1"
+similar = "2.4"
+
+# Advanced Similarity and Search Algorithms
+strsim = "0.11"
+
+# Advanced Theme Extraction and Topic Modeling
+linfa = "0.7"
+linfa-clustering = "0.7"
+nalgebra = "0.32"
 lz4_flex = "0.11"
 
 # Concurrency (already included above)
@@ -71,14 +82,22 @@ tracing-subscriber = "0.3"
 rayon = "1.7"
 hex = "0.4"
 sha2 = "0.10"
-rand = "0.8"
+rand = { version = "0.8.5", features = ["std_rng"] }
+rand_distr = "0.4"
 aes-gcm = "0.10"
+
+# Homomorphic Encryption
+tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
+
+# Zero-Knowledge Proofs
+bellman = { version = "0.14", optional = true }
+bls12_381 = { version = "0.8", optional = true }
 
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
-candle-core = { version = "0.3", optional = true }
-candle-nn = { version = "0.3", optional = true }
-candle-transformers = { version = "0.3", optional = true }
+candle-core = { version = "0.8.1", optional = true }
+candle-nn = { version = "0.8.1", optional = true }
+candle-transformers = { version = "0.8.1", optional = true }
 tokenizers = { version = "0.15", optional = true }
 plotters = { version = "0.3", optional = true }
 plotters-backend = { version = "0.3", optional = true }
@@ -139,6 +158,9 @@ encoding_rs = { version = "0.8", optional = true }
 pdf-extract = "0.9"
 zip = "0.6"
 quick-xml = "0.31"
+regex = "1.11.1"
+fastrand = "2.3.0"
+libm = "0.2.15"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -146,43 +168,53 @@ criterion = "0.5"
 base64 = "0.21"
 
 [features]
-default = ["file-storage", "memory-storage", "embeddings", "bincode"]
+# Core Features (minimal dependencies)
+default = ["core", "storage", "bincode", "base64"]
+core = []
+storage = ["file-storage", "memory-storage"]
 file-storage = []
 memory-storage = []
 sql-storage = ["sqlx"]
+
+# Essential Features
 embeddings = []
 vector-search = []
+analytics = []
+compression = ["lz4", "zstd", "brotli"]
+
+# Advanced Features
+security = ["tfhe", "bellman", "bls12_381"]
+homomorphic-encryption = ["tfhe"]
+zero-knowledge-proofs = ["bellman", "bls12_381"]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
 compression = ["lz4", "zstd", "brotli"]
 realtime = ["tokio-tungstenite", "futures-util"]
-analytics = []
+
+# External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
-security = []
 
-# Phase 5: Multi-Modal & Cross-Platform Features
-image-memory = ["image", "imageproc", "rusttype", "tesseract", "opencv"]
-audio-memory = ["rodio", "hound", "whisper-rs", "cpal", "dasp"]
-code-memory = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript", "syn", "proc-macro2"]
-multimodal = ["image-memory", "audio-memory", "code-memory"]
+# Multi-Modal Processing
+image-processing = ["image", "imageproc", "rusttype", "tesseract", "opencv"]
+audio-processing = ["rodio", "hound", "whisper-rs", "cpal", "dasp"]
+code-analysis = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript", "syn", "proc-macro2"]
+document-processing = ["pulldown-cmark", "mime_guess", "encoding_rs", "csv", "walkdir", "ignore", "globset"]
+multimodal = ["image-processing", "audio-processing", "code-analysis", "document-processing"]
 
 # Cross-Platform Support
-wasm-support = ["wasm-bindgen", "js-sys", "web-sys", "wasm-bindgen-futures", "getrandom", "base64"]
-mobile-support = ["jni", "ndk", "swift-bridge"]
-cross-platform = ["wasm-support", "md5", "bincode"]
+wasm = ["wasm-bindgen", "js-sys", "web-sys", "wasm-bindgen-futures", "getrandom", "base64"]
+mobile = ["jni", "ndk", "swift-bridge"]
+cross-platform = ["wasm", "mobile", "md5", "bincode"]
 
-# Phase 5B: Advanced Document Processing
-document-memory = ["pulldown-cmark", "mime_guess", "encoding_rs"]
-data-memory = ["csv"]
-folder-processing = ["walkdir", "ignore", "globset"]
-document-processing = ["document-memory", "data-memory", "folder-processing"]
+# Convenience Feature Groups
+full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal", "distributed"]
+minimal = ["core", "storage"]
+base64 = ["dep:base64"]
 
-# Complete Phase 5
-phase5 = ["multimodal", "cross-platform"]
-phase5b = ["document-processing", "multimodal"]
-phase5-complete = ["phase5", "phase5b"]
+# Testing utilities
+test-utils = []
 
 [[example]]
 name = "basic_usage"
@@ -209,7 +241,36 @@ required-features = ["security"]
 
 
 
+# Test configuration
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[[test]]
+name = "security_suite"
+path = "tests/phase4_security_tests.rs"
+required-features = ["security"]
+
+[[test]]
+name = "performance_suite"
+path = "tests/real_performance_measurement_tests.rs"
+
+[[test]]
+name = "multimodal_suite"
+path = "tests/phase5_multimodal_tests.rs"
+required-features = ["multimodal"]
+
+[[test]]
+name = "document_suite"
+path = "tests/phase5b_document_tests.rs"
+required-features = ["document-processing"]
+
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.test]
+opt-level = 1
+debug = true
+overflow-checks = true

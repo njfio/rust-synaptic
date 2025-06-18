@@ -1,5 +1,6 @@
 #[cfg(feature = "analytics")]
-use synaptic::analytics::{behavioral::BehavioralAnalyzer, AnalyticsConfig, AnalyticsEvent, AccessType, RecommendationType};
+use synaptic::analytics::{behavioral::BehavioralAnalyzer, AnalyticsConfig, AnalyticsEvent, AccessType};
+use synaptic::analytics::behavioral::RecommendationType;
 #[cfg(feature = "analytics")]
 use chrono::Utc;
 
