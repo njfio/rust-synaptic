@@ -137,7 +137,7 @@ impl PrototypicalLearner {
             }
             
             // Semantic features
-            for (j, &val) in semantic_features.iter().enumerate() {
+            for (_j, &val) in semantic_features.iter().enumerate() {
                 if idx < feature_dim {
                     features[[i, idx]] = val; idx += 1;
                 }
@@ -421,7 +421,7 @@ impl PrototypicalLearner {
                 perturbed_params.insert(param_name.clone(), perturbed_param);
                 
                 // Create temporary learner with perturbed parameters
-                let mut temp_learner = self.clone_with_params(&perturbed_params);
+                let temp_learner = self.clone_with_params(&perturbed_params);
                 let perturbed_embeddings = temp_learner.compute_embeddings(features)?;
                 let perturbed_prototypes = temp_learner.compute_prototypes(&perturbed_embeddings, targets);
                 let perturbed_distances = temp_learner.compute_distances(&perturbed_embeddings, &perturbed_prototypes);

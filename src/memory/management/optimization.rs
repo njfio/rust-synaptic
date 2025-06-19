@@ -1484,7 +1484,7 @@ impl MemoryOptimizer {
     /// Compress using Huffman algorithm
     fn compress_huffman(content: &str, analysis: &CompressionAnalysis) -> CompressionResult {
         // Simplified Huffman compression simulation
-        let mut frequency_map = analysis.char_frequency.clone();
+        let frequency_map = analysis.char_frequency.clone();
 
         // Build Huffman tree (simplified)
         let mut codes = HashMap::new();
@@ -1694,6 +1694,98 @@ impl MemoryOptimizer {
     /// Get all optimization strategies
     pub fn get_strategies(&self) -> &[OptimizationStrategy] {
         &self.strategies
+    }
+
+
+
+    /// Find text similarities between memory entries
+    async fn find_text_similarities(&self, entries: &[MemoryEntry]) -> Result<Vec<Vec<MemoryEntry>>> {
+        let mut similarity_groups = Vec::new();
+        let mut processed = std::collections::HashSet::new();
+
+        for (i, entry1) in entries.iter().enumerate() {
+            if processed.contains(&i) {
+                continue;
+            }
+
+            let mut group = vec![entry1.clone()];
+            processed.insert(i);
+
+            for (j, entry2) in entries.iter().enumerate() {
+                if i != j && !processed.contains(&j) {
+                    let similarity = self.calculate_string_similarity(&entry1.value, &entry2.value);
+                    if similarity > 0.8 {
+                        group.push(entry2.clone());
+                        processed.insert(j);
+                    }
+                }
+            }
+
+            if group.len() > 1 {
+                similarity_groups.push(group);
+            }
+        }
+
+        Ok(similarity_groups)
+    }
+
+    /// Merge similar memories into a single representative memory
+    async fn merge_similar_memories(&self, group: Vec<MemoryEntry>) -> Result<(usize, usize)> {
+        if group.is_empty() {
+            return Ok((0, 0));
+        }
+
+        // Find the best representative (highest importance or most recent)
+        let best_entry = group.iter()
+            .max_by(|a, b| {
+                a.metadata.importance.partial_cmp(&b.metadata.importance)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
+            })
+            .unwrap();
+
+        // Calculate space saved by removing duplicates
+        let space_saved = group.iter()
+            .filter(|entry| entry.key != best_entry.key)
+            .map(|entry| entry.estimated_size())
+            .sum();
+
+        let removed_count = group.len() - 1;
+
+        Ok((removed_count, space_saved))
+    }
+
+    /// Deduplicate groups of similar memories
+    async fn deduplicate_groups(&mut self, groups: Vec<Vec<MemoryEntry>>) -> Result<(usize, usize)> {
+        let mut total_removed = 0;
+        let mut total_space_saved = 0;
+
+        for group in groups {
+            if group.len() > 1 {
+                // Merge similar memories in this group
+                let (removed, space_saved) = self.merge_similar_memories(group.clone()).await?;
+                total_removed += removed;
+                total_space_saved += space_saved;
+
+                // Remove duplicates from our entries (keep the best one)
+                if let Some(best_entry) = group.iter()
+                    .max_by(|a, b| {
+                        a.metadata.importance.partial_cmp(&b.metadata.importance)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
+                    }) {
+
+                    // Remove all entries in the group except the best one
+                    for entry in &group {
+                        if entry.key != best_entry.key {
+                            self.entries.remove(&entry.key);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok((total_removed, total_space_saved))
     }
 }
 
@@ -3016,7 +3108,7 @@ impl MetricsCollector {
     }
 
     /// Calculate optimal Bloom filter bits per element
-    fn calculate_optimal_bloom_bits(&self, analysis: &KeyDistributionAnalysis) -> usize {
+    fn calculate_optimal_bloom_bits(&self, _analysis: &KeyDistributionAnalysis) -> usize {
         // Optimal bits per element for target false positive rate
         let target_fpr: f64 = 0.01; // 1% false positive rate
         let optimal_bits = (-target_fpr.ln() / (2.0_f64.ln().powi(2))).ceil() as usize;
@@ -3443,12 +3535,6 @@ impl MetricsCollector {
     }
 
 
-
-
-
-
-
-
 }
 
 impl Default for AdvancedPerformanceMetrics {
@@ -3545,6 +3631,43 @@ impl CachePerformanceTracker {
     }
 }
 
+impl CpuUsageTracker {
+    pub fn new() -> Self {
+        Self {
+            current_usage: 0.0,
+            usage_history: VecDeque::with_capacity(1000),
+            peak_usage: 0.0,
+            average_usage: 0.0,
+        }
+    }
+}
+
+impl AllocationTracker {
+    pub fn new() -> Self {
+        Self {
+            total_allocations: AtomicU64::new(0),
+            total_deallocations: AtomicU64::new(0),
+            current_allocations: AtomicUsize::new(0),
+            peak_allocations: AtomicUsize::new(0),
+            allocation_events: VecDeque::with_capacity(10000),
+        }
+    }
+}
+
+impl IoPerformanceTracker {
+    pub fn new() -> Self {
+        Self {
+            read_operations: AtomicU64::new(0),
+            write_operations: AtomicU64::new(0),
+            total_bytes_read: AtomicU64::new(0),
+            total_bytes_written: AtomicU64::new(0),
+            io_events: VecDeque::with_capacity(10000),
+            average_read_latency: 0.0,
+            average_write_latency: 0.0,
+        }
+    }
+}
+
 impl PerformanceProfiler {
     pub fn new() -> Self {
         Self {
@@ -3635,42 +3758,7 @@ impl PerformanceProfiler {
     }
 }
 
-impl CpuUsageTracker {
-    pub fn new() -> Self {
-        Self {
-            current_usage: 0.0,
-            usage_history: VecDeque::with_capacity(1000),
-            peak_usage: 0.0,
-            average_usage: 0.0,
-        }
-    }
-}
 
-impl AllocationTracker {
-    pub fn new() -> Self {
-        Self {
-            total_allocations: AtomicU64::new(0),
-            total_deallocations: AtomicU64::new(0),
-            current_allocations: AtomicUsize::new(0),
-            peak_allocations: AtomicUsize::new(0),
-            allocation_events: VecDeque::with_capacity(10000),
-        }
-    }
-}
-
-impl IoPerformanceTracker {
-    pub fn new() -> Self {
-        Self {
-            read_operations: AtomicU64::new(0),
-            write_operations: AtomicU64::new(0),
-            total_bytes_read: AtomicU64::new(0),
-            total_bytes_written: AtomicU64::new(0),
-            io_events: VecDeque::with_capacity(10000),
-            average_read_latency: 0.0,
-            average_write_latency: 0.0,
-        }
-    }
-}
 
 impl BenchmarkRunner {
     pub fn new() -> Self {

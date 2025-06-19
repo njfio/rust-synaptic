@@ -1525,7 +1525,7 @@ impl PatternDetector {
     }
 
     /// Generate decision rules from evidence
-    fn generate_decision_rules(&self, evidence: &[PatternEvidence]) -> Vec<DecisionRule> {
+    fn generate_decision_rules(&self, _evidence: &[PatternEvidence]) -> Vec<DecisionRule> {
         let mut rules = Vec::new();
 
         // Rule 1: High activity during business hours

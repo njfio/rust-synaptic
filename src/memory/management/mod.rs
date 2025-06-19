@@ -290,7 +290,7 @@ pub struct MemoryContentAnalysis {
     /// Content complexity score (0.0 to 1.0)
     pub complexity_score: f64,
     /// Language distribution
-    pub language_distribution: HashMap<String, usize>,
+    pub language_distribution: std::collections::HashMap<String, usize>,
     /// Semantic diversity score (0.0 to 1.0)
     pub semantic_diversity: f64,
     /// Content quality metrics

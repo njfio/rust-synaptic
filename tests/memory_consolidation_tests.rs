@@ -100,12 +100,17 @@ async fn test_selective_replay_manager() -> Result<()> {
     // Buffer should contain memories
     assert_eq!(replay_manager.buffer_size(), 5);
 
-    // Perform selective replay for testing (force immediate replay for testing)
-    #[cfg(any(test, feature = "test-utils"))]
+    // Perform selective replay for testing
+    // Use force_immediate_replay if test-utils feature is enabled, otherwise make replays immediate and use regular replay
+    #[cfg(feature = "test-utils")]
     replay_manager.force_immediate_replay().await?;
 
-    #[cfg(not(any(test, feature = "test-utils")))]
-    replay_manager.perform_selective_replay().await?;
+    #[cfg(not(feature = "test-utils"))]
+    {
+        // Make all scheduled replays immediate for testing
+        replay_manager.make_all_replays_immediate();
+        replay_manager.perform_selective_replay().await?;
+    }
 
     // Check metrics
     let metrics = replay_manager.get_metrics();

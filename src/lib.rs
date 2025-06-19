@@ -42,6 +42,7 @@
 pub mod error;
 pub mod memory;
 pub mod logging;
+pub mod cli;
 
 #[cfg(feature = "distributed")]
 pub mod distributed;

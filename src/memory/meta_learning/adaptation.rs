@@ -210,7 +210,7 @@ impl AdaptationManager {
         strategy: &'a AdaptationStrategy,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<AdaptationResult>> + 'a>> {
         Box::pin(async move {
-        let start_time = std::time::Instant::now();
+        let _start_time = std::time::Instant::now();
         
         match strategy {
             AdaptationStrategy::FineTuning { learning_rate, num_steps } => {

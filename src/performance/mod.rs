@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod cache;
 pub mod memory_pool;
 pub mod async_executor;
+pub mod real_time_monitoring;
 
 use std::collections::HashMap;
 use std::sync::Arc;
