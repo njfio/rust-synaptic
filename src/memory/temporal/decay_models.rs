@@ -828,7 +828,7 @@ mod tests {
     #[tokio::test]
     async fn test_ebbinghaus_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_ebbinghaus_decay(24.0, &context).await.unwrap();
@@ -846,7 +846,7 @@ mod tests {
     #[tokio::test]
     async fn test_power_law_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_power_law_decay(48.0, &context).await.unwrap();
@@ -860,7 +860,7 @@ mod tests {
     #[tokio::test]
     async fn test_logarithmic_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_logarithmic_decay(72.0, &context).await.unwrap();

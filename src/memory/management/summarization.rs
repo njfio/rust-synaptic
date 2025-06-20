@@ -6,10 +6,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use ndarray::{Array1, Array2};
-use linfa::prelude::*;
-use linfa_clustering::KMeans;
-use std::collections::BTreeMap;
 
 /// Strategies for memory summarization
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1676,7 +1672,7 @@ impl MemorySummarizer {
         let accuracy = self.calculate_accuracy_score(summary_content, memories)?;
 
         // Calculate overall quality as weighted average
-        let overall_quality = (coherence * 0.25 + completeness * 0.3 + conciseness * 0.2 + accuracy * 0.25);
+        let overall_quality = coherence * 0.25 + completeness * 0.3 + conciseness * 0.2 + accuracy * 0.25;
 
         tracing::debug!("Quality metrics - Coherence: {:.2}, Completeness: {:.2}, Conciseness: {:.2}, Accuracy: {:.2}, Overall: {:.2}",
             coherence, completeness, conciseness, accuracy, overall_quality);
@@ -1843,7 +1839,7 @@ impl MemorySummarizer {
             unique_sentences.len() as f64 / sentences.len() as f64
         };
 
-        let conciseness = (compression_score * 0.4 + density_score * 0.3 + redundancy_score * 0.3);
+        let conciseness = compression_score * 0.4 + density_score * 0.3 + redundancy_score * 0.3;
 
         Ok(conciseness.min(1.0))
     }

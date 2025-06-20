@@ -363,12 +363,12 @@ impl EvolutionTracker {
             // Count events and calculate activity score within this window
             let mut activity_score = 0.0;
             let mut event_count = 0;
-            let mut total_impact = 0.0;
+            let mut _total_impact = 0.0;
 
             for event in &sorted_events[i..] {
                 if event.timestamp <= window_end {
                     event_count += 1;
-                    total_impact += event.impact_score;
+                    _total_impact += event.impact_score;
 
                     // Weight recent events more heavily
                     let recency_factor = 1.0 - (event.timestamp - window_start).num_hours() as f64 / (window_duration.num_hours() as f64);

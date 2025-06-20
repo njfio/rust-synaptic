@@ -76,7 +76,7 @@ anyhow = "1.0"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Utilities
 rayon = "1.7"
@@ -161,6 +161,11 @@ quick-xml = "0.31"
 regex = "1.11.1"
 fastrand = "2.3.0"
 libm = "0.2.15"
+rustyline = "16.0.0"
+clap = { version = "4.5.40", features = ["derive"] }
+toml = "0.8.23"
+serde_yaml = "0.9.34"
+dirs = "6.0.0"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -168,8 +173,8 @@ criterion = "0.5"
 base64 = "0.21"
 
 [features]
-# Core Features (minimal dependencies)
-default = ["core", "storage", "bincode", "base64"]
+# Core Features (minimal dependencies) - Updated for development
+default = ["core", "storage", "embeddings", "analytics", "bincode", "base64"]
 core = []
 storage = ["file-storage", "memory-storage"]
 file-storage = []
@@ -187,7 +192,6 @@ security = ["tfhe", "bellman", "bls12_381"]
 homomorphic-encryption = ["tfhe"]
 zero-knowledge-proofs = ["bellman", "bls12_381"]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
-compression = ["lz4", "zstd", "brotli"]
 realtime = ["tokio-tungstenite", "futures-util"]
 
 # External Integrations

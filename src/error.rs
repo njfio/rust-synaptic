@@ -198,6 +198,10 @@ pub enum MemoryError {
     /// Document processing errors
     #[error("Document processing error: {message}")]
     DocumentProcessing { message: String },
+
+    /// Query parsing and execution errors
+    #[error("Invalid query: {message}")]
+    InvalidQuery { message: String },
 }
 
 impl MemoryError {
@@ -430,6 +434,13 @@ impl MemoryError {
         }
     }
 
+    /// Create an invalid query error
+    pub fn invalid_query<S: Into<String>>(message: S) -> Self {
+        Self::InvalidQuery {
+            message: message.into(),
+        }
+    }
+
     /// Check if this is a not found error
     pub fn is_not_found(&self) -> bool {
         matches!(self, Self::NotFound { .. })
@@ -453,6 +464,41 @@ impl MemoryError {
 impl From<anyhow::Error> for MemoryError {
     fn from(err: anyhow::Error) -> Self {
         Self::unexpected(err.to_string())
+    }
+}
+
+/// Convert from rustyline::error::ReadlineError for CLI operations
+impl From<rustyline::error::ReadlineError> for MemoryError {
+    fn from(err: rustyline::error::ReadlineError) -> Self {
+        Self::unexpected(format!("Readline error: {}", err))
+    }
+}
+
+/// Convert from regex::Error for pattern matching operations
+impl From<regex::Error> for MemoryError {
+    fn from(err: regex::Error) -> Self {
+        Self::validation(format!("Regex error: {}", err))
+    }
+}
+
+/// Convert from toml::de::Error for TOML parsing operations
+impl From<toml::de::Error> for MemoryError {
+    fn from(err: toml::de::Error) -> Self {
+        Self::configuration(format!("TOML parsing error: {}", err))
+    }
+}
+
+/// Convert from toml::ser::Error for TOML serialization operations
+impl From<toml::ser::Error> for MemoryError {
+    fn from(err: toml::ser::Error) -> Self {
+        Self::configuration(format!("TOML serialization error: {}", err))
+    }
+}
+
+/// Convert from serde_yaml::Error for YAML operations
+impl From<serde_yaml::Error> for MemoryError {
+    fn from(err: serde_yaml::Error) -> Self {
+        Self::configuration(format!("YAML error: {}", err))
     }
 }
 

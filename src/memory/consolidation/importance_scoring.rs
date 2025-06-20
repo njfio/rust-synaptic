@@ -514,7 +514,7 @@ impl ImportanceScorer {
     }
 
     /// Calculate PageRank-style centrality approximation
-    fn calculate_pagerank_approximation(&self, memory: &MemoryEntry, in_degree: usize, out_degree: usize) -> f64 {
+    fn calculate_pagerank_approximation(&self, memory: &MemoryEntry, in_degree: usize, _out_degree: usize) -> f64 {
         // PageRank considers both incoming links and the quality of those links
         let damping_factor = 0.85;
         let base_rank = (1.0 - damping_factor) / 100.0; // Assuming 100 total memories

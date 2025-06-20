@@ -342,7 +342,7 @@ impl GradualForgettingAlgorithm {
     /// Calculate next evaluation time based on retention factors
     fn calculate_next_evaluation_time(
         &self,
-        memory: &MemoryEntry,
+        _memory: &MemoryEntry,
         retention_factors: &RetentionFactors,
     ) -> DateTime<Utc> {
         let base_interval = self.config.evaluation_interval_hours as f64;
@@ -394,7 +394,7 @@ impl GradualForgettingAlgorithm {
         }
 
         let retention_rate = self.metrics.memories_retained as f64 / self.metrics.memories_evaluated as f64;
-        let forgetting_rate = self.metrics.memories_forgotten as f64 / self.metrics.memories_evaluated as f64;
+        let _forgetting_rate = self.metrics.memories_forgotten as f64 / self.metrics.memories_evaluated as f64;
         
         // Efficiency based on balanced retention/forgetting and average retention strength
         let balance_score = 1.0 - (retention_rate - 0.7).abs(); // Target 70% retention

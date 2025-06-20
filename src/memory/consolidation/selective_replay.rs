@@ -483,6 +483,18 @@ impl SelectiveReplayManager {
 
         Ok(())
     }
+
+    /// Make all scheduled replays immediate for testing purposes
+    pub fn make_all_replays_immediate(&mut self) {
+        let mut temp_buffer = Vec::new();
+        while let Some(mut priority_entry) = self.replay_buffer.pop() {
+            priority_entry.scheduled_time = Utc::now(); // Schedule immediately for testing
+            temp_buffer.push(priority_entry);
+        }
+        for entry in temp_buffer {
+            self.replay_buffer.push(entry);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -28,6 +28,8 @@ use crate::memory::storage::Storage;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Simple memory manager for basic operations and testing
 pub struct MemoryManager {
@@ -659,7 +661,7 @@ pub struct MemoryContentAnalysis {
     /// Content complexity score (0.0 to 1.0)
     pub complexity_score: f64,
     /// Language distribution
-    pub language_distribution: HashMap<String, usize>,
+    pub language_distribution: std::collections::HashMap<String, usize>,
     /// Semantic diversity score (0.0 to 1.0)
     pub semantic_diversity: f64,
     /// Content quality metrics
@@ -1000,6 +1002,12 @@ impl AdvancedMemoryManager {
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
+        let result_data = serde_json::json!({
+            "memory_key": memory_key,
+            "version_id": version_id,
+            "updated_value_length": updated_memory.value.len()
+        });
+
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Update,
             success: true,
@@ -1056,7 +1064,7 @@ impl AdvancedMemoryManager {
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
-
+        let cleanup_count = 0; // Placeholder for actual cleanup count
 
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Delete,
@@ -1067,7 +1075,7 @@ impl AdvancedMemoryManager {
                 "deleted_memory_key": memory_key,
                 "version_id": version_id,
                 "cleanup_count": cleanup_count,
-                "original_value_length": memory_to_delete.value.len()
+                "original_value_length": deleted_memory.value.len()
             })),
             messages,
         })
