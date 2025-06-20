@@ -192,7 +192,6 @@ security = ["tfhe", "bellman", "bls12_381"]
 homomorphic-encryption = ["tfhe"]
 zero-knowledge-proofs = ["bellman", "bls12_381"]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
-compression = ["lz4", "zstd", "brotli"]
 realtime = ["tokio-tungstenite", "futures-util"]
 
 # External Integrations
