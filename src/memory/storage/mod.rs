@@ -50,6 +50,9 @@ pub trait Storage: Send + Sync {
 
     /// Restore from a backup
     async fn restore(&self, path: &str) -> Result<()>;
+
+    /// Get all entries (for analysis and processing)
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>>;
 }
 
 /// Storage statistics
@@ -287,5 +290,9 @@ impl Storage for StorageMiddleware {
 
     async fn restore(&self, path: &str) -> Result<()> {
         self.inner.restore(path).await
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        self.inner.get_all_entries().await
     }
 }
