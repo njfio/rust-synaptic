@@ -4,7 +4,7 @@
 use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
 
 /// Redis configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +39,7 @@ impl Default for RedisConfig {
 /// Real Redis client
 #[derive(Debug)]
 pub struct RedisClient {
+    #[allow(dead_code)]
     config: RedisConfig,
     #[cfg(feature = "distributed")]
     connection_manager: Option<redis::aio::MultiplexedConnection>,
@@ -341,6 +342,7 @@ impl RedisClient {
     }
 
     /// Hash text for consistent cache keys
+    #[allow(dead_code)]
     fn hash_text(&self, text: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -397,6 +399,7 @@ impl RedisClient {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn update_metrics(&mut self, start_time: std::time::Instant, operation: CacheOperation) {
         let elapsed_ms = start_time.elapsed().as_millis() as f64;
         
@@ -415,6 +418,7 @@ impl RedisClient {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum CacheOperation {
     Hit,
     Miss,

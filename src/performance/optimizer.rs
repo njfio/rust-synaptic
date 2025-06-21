@@ -18,6 +18,7 @@ use super::{PerformanceConfig, metrics::PerformanceMetrics};
 #[derive(Debug)]
 pub struct PerformanceOptimizer {
     config: PerformanceConfig,
+    #[allow(dead_code)]
     optimization_strategies: Arc<RwLock<Vec<OptimizationStrategy>>>,
     optimization_history: Arc<RwLock<Vec<OptimizationPlan>>>,
     ml_predictor: Arc<RwLock<MLPredictor>>,

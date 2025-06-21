@@ -6,7 +6,7 @@
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use super::{ConsolidationConfig, MemoryImportance, ConsolidationStrategy};
-use chrono::{DateTime, Utc, Duration};
+use chrono::Utc;
 use std::collections::HashMap;
 
 /// Gradual forgetting parameters
@@ -88,6 +88,7 @@ pub struct ConsolidationStrategies {
     /// Hierarchical compression configuration
     hierarchical_config: HierarchicalConfig,
     /// Consolidation policies by memory type
+    #[allow(dead_code)]
     policies: HashMap<String, ConsolidationPolicy>,
     /// Strategy performance history
     performance_history: HashMap<ConsolidationStrategy, Vec<StrategyResult>>,
@@ -578,7 +579,7 @@ impl ConsolidationStrategies {
         Ok(forgetting_prob.min(1.0).max(0.0))
     }
 
-    async fn calculate_replay_probability(&self, memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_replay_probability(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
         let importance_factor = importance.importance_score;
         let recency_factor = importance.recency_score;
         let centrality_factor = importance.centrality_score;

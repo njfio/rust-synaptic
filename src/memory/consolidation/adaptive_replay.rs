@@ -197,6 +197,7 @@ pub struct AdaptiveReplayMechanisms {
     /// Configuration
     config: AdaptiveReplayConfig,
     /// Consolidation configuration
+    #[allow(dead_code)]
     consolidation_config: ConsolidationConfig,
     /// Current active strategy
     current_strategy: AdaptiveReplayStrategy,
@@ -465,7 +466,7 @@ impl AdaptiveReplayMechanisms {
     /// Calculate adaptive replay priority
     async fn calculate_adaptive_priority(
         &self,
-        memory: &MemoryEntry,
+        _memory: &MemoryEntry,
         importance: &MemoryImportance,
         context: &ReplayContext,
         strategy: &AdaptiveReplayStrategy,
@@ -505,7 +506,7 @@ impl AdaptiveReplayMechanisms {
     /// Calculate adaptive scheduling time
     async fn calculate_adaptive_schedule(
         &self,
-        memory: &MemoryEntry,
+        _memory: &MemoryEntry,
         importance: &MemoryImportance,
         context: &ReplayContext,
         strategy: &AdaptiveReplayStrategy,
@@ -733,7 +734,7 @@ impl AdaptiveReplayMechanisms {
         &mut self,
         context_weights: &HashMap<String, f64>,
         adaptation_window: u64,
-        current_context: &ReplayContext,
+        _current_context: &ReplayContext,
     ) -> Result<()> {
         let mut new_weights = context_weights.clone();
 
@@ -992,7 +993,7 @@ impl AdaptiveReplayMechanisms {
     }
 
     /// Calculate context variance for strategy selection
-    async fn calculate_context_variance(&self, current_context: &ReplayContext) -> Result<f64> {
+    async fn calculate_context_variance(&self, _current_context: &ReplayContext) -> Result<f64> {
         if self.context_history.len() < 3 {
             return Ok(0.0);
         }

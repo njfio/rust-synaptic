@@ -5,13 +5,13 @@
 
 use synaptic::memory::meta_learning::{
     MetaLearningSystem, MetaLearningConfig, MetaTask, TaskType, MetaAlgorithm,
-    AdaptationResult, MetaLearningMetrics, task_distribution::{TaskDistribution, SamplingStrategy},
+    task_distribution::{TaskDistribution, SamplingStrategy},
 };
 use synaptic::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
 use synaptic::error::Result;
 use chrono::Utc;
 use std::collections::HashMap;
-use uuid::Uuid;
+
 
 /// Create test memory entries for meta-learning tasks
 fn create_test_memories(count: usize, memory_type: MemoryType, domain: &str) -> Vec<MemoryEntry> {

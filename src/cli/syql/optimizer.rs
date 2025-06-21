@@ -140,9 +140,9 @@ impl OptimizationRule for PredicatePushdownRule {
     fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         let query = query.clone();
         Box::pin(async move {
-            let mut query = query;
+            let query = query;
             // Push WHERE conditions down to the FROM clause when possible
-            if let Some(where_expr) = &query.where_clause {
+            if let Some(_where_expr) = &query.where_clause {
                 // Simplified implementation - in practice would analyze predicates
                 // and push suitable ones down to the FROM clause
             }
@@ -153,6 +153,7 @@ impl OptimizationRule for PredicatePushdownRule {
 }
 
 impl PredicatePushdownRule {
+    #[allow(dead_code)]
     fn push_predicate_to_from(&self, from: FromClause, predicate: Expression) -> Result<FromClause> {
         match from {
             FromClause::Memories { alias, filter } => {
@@ -170,6 +171,7 @@ impl PredicatePushdownRule {
         }
     }
 
+    #[allow(dead_code)]
     fn remove_pushed_predicates(&self, where_clause: Option<Expression>) -> Result<Option<Expression>> {
         // Simplified implementation - in practice would analyze which predicates were pushed
         Ok(where_clause)
@@ -229,6 +231,7 @@ impl OptimizationRule for ConstantFoldingRule {
 }
 
 impl ConstantFoldingRule {
+    #[allow(dead_code)]
     fn fold_constants(&self, expr: Expression) -> Expression {
         match expr {
             Expression::Binary { left, operator, right } => {
@@ -266,6 +269,7 @@ impl ConstantFoldingRule {
         }
     }
 
+    #[allow(dead_code)]
     fn evaluate_binary_operation(&self, left: &Literal, op: &BinaryOperator, right: &Literal) -> Option<Literal> {
         match (left, op, right) {
             (Literal::Integer(a), BinaryOperator::Add, Literal::Integer(b)) => {
@@ -299,6 +303,7 @@ impl ConstantFoldingRule {
         }
     }
 
+    #[allow(dead_code)]
     fn evaluate_unary_operation(&self, op: &UnaryOperator, operand: &Literal) -> Option<Literal> {
         match (op, operand) {
             (UnaryOperator::Minus, Literal::Integer(n)) => Some(Literal::Integer(-n)),
@@ -403,9 +408,9 @@ impl CostModel {
     }
 
     /// Estimate cost of FROM clause
-    fn estimate_from_cost<'a>(&'a self, from: &FromClause, statistics: &'a QueryStatistics) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + '_>> {
+    fn estimate_from_cost<'a>(&'a self, from: &FromClause, statistics: &'a QueryStatistics) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + 'a>> {
         let from = from.clone();
-        let statistics = statistics.clone();
+        let statistics = statistics;
         Box::pin(async move {
             self.estimate_from_cost_impl(&from, &statistics).await
         })
@@ -440,6 +445,7 @@ impl CostModel {
 }
 
 /// Query statistics for optimization
+#[derive(Clone)]
 pub struct QueryStatistics {
     /// Number of memories in the system
     pub memory_count: usize,

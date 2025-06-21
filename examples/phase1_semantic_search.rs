@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Semantic search using embeddings
         #[cfg(feature = "embeddings")]
         {
-            let semantic_results = memory.semantic_search(query, Some(3))?;
+            let semantic_results = memory.semantic_search(query, Some(3)).await?;
             println!("   Semantic search found {} results:", semantic_results.len());
             for result in &semantic_results {
                 println!("    • {} (similarity: {:.3}, distance: {:.3})", 
@@ -159,7 +159,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "embeddings")]
     let (semantic_results, semantic_time) = {
         let start_time = std::time::Instant::now();
-        let results = memory.semantic_search(test_query, Some(5))?;
+        let results = memory.semantic_search(test_query, Some(5)).await?;
         let time = start_time.elapsed();
         (results, time)
     };

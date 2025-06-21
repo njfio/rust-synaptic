@@ -107,7 +107,7 @@ async fn advanced_search_example() -> Result<()> {
     println!("✓ Stored memories with metadata and tags");
 
     // Perform advanced search
-    let search_query = SearchQuery::new("project".to_string())
+    let _search_query = SearchQuery::new("project".to_string())
         .with_memory_type(MemoryType::LongTerm)
         .with_sort_by(SortBy::Importance)
         .with_limit(10);
@@ -208,6 +208,7 @@ async fn storage_backends_example() -> Result<()> {
 }
 
 /// Helper function to demonstrate memory entry creation with rich metadata
+#[allow(dead_code)]
 fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance: f64) -> MemoryEntry {
     let mut entry = MemoryEntry::new(
         key.to_string(),
@@ -227,6 +228,7 @@ fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance:
 }
 
 /// Demonstrate error handling patterns
+#[allow(dead_code)]
 async fn error_handling_example() -> Result<()> {
     println!("  Example 5: Error Handling");
     println!("-----------------------------");

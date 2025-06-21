@@ -11,10 +11,10 @@ pub mod performance;
 mod tests;
 
 use crate::error::Result;
-use crate::memory::types::{MemoryEntry, MemoryMetadata};
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
 use uuid::Uuid;
 
 /// Advanced analytics configuration
@@ -222,6 +222,7 @@ pub struct AnalyticsEngine {
     /// Behavioral analysis module
     behavioral: behavioral::BehavioralAnalyzer,
     /// Visualization module
+    #[allow(dead_code)]
     visualization: visualization::VisualizationEngine,
 }
 

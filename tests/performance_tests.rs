@@ -127,7 +127,7 @@ async fn test_concurrent_access_performance() -> Result<(), Box<dyn Error>> {
 #[ignore]
 async fn test_embedding_performance() -> Result<(), Box<dyn Error>> {
     let config = EmbeddingConfig::default();
-    let mut manager = EmbeddingManager::new(config);
+    let mut manager = EmbeddingManager::new(config)?;
     
     let test_texts = (0..100)
         .map(|i| format!("This is test text number {} for embedding performance testing with sufficient length", i))
@@ -142,7 +142,7 @@ async fn test_embedding_performance() -> Result<(), Box<dyn Error>> {
             text.clone(),
             MemoryType::ShortTerm,
         );
-        manager.add_memory(memory)?;
+        manager.add_memory(memory).await?;
     }
     
     let embedding_duration = start_time.elapsed();
@@ -151,7 +151,7 @@ async fn test_embedding_performance() -> Result<(), Box<dyn Error>> {
     // Test similarity search performance
     let search_start = Instant::now();
     let query = "test text performance";
-    let results = manager.find_similar_to_query(query, Some(10))?;
+    let results = manager.find_similar_to_query(query, Some(10)).await?;
     let search_duration = search_start.elapsed();
     
     println!("Similarity search completed in {:?}", search_duration);

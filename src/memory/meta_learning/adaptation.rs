@@ -75,12 +75,15 @@ pub enum DomainAlignmentMethod {
 #[derive(Debug)]
 pub struct AdaptationManager {
     /// Configuration
+    #[allow(dead_code)]
     config: MetaLearningConfig,
     /// Adaptation history
     adaptation_history: Vec<AdaptationRecord>,
     /// Domain mappings
+    #[allow(dead_code)]
     domain_mappings: HashMap<String, DomainMapping>,
     /// Task similarity cache
+    #[allow(dead_code)]
     task_similarity_cache: HashMap<(String, String), f64>,
     /// Adaptation strategies
     strategies: HashMap<String, AdaptationStrategy>,
@@ -88,7 +91,7 @@ pub struct AdaptationManager {
 
 /// Record of adaptation attempts
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AdaptationRecord {
+pub struct AdaptationRecord {
     /// Task ID
     task_id: String,
     /// Source domain

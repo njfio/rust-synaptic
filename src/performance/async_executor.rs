@@ -404,6 +404,7 @@ pub enum SchedulingStrategy {
 /// Load balancer for task selection
 #[derive(Debug)]
 pub struct LoadBalancer {
+    #[allow(dead_code)]
     task_history: VecDeque<TaskExecutionRecord>,
 }
 

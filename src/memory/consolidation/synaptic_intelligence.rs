@@ -116,6 +116,7 @@ pub struct SynapticIntelligence {
     /// Task-specific importance weights
     task_importance_weights: HashMap<String, HashMap<String, f64>>,
     /// Regularization terms
+    #[allow(dead_code)]
     regularization_terms: Vec<SIRegularizationTerm>,
     /// Performance metrics
     metrics: SIMetrics,
@@ -473,7 +474,7 @@ impl SynapticIntelligence {
         let mut task_count = 0;
 
         // Aggregate resistance from all tasks
-        for (task_id, task_weights) in &self.task_importance_weights {
+        for (_task_id, task_weights) in &self.task_importance_weights {
             if let Some(&importance) = task_weights.get(param_id) {
                 // Get path integral contribution
                 let path_integral_contribution = if let Some(path_integral) = self.path_integrals.get(param_id) {
@@ -829,11 +830,11 @@ mod tests {
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_key1".to_string(), 10.0); // Large deviation
 
-        let at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
+        let _at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
 
         // Should detect the parameter as at risk if there's sufficient importance
         // The test is valid whether or not parameters are detected as at risk
-        assert!(at_risk.len() >= 0); // Always true, but validates the function works
+        // Validate that the function returns a valid result works
     }
 
     #[tokio::test]

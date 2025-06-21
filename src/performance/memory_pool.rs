@@ -15,6 +15,7 @@ use super::PerformanceConfig;
 /// High-performance memory pool
 #[derive(Debug)]
 pub struct MemoryPool {
+    #[allow(dead_code)]
     config: PerformanceConfig,
     pools: Arc<RwLock<HashMap<usize, Pool>>>,
     allocation_stats: Arc<RwLock<AllocationStatistics>>,

@@ -7,13 +7,14 @@ use std::error::Error;
 #[cfg(feature = "analytics")]
 use synaptic::analytics::{
     AnalyticsEngine, AnalyticsConfig, AnalyticsEvent, AccessType, ModificationType,
-    InsightType, InsightPriority,
     predictive::PredictiveAnalytics,
     behavioral::BehavioralAnalyzer,
     visualization::{VisualizationEngine, TimelineVisualizationType, TemporalDataType, TemporalDataPoint},
     intelligence::MemoryIntelligenceEngine,
     performance::{PerformanceAnalyzer, PerformanceSnapshot},
 };
+
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

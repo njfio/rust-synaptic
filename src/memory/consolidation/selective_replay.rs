@@ -90,6 +90,7 @@ pub struct SelectiveReplayManager {
     /// Replay history for performance tracking
     replay_history: VecDeque<ReplayEntry>,
     /// Replay strategy
+    #[allow(dead_code)]
     strategy: ReplayStrategy,
     /// Scheduling algorithm
     scheduling: SchedulingAlgorithm,

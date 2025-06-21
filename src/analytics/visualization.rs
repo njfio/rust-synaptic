@@ -2,7 +2,7 @@
 // 3D graph visualization and temporal visualization capabilities
 
 use crate::error::Result;
-use crate::analytics::{AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority};
+use crate::analytics::AnalyticsConfig;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -227,6 +227,7 @@ pub struct HeatmapColorConfig {
 #[derive(Debug)]
 pub struct VisualizationEngine {
     /// Configuration
+    #[allow(dead_code)]
     config: AnalyticsConfig,
     /// 3D layout configuration
     layout_config: Layout3DConfig,
@@ -844,8 +845,8 @@ mod tests {
 
         // Create some nodes
         let memory_entry = MemoryEntry::new("key1".to_string(), "Test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
 
         // Create an edge
         engine.create_visual_edge("key1", "key2", 0.8, "similarity").await.unwrap();
@@ -902,9 +903,9 @@ mod tests {
         let vr_export = engine.export_vr_data().await.unwrap();
 
         assert_eq!(vr_export.webgl_data.node_count, 2);
-        assert!(vr_export.interaction_zones.len() >= 0);
+        // Validate VR export has interaction zones
         assert_eq!(vr_export.spatial_audio_sources.len(), 2); // One per node
-        assert!(vr_export.haptic_feedback_points.len() >= 0); // Depends on node importance
+        // Validate VR export has haptic feedback points (depends on node importance)
         assert!(vr_export.navigation_config.enable_teleportation);
     }
 }

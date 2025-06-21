@@ -260,6 +260,7 @@ enum CompletionContext {
     Property,
     MemoryType,
     RelationshipType,
+    #[allow(dead_code)]
     Operator,
 }
 

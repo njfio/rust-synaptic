@@ -384,6 +384,7 @@ struct HistoricalStorageData {
     pub daily_sizes: Vec<f64>,
     pub growth_rates: Vec<f64>,
     pub access_patterns: Vec<f64>,
+    #[allow(dead_code)]
     pub analysis_period_days: i64,
 }
 
@@ -393,7 +394,9 @@ struct DetailedStorageAnalysis {
     pub total_size: usize,
     pub memory_count: usize,
     pub size_distribution: std::collections::HashMap<String, usize>,
+    #[allow(dead_code)]
     pub type_distribution: std::collections::HashMap<String, usize>,
+    #[allow(dead_code)]
     pub age_distribution: std::collections::HashMap<String, usize>,
     pub average_memory_size: f64,
 }
@@ -404,6 +407,7 @@ struct GrowthProjection {
     pub projected_30_days: f64,
     pub projected_90_days: f64,
     pub projected_365_days: f64,
+    #[allow(dead_code)]
     pub confidence: f64,
 }
 
@@ -441,6 +445,7 @@ struct ActionAnalysisResult {
 
 /// Advanced archiving prediction result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ArchivingPrediction {
     pub memory_key: String,
     pub prediction_score: f64,
@@ -451,6 +456,7 @@ struct ArchivingPrediction {
 
 /// Access pattern analysis for archiving
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct AccessPatternAnalysis {
     pub total_memories: usize,
     pub avg_access_frequency: f64,
@@ -461,6 +467,7 @@ struct AccessPatternAnalysis {
 
 /// Seasonal access pattern
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SeasonalPattern {
     pub seasonal_relevance: f64,
     pub weekday_relevance: f64,
@@ -470,6 +477,7 @@ struct SeasonalPattern {
 
 /// Archiving decision result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ArchivingDecision {
     pub memory_key: String,
     pub should_archive: bool,
@@ -479,6 +487,7 @@ struct ArchivingDecision {
     pub estimated_retrieval_time_ms: u64,
 }
 
+#[allow(dead_code)] // Comprehensive utility methods for future use
 impl MemoryLifecycleManager {
     /// Create a new lifecycle manager
     pub fn new() -> Self {
@@ -2596,13 +2605,11 @@ impl MemoryLifecycleManager {
 
     /// Analyze access patterns specifically for archiving decisions
     async fn analyze_access_patterns_for_archiving(&self) -> Result<AccessPatternAnalysis> {
-        let mut total_accesses = 0;
         let mut access_frequencies = Vec::new();
         let mut last_access_times = Vec::new();
         let current_time = Utc::now();
 
         for state in self.memory_states.values() {
-            total_accesses += state.access_count;
 
             let days_since_last_access = (current_time - state.last_accessed).num_days();
             last_access_times.push(days_since_last_access);

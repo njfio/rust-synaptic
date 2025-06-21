@@ -45,14 +45,28 @@ impl FileStorage {
 
     /// Serialize a memory entry to bytes
     fn serialize_entry(&self, entry: &MemoryEntry) -> Result<Vec<u8>> {
-        bincode::serialize(entry)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize entry: {}", e)))
+        #[cfg(feature = "bincode")]
+        let result = bincode::serialize(entry)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize entry: {}", e)));
+
+        #[cfg(not(feature = "bincode"))]
+        let result = serde_json::to_vec(entry)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize entry with JSON: {}", e)));
+
+        result
     }
 
     /// Deserialize bytes to a memory entry
     fn deserialize_entry(&self, bytes: &[u8]) -> Result<MemoryEntry> {
-        bincode::deserialize(bytes)
-            .map_err(|e| MemoryError::storage(format!("Failed to deserialize entry: {}", e)))
+        #[cfg(feature = "bincode")]
+        let result = bincode::deserialize(bytes)
+            .map_err(|e| MemoryError::storage(format!("Failed to deserialize entry: {}", e)));
+
+        #[cfg(not(feature = "bincode"))]
+        let result = serde_json::from_slice(bytes)
+            .map_err(|e| MemoryError::storage(format!("Failed to deserialize entry from JSON: {}", e)));
+
+        result
     }
 
     /// Update and cache storage statistics
@@ -311,6 +325,18 @@ impl Storage for FileStorage {
     async fn restore(&self, path: &str) -> Result<()> {
         self.import_from_json(path).await?;
         Ok(())
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        let mut entries = Vec::new();
+
+        for result in self.db.iter() {
+            let (_key, value) = result.storage_context("Failed to iterate over database")?;
+            let entry = self.deserialize_entry(&value)?;
+            entries.push(entry);
+        }
+
+        Ok(entries)
     }
 }
 

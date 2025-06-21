@@ -64,6 +64,7 @@ impl Default for IntegrationConfig {
 
 /// Integration manager for coordinating external services
 pub struct IntegrationManager {
+    #[allow(dead_code)]
     config: IntegrationConfig,
     
     #[cfg(feature = "sql-storage")]

@@ -187,8 +187,6 @@ async fn test_standard_encryption_workflow() -> Result<(), Box<dyn std::error::E
 
     let mut config = SecurityConfig::default();
     config.access_control_policy.require_mfa = false;
-    config.enable_homomorphic_encryption = false;
-    config.enable_zero_knowledge = false;
     config.enable_differential_privacy = false;
     let mut security = SecurityManager::new(config).await?;
     security.access_control.add_role(

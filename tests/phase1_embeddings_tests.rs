@@ -14,7 +14,7 @@ mod embeddings_tests {
     #[tokio::test]
     async fn test_embedding_manager_basic_operations() -> Result<(), Box<dyn Error>> {
         let config = EmbeddingConfig::default();
-        let mut manager = EmbeddingManager::new(config);
+        let mut manager = EmbeddingManager::new(config)?;
         
         // Test initial state
         let stats = manager.get_stats();
@@ -29,7 +29,7 @@ mod embeddings_tests {
             MemoryType::ShortTerm,
         );
         
-        let embedding = manager.add_memory(memory)?;
+        let embedding = manager.add_memory(memory).await?;
         
         // Verify embedding properties
         assert_eq!(embedding.vector.len(), 384);
@@ -51,7 +51,7 @@ mod embeddings_tests {
             similarity_threshold: 0.01, // Very low threshold for testing with simple TF-IDF
             ..Default::default()
         };
-        let mut manager = EmbeddingManager::new(config);
+        let mut manager = EmbeddingManager::new(config)?;
         
         // Add diverse memories
         let memories = vec![
@@ -67,11 +67,11 @@ mod embeddings_tests {
                 content.to_string(),
                 MemoryType::ShortTerm,
             );
-            manager.add_memory(memory)?;
+            manager.add_memory(memory).await?;
         }
         
         // Search for AI-related content
-        let results = manager.find_similar_to_query("machine learning algorithms", Some(4))?;
+        let results = manager.find_similar_to_query("machine learning algorithms", Some(4)).await?;
         
         assert!(!results.is_empty());
         
@@ -99,7 +99,7 @@ mod embeddings_tests {
 
     #[tokio::test]
     async fn test_memory_update_and_caching() -> Result<(), Box<dyn Error>> {
-        let mut manager = EmbeddingManager::new(EmbeddingConfig::default());
+        let mut manager = EmbeddingManager::new(EmbeddingConfig::default())?;
         
         // Add initial memory
         let memory1 = MemoryEntry::new(
@@ -107,7 +107,7 @@ mod embeddings_tests {
             "Initial content about AI".to_string(),
             MemoryType::ShortTerm,
         );
-        let embedding1 = manager.add_memory(memory1)?;
+        let embedding1 = manager.add_memory(memory1).await?;
         
         // Update with new content - the update_memory method should handle this properly
         let memory2 = MemoryEntry::new(
@@ -115,7 +115,7 @@ mod embeddings_tests {
             "Updated content about artificial intelligence and machine learning".to_string(),
             MemoryType::ShortTerm,
         );
-        let embedding2 = manager.update_memory(memory2)?;
+        let embedding2 = manager.update_memory(memory2).await?;
 
         // Verify that embeddings are different (content changed)
         assert_ne!(embedding1.metadata.content_hash, embedding2.metadata.content_hash);
@@ -173,7 +173,7 @@ mod embeddings_tests {
         memory.store("rust_lang", "Rust programming language for system programming").await?;
         
         // Test semantic search integration
-        let semantic_results = memory.semantic_search("machine learning", Some(3))?;
+        let semantic_results = memory.semantic_search("machine learning", Some(3)).await?;
         println!("Semantic search results: {}", semantic_results.len());
         for result in &semantic_results {
             println!("  - {} (similarity: {:.3})", result.memory.key, result.similarity);
@@ -205,10 +205,10 @@ mod embeddings_tests {
         Ok(())
     }
 
-    #[test]
-    fn test_embedding_quality_metrics() {
+    #[tokio::test]
+    async fn test_embedding_quality_metrics() -> Result<(), Box<dyn Error>> {
         let config = EmbeddingConfig::default();
-        let mut manager = EmbeddingManager::new(config);
+        let mut manager = EmbeddingManager::new(config)?;
 
         // Test quality calculation with different content lengths
 
@@ -224,17 +224,19 @@ mod embeddings_tests {
             MemoryType::ShortTerm,
         );
 
-        let embedding1 = manager.generate_embedding(&memory1).unwrap();
-        let embedding2 = manager.generate_embedding(&memory2).unwrap();
+        let embedding1 = manager.generate_embedding(&memory1).await.unwrap();
+        let embedding2 = manager.generate_embedding(&memory2).await.unwrap();
 
         assert!(embedding1.metadata.quality_score >= embedding2.metadata.quality_score);
         assert!(embedding1.metadata.quality_score >= 0.0 && embedding1.metadata.quality_score <= 1.0);
         assert!(embedding2.metadata.quality_score >= 0.0 && embedding2.metadata.quality_score <= 1.0);
+
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_performance_benchmarks() -> Result<(), Box<dyn Error>> {
-        let mut manager = EmbeddingManager::new(EmbeddingConfig::default());
+        let mut manager = EmbeddingManager::new(EmbeddingConfig::default())?;
         
         // Add many memories for performance testing
         let start_time = std::time::Instant::now();
@@ -245,7 +247,7 @@ mod embeddings_tests {
                 format!("This is test memory number {} about various topics including AI, cooking, programming, and science", i),
                 MemoryType::ShortTerm,
             );
-            manager.add_memory(memory)?;
+            manager.add_memory(memory).await?;
         }
         
         let add_time = start_time.elapsed();
@@ -253,7 +255,7 @@ mod embeddings_tests {
         
         // Test search performance
         let search_start = std::time::Instant::now();
-        let results = manager.find_similar_to_query("artificial intelligence", Some(10))?;
+        let results = manager.find_similar_to_query("artificial intelligence", Some(10)).await?;
         let search_time = search_start.elapsed();
         
         println!("Searched 100 memories in {:?}, found {} results", search_time, results.len());

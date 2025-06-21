@@ -873,7 +873,7 @@ mod tests {
     #[tokio::test]
     async fn test_gaussian_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_gaussian_decay(36.0, &context).await.unwrap();
@@ -886,7 +886,7 @@ mod tests {
     #[tokio::test]
     async fn test_hyperbolic_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_hyperbolic_decay(60.0, &context).await.unwrap();
@@ -899,7 +899,7 @@ mod tests {
     #[tokio::test]
     async fn test_weibull_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let result = models.calculate_weibull_decay(84.0, &context).await.unwrap();
@@ -912,7 +912,7 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let hybrid_models = vec![DecayModelType::Ebbinghaus, DecayModelType::PowerLaw];
@@ -931,7 +931,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_decay() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         let mut parameters = HashMap::new();
@@ -1108,7 +1108,7 @@ mod tests {
         config.min_decay_rate = 0.01;
         config.max_decay_rate = 0.99;
 
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).unwrap();
         let context = create_test_context();
 
         // Test very long time (should hit minimum retention)

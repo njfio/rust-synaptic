@@ -8,11 +8,12 @@ use crate::security::{SecurityConfig, SecurityContext, Permission, AbacRule, Acc
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
+
 
 /// Access control manager
 #[derive(Debug)]
 pub struct AccessControlManager {
+    #[allow(dead_code)]
     config: SecurityConfig,
     policy: AccessControlPolicy,
     active_sessions: HashMap<String, SessionInfo>,
@@ -343,12 +344,17 @@ struct AuthenticationResult {
 /// Session information
 #[derive(Debug, Clone)]
 struct SessionInfo {
+    #[allow(dead_code)]
     user_id: String,
+    #[allow(dead_code)]
     session_id: String,
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
     last_activity: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+    #[allow(dead_code)]
     ip_address: Option<String>,
+    #[allow(dead_code)]
     user_agent: Option<String>,
     mfa_verified: bool,
 }
@@ -357,6 +363,7 @@ struct SessionInfo {
 #[derive(Debug)]
 struct FailedAttemptTracker {
     count: u32,
+    #[allow(dead_code)]
     first_attempt: DateTime<Utc>,
     locked_until: DateTime<Utc>,
 }

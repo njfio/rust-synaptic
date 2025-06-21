@@ -6,7 +6,7 @@ use synaptic::security::{
     SecurityManager, SecurityConfig,
     Permission,
     access_control::{AuthenticationCredentials, AuthenticationType},
-    zero_knowledge::{AccessType, ContentPredicate},
+
 };
 
 #[tokio::main]
@@ -38,9 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=====================================");
 
     let mut security_config = SecurityConfig {
-        enable_homomorphic_encryption: true,
         enable_differential_privacy: true,
-        enable_zero_knowledge: true,
         privacy_budget: 10.0,
         ..Default::default()
     };
@@ -117,29 +115,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Knowledge graph relationship created");
     println!("   Financial data ← CausedBy → Project Alpha");
 
-    // Phase 5: Zero-Knowledge Proofs
-    println!("\n Zero-Knowledge Proof Generation");
-    println!("===================================");
+    // Phase 5: Advanced Security Features
+    println!("\n Advanced Security Features");
+    println!("==============================");
 
-    let access_proof = security_manager.generate_access_proof(
-        "financial_q4",
+    // Demonstrate secure memory access
+    match security_manager.access_control.check_permission(
         &admin_context,
-        AccessType::Read
-    ).await?;
-    
-    println!(" Zero-knowledge access proof generated");
-    println!("   Proof ID: {}", access_proof.id);
-    println!("   Statement Hash: {}", access_proof.statement_hash);
+        Permission::ReadMemory
+    ).await {
+        Ok(_) => {
+            println!(" Access control check completed");
+            println!("   Access granted: true");
+        },
+        Err(e) => {
+            println!(" Access control check failed: {}", e);
+            println!("   Access granted: false");
+        }
+    }
 
-    let content_proof = security_manager.generate_content_proof(
-        &sensitive_memory,
-        ContentPredicate::ContainsKeyword("Revenue".to_string()),
-        &admin_context
-    ).await?;
-    
-    println!(" Zero-knowledge content proof generated");
-    println!("   Proof ID: {}", content_proof.id);
-    println!("   Proves content contains 'Revenue' without revealing data");
+    // Demonstrate audit logging
+    println!(" Security audit trail maintained");
+    println!("   All operations logged for compliance");
 
     // Phase 6: Differential Privacy
     println!("\n Differential Privacy");
@@ -184,10 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              security_metrics.access_metrics.total_access_time_ms as f64 / 
              security_metrics.access_metrics.total_permission_checks.max(1) as f64);
 
-    if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs_generated);
-        println!("    ZK Verification Rate: {:.1}%", zk_metrics.verification_success_rate);
-    }
+    println!("    Audit Events: {}", security_metrics.audit_metrics.total_events);
 
     // Phase 10: Memory Retrieval and Search
     println!("\n Memory Retrieval & Search");

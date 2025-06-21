@@ -4,7 +4,7 @@
 use synaptic::{AgentMemory, MemoryConfig};
 use synaptic::integrations::{IntegrationConfig, IntegrationManager};
 use std::error::Error;
-use std::collections::HashMap;
+
 
 #[cfg(feature = "sql-storage")]
 use synaptic::integrations::database::{DatabaseConfig, DatabaseClient};
@@ -448,7 +448,7 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
     };
 
     match RedisClient::new(config).await {
-        Ok(mut client) => {
+        Ok(client) => {
             println!(" Connected to Redis successfully");
 
             // Test health check
@@ -458,7 +458,7 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
             }
 
             // Test caching
-            let memory_entry = synaptic::memory::types::MemoryEntry::new(
+            let _memory_entry = synaptic::memory::types::MemoryEntry::new(
                 "cache_test_key".to_string(),
                 "Test cache integration content".to_string(),
                 synaptic::memory::types::MemoryType::ShortTerm

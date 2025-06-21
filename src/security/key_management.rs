@@ -444,10 +444,12 @@ pub enum KeyStatus {
 /// Key rotation task
 #[derive(Debug, Clone)]
 struct KeyRotationTask {
+    #[allow(dead_code)]
     id: String,
     key_id: String,
     scheduled_time: DateTime<Utc>,
     status: RotationStatus,
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
     completed_at: Option<DateTime<Utc>>,
     error_message: Option<String>,
@@ -497,6 +499,7 @@ pub struct KeyManagementMetrics {
 }
 
 /// Trait for common key information
+#[allow(dead_code)]
 trait KeyInfo {
     fn get_status(&self) -> &KeyStatus;
     fn get_created_at(&self) -> DateTime<Utc>;

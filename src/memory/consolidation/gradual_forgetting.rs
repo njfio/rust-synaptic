@@ -124,6 +124,7 @@ pub struct GradualForgettingAlgorithm {
     /// Configuration
     config: ForgettingConfig,
     /// Consolidation configuration
+    #[allow(dead_code)]
     consolidation_config: ConsolidationConfig,
     /// Forgetting decisions history
     decision_history: HashMap<String, Vec<ForgettingDecision>>,
@@ -377,7 +378,7 @@ impl GradualForgettingAlgorithm {
     /// Calculate contextual relevance based on current usage patterns
     async fn calculate_contextual_relevance(
         &self,
-        memory: &MemoryEntry,
+        _memory: &MemoryEntry,
         importance: &MemoryImportance,
     ) -> Result<f64> {
         // Simplified contextual relevance based on centrality and uniqueness

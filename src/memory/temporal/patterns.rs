@@ -146,6 +146,7 @@ pub struct PatternDetector {
     /// Configuration
     config: PatternDetectionConfig,
     /// Pattern detection history
+    #[allow(dead_code)]
     detection_history: Vec<PatternDetectionRun>,
 }
 
@@ -1626,7 +1627,7 @@ impl PatternDetector {
             return Ok(patterns);
         }
 
-        let feature_dim = features[0].len();
+        let _feature_dim = features[0].len();
 
         // Try different weight combinations to find patterns
         let weight_combinations = vec![

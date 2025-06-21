@@ -173,6 +173,7 @@ pub enum AnomalySeverity {
 #[derive(Debug)]
 pub struct MemoryIntelligenceEngine {
     /// Configuration
+    #[allow(dead_code)]
     config: AnalyticsConfig,
     /// Memory intelligence cache
     intelligence_cache: HashMap<String, MemoryIntelligence>,

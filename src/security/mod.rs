@@ -1,13 +1,13 @@
 //! Security and Privacy Module
-//! 
-//! This module implements state-of-the-art security and privacy features for the Synaptic
-//! AI agent memory system, including zero-knowledge architecture, homomorphic encryption,
-//! differential privacy, and advanced access control.
+//!
+//! This module implements practical security and privacy features for the Synaptic
+//! AI agent memory system, including AES-256-GCM encryption, differential privacy,
+//! and access control.
 
 use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -17,7 +17,7 @@ pub mod privacy;
 pub mod access_control;
 pub mod audit;
 pub mod key_management;
-pub mod zero_knowledge;
+// Removed zero_knowledge module - unnecessary for memory system
 
 /// Comprehensive security configuration for the Synaptic memory system.
 ///
@@ -41,35 +41,26 @@ pub mod zero_knowledge;
 ///
 /// // High-security configuration for sensitive data
 /// let high_security_config = SecurityConfig {
-///     enable_zero_knowledge: true,
-///     enable_homomorphic_encryption: true,
 ///     enable_differential_privacy: true,
 ///     privacy_budget: 0.5, // Conservative privacy budget
 ///     encryption_key_size: 256,
 ///     key_rotation_interval_hours: 12, // Rotate keys twice daily
 ///     enable_secure_mpc: true,
-///     enable_homomorphic_ops: true,
 ///     ..Default::default()
 /// };
 ///
 /// // Performance-optimized configuration
 /// let performance_config = SecurityConfig {
-///     enable_zero_knowledge: false,
-///     enable_homomorphic_encryption: false,
 ///     enable_differential_privacy: false,
 ///     encryption_key_size: 128,
 ///     key_rotation_interval_hours: 168, // Weekly rotation
 ///     enable_secure_mpc: false,
-///     enable_homomorphic_ops: false,
 ///     ..Default::default()
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    /// Enable zero-knowledge architecture for privacy-preserving operations
-    pub enable_zero_knowledge: bool,
-    /// Enable homomorphic encryption for computation on encrypted data
-    pub enable_homomorphic_encryption: bool,
+    // Removed zero-knowledge and homomorphic encryption - overkill for memory system
     /// Enable differential privacy for mathematical privacy guarantees
     pub enable_differential_privacy: bool,
     /// Privacy budget for differential privacy (lower = more private)
@@ -84,17 +75,11 @@ pub struct SecurityConfig {
     pub key_rotation_interval_hours: u64,
     /// Enable secure multi-party computation capabilities
     pub enable_secure_mpc: bool,
-    /// Enable homomorphic operations on encrypted memory data
-    pub enable_homomorphic_ops: bool,
-    /// Zero-knowledge proof system configuration
-    pub zero_knowledge_config: zero_knowledge::ZeroKnowledgeConfig,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            enable_zero_knowledge: true,
-            enable_homomorphic_encryption: true,
             enable_differential_privacy: true,
             privacy_budget: 1.0,
             encryption_key_size: 256,
@@ -102,8 +87,6 @@ impl Default for SecurityConfig {
             audit_config: AuditConfig::default(),
             key_rotation_interval_hours: 24,
             enable_secure_mpc: true,
-            enable_homomorphic_ops: true,
-            zero_knowledge_config: zero_knowledge::ZeroKnowledgeConfig::default(),
         }
     }
 }
@@ -323,7 +306,6 @@ pub struct SecurityManager {
     pub access_control: access_control::AccessControlManager,
     pub audit_logger: audit::AuditLogger,
     pub key_manager: key_management::KeyManager,
-    pub zero_knowledge_manager: Option<zero_knowledge::ZeroKnowledgeManager>,
 }
 
 impl SecurityManager {
@@ -335,12 +317,6 @@ impl SecurityManager {
         let access_control = access_control::AccessControlManager::new(&config).await?;
         let audit_logger = audit::AuditLogger::new(&config.audit_config).await?;
 
-        let zero_knowledge_manager = if config.enable_zero_knowledge {
-            Some(zero_knowledge::ZeroKnowledgeManager::new(&config).await?)
-        } else {
-            None
-        };
-
         Ok(Self {
             config,
             encryption_manager,
@@ -348,13 +324,12 @@ impl SecurityManager {
             access_control,
             audit_logger,
             key_manager,
-            zero_knowledge_manager,
         })
     }
 
-    /// Encrypt a memory entry with zero-knowledge architecture
-    pub async fn encrypt_memory(&mut self, 
-        entry: &MemoryEntry, 
+    /// Encrypt a memory entry with standard AES-256-GCM encryption
+    pub async fn encrypt_memory(&mut self,
+        entry: &MemoryEntry,
         context: &SecurityContext
     ) -> Result<EncryptedMemoryEntry> {
         // Check permissions
@@ -367,12 +342,8 @@ impl SecurityManager {
             entry.clone()
         };
 
-        // Encrypt with homomorphic encryption if enabled
-        let encrypted_entry = if self.config.enable_homomorphic_encryption {
-            self.encryption_manager.homomorphic_encrypt(&processed_entry, context).await?
-        } else {
-            self.encryption_manager.standard_encrypt(&processed_entry, context).await?
-        };
+        // Encrypt with standard AES-256-GCM encryption
+        let encrypted_entry = self.encryption_manager.standard_encrypt(&processed_entry, context).await?;
 
         // Log the operation
         self.audit_logger.log_encryption_operation(context, "encrypt_memory", true).await?;
@@ -388,34 +359,8 @@ impl SecurityManager {
         // Check permissions
         self.access_control.check_permission(context, Permission::ReadMemory).await?;
 
-        // Verify zero-knowledge proof if enabled
-        if self.config.enable_zero_knowledge {
-            if let Some(ref mut zkm) = self.zero_knowledge_manager {
-                if let Some(proof_json) = context.attributes.get("zk_access_proof") {
-                    let proof: zero_knowledge::ZKProof = serde_json::from_str(proof_json)
-                        .map_err(|_| MemoryError::access_denied("Invalid proof format".to_string()))?;
-                    let statement = zero_knowledge::AccessStatement {
-                        memory_key: encrypted_entry.id.clone(),
-                        user_id: context.user_id.clone(),
-                        access_type: zero_knowledge::AccessType::Read,
-                        timestamp: Utc::now(),
-                    };
-                    let valid = zkm.verify_access_proof(&proof, &statement).await?;
-                    if !valid {
-                        return Err(MemoryError::access_denied("Zero-knowledge verification failed".to_string()));
-                    }
-                } else {
-                    return Err(MemoryError::access_denied("Access proof required".to_string()));
-                }
-            }
-        }
-
-        // Decrypt based on encryption type
-        let decrypted_entry = if encrypted_entry.is_homomorphic {
-            self.encryption_manager.homomorphic_decrypt(encrypted_entry, context).await?
-        } else {
-            self.encryption_manager.standard_decrypt(encrypted_entry, context).await?
-        };
+        // Decrypt with standard AES-256-GCM decryption
+        let decrypted_entry = self.encryption_manager.standard_decrypt(encrypted_entry, context).await?;
 
         // Log the operation
         self.audit_logger.log_encryption_operation(context, "decrypt_memory", true).await?;
@@ -423,65 +368,7 @@ impl SecurityManager {
         Ok(decrypted_entry)
     }
 
-    /// Perform secure computation on encrypted data
-    pub async fn secure_compute(&mut self,
-        encrypted_entries: &[EncryptedMemoryEntry],
-        operation: SecureOperation,
-        context: &SecurityContext
-    ) -> Result<EncryptedComputationResult> {
-        // Check permissions
-        self.access_control.check_permission(context, Permission::ExecuteQueries).await?;
-
-        // Perform homomorphic computation
-        let result = self.encryption_manager.homomorphic_compute(
-            encrypted_entries,
-            operation.clone(),
-            context
-        ).await?;
-
-        // Log the operation
-        self.audit_logger.log_computation_operation(context, &operation, true).await?;
-
-        Ok(result)
-    }
-
-    /// Generate zero-knowledge proof for memory access
-    pub async fn generate_access_proof(&mut self,
-        memory_key: &str,
-        context: &SecurityContext,
-        access_type: zero_knowledge::AccessType,
-    ) -> Result<zero_knowledge::ZKProof> {
-        if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_access_proof(memory_key, context, access_type).await
-        } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
-        }
-    }
-
-    /// Verify zero-knowledge proof
-    pub async fn verify_access_proof(&mut self,
-        proof: &zero_knowledge::ZKProof,
-        statement: &zero_knowledge::AccessStatement,
-    ) -> Result<bool> {
-        if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.verify_access_proof(proof, statement).await
-        } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
-        }
-    }
-
-    /// Generate content proof without revealing content
-    pub async fn generate_content_proof(&mut self,
-        entry: &MemoryEntry,
-        predicate: zero_knowledge::ContentPredicate,
-        context: &SecurityContext,
-    ) -> Result<zero_knowledge::ZKProof> {
-        if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_content_proof(entry, predicate, context).await
-        } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
-        }
-    }
+    // Removed secure computation and zero-knowledge methods - unnecessary for memory system
 
     /// Get security metrics
     pub async fn get_security_metrics(&mut self, context: &SecurityContext) -> Result<SecurityMetrics> {
@@ -493,18 +380,11 @@ impl SecurityManager {
         let access_metrics = self.access_control.get_metrics().await?;
         let audit_metrics = self.audit_logger.get_metrics().await?;
 
-        let zero_knowledge_metrics = if let Some(ref zkm) = self.zero_knowledge_manager {
-            Some(zkm.get_metrics().await?)
-        } else {
-            None
-        };
-
         Ok(SecurityMetrics {
             encryption_metrics,
             privacy_metrics,
             access_metrics,
             audit_metrics,
-            zero_knowledge_metrics,
             timestamp: Utc::now(),
         })
     }
@@ -517,7 +397,6 @@ pub struct EncryptedMemoryEntry {
     pub encrypted_data: Vec<u8>,
     pub encryption_algorithm: String,
     pub key_id: String,
-    pub is_homomorphic: bool,
     pub privacy_level: PrivacyLevel,
     pub created_at: DateTime<Utc>,
     pub metadata: EncryptionMetadata,
@@ -544,26 +423,7 @@ pub struct EncryptionMetadata {
     pub compression: Option<String>,
 }
 
-/// Secure operations for homomorphic computation
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum SecureOperation {
-    Sum,
-    Average,
-    Count,
-    Search { query: String },
-    Similarity { threshold: f64 },
-    Aggregate { function: String },
-}
-
-/// Result of encrypted computation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncryptedComputationResult {
-    pub result_data: Vec<u8>,
-    pub operation: SecureOperation,
-    pub computation_id: String,
-    pub timestamp: DateTime<Utc>,
-    pub privacy_preserved: bool,
-}
+// Removed homomorphic computation types - unnecessary for memory system
 
 /// Security metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -572,6 +432,5 @@ pub struct SecurityMetrics {
     pub privacy_metrics: privacy::PrivacyMetrics,
     pub access_metrics: access_control::AccessMetrics,
     pub audit_metrics: audit::AuditMetrics,
-    pub zero_knowledge_metrics: Option<zero_knowledge::ZeroKnowledgeMetrics>,
     pub timestamp: DateTime<Utc>,
 }

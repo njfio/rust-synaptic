@@ -11,6 +11,7 @@ use std::collections::HashMap;
 /// Result formatter for SyQL query results
 pub struct ResultFormatter {
     /// Formatting options
+    #[allow(dead_code)]
     options: FormatterOptions,
 }
 

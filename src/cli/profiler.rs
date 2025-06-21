@@ -716,7 +716,7 @@ impl PerformanceProfiler {
     }
 
     /// Calculate summary statistics
-    async fn calculate_summary_statistics(&self, metrics: &[PerformanceMetrics], duration: Duration) -> Result<ProfileSummary> {
+    async fn calculate_summary_statistics(&self, metrics: &[PerformanceMetrics], _duration: Duration) -> Result<ProfileSummary> {
         if metrics.is_empty() {
             return Ok(ProfileSummary {
                 total_operations: 0,

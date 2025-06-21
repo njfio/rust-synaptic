@@ -9,7 +9,7 @@ use synaptic::performance::{
         PerformanceOptimizer, MLPredictor, AdaptiveTuner, OnlineLearner,
         BayesianOptimizer, GeneticAlgorithm, HyperparameterTuner,
         Individual, OptimizationType, OptimizationPlan, Optimization,
-        OptimizationResult, HyperparameterResult, SearchType, PerformanceAnalysis,
+        OptimizationResult, SearchType, PerformanceAnalysis,
     },
     metrics::PerformanceMetrics,
 };

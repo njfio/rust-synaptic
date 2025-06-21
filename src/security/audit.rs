@@ -4,7 +4,7 @@
 //! alerting, and compliance reporting capabilities.
 
 use crate::error::Result;
-use crate::security::{SecurityContext, AuditConfig, AlertThresholds, SecureOperation};
+use crate::security::{SecurityContext, AuditConfig, AlertThresholds};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
@@ -180,34 +180,7 @@ impl AuditLogger {
         Ok(())
     }
 
-    /// Log a computation operation
-    pub async fn log_computation_operation(&mut self, 
-        context: &SecurityContext, 
-        operation: &SecureOperation, 
-        success: bool
-    ) -> Result<()> {
-        let mut details = HashMap::new();
-        details.insert("operation_type".to_string(), format!("{:?}", operation));
-        details.insert("request_id".to_string(), context.request_id.clone());
-
-        let event = AuditEvent {
-            id: Uuid::new_v4().to_string(),
-            event_type: AuditEventType::Computation,
-            user_id: context.user_id.clone(),
-            session_id: context.session_id.clone(),
-            operation: "secure_computation".to_string(),
-            resource: "homomorphic_engine".to_string(),
-            success,
-            timestamp: Utc::now(),
-            ip_address: None,
-            user_agent: None,
-            details,
-            risk_level: RiskLevel::Medium,
-        };
-
-        self.add_audit_event(event).await?;
-        Ok(())
-    }
+    // Removed log_computation_operation - homomorphic computation no longer supported
 
     /// Log a system event
     pub async fn log_system_event(&mut self, 

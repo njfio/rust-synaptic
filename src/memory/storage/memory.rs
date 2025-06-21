@@ -16,6 +16,7 @@ pub struct MemoryStorage {
     /// Statistics tracking
     stats: RwLock<StorageStats>,
     /// Creation timestamp
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
 }
 
@@ -204,6 +205,10 @@ impl Storage for MemoryStorage {
         Err(MemoryError::storage(
             "In-memory storage does not support restore operations"
         ))
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        Ok(self.entries.iter().map(|entry| entry.value().clone()).collect())
     }
 }
 

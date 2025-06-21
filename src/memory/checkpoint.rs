@@ -117,8 +117,17 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     pub fn new(state: &AgentState, metadata: CheckpointMetadata) -> Result<Self> {
+        #[cfg(feature = "bincode")]
         let state_data = bincode::serialize(state)
             .checkpoint_context("Failed to serialize agent state")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let state_data = {
+            // Fallback serialization using serde_json
+            let json_data = serde_json::to_vec(state)
+                .checkpoint_context("Failed to serialize agent state with JSON")?;
+            json_data
+        };
 
         Ok(Self {
             metadata,
@@ -127,13 +136,25 @@ impl Checkpoint {
     }
 
     pub fn restore_state(&self) -> Result<AgentState> {
-        bincode::deserialize(&self.state_data)
-            .checkpoint_context("Failed to deserialize agent state")
+        #[cfg(feature = "bincode")]
+        let result = bincode::deserialize(&self.state_data)
+            .checkpoint_context("Failed to deserialize agent state");
+
+        #[cfg(not(feature = "bincode"))]
+        let result = serde_json::from_slice(&self.state_data)
+            .checkpoint_context("Failed to deserialize agent state from JSON");
+
+        result
     }
 
     pub fn size(&self) -> usize {
-        self.state_data.len() + 
-        bincode::serialized_size(&self.metadata).unwrap_or(0) as usize
+        #[cfg(feature = "bincode")]
+        let metadata_size = bincode::serialized_size(&self.metadata).unwrap_or(0) as usize;
+
+        #[cfg(not(feature = "bincode"))]
+        let metadata_size = serde_json::to_vec(&self.metadata).map(|v| v.len()).unwrap_or(0);
+
+        self.state_data.len() + metadata_size
     }
 }
 
@@ -183,8 +204,14 @@ impl CheckpointManager {
 
         // Store the checkpoint
         let checkpoint_key = format!("checkpoint_{}", metadata.id);
+
+        #[cfg(feature = "bincode")]
         let serialized_checkpoint = bincode::serialize(&checkpoint)
             .checkpoint_context("Failed to serialize checkpoint")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let serialized_checkpoint = serde_json::to_vec(&checkpoint)
+            .checkpoint_context("Failed to serialize checkpoint with JSON")?;
 
         // Create a memory entry for the checkpoint
         let checkpoint_entry = crate::memory::types::MemoryEntry::new(
@@ -220,8 +247,14 @@ impl CheckpointManager {
 
         let checkpoint_bytes = hex::decode(&checkpoint_entry.value)
             .checkpoint_context("Failed to decode checkpoint hex")?;
+
+        #[cfg(feature = "bincode")]
         let checkpoint: Checkpoint = bincode::deserialize(&checkpoint_bytes)
             .checkpoint_context("Failed to deserialize checkpoint")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let checkpoint: Checkpoint = serde_json::from_slice(&checkpoint_bytes)
+            .checkpoint_context("Failed to deserialize checkpoint from JSON")?;
 
         checkpoint.restore_state()
     }
@@ -289,8 +322,14 @@ impl CheckpointManager {
         metadata.size_bytes = checkpoint.size();
 
         let checkpoint_key = format!("checkpoint_{}", metadata.id);
+
+        #[cfg(feature = "bincode")]
         let serialized_checkpoint = bincode::serialize(&checkpoint)
             .checkpoint_context("Failed to serialize named checkpoint")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let serialized_checkpoint = serde_json::to_vec(&checkpoint)
+            .checkpoint_context("Failed to serialize named checkpoint with JSON")?;
 
         let checkpoint_entry = crate::memory::types::MemoryEntry::new(
             checkpoint_key,

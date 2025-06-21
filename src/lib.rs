@@ -78,6 +78,7 @@ use serde::{Deserialize, Serialize};
 
 /// Main memory system for AI agents
 pub struct AgentMemory {
+    #[allow(dead_code)]
     config: MemoryConfig,
     state: memory::state::AgentState,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
@@ -91,7 +92,9 @@ pub struct AgentMemory {
     distributed_coordinator: Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
     #[cfg(feature = "analytics")]
     analytics_engine: Option<analytics::AnalyticsEngine>,
+    #[allow(dead_code)]
     integration_manager: Option<integrations::IntegrationManager>,
+    #[allow(dead_code)]
     security_manager: Option<security::SecurityManager>,
     #[cfg(feature = "multimodal")]
     multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
@@ -153,7 +156,7 @@ impl AgentMemory {
         #[cfg(feature = "embeddings")]
         let embedding_manager = if config.enable_embeddings {
             let embedding_config = memory::embeddings::EmbeddingConfig::default();
-            Some(memory::embeddings::EmbeddingManager::new(embedding_config))
+            Some(memory::embeddings::EmbeddingManager::new(embedding_config)?)
         } else {
             None
         };
@@ -297,9 +300,9 @@ impl AgentMemory {
         // Generate embeddings if enabled
         #[cfg(feature = "embeddings")]
         if let Some(ref mut em) = self.embedding_manager {
-            let _ = em.add_memory(entry.clone()).map_err(|e| {
+            if let Err(e) = em.add_memory(entry.clone()).await {
                 eprintln!("Warning: Failed to generate embedding: {}", e);
-            });
+            }
         }
 
         // Check if we need to create a checkpoint
@@ -484,9 +487,9 @@ impl AgentMemory {
 
     /// Semantic search using embeddings (if enabled)
     #[cfg(feature = "embeddings")]
-    pub fn semantic_search(&mut self, query: &str, limit: Option<usize>) -> Result<Vec<memory::embeddings::SimilarMemory>> {
+    pub async fn semantic_search(&mut self, query: &str, limit: Option<usize>) -> Result<Vec<memory::embeddings::SimilarMemory>> {
         if let Some(ref mut embedding_manager) = self.embedding_manager {
-            embedding_manager.find_similar_to_query(query, limit)
+            embedding_manager.find_similar_to_query(query, limit).await
         } else {
             Ok(Vec::new())
         }
@@ -550,8 +553,11 @@ pub struct MemoryConfig {
     pub storage_backend: StorageBackend,
     pub session_id: Option<Uuid>,
     pub checkpoint_interval: usize,
+    #[allow(dead_code)]
     pub max_short_term_memories: usize,
+    #[allow(dead_code)]
     pub max_long_term_memories: usize,
+    #[allow(dead_code)]
     pub similarity_threshold: f64,
     pub enable_knowledge_graph: bool,
     pub enable_temporal_tracking: bool,

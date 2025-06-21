@@ -4,7 +4,7 @@ use crate::error::Result;
 use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rand::seq::SliceRandom;
 
 /// Analytics engine for memory insights
@@ -278,6 +278,7 @@ struct LinearRegressionResult {
 /// Result of time series forecasting
 #[derive(Debug, Clone)]
 struct ForecastResult {
+    #[allow(dead_code)]
     pub predictions: Vec<f64>,
     pub confidence: f64,
 }
@@ -286,7 +287,9 @@ struct ForecastResult {
 #[derive(Debug, Clone)]
 struct ContentEvolution {
     pub complexity_score: f64,
+    #[allow(dead_code)]
     pub diversity_trend: f64,
+    #[allow(dead_code)]
     pub growth_rate: f64,
 }
 
@@ -294,15 +297,20 @@ struct ContentEvolution {
 #[derive(Debug, Clone)]
 struct MLUsageInsights {
     pub projected_growth: f64,
+    #[allow(dead_code)]
     pub efficiency_score: f64,
+    #[allow(dead_code)]
     pub optimization_potential: f64,
 }
 
 /// Predictive metrics
 #[derive(Debug, Clone)]
 struct PredictiveMetrics {
+    #[allow(dead_code)]
     pub future_load: f64,
+    #[allow(dead_code)]
     pub capacity_utilization: f64,
+    #[allow(dead_code)]
     pub performance_forecast: f64,
 }
 
@@ -410,6 +418,7 @@ impl MemoryAnalytics {
     }
 
     /// Generate insights from analytics data
+    #[allow(dead_code)]
     async fn generate_insights(&self) -> Result<Vec<Insight>> {
         let mut insights = Vec::new();
 
@@ -432,6 +441,7 @@ impl MemoryAnalytics {
     }
 
     /// Analyze usage patterns using sophisticated temporal and behavioral analysis
+    #[allow(dead_code)]
     async fn analyze_usage_patterns(&self) -> Result<Option<Insight>> {
         // Analyze temporal patterns from access patterns and events
         let mut access_times = Vec::new();
@@ -550,6 +560,7 @@ impl MemoryAnalytics {
     }
 
     /// Analyze performance patterns using sophisticated metrics analysis
+    #[allow(dead_code)]
     async fn analyze_performance_patterns(&self) -> Result<Option<Insight>> {
         // Analyze performance based on event frequency and patterns
         let total_events = self.analytics_data.additions.len() +
@@ -661,6 +672,7 @@ impl MemoryAnalytics {
     }
 
     /// Analyze content patterns using sophisticated content analysis
+    #[allow(dead_code)]
     async fn analyze_content_patterns(&self) -> Result<Option<Insight>> {
         // Analyze content patterns from memory events and access patterns
         let total_memories = self.analytics_data.additions.len();
@@ -804,6 +816,7 @@ impl MemoryAnalytics {
     }
 
     /// Analyze trends in the data
+    #[allow(dead_code)]
     async fn analyze_trends(&self) -> Result<Vec<TrendAnalysis>> {
         let mut trends = Vec::new();
 
@@ -925,6 +938,7 @@ impl MemoryAnalytics {
     }
 
     /// Generate recommendations based on insights and trends using intelligent analysis
+    #[allow(dead_code)]
     async fn generate_recommendations(
         &self,
         insights: &[Insight],
@@ -1351,7 +1365,7 @@ impl MemoryAnalytics {
     async fn analyze_behavioral_patterns_ml(&self) -> Result<Option<Insight>> {
         // Analyze user behavior patterns from access data
         let mut behavior_sequences = Vec::new();
-        let mut session_patterns: Vec<String> = Vec::new();
+        let _session_patterns: Vec<String> = Vec::new();
 
         // Extract behavioral sequences
         for access_pattern in self.analytics_data.access_patterns.values() {
@@ -1431,7 +1445,7 @@ impl MemoryAnalytics {
         let ml_insights = self.calculate_ml_usage_insights().await?;
 
         // Add predictive metrics
-        let predictive_metrics = self.calculate_predictive_metrics().await?;
+        let _predictive_metrics = self.calculate_predictive_metrics().await?;
 
         // Enhance the statistics with ML insights
         stats.total_memories_created += ml_insights.projected_growth as usize;
@@ -1714,7 +1728,7 @@ impl MemoryAnalytics {
         let sum_y = data.iter().sum::<f64>();
         let sum_xy = x_values.iter().zip(data.iter()).map(|(x, y)| x * y).sum::<f64>();
         let sum_x_squared = x_values.iter().map(|x| x * x).sum::<f64>();
-        let sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
+        let _sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x_squared - sum_x * sum_x);
         let intercept = (sum_y - slope * sum_x) / n;

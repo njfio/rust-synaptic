@@ -190,6 +190,7 @@ pub trait MetaLearner: Send + Sync {
 /// Main meta-learning system for memory management
 pub struct MetaLearningSystem {
     /// Configuration
+    #[allow(dead_code)]
     config: MetaLearningConfig,
     /// Active meta-learner
     learner: Box<dyn MetaLearner>,

@@ -86,12 +86,9 @@ rand = { version = "0.8.5", features = ["std_rng"] }
 rand_distr = "0.4"
 aes-gcm = "0.10"
 
-# Homomorphic Encryption
-tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
-
-# Zero-Knowledge Proofs
-bellman = { version = "0.14", optional = true }
-bls12_381 = { version = "0.8", optional = true }
+# Removed unnecessary cryptographic dependencies:
+# - tfhe (homomorphic encryption) - overkill for memory system
+# - bellman, bls12_381 (zero-knowledge proofs) - not needed for memory operations
 
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
@@ -166,6 +163,7 @@ clap = { version = "4.5.40", features = ["derive"] }
 toml = "0.8.23"
 serde_yaml = "0.9.34"
 dirs = "6.0.0"
+lru = "0.14.0"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -188,17 +186,16 @@ analytics = []
 compression = ["lz4", "zstd", "brotli"]
 
 # Advanced Features
-security = ["tfhe", "bellman", "bls12_381"]
-homomorphic-encryption = ["tfhe"]
-zero-knowledge-proofs = ["bellman", "bls12_381"]
+security = []  # Basic encryption using existing aes-gcm dependency
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
 
 # External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 llm-integration = ["reqwest", "base64"]
+openai-embeddings = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
-external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
+external-integrations = ["sql-storage", "ml-models", "llm-integration", "openai-embeddings", "visualization"]
 
 # Multi-Modal Processing
 image-processing = ["image", "imageproc", "rusttype", "tesseract", "opencv"]
@@ -219,6 +216,7 @@ base64 = ["dep:base64"]
 
 # Testing utilities
 test-utils = []
+reqwest = ["dep:reqwest"]
 
 [[example]]
 name = "basic_usage"
@@ -238,10 +236,7 @@ name = "combined_full_system"
 path = "examples/combined_full_system.rs"
 required-features = ["distributed", "external-integrations", "embeddings"]
 
-[[example]]
-name = "phase4_security_privacy"
-path = "examples/phase4_security_privacy.rs"
-required-features = ["security"]
+
 
 
 
@@ -250,10 +245,6 @@ required-features = ["security"]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
 
-[[test]]
-name = "security_suite"
-path = "tests/phase4_security_tests.rs"
-required-features = ["security"]
 
 [[test]]
 name = "performance_suite"

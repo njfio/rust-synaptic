@@ -169,6 +169,7 @@ pub enum BottleneckSeverity {
 #[derive(Debug)]
 pub struct PerformanceAnalyzer {
     /// Configuration
+    #[allow(dead_code)]
     config: AnalyticsConfig,
     /// Performance snapshots history
     snapshots: VecDeque<PerformanceSnapshot>,
@@ -179,6 +180,7 @@ pub struct PerformanceAnalyzer {
     /// Detected bottlenecks
     bottlenecks: Vec<PerformanceBottleneck>,
     /// Baseline performance metrics
+    #[allow(dead_code)]
     baseline_metrics: HashMap<String, f64>,
     /// Performance targets
     performance_targets: HashMap<String, f64>,

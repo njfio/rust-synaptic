@@ -163,6 +163,7 @@ pub struct DomainAdaptationEngine {
     /// Feature extractor parameters
     feature_extractor: HashMap<String, Vec<f64>>,
     /// Domain discriminator parameters
+    #[allow(dead_code)]
     domain_discriminator: HashMap<String, Vec<f64>>,
     /// Adaptation history
     adaptation_history: Vec<DomainAdaptationResult>,

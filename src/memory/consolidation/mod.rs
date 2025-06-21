@@ -12,7 +12,7 @@ pub mod gradual_forgetting;
 pub mod adaptive_replay;
 
 use crate::error::Result;
-use crate::memory::types::{MemoryEntry, MemoryType};
+use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -149,6 +149,7 @@ pub struct MemoryConsolidationSystem {
     /// Selective replay manager
     replay_manager: selective_replay::SelectiveReplayManager,
     /// Consolidation strategies
+    #[allow(dead_code)]
     strategies: consolidation_strategies::ConsolidationStrategies,
     /// EWC implementation
     ewc: elastic_weight_consolidation::ElasticWeightConsolidation,

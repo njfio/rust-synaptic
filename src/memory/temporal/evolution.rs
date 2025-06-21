@@ -90,6 +90,7 @@ pub struct EvolutionTracker {
     /// Global evolution metrics
     global_metrics: GlobalEvolutionMetrics,
     /// Configuration
+    #[allow(dead_code)]
     config: EvolutionConfig,
 }
 

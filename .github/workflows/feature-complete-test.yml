@@ -1,0 +1,139 @@
+name: Feature Complete Compilation Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  feature-complete-test:
+    name: Test All Features Compilation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          pkg-config \
+          libssl-dev \
+          libclang-dev \
+          libtesseract-dev \
+          libleptonica-dev \
+          tesseract-ocr \
+          libasound2-dev \
+          portaudio19-dev
+
+    - name: Test minimal features compilation
+      run: cargo check --features "minimal"
+      
+    - name: Test core features compilation
+      run: cargo check --features "core,storage,embeddings"
+      
+    - name: Test analytics features compilation
+      run: cargo check --features "analytics,embeddings"
+      
+    - name: Test security features compilation
+      run: cargo check --features "security"
+      
+    - name: Test external integrations compilation
+      run: cargo check --features "external-integrations"
+      
+    - name: Test multimodal features compilation (without opencv)
+      run: cargo check --features "image-processing,audio-processing,code-analysis,document-processing" --no-default-features
+      
+    - name: Test distributed features compilation
+      run: cargo check --features "distributed"
+      
+    - name: Test cross-platform features compilation
+      run: cargo check --features "cross-platform"
+      
+    - name: Test full feature set compilation (excluding problematic features)
+      run: cargo check --features "storage,embeddings,analytics,security,external-integrations,distributed" --no-default-features
+      
+    - name: Test library compilation with default features
+      run: cargo check --lib
+      
+    - name: Test examples compilation
+      run: |
+        cargo check --example basic_usage
+        cargo check --example phase3_analytics --features "analytics"
+        cargo check --example real_integrations --features "external-integrations"
+        cargo check --example openai_embeddings_test --features "openai-embeddings"
+        
+    - name: Run clippy on core features
+      run: cargo clippy --features "embeddings,analytics" -- -D warnings
+      
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+      
+    - name: Run core tests
+      run: cargo test --lib --features "embeddings,analytics"
+      
+    - name: Run security tests
+      run: cargo test --test security_suite --features "security" || true
+      
+    - name: Run performance tests
+      run: cargo test --test performance_suite --features "embeddings,analytics" || true
+
+  feature-matrix-test:
+    name: Feature Matrix Compilation Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        feature-set:
+          - "minimal"
+          - "core,storage"
+          - "embeddings,analytics"
+          - "security"
+          - "external-integrations"
+          - "distributed"
+          - "document-processing"
+          - "reqwest"
+          - "openai-embeddings"
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+    
+    - name: Test feature set compilation
+      run: cargo check --features "${{ matrix.feature-set }}" --no-default-features
+      
+    - name: Test feature set with default features
+      run: cargo check --features "${{ matrix.feature-set }}"

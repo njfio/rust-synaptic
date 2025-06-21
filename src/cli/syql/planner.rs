@@ -7,7 +7,7 @@ use super::ast::*;
 use super::{QueryPlan, PlanNode, PlanNodeType, PlanStatistics, QueryValue};
 use crate::error::Result;
 use std::collections::HashMap;
-use uuid::Uuid;
+
 
 /// Query planner for SyQL
 pub struct QueryPlanner {
@@ -62,13 +62,11 @@ impl QueryPlanner {
     async fn create_query_plan(&self, query: QueryStatement) -> Result<QueryPlan> {
         let mut nodes = Vec::new();
         let mut estimated_cost = 0.0;
-        let mut estimated_rows = 1000; // Default estimate
-
         // Create plan nodes for FROM clause
         let (from_nodes, from_cost, from_rows) = self.create_from_plan(&query.from).await?;
         nodes.extend(from_nodes);
         estimated_cost += from_cost;
-        estimated_rows = from_rows;
+        let mut estimated_rows = from_rows;
 
         // Create plan node for WHERE clause
         if let Some(where_expr) = &query.where_clause {
@@ -215,7 +213,7 @@ impl QueryPlanner {
 
                 Ok((vec![path_node], 200.0, 100))
             },
-            FromClause::Join { left, right, join_type, condition } => {
+            FromClause::Join { left: _, right: _, join_type, condition } => {
                 // Simplified join handling without recursion
                 let left_rows = 1000; // Default estimate
                 let right_rows = 1000; // Default estimate
@@ -276,7 +274,7 @@ impl QueryPlanner {
 
                 Ok((nodes, total_cost, total_rows))
             },
-            FromClause::Subquery { query, alias } => {
+            FromClause::Subquery { query: _, alias } => {
                 // Simplified subquery handling without recursion
                 let estimated_cost = 50.0; // Default subquery cost
                 let estimated_rows = 100; // Default subquery rows
