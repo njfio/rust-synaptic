@@ -198,7 +198,9 @@ impl SyQLParser {
             return Ok(CompletionContext::Keyword);
         }
         
-        let last_token = tokens.last().unwrap().to_uppercase();
+        let last_token = tokens.last()
+            .ok_or_else(|| MemoryError::InvalidQuery { message: "Empty token list".to_string() })?
+            .to_uppercase();
         
         match last_token.as_str() {
             "SELECT" | "MATCH" | "WHERE" | "HAVING" | "ORDER" | "GROUP" => Ok(CompletionContext::Keyword),

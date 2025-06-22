@@ -185,7 +185,7 @@ impl GraphReasoner {
         inferences.retain(|inf| inf.confidence >= self.config.min_confidence_threshold);
         
         // Sort by confidence (highest first)
-        inferences.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        inferences.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
         
         Ok(inferences)
     }
