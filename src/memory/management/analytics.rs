@@ -436,17 +436,31 @@ impl MemoryAnalytics {
         // Analyze temporal patterns from access patterns and events
         let mut access_times = Vec::new();
 
-        // Collect access times from access patterns
-        for access_pattern in self.analytics_data.access_patterns.values() {
-            access_times.push(access_pattern.last_access);
+        // Collect access times from access patterns (async batched processing)
+        let batch_size = 1000;
+        let access_patterns: Vec<_> = self.analytics_data.access_patterns.values().collect();
+
+        for chunk in access_patterns.chunks(batch_size) {
+            for access_pattern in chunk {
+                access_times.push(access_pattern.last_access);
+            }
+            // Yield control to allow other tasks to run
+            tokio::task::yield_now().await;
         }
 
         // Also collect times from memory events (additions, updates as proxy for access)
-        for event in &self.analytics_data.additions {
-            access_times.push(event.timestamp);
+        for chunk in self.analytics_data.additions.chunks(batch_size) {
+            for event in chunk {
+                access_times.push(event.timestamp);
+            }
+            tokio::task::yield_now().await;
         }
-        for event in &self.analytics_data.updates {
-            access_times.push(event.timestamp);
+
+        for chunk in self.analytics_data.updates.chunks(batch_size) {
+            for event in chunk {
+                access_times.push(event.timestamp);
+            }
+            tokio::task::yield_now().await;
         }
 
         if access_times.is_empty() {
@@ -563,18 +577,31 @@ impl MemoryAnalytics {
         // 1. Calculate operation frequency trends
         let mut daily_operations = std::collections::HashMap::new();
 
-        // Group operations by day
-        for event in &self.analytics_data.additions {
-            let day = event.timestamp.date_naive();
-            *daily_operations.entry(day).or_insert(0) += 1;
+        // Group operations by day (async batched processing)
+        let batch_size = 1000;
+
+        for chunk in self.analytics_data.additions.chunks(batch_size) {
+            for event in chunk {
+                let day = event.timestamp.date_naive();
+                *daily_operations.entry(day).or_insert(0) += 1;
+            }
+            tokio::task::yield_now().await;
         }
-        for event in &self.analytics_data.updates {
-            let day = event.timestamp.date_naive();
-            *daily_operations.entry(day).or_insert(0) += 1;
+
+        for chunk in self.analytics_data.updates.chunks(batch_size) {
+            for event in chunk {
+                let day = event.timestamp.date_naive();
+                *daily_operations.entry(day).or_insert(0) += 1;
+            }
+            tokio::task::yield_now().await;
         }
-        for event in &self.analytics_data.deletions {
-            let day = event.timestamp.date_naive();
-            *daily_operations.entry(day).or_insert(0) += 1;
+
+        for chunk in self.analytics_data.deletions.chunks(batch_size) {
+            for event in chunk {
+                let day = event.timestamp.date_naive();
+                *daily_operations.entry(day).or_insert(0) += 1;
+            }
+            tokio::task::yield_now().await;
         }
 
         // 2. Calculate performance metrics
@@ -1511,20 +1538,28 @@ impl MemoryAnalytics {
                 cluster.clear();
             }
 
-            // Assign points to nearest centroids
-            for (idx, feature) in features.iter().enumerate() {
-                let mut min_distance = f64::MAX;
-                let mut closest_cluster = 0;
+            // Assign points to nearest centroids (async batched processing)
+            let batch_size = 100; // Smaller batch for expensive operations
+            for chunk in features.chunks(batch_size).enumerate() {
+                for (idx_offset, feature_chunk) in std::iter::once(chunk) {
+                    for (local_idx, feature) in feature_chunk.iter().enumerate() {
+                        let idx = idx_offset * batch_size + local_idx;
+                        let mut min_distance = f64::MAX;
+                        let mut closest_cluster = 0;
 
-                for (cluster_idx, centroid) in centroids.iter().enumerate() {
-                    let distance = self.euclidean_distance(feature, centroid);
-                    if distance < min_distance {
-                        min_distance = distance;
-                        closest_cluster = cluster_idx;
+                        for (cluster_idx, centroid) in centroids.iter().enumerate() {
+                            let distance = self.euclidean_distance(feature, centroid);
+                            if distance < min_distance {
+                                min_distance = distance;
+                                closest_cluster = cluster_idx;
+                            }
+                        }
+
+                        clusters[closest_cluster].push(idx);
                     }
                 }
-
-                clusters[closest_cluster].push(idx);
+                // Yield control after each batch to prevent blocking
+                tokio::task::yield_now().await;
             }
 
             // Update centroids

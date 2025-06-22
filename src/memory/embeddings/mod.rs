@@ -145,7 +145,7 @@ impl EmbeddingManager {
         }
 
         // Sort by similarity (highest first) and limit results
-        similarities.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+        similarities.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
         similarities.truncate(limit);
         
         Ok(similarities)
@@ -171,7 +171,7 @@ impl EmbeddingManager {
         }
 
         // Sort by similarity (highest first)
-        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         Ok(similarities)
     }

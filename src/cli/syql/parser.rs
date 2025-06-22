@@ -615,7 +615,7 @@ impl Lexer {
 
     /// Consume an operator or punctuation
     fn consume_operator_or_punctuation(&mut self) -> Result<TokenType> {
-        let ch = self.chars.next().unwrap();
+        let ch = self.chars.next().ok_or_else(|| crate::error::MemoryError::InvalidInput { message: "Unexpected end of input while parsing operator".to_string() })?;
         self.position += 1;
         
         match ch {

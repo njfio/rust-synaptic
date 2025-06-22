@@ -530,7 +530,7 @@ mod tests {
         };
 
         // Execute the summarization
-        let result = advanced_manager.execute_automatic_summarization(trigger).await?;
+        let result = advanced_manager.execute_automatic_summarization(&*storage, trigger).await?;
 
         // Verify the result
         assert_eq!(result.processed_count, 0); // No memories processed due to empty keys

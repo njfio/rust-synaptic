@@ -247,7 +247,7 @@ impl CliConfig {
     }
 
     /// Get default configuration file paths
-    fn get_default_config_paths() -> Vec<PathBuf> {
+    pub fn get_default_config_paths() -> Vec<PathBuf> {
         let mut paths = Vec::new();
 
         // Current directory

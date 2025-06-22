@@ -4,7 +4,7 @@
 //! including Ebbinghaus forgetting curves, power law decay, logarithmic decay,
 //! and adaptive decay parameters based on psychological and neuroscience research.
 
-use crate::error::Result;
+use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -288,7 +288,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let _params = self.model_parameters.get("ebbinghaus").unwrap();
+        let _params = self.model_parameters.get("ebbinghaus")
+            .ok_or_else(|| MemoryError::validation("Ebbinghaus model parameters not found".to_string()))?;
 
         // Adaptive half-life based on context
         let base_half_life = self.config.base_half_life_hours;
@@ -326,7 +327,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("power_law").unwrap();
+        let params = self.model_parameters.get("power_law")
+            .ok_or_else(|| MemoryError::validation("Power law model parameters not found".to_string()))?;
 
         // Power law formula: R(t) = (1 + t/τ)^(-β)
         let time_scale = self.config.base_half_life_hours;
@@ -358,7 +360,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("logarithmic").unwrap();
+        let params = self.model_parameters.get("logarithmic")
+            .ok_or_else(|| MemoryError::validation("Logarithmic model parameters not found".to_string()))?;
 
         // Logarithmic formula: R(t) = 1 - log(1 + t/τ) / log(1 + T_max/τ)
         let time_scale = params.scale_parameter * (1.0 + context.complexity * 0.5);
@@ -394,7 +397,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("gaussian").unwrap();
+        let params = self.model_parameters.get("gaussian")
+            .ok_or_else(|| MemoryError::validation("Gaussian model parameters not found".to_string()))?;
 
         // Gaussian formula: R(t) = e^(-(t/σ)²/2)
         let sigma = params.scale_parameter * (1.0 + context.engagement_level * 0.8);
@@ -425,7 +429,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("hyperbolic").unwrap();
+        let params = self.model_parameters.get("hyperbolic")
+            .ok_or_else(|| MemoryError::validation("Hyperbolic model parameters not found".to_string()))?;
 
         // Hyperbolic formula: R(t) = 1 / (1 + (t/τ)^α)
         let time_scale = self.config.base_half_life_hours * (1.0 + context.contextual_relevance);
@@ -457,7 +462,8 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("weibull").unwrap();
+        let params = self.model_parameters.get("weibull")
+            .ok_or_else(|| MemoryError::validation("Weibull model parameters not found".to_string()))?;
 
         // Weibull formula: R(t) = e^(-(t/λ)^k)
         let lambda = params.scale_parameter * (1.0 + context.importance * 2.0);

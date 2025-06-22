@@ -40,6 +40,7 @@
 //! ```
 
 pub mod error;
+pub mod error_handling;
 pub mod memory;
 pub mod logging;
 pub mod cli;
@@ -107,6 +108,7 @@ impl AgentMemory {
         if let Some(ref logging_config) = config.logging_config {
             let logging_manager = logging::LoggingManager::new(logging_config.clone());
             if let Err(e) = logging_manager.initialize() {
+                // Use stderr directly since tracing may not be initialized yet
                 eprintln!("Warning: Failed to initialize logging: {}", e);
             }
         }
@@ -463,6 +465,20 @@ impl AgentMemory {
         }
     }
 
+    /// Find shortest path between two memories in the knowledge graph
+    pub async fn find_path_between_memories(
+        &self,
+        from_memory: &str,
+        to_memory: &str,
+        max_depth: Option<usize>,
+    ) -> Result<Option<memory::knowledge_graph::GraphPath>> {
+        if let Some(ref kg) = self.knowledge_graph {
+            kg.find_path_between_memories(from_memory, to_memory, max_depth).await
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get knowledge graph statistics
     pub fn knowledge_graph_stats(&self) -> Option<memory::knowledge_graph::GraphStats> {
         self.knowledge_graph.as_ref().map(|kg| kg.get_stats())
@@ -531,6 +547,11 @@ impl AgentMemory {
     #[cfg(feature = "multimodal")]
     pub fn multimodal_enabled(&self) -> bool {
         self.multimodal_memory.is_some()
+    }
+
+    /// Get access to the storage backend
+    pub fn storage(&self) -> &std::sync::Arc<dyn memory::storage::Storage + Send + Sync> {
+        &self.storage
     }
 }
 

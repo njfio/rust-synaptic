@@ -355,7 +355,7 @@ impl<'a> InteractiveShell<'a> {
                 self.state.last_error = None;
             },
             Err(e) => {
-                eprintln!("Error executing query: {}", e);
+                tracing::error!("Error executing query: {}", e);
 
                 // Add failed command to history
                 self.history_manager.add_command(
@@ -389,19 +389,19 @@ impl<'a> InteractiveShell<'a> {
     async fn explain_query(&self, query: &str) -> Result<()> {
         match self.syql_engine.explain_query(query).await {
             Ok(plan) => {
-                println!("Query Execution Plan:");
-                println!("=====================");
-                println!("Estimated Cost: {:.2}", plan.estimated_cost);
-                println!("Estimated Rows: {}", plan.estimated_rows);
-                println!();
-                
+                tracing::info!("Query Execution Plan:");
+                tracing::info!("=====================");
+                tracing::info!("Estimated Cost: {:.2}", plan.estimated_cost);
+                tracing::info!("Estimated Rows: {}", plan.estimated_rows);
+                tracing::info!("");
+
                 for (i, node) in plan.nodes.iter().enumerate() {
-                    println!("{}. {} (Cost: {:.2}, Rows: {})", 
+                    tracing::info!("{}. {} (Cost: {:.2}, Rows: {})",
                         i + 1, node.description, node.cost, node.rows);
                 }
             },
             Err(e) => {
-                eprintln!("Error explaining query: {}", e);
+                tracing::error!("Error explaining query: {}", e);
             }
         }
         Ok(())

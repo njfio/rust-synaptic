@@ -166,7 +166,7 @@ impl CompletionEngine {
             return CompletionContext::SyqlKeyword;
         }
 
-        let last_token = tokens.last().unwrap().to_uppercase();
+        let last_token = tokens.last().map(|t| t.to_uppercase()).unwrap_or_default();
 
         // Check for shell commands (starting with no SyQL keywords)
         if tokens.len() == 1 && self.shell_commands.iter().any(|cmd| cmd.to_uppercase().starts_with(&last_token)) {

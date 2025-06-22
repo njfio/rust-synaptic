@@ -938,7 +938,7 @@ impl AdvancedMemoryManager {
                 messages.push(format!("Summarization triggered: {}", trigger_info.reason));
 
                 // Execute the summarization
-                let summary_result = self.execute_automatic_summarization(trigger_info).await?;
+                let summary_result = self.execute_automatic_summarization(storage, trigger_info).await?;
                 messages.push(format!("Summarization completed: {} memories processed", summary_result.processed_count));
             }
 
@@ -1492,6 +1492,7 @@ impl AdvancedMemoryManager {
     /// Execute automatic summarization based on trigger information
     async fn execute_automatic_summarization(
         &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         trigger: SummarizationTrigger,
     ) -> Result<AutoSummarizationResult> {
         let start_time = std::time::Instant::now();
@@ -1509,9 +1510,7 @@ impl AdvancedMemoryManager {
             SummarizationTriggerType::Manual => SummaryStrategy::ImportanceBased,
         };
 
-        // Execute the summarization (using a temporary storage for now)
-        // TODO: In a real implementation, this should use the actual storage from the memory manager
-        let temp_storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        // Use the provided storage backend
 
         // For testing purposes, if no memories are found, create a simple summary
         let summary_result = if trigger.related_memory_keys.is_empty() {
@@ -1537,7 +1536,7 @@ impl AdvancedMemoryManager {
             }
         } else {
             self.summarizer.summarize_memories(
-                &*temp_storage,
+                storage,
                 trigger.related_memory_keys.clone(),
                 strategy.clone(),
             ).await?
@@ -2401,8 +2400,12 @@ impl AdvancedMemoryManager {
         dates.sort();
 
         let slope = if dates.len() >= 2 {
-            let recent_avg = daily_avg_sizes.get(dates.last().unwrap()).unwrap_or(&current_value);
-            let older_avg = daily_avg_sizes.get(dates.first().unwrap()).unwrap_or(&current_value);
+            let recent_avg = dates.last()
+                .and_then(|date| daily_avg_sizes.get(date))
+                .unwrap_or(&current_value);
+            let older_avg = dates.first()
+                .and_then(|date| daily_avg_sizes.get(date))
+                .unwrap_or(&current_value);
             (recent_avg - older_avg) / dates.len() as f64
         } else {
             0.0

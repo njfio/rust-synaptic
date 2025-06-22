@@ -1224,7 +1224,7 @@ impl MemoryOptimizer {
             access_scores.push((key.clone(), warming_score));
         }
 
-        access_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        access_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let warm_count = (access_scores.len() / 4).max(10);
 
         for (key, _score) in access_scores.iter().take(warm_count) {
@@ -1252,7 +1252,7 @@ impl MemoryOptimizer {
             eviction_candidates.push((key.clone(), eviction_score));
         }
 
-        eviction_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        eviction_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let evict_count = (eviction_candidates.len() / 10).max(1);
         for (key, _score) in eviction_candidates.iter().take(evict_count) {
@@ -1282,7 +1282,7 @@ impl MemoryOptimizer {
             }
         }
 
-        prefetch_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        prefetch_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for (key, _score) in prefetch_candidates.iter().take(20) {
             if let Some(entry) = self.entries.get_mut(key) {
@@ -1742,7 +1742,7 @@ impl MemoryOptimizer {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
             })
-            .unwrap();
+            .ok_or_else(|| crate::error::MemoryError::validation("Empty group provided for merging".to_string()))?;
 
         // Calculate space saved by removing duplicates
         let space_saved = group.iter()
@@ -3809,8 +3809,8 @@ impl BenchmarkRunner {
         // Calculate statistics
         let total_duration: Duration = durations.iter().sum();
         let average_duration = total_duration / durations.len() as u32;
-        let min_duration = *durations.iter().min().unwrap();
-        let max_duration = *durations.iter().max().unwrap();
+        let min_duration = *durations.iter().min().unwrap_or(&Duration::from_millis(0));
+        let max_duration = *durations.iter().max().unwrap_or(&Duration::from_millis(0));
 
         // Calculate percentiles
         let mut sorted_durations = durations.clone();
@@ -3989,7 +3989,7 @@ mod tests {
         let mut opt = MemoryOptimizer::new();
         opt.add_entry(MemoryEntry::new("a".into(), "same".into(), MemoryType::ShortTerm));
         opt.add_entry(MemoryEntry::new("b".into(), "same".into(), MemoryType::ShortTerm));
-        let (removed, _) = opt.perform_deduplication().await.unwrap();
+        let (removed, _) = opt.perform_deduplication().await.expect("Deduplication should succeed in test");
         assert_eq!(removed, 1);
         assert_eq!(opt.entry_count(), 1);
     }
@@ -4001,7 +4001,7 @@ mod tests {
         let repetitive_content = "aaaaaaaaaa bbbbbbbbbb cccccccccc ".repeat(100);
         opt.add_entry(MemoryEntry::new("a".into(), repetitive_content, MemoryType::ShortTerm));
         let before = opt.get_performance_metrics().memory_usage_bytes;
-        let (count, _) = opt.perform_compression().await.unwrap();
+        let (count, _) = opt.perform_compression().await.expect("Compression should succeed in test");
         // Count should be non-negative (usize is always >= 0)
         // Memory usage should be updated regardless
         let after = opt.get_performance_metrics().memory_usage_bytes;
@@ -4021,7 +4021,7 @@ mod tests {
             embedding: None,
         });
         opt.add_entry(MemoryEntry::new("fresh".into(), "f".into(), MemoryType::ShortTerm));
-        let (removed, _) = opt.perform_cleanup().await.unwrap();
+        let (removed, _) = opt.perform_cleanup().await.expect("Cleanup should succeed in test");
         assert_eq!(removed, 1);
         assert_eq!(opt.entry_count(), 1);
     }
@@ -4031,9 +4031,9 @@ mod tests {
         let mut opt = MemoryOptimizer::new();
         opt.metrics.index_efficiency = 0.5;
         opt.metrics.cache_hit_rate = 0.2;
-        opt.optimize_indexes().await.unwrap();
+        opt.optimize_indexes().await.expect("Index optimization should succeed in test");
         assert_eq!(opt.metrics.index_efficiency, 1.0);
-        opt.optimize_cache().await.unwrap();
+        opt.optimize_cache().await.expect("Cache optimization should succeed in test");
         assert!(opt.metrics.cache_hit_rate > 0.2);
     }
 }
