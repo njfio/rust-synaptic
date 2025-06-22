@@ -1,6 +1,6 @@
 //! Memory analytics and insights
 
-use crate::error::Result;
+use crate::error::{Result, MemoryError};
 use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -482,8 +482,10 @@ impl MemoryAnalytics {
         // 2. Analyze access frequency patterns
         let total_accesses = access_times.len();
         let time_span = if access_times.len() > 1 {
-            let earliest = access_times.iter().min().unwrap();
-            let latest = access_times.iter().max().unwrap();
+            let earliest = access_times.iter().min()
+                .ok_or_else(|| MemoryError::validation("No access times available"))?;
+            let latest = access_times.iter().max()
+                .ok_or_else(|| MemoryError::validation("No access times available"))?;
             (*latest - *earliest).num_days().max(1)
         } else {
             1

@@ -1,6 +1,6 @@
 //! Temporal pattern detection and analysis
 
-use crate::error::Result;
+use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::TimeRange;
 use chrono::{DateTime, Utc, Duration, Weekday, Timelike, Datelike};
@@ -381,9 +381,11 @@ impl PatternDetector {
         let mut clusters: Vec<Vec<PatternEvidence>> = Vec::new();
         for ev in evidence {
             if let Some(cluster) = clusters.last_mut() {
-                if ev.timestamp - cluster.last().unwrap().timestamp <= Duration::minutes(60) {
-                    cluster.push(ev);
-                    continue;
+                if let Some(last_event) = cluster.last() {
+                    if ev.timestamp - last_event.timestamp <= Duration::minutes(60) {
+                        cluster.push(ev);
+                        continue;
+                    }
                 }
             }
             clusters.push(vec![ev]);
@@ -391,8 +393,12 @@ impl PatternDetector {
 
         let mut patterns = Vec::new();
         for cluster in clusters.into_iter().filter(|c| c.len() as usize >= self.config.min_data_points) {
-            let start = cluster.first().unwrap().timestamp;
-            let end = cluster.last().unwrap().timestamp;
+            let start = cluster.first()
+                .ok_or_else(|| MemoryError::validation("Empty cluster"))?
+                .timestamp;
+            let end = cluster.last()
+                .ok_or_else(|| MemoryError::validation("Empty cluster"))?
+                .timestamp;
             let strength = cluster.len() as f64 / self.config.min_data_points as f64;
             let pattern = TemporalPattern {
                 id: format!("burst_{}_{}", start.timestamp(), end.timestamp()),

@@ -505,10 +505,10 @@ impl AdvancedSearchEngine {
     async fn rank_results(&self, results: &mut [SearchResult], strategy: &RankingStrategy) -> Result<()> {
         match strategy {
             RankingStrategy::Relevance => {
-                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
             }
             RankingStrategy::Importance => {
-                results.sort_by(|a, b| b.memory.metadata.importance.partial_cmp(&a.memory.metadata.importance).unwrap());
+                results.sort_by(|a, b| b.memory.metadata.importance.partial_cmp(&a.memory.metadata.importance).unwrap_or(std::cmp::Ordering::Equal));
             }
             RankingStrategy::Recency => {
                 results.sort_by(|a, b| b.memory.created_at().cmp(&a.memory.created_at()));
@@ -517,7 +517,7 @@ impl AdvancedSearchEngine {
                 results.sort_by(|a, b| b.memory.access_count().cmp(&a.memory.access_count()));
             }
             RankingStrategy::Confidence => {
-                results.sort_by(|a, b| b.memory.metadata.confidence.partial_cmp(&a.memory.metadata.confidence).unwrap());
+                results.sort_by(|a, b| b.memory.metadata.confidence.partial_cmp(&a.memory.metadata.confidence).unwrap_or(std::cmp::Ordering::Equal));
             }
             RankingStrategy::ContentLength => {
                 results.sort_by(|a, b| b.memory.value.len().cmp(&a.memory.value.len()));
@@ -576,7 +576,7 @@ impl AdvancedSearchEngine {
             };
         }
 
-        results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap());
+        results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap_or(std::cmp::Ordering::Equal));
         Ok(())
     }
 
@@ -1487,9 +1487,7 @@ impl AdvancedSearchEngine {
         let tag_count = memory.metadata.tags.len() as f64;
         let complexity_score = if content_length > 1000.0 { 0.8 } else if content_length > 200.0 { 0.6 } else { 0.4 };
         let tag_richness = (tag_count / 10.0).min(1.0);
-        let content_type_score = if memory.value.contains("http") || memory.value.contains("www") { 0.7 }
-                                else if memory.value.contains("TODO") || memory.value.contains("FIXME") { 0.9 }
-                                else if memory.value.len() > 500 { 0.8 } else { 0.6 };
+        let content_type_score = self.calculate_sophisticated_content_type_score(&memory.value);
         let content_affinity_score = (complexity_score * 0.4 + tag_richness * 0.3 + content_type_score * 0.3).min(1.0);
         preference_factors.push(content_affinity_score);
 
@@ -1963,6 +1961,58 @@ impl AdvancedSearchEngine {
         } else {
             0.3
         }
+    }
+
+    /// Calculate sophisticated content type score based on content analysis
+    fn calculate_sophisticated_content_type_score(&self, content: &str) -> f64 {
+        let content_lower = content.to_lowercase();
+        let mut score_factors = Vec::new();
+
+        // 1. URL/Link content detection (lower score as it's often just references)
+        let url_score = if content_lower.contains("http") || content_lower.contains("www") { 0.6 } else { 0.8 };
+        score_factors.push(url_score);
+
+        // 2. Code content detection (higher score for technical content)
+        let code_indicators = ["function", "class", "def ", "import", "return", "if ", "for ", "while ", "var ", "let ", "const "];
+        let code_count = code_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
+        let code_score = if code_count >= 3 { 0.9 } else if code_count >= 1 { 0.8 } else { 0.7 };
+        score_factors.push(code_score);
+
+        // 3. Documentation/explanation content (high value)
+        let doc_indicators = ["explanation", "description", "overview", "summary", "guide", "tutorial", "how to", "steps"];
+        let doc_count = doc_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
+        let doc_score = if doc_count >= 2 { 0.95 } else if doc_count >= 1 { 0.85 } else { 0.7 };
+        score_factors.push(doc_score);
+
+        // 4. Structured content detection (lists, numbered items)
+        let structure_indicators = ["\n- ", "\n* ", "\n1.", "\n2.", "\n3.", ":\n", "```"];
+        let structure_count = structure_indicators.iter().filter(|&indicator| content.contains(indicator)).count();
+        let structure_score = if structure_count >= 3 { 0.9 } else if structure_count >= 1 { 0.8 } else { 0.6 };
+        score_factors.push(structure_score);
+
+        // 5. Content length and complexity
+        let length_score = if content.len() > 1000 { 0.9 } else if content.len() > 500 { 0.8 } else if content.len() > 100 { 0.7 } else { 0.5 };
+        score_factors.push(length_score);
+
+        // 6. Actionable content detection (higher value for actionable items)
+        let action_indicators = ["action", "task", "goal", "objective", "plan", "strategy", "implement", "execute"];
+        let action_count = action_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
+        let action_score = if action_count >= 2 { 0.9 } else if action_count >= 1 { 0.8 } else { 0.7 };
+        score_factors.push(action_score);
+
+        // 7. Knowledge content detection (high value for knowledge)
+        let knowledge_indicators = ["concept", "theory", "principle", "definition", "meaning", "understanding", "insight"];
+        let knowledge_count = knowledge_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
+        let knowledge_score = if knowledge_count >= 2 { 0.95 } else if knowledge_count >= 1 { 0.85 } else { 0.7 };
+        score_factors.push(knowledge_score);
+
+        // Weighted combination of all factors
+        let weights = [0.1, 0.15, 0.2, 0.15, 0.1, 0.15, 0.15];
+        score_factors.iter()
+            .zip(weights.iter())
+            .map(|(score, weight)| score * weight)
+            .sum::<f64>()
+            .min(1.0)
     }
 
     /// Calculate content interaction score
@@ -2904,5 +2954,75 @@ impl SearchIndex {
 impl Default for AdvancedSearchEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::types::{MemoryEntry, MemoryType};
+
+    #[test]
+    fn test_sophisticated_content_type_scoring() {
+        let engine = AdvancedSearchEngine::new();
+
+        // Test URL content (should get lower score)
+        let url_content = "Check out this link: https://example.com/article and www.github.com";
+        let url_score = engine.calculate_sophisticated_content_type_score(url_content);
+
+        // Test code content (should get high score)
+        let code_content = "function calculateSum(a, b) { return a + b; } class MyClass { def method(): pass }";
+        let code_score = engine.calculate_sophisticated_content_type_score(code_content);
+
+        // Test documentation content (should get highest score)
+        let doc_content = "This is a comprehensive explanation of the algorithm. The overview shows how to implement the steps in the tutorial guide.";
+        let doc_score = engine.calculate_sophisticated_content_type_score(doc_content);
+
+        // Test structured content (should get high score)
+        let structured_content = "Steps to follow:\n- First step\n- Second step\n1. Initialize\n2. Process\n3. Finalize\n```code block```";
+        let structured_score = engine.calculate_sophisticated_content_type_score(structured_content);
+
+        // Test actionable content (should get high score)
+        let actionable_content = "Action plan: implement the strategy to execute the task and achieve the goal through planned objectives.";
+        let actionable_score = engine.calculate_sophisticated_content_type_score(actionable_content);
+
+        // Test knowledge content (should get highest score)
+        let knowledge_content = "The concept behind this theory is based on the principle that understanding the definition provides insight into the meaning.";
+        let knowledge_score = engine.calculate_sophisticated_content_type_score(knowledge_content);
+
+        // Verify scoring hierarchy
+        assert!(doc_score > url_score, "Documentation should score higher than URLs");
+        assert!(code_score > url_score, "Code should score higher than URLs");
+        assert!(structured_score > url_score, "Structured content should score higher than URLs");
+        assert!(actionable_score > url_score, "Actionable content should score higher than URLs");
+        assert!(knowledge_score > url_score, "Knowledge content should score higher than URLs");
+
+        // Documentation and knowledge should be among the highest
+        assert!(doc_score >= 0.77, "Documentation should get high score, got {}", doc_score);
+        assert!(knowledge_score >= 0.73, "Knowledge content should get high score, got {}", knowledge_score);
+
+        // URL content should get moderate score
+        assert!(url_score >= 0.5 && url_score <= 0.7, "URL content should get moderate score");
+    }
+
+    #[test]
+    fn test_no_todo_fixme_dependency() {
+        let engine = AdvancedSearchEngine::new();
+
+        // Test content with TODO/FIXME - should not get artificially high scores
+        let todo_content = "TODO: implement this feature and FIXME: resolve this bug";
+        let todo_score = engine.calculate_sophisticated_content_type_score(todo_content);
+
+        // Test equivalent content without TODO/FIXME
+        let regular_content = "Need to implement this feature and resolve this bug";
+        let regular_score = engine.calculate_sophisticated_content_type_score(regular_content);
+
+        // Scores should be similar (not artificially boosted by TODO/FIXME)
+        let score_diff = (todo_score - regular_score).abs();
+        assert!(score_diff < 0.1, "TODO/FIXME should not artificially boost scores");
+
+        // Both should get reasonable scores based on content quality
+        assert!(todo_score >= 0.5, "Content with TODO should still get reasonable score");
+        assert!(regular_score >= 0.5, "Regular content should get reasonable score");
     }
 }

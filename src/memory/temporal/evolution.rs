@@ -274,8 +274,12 @@ impl EvolutionTracker {
             
             // Calculate average change interval
             let avg_change_interval = if total_changes > 1 {
-                let first_time = evolution.timeline.first().unwrap().timestamp;
-                let last_time = evolution.timeline.last().unwrap().timestamp;
+                let first_time = evolution.timeline.first()
+                    .ok_or_else(|| MemoryError::validation("Empty timeline"))?
+                    .timestamp;
+                let last_time = evolution.timeline.last()
+                    .ok_or_else(|| MemoryError::validation("Empty timeline"))?
+                    .timestamp;
                 let total_duration = last_time - first_time;
                 Duration::milliseconds(total_duration.num_milliseconds() / (total_changes - 1) as i64)
             } else {
@@ -424,7 +428,7 @@ impl EvolutionTracker {
 
         // Find most stable memory (highest stability score)
         let most_stable_memory = self.evolutions.iter()
-            .max_by(|(_, a), (_, b)| a.metrics.stability_score.partial_cmp(&b.metrics.stability_score).unwrap())
+            .max_by(|(_, a), (_, b)| a.metrics.stability_score.partial_cmp(&b.metrics.stability_score).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(key, _)| key.clone());
 
         let system_growth_rate = avg_evolution_rate;
@@ -477,7 +481,7 @@ impl EvolutionTracker {
             .map(|(key, evolution)| (key.clone(), evolution.metrics.stability_score))
             .collect();
         
-        memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         memories.truncate(limit);
         memories
     }

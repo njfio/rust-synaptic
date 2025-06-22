@@ -11,7 +11,7 @@ use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc, Timelike};
 use uuid::Uuid;
 
-use crate::error::Result;
+use crate::error::{Result, MemoryError};
 use super::{PerformanceConfig, metrics::PerformanceMetrics};
 
 /// Performance optimizer with intelligent optimization strategies
@@ -1339,7 +1339,7 @@ impl GeneticAlgorithm {
             }
         }
 
-        Ok(best.unwrap())
+        best.ok_or_else(|| MemoryError::validation("No valid optimization candidate found"))
     }
 
     fn crossover(&self, parent1: &Individual, parent2: &Individual) -> Result<Individual> {

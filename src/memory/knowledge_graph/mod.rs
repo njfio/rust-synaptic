@@ -148,7 +148,7 @@ impl MemoryKnowledgeGraph {
         }
 
         // Sort by relationship strength
-        related_memories.sort_by(|a, b| b.relationship_strength.partial_cmp(&a.relationship_strength).unwrap());
+        related_memories.sort_by(|a, b| b.relationship_strength.partial_cmp(&a.relationship_strength).unwrap_or(std::cmp::Ordering::Equal));
         
         Ok(related_memories)
     }
