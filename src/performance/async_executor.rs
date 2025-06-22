@@ -160,7 +160,13 @@ impl AsyncExecutor {
         // Apply worker thread optimization
         if let Some(threads_str) = parameters.get("worker_threads") {
             if let Ok(threads) = threads_str.parse::<usize>() {
-                println!("Optimizing worker threads to {}", threads);
+                tracing::info!(
+                    component = "async_executor",
+                    operation = "apply_optimization",
+                    parameter = "worker_threads",
+                    value = %threads,
+                    "Optimizing worker threads"
+                );
                 // In a real implementation, this would resize the thread pool
             }
         }
@@ -168,7 +174,13 @@ impl AsyncExecutor {
         // Apply blocking thread optimization
         if let Some(blocking_str) = parameters.get("max_blocking_threads") {
             if let Ok(blocking) = blocking_str.parse::<usize>() {
-                println!("Optimizing max blocking threads to {}", blocking);
+                tracing::info!(
+                    component = "async_executor",
+                    operation = "apply_optimization",
+                    parameter = "max_blocking_threads",
+                    value = %blocking,
+                    "Optimizing max blocking threads"
+                );
                 // In a real implementation, this would resize the blocking thread pool
             }
         }
@@ -212,7 +224,8 @@ impl AsyncExecutor {
     /// Execute a compute task
     #[tracing::instrument(skip(self, task), fields(task_id = %task.id, priority = ?task.priority))]
     async fn execute_compute_task(&self, task: Task) -> Result<()> {
-        let _permit = self.worker_semaphore.acquire().await.unwrap();
+        let _permit = self.worker_semaphore.acquire().await
+            .map_err(|e| crate::error::MemoryError::concurrency(format!("Failed to acquire worker semaphore: {}", e)))?;
         let task_id = task.id.clone();
         let start_time = Instant::now();
 
@@ -241,7 +254,8 @@ impl AsyncExecutor {
     
     /// Execute a blocking task
     async fn execute_blocking_task(&self, task: Task) -> Result<()> {
-        let _permit = self.blocking_semaphore.acquire().await.unwrap();
+        let _permit = self.blocking_semaphore.acquire().await
+            .map_err(|e| crate::error::MemoryError::concurrency(format!("Failed to acquire blocking semaphore: {}", e)))?;
         let task_id = task.id.clone();
         let start_time = Instant::now();
 
@@ -258,7 +272,8 @@ impl AsyncExecutor {
         tokio::task::spawn_blocking(|| {
             // Simulate minimal blocking work
             std::thread::sleep(Duration::from_millis(1));
-        }).await.unwrap();
+        }).await
+        .map_err(|e| crate::error::MemoryError::processing_error(format!("Blocking task failed: {}", e)))?;
 
         // Complete task
         self.complete_task(&task_id, start_time).await?;

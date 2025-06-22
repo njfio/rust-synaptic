@@ -270,7 +270,13 @@ impl EventBus {
                 if handler.is_some() {
                     // For now, just log the event - in a real implementation,
                     // we'd need to restructure to avoid the Send issue
-                    println!("Processing event: {:?}", envelope.event_id);
+                    tracing::debug!(
+                        component = "event_bus",
+                        operation = "process_event",
+                        event_id = ?envelope.event_id,
+                        event_type = ?envelope.event_type,
+                        "Processing event"
+                    );
                     let mut stats_guard = stats.write();
                     stats_guard.events_processed += 1;
                 }
@@ -438,11 +444,11 @@ mod tests {
         let handler = TestHandler::new("test_handler");
         let handler_events = handler.events_received.clone();
         
-        event_bus.subscribe(handler).await.unwrap();
-        
+        event_bus.subscribe(handler).await.expect("Failed to subscribe handler in test");
+
         // Give the subscription time to set up
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        
+
         let event = MemoryEvent::MemoryCreated {
             memory_id: Uuid::new_v4(),
             key: "test_key".to_string(),
@@ -451,9 +457,9 @@ mod tests {
             node_id: NodeId::new(),
             timestamp: Utc::now(),
         };
-        
+
         let metadata = OperationMetadata::new(NodeId::new(), ConsistencyLevel::Eventual);
-        event_bus.publish(event, metadata).await.unwrap();
+        event_bus.publish(event, metadata).await.expect("Failed to publish event in test");
         
         // Give the event time to be processed
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -482,14 +488,14 @@ mod tests {
         let metadata = OperationMetadata::new(NodeId::new(), ConsistencyLevel::Strong);
         let envelope = EventEnvelope::new(event, metadata);
         
-        let sequence = store.store_event(&envelope).await.unwrap();
+        let sequence = store.store_event(&envelope).await.expect("Failed to store event in test");
         assert_eq!(sequence, 1);
-        
-        let events = store.get_events(1, 1).await.unwrap();
+
+        let events = store.get_events(1, 1).await.expect("Failed to get events in test");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].sequence, 1);
-        
-        let latest = store.get_latest_sequence().await.unwrap();
+
+        let latest = store.get_latest_sequence().await.expect("Failed to get latest sequence in test");
         assert_eq!(latest, 1);
     }
 }

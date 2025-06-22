@@ -356,7 +356,12 @@ impl SelfOptimizationEngine {
             
             // Perform optimization cycle
             if let Err(e) = self.perform_optimization_cycle().await {
-                eprintln!("Optimization cycle failed: {}", e);
+                tracing::error!(
+                    component = "self_optimization",
+                    operation = "optimization_cycle",
+                    error = %e,
+                    "Optimization cycle failed"
+                );
                 
                 let mut state = self.state.write().await;
                 state.consecutive_failures += 1;

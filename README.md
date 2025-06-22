@@ -7,20 +7,20 @@ An AI agent memory system implemented in Rust with intelligent memory management
 
 ## Project Status
 
-- **Library**: Rust library with 179 passing tests
+- **Library**: Rust library with 189 passing tests
 - **Version**: 0.1.0 (development)
 - **Architecture**: Modular design with optional feature flags
-- **Storage**: In-memory, file-based, and SQL backends
-- **Testing**: Comprehensive test suite covering all modules
+- **Storage**: In-memory, file-based, and SQL backends (PostgreSQL)
+- **Testing**: Comprehensive test suite covering core functionality
 - **Build Status**: ✅ All tests passing, compilation successful
 
 ## Recent Improvements
 
+- ✅ Standardized logging system with structured tracing
 - ✅ Fixed compilation errors in memory management tests
 - ✅ Enhanced automatic summarization with fallback handling
 - ✅ Improved test coverage for advanced memory operations
-- ✅ Resolved all critical compilation issues
-- ✅ Comprehensive test suite with 179 passing tests
+- ✅ Comprehensive test suite with 189 passing tests
 
 ## Core Features
 
@@ -52,26 +52,33 @@ An AI agent memory system implemented in Rust with intelligent memory management
 
 - AES-256-GCM encryption for sensitive data
 - Access control and audit logging
-- Zero-knowledge proofs (experimental)
-- Homomorphic encryption support (experimental)
+- **Note**: Zero-knowledge proofs and homomorphic encryption are experimental features with limited functionality
 
 ### Multi-Modal Processing
 
-- **Documents**: PDF, Markdown, CSV, text files
-- **Images**: Feature extraction, OCR, visual analysis
-- **Audio**: Speech processing and feature extraction
-- **Code**: Syntax analysis and semantic understanding
+- **Documents**: PDF, Markdown, CSV, text files (basic implementation)
+- **Images**: Feature extraction, OCR, visual analysis (requires optional dependencies)
+- **Audio**: Speech processing and feature extraction (requires optional dependencies)
+- **Code**: Syntax analysis and semantic understanding (requires optional dependencies)
+- **Note**: Multi-modal features require specific feature flags and external dependencies
 
 ## Installation
 
-Add to your `Cargo.toml`:
+**Note**: This is a development library not yet published to crates.io.
+
+Clone and build from source:
+
+```bash
+git clone https://github.com/njfio/rust-synaptic.git
+cd rust-synaptic
+cargo build
+```
+
+For use in other projects, add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-synaptic = "0.1.0"
-
-# With optional features
-synaptic = { version = "0.1.0", features = ["analytics", "security", "multimodal"] }
+synaptic = { git = "https://github.com/njfio/rust-synaptic.git", features = ["analytics"] }
 ```
 
 ## Quick Start
@@ -154,7 +161,7 @@ cargo run --example phase5b_document_demo --features "document-processing"
 ## Testing
 
 ```bash
-# Run all tests (179 tests)
+# Run all tests (189 tests)
 cargo test
 
 # Run with specific features
@@ -216,11 +223,57 @@ src/
 
 ## Documentation
 
-Generate and view documentation:
+### Comprehensive Guides
+
+- **[User Guide](docs/user_guide.md)** - Complete user documentation with examples
+- **[API Guide](docs/api_guide.md)** - Detailed API reference and usage
+- **[Architecture Guide](docs/architecture.md)** - System architecture and design
+- **[Deployment Guide](docs/deployment.md)** - Production deployment instructions
+- **[Testing Guide](docs/testing_guide.md)** - Testing strategies and best practices
+- **[Error Handling Guide](docs/error_handling_guide.md)** - Comprehensive error handling
+
+### API Documentation
+
+Generate and view Rust API documentation:
 
 ```bash
 cargo doc --all-features --no-deps --open
 ```
+
+### Quick Links
+
+- [Getting Started](docs/user_guide.md#getting-started) - Quick start guide
+- [Basic Usage](docs/user_guide.md#basic-usage) - Common operations
+- [Advanced Features](docs/user_guide.md#advanced-features) - Knowledge graph, analytics, security
+- [Configuration](docs/user_guide.md#configuration) - System configuration options
+- [Deployment](docs/deployment.md) - Production deployment
+- [Testing](docs/testing_guide.md) - Running and writing tests
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and contribution guidelines.
+
+## Development Status & Limitations
+
+### Experimental Features
+
+- **Homomorphic Encryption**: Limited functionality, not production-ready
+- **Zero-Knowledge Proofs**: Basic implementation, experimental status
+- **WebAssembly Support**: Experimental, may have performance limitations
+- **Mobile Platform Support**: Basic implementation, requires testing
+
+### External Dependencies
+
+- **Multi-modal Processing**: Requires heavy external dependencies (OpenCV, Tesseract, etc.)
+- **ML Models**: Integration requires external model files and configuration
+- **Distributed Features**: Some components are simplified for development
+
+### Production Readiness
+
+- **Core Memory System**: Production-ready with comprehensive tests
+- **Knowledge Graph**: Stable implementation with good test coverage
+- **Storage Backends**: Memory and file storage are stable, SQL storage functional
+- **Analytics**: Basic analytics implemented, advanced features in development
 
 ## License
 
