@@ -170,7 +170,12 @@ impl AdvancedProfiler {
                 
                 // Collect samples from all profilers
                 if let Err(e) = profiler.collect_samples().await {
-                    eprintln!("Error collecting profiling samples: {}", e);
+                    tracing::error!(
+                        component = "profiler",
+                        operation = "collect_samples",
+                        error = %e,
+                        "Error collecting profiling samples"
+                    );
                 }
             }
         });
@@ -204,7 +209,9 @@ impl AdvancedProfiler {
     
     /// Generate session result
     async fn generate_session_result(&self, session: &ProfilingSession) -> Result<ProfilingSessionResult> {
-        let duration = session.end_time.unwrap() - session.start_time;
+        let end_time = session.end_time
+            .ok_or_else(|| crate::error::MemoryError::validation("Session has no end time".to_string()))?;
+        let duration = end_time - session.start_time;
         
         // Calculate averages and statistics
         let avg_cpu_usage = session.cpu_samples.iter()
@@ -224,7 +231,8 @@ impl AdvancedProfiler {
             session_name: session.name.clone(),
             duration,
             start_timestamp: session.start_timestamp,
-            end_timestamp: session.end_timestamp.unwrap(),
+            end_timestamp: session.end_timestamp
+                .ok_or_else(|| crate::error::MemoryError::validation("Session has no end timestamp".to_string()))?,
             avg_cpu_usage,
             peak_cpu_usage: session.cpu_samples.iter()
                 .map(|s| s.usage_percent)

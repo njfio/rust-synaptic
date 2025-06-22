@@ -881,7 +881,7 @@ impl MemorySummarizer {
         entities.extend(self.extract_action_entities(text)?);
 
         // Sort by importance and remove duplicates
-        entities.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap());
+        entities.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap_or(std::cmp::Ordering::Equal));
         entities.dedup_by(|a, b| a.name == b.name && a.entity_type == b.entity_type);
 
         // Limit to top 20 entities to avoid noise

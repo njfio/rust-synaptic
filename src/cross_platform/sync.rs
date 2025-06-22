@@ -342,7 +342,12 @@ impl SyncManager {
                         &sync_state,
                         &config,
                     ).await {
-                        eprintln!("Auto-sync failed: {}", e);
+                        tracing::error!(
+                            component = "cross_platform_sync",
+                            operation = "auto_sync",
+                            error = %e,
+                            "Auto-sync failed"
+                        );
                     }
                 }
             }
@@ -423,7 +428,12 @@ impl SyncManager {
                 }
                 Err(e) => {
                     failed += 1;
-                    eprintln!("Sync operation failed: {}", e);
+                    tracing::error!(
+                        component = "cross_platform_sync",
+                        operation = "sync_batch",
+                        error = %e,
+                        "Sync operation failed"
+                    );
                     
                     // Add to failed operations for retry
                     let mut state = sync_state.write().await;
@@ -448,28 +458,58 @@ impl SyncManager {
         match operation {
             SyncOperation::Store { key, data, timestamp, checksum } => {
                 // Simulate storing to remote
-                println!("Storing {} ({} bytes) at timestamp {}", key, data.len(), timestamp);
-                println!("Checksum: {}", checksum);
+                tracing::debug!(
+                    component = "cross_platform_sync",
+                    operation = "store",
+                    key = %key,
+                    data_size = %data.len(),
+                    timestamp = %timestamp,
+                    checksum = %checksum,
+                    "Storing data to remote"
+                );
                 Ok(())
             }
             SyncOperation::Retrieve { key, local_timestamp } => {
                 // Simulate retrieving from remote
-                println!("Retrieving {} (local timestamp: {:?})", key, local_timestamp);
+                tracing::debug!(
+                    component = "cross_platform_sync",
+                    operation = "retrieve",
+                    key = %key,
+                    local_timestamp = ?local_timestamp,
+                    "Retrieving data from remote"
+                );
                 Ok(())
             }
             SyncOperation::Delete { key, timestamp } => {
                 // Simulate deleting from remote
-                println!("Deleting {} at timestamp {}", key, timestamp);
+                tracing::debug!(
+                    component = "cross_platform_sync",
+                    operation = "delete",
+                    key = %key,
+                    timestamp = %timestamp,
+                    "Deleting data from remote"
+                );
                 Ok(())
             }
             SyncOperation::SyncMetadata { keys } => {
                 // Simulate syncing metadata
-                println!("Syncing metadata for {} keys", keys.len());
+                tracing::debug!(
+                    component = "cross_platform_sync",
+                    operation = "sync_metadata",
+                    key_count = %keys.len(),
+                    "Syncing metadata for keys"
+                );
                 Ok(())
             }
             SyncOperation::ResolveConflict { key, resolution, .. } => {
                 // Simulate resolving conflict
-                println!("Resolving conflict for {} with strategy {:?}", key, resolution);
+                tracing::info!(
+                    component = "cross_platform_sync",
+                    operation = "resolve_conflict",
+                    key = %key,
+                    resolution_strategy = ?resolution,
+                    "Resolving sync conflict"
+                );
                 Ok(())
             }
         }

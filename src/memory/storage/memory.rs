@@ -7,7 +7,23 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+/// Backup data structure for in-memory storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemoryStorageBackup {
+    /// All memory entries
+    entries: Vec<MemoryEntry>,
+    /// Original storage creation timestamp
+    created_at: DateTime<Utc>,
+    /// Backup creation timestamp
+    backup_timestamp: DateTime<Utc>,
+    /// Backup format version
+    version: String,
+    /// Number of entries in backup
+    entry_count: usize,
+}
 
 /// In-memory storage implementation using DashMap for thread-safe concurrent access
 pub struct MemoryStorage {
@@ -94,7 +110,7 @@ impl MemoryStorage {
         }
 
         // Sort by relevance score (highest first)
-        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(limit);
         results
     }
@@ -191,19 +207,68 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    async fn backup(&self, _path: &str) -> Result<()> {
-        // In-memory storage cannot be backed up to disk
-        // This would require serialization to a file
-        Err(MemoryError::storage(
-            "In-memory storage does not support backup operations"
-        ))
+    async fn backup(&self, path: &str) -> Result<()> {
+        tracing::info!("Creating backup of in-memory storage to: {}", path);
+
+        // Collect all entries
+        let entries: Vec<MemoryEntry> = self.entries
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+
+        // Create backup data structure
+        let backup_data = MemoryStorageBackup {
+            entries,
+            created_at: self.created_at,
+            backup_timestamp: Utc::now(),
+            version: "1.0".to_string(),
+            entry_count: self.entries.len(),
+        };
+
+        // Serialize to JSON
+        let json_data = serde_json::to_string_pretty(&backup_data)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize backup data: {}", e)))?;
+
+        // Write to file
+        tokio::fs::write(path, json_data).await
+            .map_err(|e| MemoryError::storage(format!("Failed to write backup file: {}", e)))?;
+
+        tracing::info!("Successfully created backup with {} entries", backup_data.entry_count);
+        Ok(())
     }
 
-    async fn restore(&self, _path: &str) -> Result<()> {
-        // In-memory storage cannot restore from disk
-        Err(MemoryError::storage(
-            "In-memory storage does not support restore operations"
-        ))
+    async fn restore(&self, path: &str) -> Result<()> {
+        tracing::info!("Restoring in-memory storage from: {}", path);
+
+        // Read backup file
+        let json_data = tokio::fs::read_to_string(path).await
+            .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
+
+        // Deserialize backup data
+        let backup_data: MemoryStorageBackup = serde_json::from_str(&json_data)
+            .map_err(|e| MemoryError::storage(format!("Failed to deserialize backup data: {}", e)))?;
+
+        // Validate backup version compatibility
+        if backup_data.version != "1.0" {
+            return Err(MemoryError::storage(format!(
+                "Unsupported backup version: {}. Expected: 1.0",
+                backup_data.version
+            )));
+        }
+
+        // Clear existing entries
+        self.entries.clear();
+
+        // Restore entries
+        for entry in backup_data.entries {
+            self.entries.insert(entry.key.clone(), entry);
+        }
+
+        // Update statistics
+        self.update_stats();
+
+        tracing::info!("Successfully restored {} entries from backup", backup_data.entry_count);
+        Ok(())
     }
 
     async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {

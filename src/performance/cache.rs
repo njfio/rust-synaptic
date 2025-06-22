@@ -118,14 +118,26 @@ impl PerformanceCache {
         if let Some(size_str) = parameters.get("cache_size_mb") {
             if let Ok(size) = size_str.parse::<usize>() {
                 // Update cache size (would require config update in real implementation)
-                println!("Optimizing cache size to {}MB", size);
+                tracing::info!(
+                    component = "performance_cache",
+                    operation = "apply_optimization",
+                    parameter = "cache_size_mb",
+                    value = %size,
+                    "Optimizing cache size"
+                );
             }
         }
         
         // Apply TTL optimization
         if let Some(ttl_str) = parameters.get("ttl_seconds") {
             if let Ok(ttl) = ttl_str.parse::<u64>() {
-                println!("Optimizing cache TTL to {}s", ttl);
+                tracing::info!(
+                    component = "performance_cache",
+                    operation = "apply_optimization",
+                    parameter = "ttl_seconds",
+                    value = %ttl,
+                    "Optimizing cache TTL"
+                );
             }
         }
         
@@ -265,7 +277,7 @@ impl PerformanceCache {
         entries.sort_by(|(key_a, entry_a), (key_b, entry_b)| {
             let score_a = self.calculate_adaptive_score(key_a, entry_a, &patterns);
             let score_b = self.calculate_adaptive_score(key_b, entry_b, &patterns);
-            score_a.partial_cmp(&score_b).unwrap()
+            score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
         });
         
         let mut freed_space = 0;

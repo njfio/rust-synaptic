@@ -62,6 +62,92 @@ macro_rules! log_performance_metric {
     };
 }
 
+#[macro_export]
+macro_rules! log_memory_operation {
+    ($operation:expr, $memory_key:expr, $($key:ident = $value:expr),*) => {
+        tracing::info!(
+            operation = $operation,
+            memory_key = $memory_key,
+            $($key = $value,)*
+            "Memory operation"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_security_event {
+    ($event_type:expr, $severity:expr, $resource:expr, $($key:ident = $value:expr),*) => {
+        match $severity {
+            "critical" | "high" => {
+                tracing::error!(
+                    event_type = $event_type,
+                    severity = $severity,
+                    resource = $resource,
+                    $($key = $value,)*
+                    "Security event detected"
+                );
+            }
+            "medium" => {
+                tracing::warn!(
+                    event_type = $event_type,
+                    severity = $severity,
+                    resource = $resource,
+                    $($key = $value,)*
+                    "Security event detected"
+                );
+            }
+            _ => {
+                tracing::info!(
+                    event_type = $event_type,
+                    severity = $severity,
+                    resource = $resource,
+                    $($key = $value,)*
+                    "Security event detected"
+                );
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_query_operation {
+    ($query_type:expr, $complexity:expr, $result_count:expr, $duration_ms:expr) => {
+        tracing::info!(
+            query_type = $query_type,
+            complexity = $complexity,
+            result_count = $result_count,
+            duration_ms = $duration_ms,
+            "Query operation completed"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_analytics_operation {
+    ($operation:expr, $algorithm:expr, $data_size:expr, $($key:ident = $value:expr),*) => {
+        tracing::info!(
+            operation = $operation,
+            algorithm = $algorithm,
+            data_size = $data_size,
+            $($key = $value,)*
+            "Analytics operation"
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! log_storage_operation {
+    ($operation:expr, $backend:expr, $size_bytes:expr, $($key:ident = $value:expr),*) => {
+        tracing::info!(
+            operation = $operation,
+            backend = $backend,
+            size_bytes = $size_bytes,
+            $($key = $value,)*
+            "Storage operation"
+        );
+    };
+}
+
 /// Comprehensive logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
@@ -564,18 +650,133 @@ impl LoggingManager {
         let cutoff_time = Utc::now() - chrono::Duration::hours(retention_hours as i64);
 
         // Clean up performance metrics
-        {
+        let metrics_removed = {
             let mut metrics = self.performance_metrics.write().await;
+            let original_count = metrics.len();
             metrics.retain(|m| m.start_time > cutoff_time);
-        }
+            original_count - metrics.len()
+        };
 
         // Clean up audit logs
-        {
+        let logs_removed = {
             let mut logs = self.audit_logs.write().await;
+            let original_count = logs.len();
             logs.retain(|l| l.timestamp > cutoff_time);
-        }
+            original_count - logs.len()
+        };
 
-        tracing::info!("Cleaned up logging data older than {} hours", retention_hours);
+        tracing::info!(
+            retention_hours = retention_hours,
+            metrics_removed = metrics_removed,
+            logs_removed = logs_removed,
+            "Cleaned up logging data"
+        );
         Ok(())
     }
+
+    /// Export performance metrics to JSON
+    pub async fn export_performance_metrics(&self) -> Result<String> {
+        let metrics = self.performance_metrics.read().await;
+        serde_json::to_string_pretty(&*metrics)
+            .map_err(|e| MemoryError::processing_error(format!("Failed to export performance metrics: {}", e)))
+    }
+
+    /// Export audit logs to JSON
+    pub async fn export_audit_logs(&self) -> Result<String> {
+        let logs = self.audit_logs.read().await;
+        serde_json::to_string_pretty(&*logs)
+            .map_err(|e| MemoryError::processing_error(format!("Failed to export audit logs: {}", e)))
+    }
+
+    /// Get performance metrics summary
+    pub async fn get_performance_summary(&self) -> PerformanceSummary {
+        let metrics = self.performance_metrics.read().await;
+
+        let total_operations = metrics.len();
+        let successful_operations = metrics.iter().filter(|m| m.success).count();
+        let failed_operations = total_operations - successful_operations;
+
+        let avg_duration = if !metrics.is_empty() {
+            metrics.iter()
+                .filter_map(|m| m.duration_ms)
+                .sum::<u64>() as f64 / metrics.len() as f64
+        } else {
+            0.0
+        };
+
+        let operations_by_type = metrics.iter()
+            .fold(std::collections::HashMap::new(), |mut acc, m| {
+                *acc.entry(m.operation_name.clone()).or_insert(0) += 1;
+                acc
+            });
+
+        PerformanceSummary {
+            total_operations,
+            successful_operations,
+            failed_operations,
+            success_rate: if total_operations > 0 {
+                successful_operations as f64 / total_operations as f64
+            } else {
+                0.0
+            },
+            avg_duration_ms: avg_duration,
+            operations_by_type,
+        }
+    }
+
+    /// Get audit logs summary
+    pub async fn get_audit_summary(&self) -> AuditSummary {
+        let logs = self.audit_logs.read().await;
+
+        let total_events = logs.len();
+        let successful_events = logs.iter().filter(|l| l.success).count();
+        let failed_events = total_events - successful_events;
+
+        let events_by_risk = logs.iter()
+            .fold(std::collections::HashMap::new(), |mut acc, l| {
+                let risk_str = match l.risk_level {
+                    RiskLevel::Low => "low",
+                    RiskLevel::Medium => "medium",
+                    RiskLevel::High => "high",
+                    RiskLevel::Critical => "critical",
+                };
+                *acc.entry(risk_str.to_string()).or_insert(0) += 1;
+                acc
+            });
+
+        let events_by_operation = logs.iter()
+            .fold(std::collections::HashMap::new(), |mut acc, l| {
+                *acc.entry(l.operation.clone()).or_insert(0) += 1;
+                acc
+            });
+
+        AuditSummary {
+            total_events,
+            successful_events,
+            failed_events,
+            events_by_risk,
+            events_by_operation,
+        }
+    }
+}
+
+/// Performance metrics summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceSummary {
+    pub total_operations: usize,
+    pub successful_operations: usize,
+    pub failed_operations: usize,
+    pub success_rate: f64,
+    pub avg_duration_ms: f64,
+    pub operations_by_type: HashMap<String, usize>,
+}
+
+/// Audit logs summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditSummary {
+    pub total_events: usize,
+    pub successful_events: usize,
+    pub failed_events: usize,
+    pub events_by_risk: HashMap<String, usize>,
+    pub events_by_operation: HashMap<String, usize>,
 }

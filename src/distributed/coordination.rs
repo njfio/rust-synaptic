@@ -102,7 +102,13 @@ impl DistributedCoordinator {
     
     /// Start the distributed coordinator
     pub async fn start(&self) -> Result<()> {
-        println!("Starting distributed coordinator for node {}", self.config.node_id);
+        tracing::info!(
+            component = "distributed_coordinator",
+            operation = "start",
+            node_id = %self.config.node_id,
+            peer_count = %self.config.peers.len(),
+            "Starting distributed coordinator"
+        );
         
         // Add known peers to the distributed graph
         for peer in &self.config.peers {
@@ -113,7 +119,12 @@ impl DistributedCoordinator {
         // let realtime_sync = Arc::clone(&self.realtime_sync);
         // tokio::spawn(async move {
         //     if let Err(e) = realtime_sync.start().await {
-        //         eprintln!("Real-time sync server error: {}", e);
+        //         tracing::error!(
+        //             component = "distributed_coordinator",
+        //             operation = "realtime_sync_start",
+        //             error = %e,
+        //             "Real-time sync server error"
+        //         );
         //     }
         // });
         
@@ -123,7 +134,12 @@ impl DistributedCoordinator {
         // Start statistics updates
         self.start_stats_updates();
         
-        println!("Distributed coordinator started successfully");
+        tracing::info!(
+            component = "distributed_coordinator",
+            operation = "start_complete",
+            node_id = %self.config.node_id,
+            "Distributed coordinator started successfully"
+        );
         Ok(())
     }
     
@@ -149,7 +165,13 @@ impl DistributedCoordinator {
         if consistency == ConsistencyLevel::Strong {
             // For now, we'll skip consensus for testing purposes
             // In a full implementation, this would go through the consensus protocol
-            println!("Strong consistency requested - would use consensus protocol");
+            tracing::debug!(
+                component = "distributed_coordinator",
+                operation = "store_memory",
+                consistency_level = "strong",
+                memory_key = %memory.key,
+                "Strong consistency requested - would use consensus protocol"
+            );
         }
         
         // Publish event
@@ -186,7 +208,13 @@ impl DistributedCoordinator {
         if consistency == ConsistencyLevel::Strong {
             // For now, we'll skip consensus for testing purposes
             // In a full implementation, this would go through the consensus protocol
-            println!("Strong consistency requested for update - would use consensus protocol");
+            tracing::debug!(
+                component = "distributed_coordinator",
+                operation = "update_memory",
+                consistency_level = "strong",
+                memory_id = %memory_id,
+                "Strong consistency requested for update - would use consensus protocol"
+            );
         }
         
         // Publish event
@@ -212,7 +240,13 @@ impl DistributedCoordinator {
         self.distributed_graph.add_node(node_id);
         
         // Add to consensus (simplified for testing)
-        println!("Adding peer {} at {}", node_id, address);
+        tracing::info!(
+            component = "distributed_coordinator",
+            operation = "add_peer",
+            node_id = %node_id,
+            address = %address,
+            "Adding peer to distributed system"
+        );
         
         // Update statistics
         {
@@ -229,7 +263,12 @@ impl DistributedCoordinator {
         self.distributed_graph.remove_node(node_id);
         
         // Remove from consensus (simplified for testing)
-        println!("Removing peer {}", node_id);
+        tracing::info!(
+            component = "distributed_coordinator",
+            operation = "remove_peer",
+            node_id = %node_id,
+            "Removing peer from distributed system"
+        );
         
         // Update statistics
         {
@@ -335,8 +374,8 @@ mod tests {
     #[tokio::test]
     async fn test_coordinator_creation() {
         let config = DistributedConfig::default();
-        let coordinator = DistributedCoordinator::new(config).await.unwrap();
-        
+        let coordinator = DistributedCoordinator::new(config).await.expect("Failed to create coordinator in test");
+
         let stats = coordinator.get_stats().await;
         assert_eq!(stats.active_peers, 0);
         assert_eq!(stats.events_processed, 0);
@@ -345,14 +384,14 @@ mod tests {
     #[tokio::test]
     async fn test_store_memory() {
         let config = DistributedConfig::default();
-        let coordinator = DistributedCoordinator::new(config).await.unwrap();
-        
+        let coordinator = DistributedCoordinator::new(config).await.expect("Failed to create coordinator in test");
+
         let memory = MemoryEntry::new(
             "test".to_string(),
             "test content".to_string(),
             MemoryType::ShortTerm,
         );
-        
+
         let result = coordinator.store_memory(memory, ConsistencyLevel::Eventual).await;
         assert!(result.is_ok());
     }
@@ -360,8 +399,8 @@ mod tests {
     #[tokio::test]
     async fn test_health_check() {
         let config = DistributedConfig::default();
-        let coordinator = DistributedCoordinator::new(config).await.unwrap();
-        
+        let coordinator = DistributedCoordinator::new(config).await.expect("Failed to create coordinator in test");
+
         let health = coordinator.get_health().await;
         assert_eq!(health.status, HealthStatus::Healthy);
         assert!(health.details.contains_key("consensus_state"));

@@ -166,7 +166,12 @@ impl RealtimeSync {
                 message: format!("Failed to bind to {}: {}", addr, e) 
             })?;
         
-        println!("Real-time sync server listening on {}", addr);
+        tracing::info!(
+            component = "realtime_sync",
+            operation = "start_server",
+            address = %addr,
+            "Real-time sync server listening"
+        );
         
         // Start heartbeat task
         self.start_heartbeat_task();
@@ -179,7 +184,13 @@ impl RealtimeSync {
             
             tokio::spawn(async move {
                 if let Err(e) = Self::handle_connection(stream, addr, connections, stats, update_sender).await {
-                    eprintln!("Error handling connection from {}: {}", addr, e);
+                    tracing::error!(
+                        component = "realtime_sync",
+                        operation = "handle_connection",
+                        client_addr = %addr,
+                        error = %e,
+                        "Error handling client connection"
+                    );
                 }
             });
         }
@@ -245,7 +256,13 @@ impl RealtimeSync {
             stats_guard.total_connections += 1;
         }
         
-        println!("New client connected: {} from {}", client_id, addr);
+        tracing::info!(
+            component = "realtime_sync",
+            operation = "client_connected",
+            client_id = %client_id,
+            client_addr = %addr,
+            "New client connected"
+        );
         
         // Subscribe to updates
         let mut update_receiver = update_sender.subscribe();
@@ -264,11 +281,23 @@ impl RealtimeSync {
             // Process outgoing messages
             _ = async {
                 while let Some(update) = message_rx.recv().await {
-                    let message = serde_json::to_string(&update).unwrap();
-                    
-                    // Send to client (in a real implementation, we'd handle this properly)
-                    // For now, we'll just log it
-                    println!("Sending update to {}: {}", client_id, message);
+                    match serde_json::to_string(&update) {
+                        Ok(message) => {
+                            // Send to client (in a real implementation, we'd handle this properly)
+                            // For now, we'll just log it
+                            tracing::debug!(
+                                component = "realtime_sync",
+                                operation = "send_update",
+                                client_id = %client_id,
+                                message_size = %message.len(),
+                                "Sending update to client"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to serialize update for client {}: {}", client_id, e);
+                            break; // Disconnect client on serialization error
+                        }
+                    }
                 }
             } => {},
         }
@@ -284,7 +313,12 @@ impl RealtimeSync {
             stats_guard.active_connections = stats_guard.active_connections.saturating_sub(1);
         }
         
-        println!("Client disconnected: {}", client_id);
+        tracing::info!(
+            component = "realtime_sync",
+            operation = "client_disconnected",
+            client_id = %client_id,
+            "Client disconnected"
+        );
         
         Ok(())
     }
@@ -401,7 +435,12 @@ impl RealtimeSync {
                 let conns = connections.read();
                 for (client_id, _connection) in conns.iter() {
                     // In a real implementation, we'd send a ping frame
-                    println!("Heartbeat to {}", client_id);
+                    tracing::trace!(
+                        component = "realtime_sync",
+                        operation = "heartbeat",
+                        client_id = %client_id,
+                        "Sending heartbeat to client"
+                    );
                 }
             }
         });
@@ -471,8 +510,8 @@ mod tests {
         let metadata = OperationMetadata::new(NodeId::new(), ConsistencyLevel::Eventual);
         let envelope = crate::distributed::events::EventEnvelope::new(event, metadata);
         
-        let update = sync.event_to_update(&envelope).unwrap();
-        
+        let update = sync.event_to_update(&envelope).expect("Failed to convert event to update in test");
+
         assert!(matches!(update.update_type, UpdateType::MemoryCreated));
         assert_eq!(update.affected_memories.len(), 1);
         assert_eq!(update.changes.affected_count, 1);

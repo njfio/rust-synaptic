@@ -450,7 +450,9 @@ impl OptimizedAllocator {
 
     /// Get allocation statistics
     pub async fn get_stats(&self) -> AllocationStats {
-        self.allocation_tracker.read().unwrap().allocation_stats.clone()
+        self.allocation_tracker.read()
+            .map(|tracker| tracker.allocation_stats.clone())
+            .unwrap_or_default()
     }
 
     /// Optimize allocations
@@ -464,7 +466,8 @@ impl OptimizedAllocator {
 
     /// Detect memory leaks
     pub async fn detect_leaks(&self) -> Result<Vec<LeakCandidate>> {
-        let tracker = self.allocation_tracker.read().unwrap();
+        let tracker = self.allocation_tracker.read()
+            .map_err(|e| MemoryError::InvalidOperation(format!("Failed to read allocation tracker: {}", e)))?;
         Ok(tracker.leak_candidates.clone())
     }
 }
@@ -537,7 +540,8 @@ impl PoolMonitor {
 
     /// Start monitoring
     pub async fn start(&self) -> Result<()> {
-        *self.monitoring_active.write().unwrap() = true;
+        *self.monitoring_active.write()
+            .map_err(|e| MemoryError::InvalidOperation(format!("Failed to write monitoring state: {}", e)))? = true;
         Ok(())
     }
 }
@@ -580,7 +584,9 @@ impl GarbageCollectionOptimizer {
 
     /// Get GC statistics
     pub async fn get_stats(&self) -> GCStats {
-        self.gc_stats.read().unwrap().clone()
+        self.gc_stats.read()
+            .map(|stats| stats.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -619,7 +625,9 @@ impl MemoryProfiler {
 
     /// Get profiling data
     pub async fn get_profiling_data(&self) -> ProfilingData {
-        self.profiling_data.read().unwrap().clone()
+        self.profiling_data.read()
+            .map(|data| data.clone())
+            .unwrap_or_default()
     }
 
     /// Create memory snapshot

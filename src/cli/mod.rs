@@ -359,6 +359,17 @@ pub enum GraphFormat {
     Png,
 }
 
+impl std::fmt::Display for GraphFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GraphFormat::Ascii => write!(f, "ascii"),
+            GraphFormat::Dot => write!(f, "dot"),
+            GraphFormat::Svg => write!(f, "svg"),
+            GraphFormat::Png => write!(f, "png"),
+        }
+    }
+}
+
 /// Path finding algorithms
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum PathAlgorithm {
@@ -366,6 +377,17 @@ pub enum PathAlgorithm {
     All,
     Dijkstra,
     AStar,
+}
+
+impl std::fmt::Display for PathAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathAlgorithm::Shortest => write!(f, "shortest"),
+            PathAlgorithm::All => write!(f, "all"),
+            PathAlgorithm::Dijkstra => write!(f, "dijkstra"),
+            PathAlgorithm::AStar => write!(f, "astar"),
+        }
+    }
 }
 
 /// Graph analysis types
@@ -378,6 +400,18 @@ pub enum AnalysisType {
     Metrics,
 }
 
+impl std::fmt::Display for AnalysisType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnalysisType::Overview => write!(f, "overview"),
+            AnalysisType::Centrality => write!(f, "centrality"),
+            AnalysisType::Clustering => write!(f, "clustering"),
+            AnalysisType::Components => write!(f, "components"),
+            AnalysisType::Metrics => write!(f, "metrics"),
+        }
+    }
+}
+
 /// Graph export formats
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum GraphExportFormat {
@@ -387,12 +421,25 @@ pub enum GraphExportFormat {
     Csv,
 }
 
+impl std::fmt::Display for GraphExportFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GraphExportFormat::Graphml => write!(f, "graphml"),
+            GraphExportFormat::Gexf => write!(f, "gexf"),
+            GraphExportFormat::Json => write!(f, "json"),
+            GraphExportFormat::Csv => write!(f, "csv"),
+        }
+    }
+}
+
 /// CLI application runner
 pub struct CliRunner {
     /// CLI configuration
     config: config::CliConfig,
     /// SyQL engine
     syql_engine: syql::SyQLEngine,
+    /// Agent memory system
+    agent_memory: crate::AgentMemory,
 }
 
 impl CliRunner {
@@ -400,10 +447,20 @@ impl CliRunner {
     pub async fn new(args: SynapticCli) -> Result<Self> {
         let config = config::CliConfig::load(args.config.as_ref().map(|v| &**v)).await?;
         let syql_engine = syql::SyQLEngine::new()?;
-        
+
+        // Initialize AgentMemory with default configuration
+        let memory_config = crate::MemoryConfig {
+            enable_knowledge_graph: true,
+            enable_temporal_tracking: true,
+            enable_advanced_management: true,
+            ..Default::default()
+        };
+        let agent_memory = crate::AgentMemory::new(memory_config).await?;
+
         Ok(Self {
             config,
             syql_engine,
+            agent_memory,
         })
     }
 
@@ -468,58 +525,111 @@ impl CliRunner {
 
     /// Execute a SyQL query
     async fn execute_query(&mut self, query: &str, output_file: Option<&PathBuf>, explain: bool) -> Result<()> {
-        if explain {
-            let plan = self.syql_engine.explain_query(query).await?;
-            println!("Query Execution Plan:");
-            println!("{:#?}", plan);
-        } else {
-            let result = self.syql_engine.execute_query(query).await?;
-            let formatted = self.syql_engine.format_result(&result, syql::OutputFormat::Table)?;
-            
-            if let Some(output_path) = output_file {
-                std::fs::write(output_path, formatted)?;
-                println!("Results written to {}", output_path.display());
-            } else {
-                println!("{}", formatted);
-            }
+        commands::SyQLCommands::execute(&mut self.syql_engine, query, output_file.map(|p| p.as_path()), explain).await
+    }
+
+    /// Validate a SyQL query
+    async fn validate_query(&mut self, query: &str) -> Result<()> {
+        commands::SyQLCommands::validate(&mut self.syql_engine, query).await
+    }
+
+    /// Get SyQL query completions
+    async fn complete_query(&mut self, partial_query: &str, cursor_position: usize) -> Result<()> {
+        commands::SyQLCommands::complete(&mut self.syql_engine, partial_query, cursor_position).await
+    }
+
+    /// Handle memory actions
+    async fn handle_memory_action(&mut self, action: MemoryAction) -> Result<()> {
+        match action {
+            MemoryAction::List { limit, memory_type } => {
+                commands::MemoryCommands::list(&mut self.agent_memory, limit, memory_type).await
+            },
+            MemoryAction::Show { id } => {
+                commands::MemoryCommands::show(&mut self.agent_memory, &id).await
+            },
+            MemoryAction::Create { content, memory_type, tags } => {
+                commands::MemoryCommands::create(&mut self.agent_memory, &content, &memory_type, &tags).await
+            },
+            MemoryAction::Update { id, content, tags } => {
+                commands::MemoryCommands::update(&mut self.agent_memory, &id, content.as_deref(), tags.as_deref()).await
+            },
+            MemoryAction::Delete { id, force: _ } => {
+                commands::MemoryCommands::delete(&mut self.agent_memory, &id).await
+            },
+            MemoryAction::Search { query, limit, threshold: _ } => {
+                commands::MemoryCommands::search(&mut self.agent_memory, &query, limit).await
+            },
         }
-        Ok(())
     }
 
-    /// Handle memory actions (placeholder)
-    async fn handle_memory_action(&self, _action: MemoryAction) -> Result<()> {
-        println!("Memory action not yet implemented");
-        Ok(())
+    /// Handle graph actions
+    async fn handle_graph_action(&mut self, action: GraphAction) -> Result<()> {
+        match action {
+            GraphAction::Visualize { format, depth, start } => {
+                commands::GraphCommands::visualize(&mut self.agent_memory, &format.to_string(), depth, start.as_deref()).await
+            },
+            GraphAction::Path { from, to, max_length, algorithm } => {
+                commands::GraphCommands::find_path(&mut self.agent_memory, &from, &to, max_length, &algorithm.to_string()).await
+            },
+            GraphAction::Analyze { analysis_type } => {
+                commands::GraphCommands::analyze(&mut self.agent_memory, &analysis_type.to_string()).await
+            },
+            GraphAction::Export { format, output } => {
+                commands::GraphCommands::export(&mut self.agent_memory, &format.to_string(), &output).await
+            },
+        }
     }
 
-    /// Handle graph actions (placeholder)
-    async fn handle_graph_action(&self, _action: GraphAction) -> Result<()> {
-        println!("Graph action not yet implemented");
-        Ok(())
+    /// Run performance profiler
+    async fn run_profiler(&self, duration: u64, output: Option<&PathBuf>, realtime: bool) -> Result<()> {
+        commands::ProfilerCommands::run_profiler(duration, output.map(|v| &**v), realtime).await
     }
 
-    /// Run performance profiler (placeholder)
-    async fn run_profiler(&self, _duration: u64, _output: Option<&PathBuf>, _realtime: bool) -> Result<()> {
-        println!("Performance profiler not yet implemented");
-        Ok(())
+    /// Handle configuration actions
+    async fn handle_config_action(&self, action: ConfigAction) -> Result<()> {
+        match action {
+            ConfigAction::Show => {
+                commands::ConfigCommands::show(&self.config).await
+            },
+            ConfigAction::Set { key, value } => {
+                commands::ConfigCommands::set(&key, &value).await
+            },
+            ConfigAction::Get { key } => {
+                commands::ConfigCommands::get(&self.config, &key).await
+            },
+            ConfigAction::Reset { force } => {
+                commands::ConfigCommands::reset(force).await
+            },
+        }
     }
 
-    /// Handle configuration actions (placeholder)
-    async fn handle_config_action(&self, _action: ConfigAction) -> Result<()> {
-        println!("Config action not yet implemented");
-        Ok(())
+    /// Export data
+    async fn export_data(&self, format: ExportFormat, output: &PathBuf, filter: Option<&String>) -> Result<()> {
+        let format_str = match format {
+            ExportFormat::Json => "json",
+            ExportFormat::Csv => "csv",
+            ExportFormat::Yaml => "yaml",
+            ExportFormat::Xml => "xml",
+            ExportFormat::Parquet => "parquet",
+        };
+        commands::DataCommands::export(&**self.agent_memory.storage(), format_str, output, filter.map(|s| s.as_str())).await
     }
 
-    /// Export data (placeholder)
-    async fn export_data(&self, _format: ExportFormat, _output: &PathBuf, _filter: Option<&String>) -> Result<()> {
-        println!("Data export not yet implemented");
-        Ok(())
-    }
-
-    /// Import data (placeholder)
-    async fn import_data(&self, _input: &PathBuf, _format: Option<ImportFormat>, _merge: MergeStrategy) -> Result<()> {
-        println!("Data import not yet implemented");
-        Ok(())
+    /// Import data
+    async fn import_data(&self, input: &PathBuf, format: Option<ImportFormat>, merge: MergeStrategy) -> Result<()> {
+        let format_str = format.map(|f| match f {
+            ImportFormat::Json => "json",
+            ImportFormat::Csv => "csv",
+            ImportFormat::Yaml => "yaml",
+            ImportFormat::Xml => "xml",
+        });
+        let merge_str = match merge {
+            MergeStrategy::Skip => "skip",
+            MergeStrategy::Overwrite => "overwrite",
+            MergeStrategy::Merge => "merge",
+            MergeStrategy::Fail => "fail",
+        };
+        commands::DataCommands::import(&**self.agent_memory.storage(), input, format_str, merge_str).await
     }
 
     /// Show system information (placeholder)

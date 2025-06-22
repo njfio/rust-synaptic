@@ -572,7 +572,7 @@ impl PerformanceProfiler {
             self.real_time_monitor.start_monitoring().await?;
         }
 
-        println!("Started profiling session '{}' (ID: {})", name, session_id);
+        tracing::info!("Started profiling session '{}' (ID: {})", name, session_id);
         Ok(session_id)
     }
 
@@ -600,7 +600,7 @@ impl PerformanceProfiler {
         // Save report to file
         self.save_report(&report).await?;
 
-        println!("Completed profiling session '{}' in {:.2}s", session.name, duration.as_secs_f64());
+        tracing::info!("Completed profiling session '{}' in {:.2}s", session.name, duration.as_secs_f64());
         Ok(report)
     }
 
@@ -608,7 +608,7 @@ impl PerformanceProfiler {
     pub async fn pause_session(&mut self, session_id: &str) -> Result<()> {
         if let Some(session) = self.active_sessions.get_mut(session_id) {
             session.status = SessionStatus::Paused;
-            println!("Paused profiling session '{}'", session.name);
+            tracing::info!("Paused profiling session '{}'", session.name);
         }
         Ok(())
     }
@@ -617,7 +617,7 @@ impl PerformanceProfiler {
     pub async fn resume_session(&mut self, session_id: &str) -> Result<()> {
         if let Some(session) = self.active_sessions.get_mut(session_id) {
             session.status = SessionStatus::Active;
-            println!("Resumed profiling session '{}'", session.name);
+            tracing::info!("Resumed profiling session '{}'", session.name);
         }
         Ok(())
     }
@@ -1461,7 +1461,7 @@ impl CachedService {
         };
 
         tokio::fs::write(&file_path, content).await?;
-        println!("Report saved to: {}", file_path.display());
+        tracing::info!("Report saved to: {}", file_path.display());
 
         Ok(())
     }

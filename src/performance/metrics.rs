@@ -257,7 +257,7 @@ impl MetricsCollector {
         }
         
         let mut sorted_timings: Vec<_> = timings.iter().map(|d| d.as_millis() as f64).collect();
-        sorted_timings.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_timings.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         
         let len = sorted_timings.len();
         
