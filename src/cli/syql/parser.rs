@@ -7,8 +7,8 @@ use super::ast::*;
 use super::{CompletionItem, CompletionType};
 use crate::error::{Result, MemoryError};
 use std::collections::HashMap;
-use std::str::Chars;
-use std::iter::Peekable;
+
+
 
 /// SyQL parser
 pub struct SyQLParser {
@@ -332,26 +332,15 @@ pub struct Token {
 pub struct Lexer {
     input: String,
     position: usize,
-    chars: Peekable<Chars<'static>>,
     keywords: &'static [&'static str],
 }
 
 impl Lexer {
     /// Create a new lexer
     pub fn new(input: &str) -> Self {
-        // SAFETY: We need to extend the lifetime for the iterator
-        // This is safe because we own the string and control its lifetime
-        let input_owned = input.to_string();
-        let chars = unsafe {
-            std::mem::transmute::<Peekable<Chars<'_>>, Peekable<Chars<'static>>>(
-                input_owned.chars().peekable()
-            )
-        };
-        
         Self {
-            input: input_owned,
+            input: input.to_string(),
             position: 0,
-            chars,
             keywords: &[
                 "SELECT", "FROM", "WHERE", "ORDER", "BY", "GROUP", "HAVING", "LIMIT",
                 "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "INDEX",
@@ -366,6 +355,30 @@ impl Lexer {
                 "RELATIONSHIPS", "NODES", "PATHS", "SHORTESTPATH", "ALLSHORTESTPATHS"
             ],
         }
+    }
+
+    /// Get current character
+    fn current_char(&self) -> Option<char> {
+        self.input.chars().nth(self.position)
+    }
+
+    /// Peek at next character
+    fn peek_char(&self) -> Option<char> {
+        self.input.chars().nth(self.position + 1)
+    }
+
+    /// Advance position by one character
+    fn advance(&mut self) -> Option<char> {
+        let ch = self.current_char();
+        if ch.is_some() {
+            self.position += 1;
+        }
+        ch
+    }
+
+    /// Check if we're at end of input
+    fn is_at_end(&self) -> bool {
+        self.position >= self.input.len()
     }
 
     /// Tokenize the input string
@@ -390,10 +403,14 @@ impl Lexer {
     /// Get the next token
     fn next_token(&mut self) -> Result<Option<Token>> {
         let start_position = self.position;
-        
-        match self.chars.peek() {
+
+        if self.is_at_end() {
+            return Ok(None);
+        }
+
+        match self.current_char() {
             None => Ok(None),
-            Some(&ch) => {
+            Some(ch) => {
                 match ch {
                     ' ' | '\t' | '\n' | '\r' => {
                         self.consume_whitespace();
@@ -468,10 +485,9 @@ impl Lexer {
 
     /// Consume whitespace characters
     fn consume_whitespace(&mut self) {
-        while let Some(&ch) = self.chars.peek() {
+        while let Some(ch) = self.current_char() {
             if ch.is_whitespace() {
-                self.chars.next();
-                self.position += 1;
+                self.advance();
             } else {
                 break;
             }
@@ -481,45 +497,39 @@ impl Lexer {
     /// Consume a line comment
     fn consume_line_comment(&mut self) -> String {
         let mut comment = String::new();
-        
+
         // Skip the '--'
-        self.chars.next();
-        self.chars.next();
-        self.position += 2;
-        
-        while let Some(&ch) = self.chars.peek() {
+        self.advance();
+        self.advance();
+
+        while let Some(ch) = self.current_char() {
             if ch == '\n' || ch == '\r' {
                 break;
             }
             comment.push(ch);
-            self.chars.next();
-            self.position += 1;
+            self.advance();
         }
-        
+
         comment
     }
 
     /// Consume a block comment
     fn consume_block_comment(&mut self) -> Result<String> {
         let mut comment = String::new();
-        
+
         // Skip the '/*'
-        self.chars.next();
-        self.chars.next();
-        self.position += 2;
-        
-        while let Some(ch) = self.chars.next() {
-            self.position += 1;
-            
-            if ch == '*' && self.chars.peek() == Some(&'/') {
-                self.chars.next();
-                self.position += 1;
+        self.advance();
+        self.advance();
+
+        while let Some(ch) = self.advance() {
+            if ch == '*' && self.current_char() == Some('/') {
+                self.advance();
                 break;
             }
-            
+
             comment.push(ch);
         }
-        
+
         Ok(comment)
     }
 
@@ -528,11 +538,9 @@ impl Lexer {
         let mut string_value = String::new();
         
         // Skip opening quote
-        self.chars.next();
-        self.position += 1;
-        
-        while let Some(ch) = self.chars.next() {
-            self.position += 1;
+        self.advance();
+
+        while let Some(ch) = self.advance() {
             
             if ch == quote_char {
                 break;
@@ -540,8 +548,7 @@ impl Lexer {
             
             if ch == '\\' {
                 // Handle escape sequences
-                if let Some(escaped) = self.chars.next() {
-                    self.position += 1;
+                if let Some(escaped) = self.advance() {
                     match escaped {
                         'n' => string_value.push('\n'),
                         't' => string_value.push('\t'),
@@ -567,17 +574,15 @@ impl Lexer {
     fn consume_number(&mut self) -> Result<TokenType> {
         let mut number_str = String::new();
         let mut is_float = false;
-        
-        while let Some(&ch) = self.chars.peek() {
+
+        while let Some(ch) = self.current_char() {
             if ch.is_ascii_digit() {
                 number_str.push(ch);
-                self.chars.next();
-                self.position += 1;
+                self.advance();
             } else if ch == '.' && !is_float {
                 is_float = true;
                 number_str.push(ch);
-                self.chars.next();
-                self.position += 1;
+                self.advance();
             } else {
                 break;
             }
@@ -601,12 +606,11 @@ impl Lexer {
     /// Consume an identifier
     fn consume_identifier(&mut self) -> String {
         let mut identifier = String::new();
-        
-        while let Some(&ch) = self.chars.peek() {
+
+        while let Some(ch) = self.current_char() {
             if ch.is_alphanumeric() || ch == '_' {
                 identifier.push(ch);
-                self.chars.next();
-                self.position += 1;
+                self.advance();
             } else {
                 break;
             }
@@ -617,15 +621,13 @@ impl Lexer {
 
     /// Consume an operator or punctuation
     fn consume_operator_or_punctuation(&mut self) -> Result<TokenType> {
-        let ch = self.chars.next().ok_or_else(|| crate::error::MemoryError::InvalidInput { message: "Unexpected end of input while parsing operator".to_string() })?;
-        self.position += 1;
+        let ch = self.advance().ok_or_else(|| crate::error::MemoryError::InvalidInput { message: "Unexpected end of input while parsing operator".to_string() })?;
         
         match ch {
             '+' => Ok(TokenType::Plus),
             '-' => {
-                if self.chars.peek() == Some(&'>') {
-                    self.chars.next();
-                    self.position += 1;
+                if self.current_char() == Some('>') {
+                    self.advance();
                     Ok(TokenType::Arrow)
                 } else {
                     Ok(TokenType::Minus)
@@ -637,32 +639,27 @@ impl Lexer {
             '^' => Ok(TokenType::Power),
             '=' => Ok(TokenType::Equal),
             '!' => {
-                if self.chars.peek() == Some(&'=') {
-                    self.chars.next();
-                    self.position += 1;
+                if self.current_char() == Some('=') {
+                    self.advance();
                     Ok(TokenType::NotEqual)
                 } else {
                     Ok(TokenType::Not)
                 }
             },
             '<' => {
-                match self.chars.peek() {
-                    Some(&'=') => {
-                        self.chars.next();
-                        self.position += 1;
+                match self.current_char() {
+                    Some('=') => {
+                        self.advance();
                         Ok(TokenType::LessThanOrEqual)
                     },
-                    Some(&'>') => {
-                        self.chars.next();
-                        self.position += 1;
+                    Some('>') => {
+                        self.advance();
                         Ok(TokenType::NotEqual)
                     },
-                    Some(&'-') => {
-                        self.chars.next();
-                        self.position += 1;
-                        if self.chars.peek() == Some(&'>') {
-                            self.chars.next();
-                            self.position += 1;
+                    Some('-') => {
+                        self.advance();
+                        if self.current_char() == Some('>') {
+                            self.advance();
                             Ok(TokenType::BiArrow)
                         } else {
                             Ok(TokenType::BackArrow)
@@ -672,9 +669,8 @@ impl Lexer {
                 }
             },
             '>' => {
-                if self.chars.peek() == Some(&'=') {
-                    self.chars.next();
-                    self.position += 1;
+                if self.current_char() == Some('=') {
+                    self.advance();
                     Ok(TokenType::GreaterThanOrEqual)
                 } else {
                     Ok(TokenType::GreaterThan)
@@ -774,6 +770,87 @@ impl Parser {
         }
     }
 
+    /// Check if current token matches the given type
+    fn check(&self, token_type: &TokenType) -> bool {
+        if let Some(token) = self.current_token() {
+            std::mem::discriminant(&token.token_type) == std::mem::discriminant(token_type)
+        } else {
+            false
+        }
+    }
+
+    /// Check if we're at the end of tokens
+    fn is_at_end(&self) -> bool {
+        self.position >= self.tokens.len() ||
+        matches!(self.current_token(), Some(Token { token_type: TokenType::EOF, .. }))
+    }
+
+    /// Peek at current token
+    fn peek(&self) -> Option<&Token> {
+        self.current_token()
+    }
+
+    /// Match a specific keyword
+    fn match_keyword(&mut self, keyword: &str) -> bool {
+        if let Some(Token { token_type: TokenType::Keyword(k), .. }) = self.current_token() {
+            if k.eq_ignore_ascii_case(keyword) {
+                self.advance();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Match a specific token type
+    fn match_token(&mut self, token_type: &TokenType) -> bool {
+        if self.check(token_type) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Parse expression (placeholder)
+    fn parse_expression(&mut self) -> Result<Expression> {
+        // Simple expression parsing - just return a literal for now
+        if let Some(token) = self.current_token().cloned() {
+            match token.token_type {
+                TokenType::String(s) => {
+                    self.advance();
+                    Ok(Expression::Literal(Literal::String(s)))
+                },
+                TokenType::Integer(i) => {
+                    self.advance();
+                    Ok(Expression::Literal(Literal::Integer(i)))
+                },
+                TokenType::Float(f) => {
+                    self.advance();
+                    Ok(Expression::Literal(Literal::Float(f)))
+                },
+                TokenType::Boolean(b) => {
+                    self.advance();
+                    Ok(Expression::Literal(Literal::Boolean(b)))
+                },
+                TokenType::Null => {
+                    self.advance();
+                    Ok(Expression::Literal(Literal::Null))
+                },
+                TokenType::Identifier(name) => {
+                    self.advance();
+                    Ok(Expression::Variable(name))
+                },
+                _ => Err(MemoryError::InvalidQuery {
+                    message: "Expected expression".to_string(),
+                }),
+            }
+        } else {
+            Err(MemoryError::InvalidQuery {
+                message: "Unexpected end of input".to_string(),
+            })
+        }
+    }
+
     /// Parse query statement (placeholder implementation)
     fn parse_query_statement(&mut self) -> Result<QueryStatement> {
         // This is a simplified implementation
@@ -802,33 +879,165 @@ impl Parser {
         })
     }
 
-    /// Parse create statement (placeholder)
+    /// Parse create statement
     fn parse_create_statement(&mut self) -> Result<CreateStatement> {
         self.advance(); // consume CREATE
-        
-        Ok(CreateStatement::Memory {
-            properties: HashMap::new(),
-        })
+
+        // Expect MEMORY keyword
+        if !self.match_keyword("MEMORY") {
+            return Err(MemoryError::InvalidQuery {
+                message: "Expected MEMORY after CREATE".to_string()
+            });
+        }
+
+        let mut properties = HashMap::new();
+
+        // Parse optional properties in parentheses
+        if self.check(&TokenType::LeftParen) {
+            self.advance(); // consume (
+
+            while !self.check(&TokenType::RightParen) && !self.is_at_end() {
+                // Parse property: key = value
+                if let Some(Token { token_type: TokenType::Identifier(key), .. }) = self.peek() {
+                    let key = key.clone();
+                    self.advance();
+
+                    if self.match_token(&TokenType::Equal) {
+                        if let Some(Token { token_type: TokenType::String(value), .. }) = self.peek() {
+                            let expr = Expression::Literal(Literal::String(value.clone()));
+                            properties.insert(key, expr);
+                            self.advance();
+                        }
+                    }
+                }
+
+                // Handle comma separation
+                if self.check(&TokenType::Comma) {
+                    self.advance();
+                }
+            }
+
+            if !self.match_token(&TokenType::RightParen) {
+                return Err(MemoryError::InvalidQuery {
+                    message: "Expected ')' after properties".to_string()
+                });
+            }
+        }
+
+        Ok(CreateStatement::Memory { properties })
     }
 
-    /// Parse update statement (placeholder)
+    /// Parse update statement
     fn parse_update_statement(&mut self) -> Result<UpdateStatement> {
         self.advance(); // consume UPDATE
-        
+
+        // Parse target (MEMORIES or RELATIONSHIPS)
+        let target = if self.match_keyword("MEMORIES") {
+            if let Some(Token { token_type: TokenType::Identifier(pattern), .. }) = self.peek() {
+                let pattern = pattern.clone();
+                self.advance();
+                UpdateTarget::Memories(pattern)
+            } else {
+                UpdateTarget::Memories("*".to_string())
+            }
+        } else if self.match_keyword("RELATIONSHIPS") {
+            if let Some(Token { token_type: TokenType::Identifier(pattern), .. }) = self.peek() {
+                let pattern = pattern.clone();
+                self.advance();
+                UpdateTarget::Relationships(pattern)
+            } else {
+                UpdateTarget::Relationships("*".to_string())
+            }
+        } else {
+            return Err(MemoryError::InvalidQuery {
+                message: "Expected MEMORIES or RELATIONSHIPS after UPDATE".to_string()
+            });
+        };
+
+        // Parse SET clause
+        if !self.match_keyword("SET") {
+            return Err(MemoryError::InvalidQuery {
+                message: "Expected SET clause in UPDATE statement".to_string()
+            });
+        }
+
+        let mut set_clauses = Vec::new();
+
+        loop {
+            // Parse assignment: property = value
+            if let Some(Token { token_type: TokenType::Identifier(property), .. }) = self.peek() {
+                let property = property.clone();
+                self.advance();
+
+                if self.match_token(&TokenType::Equal) {
+                    let value = self.parse_expression()?;
+                    set_clauses.push(SetClause { property, value });
+                }
+            }
+
+            if !self.match_token(&TokenType::Comma) {
+                break;
+            }
+        }
+
+        // Parse optional WHERE clause
+        let where_clause = if self.match_keyword("WHERE") {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+
         Ok(UpdateStatement {
-            target: UpdateTarget::Memories("*".to_string()),
-            set: Vec::new(),
-            where_clause: None,
+            target,
+            set: set_clauses,
+            where_clause,
         })
     }
 
-    /// Parse delete statement (placeholder)
+    /// Parse delete statement
     fn parse_delete_statement(&mut self) -> Result<DeleteStatement> {
         self.advance(); // consume DELETE
-        
+
+        // Expect FROM keyword
+        if !self.match_keyword("FROM") {
+            return Err(MemoryError::InvalidQuery {
+                message: "Expected FROM after DELETE".to_string()
+            });
+        }
+
+        // Parse target (MEMORIES or RELATIONSHIPS)
+        let target = if self.match_keyword("MEMORIES") {
+            if let Some(Token { token_type: TokenType::Identifier(pattern), .. }) = self.peek() {
+                let pattern = pattern.clone();
+                self.advance();
+                DeleteTarget::Memories(pattern)
+            } else {
+                DeleteTarget::Memories("*".to_string())
+            }
+        } else if self.match_keyword("RELATIONSHIPS") {
+            if let Some(Token { token_type: TokenType::Identifier(pattern), .. }) = self.peek() {
+                let pattern = pattern.clone();
+                self.advance();
+                DeleteTarget::Relationships(pattern)
+            } else {
+                DeleteTarget::Relationships("*".to_string())
+            }
+        } else {
+            return Err(MemoryError::InvalidQuery {
+                message: "Expected MEMORIES or RELATIONSHIPS after FROM".to_string()
+            });
+        };
+
+        // Parse optional WHERE clause
+        let where_clause = if self.match_keyword("WHERE") {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+
         Ok(DeleteStatement {
-            target: DeleteTarget::Memories("*".to_string()),
-            where_clause: None,
+            target,
+            where_clause,
         })
     }
 

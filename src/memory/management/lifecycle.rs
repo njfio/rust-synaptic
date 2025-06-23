@@ -439,45 +439,13 @@ struct ActionAnalysisResult {
     pub warnings_added: usize,
 }
 
-/// Advanced archiving prediction result
-#[derive(Debug, Clone)]
-struct ArchivingPrediction {
-    pub memory_key: String,
-    pub prediction_score: f64,
-    pub confidence: f64,
-    pub estimated_archival_date: DateTime<Utc>,
-    pub contributing_factors: Vec<String>,
-}
 
-/// Access pattern analysis for archiving
-#[derive(Debug, Clone)]
-struct AccessPatternAnalysis {
-    pub total_memories: usize,
-    pub avg_access_frequency: f64,
-    pub avg_days_since_access: i64,
-    pub frequency_variance: f64,
-    pub access_distribution: HashMap<String, usize>,
-}
 
-/// Seasonal access pattern
-#[derive(Debug, Clone)]
-struct SeasonalPattern {
-    pub seasonal_relevance: f64,
-    pub weekday_relevance: f64,
-    pub peak_access_months: Vec<u32>,
-    pub peak_access_weekdays: Vec<u32>,
-}
 
-/// Archiving decision result
-#[derive(Debug, Clone)]
-struct ArchivingDecision {
-    pub memory_key: String,
-    pub should_archive: bool,
-    pub confidence: f64,
-    pub reason: String,
-    pub archive_tier: String,
-    pub estimated_retrieval_time_ms: u64,
-}
+
+
+
+
 
 impl MemoryLifecycleManager {
     /// Create a new lifecycle manager
@@ -2541,7 +2509,7 @@ impl MemoryLifecycleManager {
     }
 
     /// Generate advanced archiving predictions using machine learning techniques
-    async fn generate_archiving_predictions(&self) -> Result<HashMap<String, ArchivingPrediction>> {
+    async fn generate_archiving_predictions(&self) -> Result<HashMap<String, f64>> {
         let mut predictions = HashMap::new();
         let current_time = Utc::now();
 
@@ -2576,33 +2544,19 @@ impl MemoryLifecycleManager {
                 current_time + Duration::days(90) // Low priority
             };
 
-            predictions.insert(memory_key.clone(), ArchivingPrediction {
-                memory_key: memory_key.clone(),
-                prediction_score,
-                confidence,
-                estimated_archival_date,
-                contributing_factors: vec![
-                    format!("Age factor: {:.3}", age_factor),
-                    format!("Access pattern factor: {:.3}", access_pattern_factor),
-                    format!("Content importance factor: {:.3}", content_importance_factor),
-                    format!("Seasonal factor: {:.3}", seasonal_factor),
-                    format!("Storage pressure factor: {:.3}", storage_pressure_factor),
-                ],
-            });
+            predictions.insert(memory_key.clone(), prediction_score);
         }
 
         Ok(predictions)
     }
 
     /// Analyze access patterns specifically for archiving decisions
-    async fn analyze_access_patterns_for_archiving(&self) -> Result<AccessPatternAnalysis> {
-        let mut total_accesses = 0;
+    async fn analyze_access_patterns_for_archiving(&self) -> Result<HashMap<String, f64>> {
         let mut access_frequencies = Vec::new();
         let mut last_access_times = Vec::new();
         let current_time = Utc::now();
 
         for state in self.memory_states.values() {
-            total_accesses += state.access_count;
 
             let days_since_last_access = (current_time - state.last_accessed).num_days();
             last_access_times.push(days_since_last_access);
@@ -2635,13 +2589,11 @@ impl MemoryLifecycleManager {
             0.0
         };
 
-        Ok(AccessPatternAnalysis {
-            total_memories: self.memory_states.len(),
-            avg_access_frequency,
-            avg_days_since_access,
-            frequency_variance,
-            access_distribution: self.calculate_access_distribution(&access_frequencies),
-        })
+        let mut result = HashMap::new();
+        result.insert("avg_access_frequency".to_string(), avg_access_frequency);
+        result.insert("avg_days_since_access".to_string(), avg_days_since_access as f64);
+        result.insert("frequency_variance".to_string(), frequency_variance);
+        Ok(result)
     }
 
     /// Calculate content importance scores for archiving decisions
@@ -2680,7 +2632,7 @@ impl MemoryLifecycleManager {
     }
 
     /// Detect seasonal access patterns for intelligent archiving
-    async fn detect_seasonal_access_patterns(&self) -> Result<HashMap<String, SeasonalPattern>> {
+    async fn detect_seasonal_access_patterns(&self) -> Result<HashMap<String, f64>> {
         let mut seasonal_patterns = HashMap::new();
         let current_time = Utc::now();
 
@@ -2711,12 +2663,7 @@ impl MemoryLifecycleManager {
                 0.5
             };
 
-            seasonal_patterns.insert(memory_key.clone(), SeasonalPattern {
-                seasonal_relevance,
-                weekday_relevance,
-                peak_access_months: vec![creation_month, last_access_month],
-                peak_access_weekdays: vec![creation_weekday, access_weekday],
-            });
+            seasonal_patterns.insert(memory_key.clone(), seasonal_relevance * weekday_relevance);
         }
 
         Ok(seasonal_patterns)

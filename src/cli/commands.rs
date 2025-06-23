@@ -6,7 +6,7 @@
 use crate::error::Result;
 use crate::AgentMemory;
 use crate::memory::types::{MemoryEntry, MemoryType};
-use chrono::Utc;
+
 use uuid::Uuid;
 
 /// Memory management command implementations
@@ -138,7 +138,7 @@ impl MemoryCommands {
             crate::memory::types::MemoryMetadata::new()
         };
 
-        let entry = MemoryEntry::new(key.clone(), content.to_string(), mem_type)
+        let _entry = MemoryEntry::new(key.clone(), content.to_string(), mem_type)
             .with_metadata(metadata);
 
         // Store the memory
@@ -569,7 +569,7 @@ impl GraphCommands {
                     println!("🔄 Generating JSON export...");
 
                     // Create a simplified JSON representation
-                    let export_data = serde_json::json!({
+                    let _export_data = serde_json::json!({
                         "metadata": {
                             "export_timestamp": chrono::Utc::now().to_rfc3339(),
                             "format_version": "1.0",
@@ -978,17 +978,77 @@ pub struct ProfileCommands;
 impl ProfileCommands {
     /// Run performance profiler
     pub async fn run(duration: u64, output: Option<&std::path::Path>, realtime: bool) -> Result<()> {
-        println!("Running profiler: duration={}s, output={:?}, realtime={}", 
-            duration, output, realtime);
-        
-        if realtime {
-            println!("Starting real-time monitoring...");
-            // TODO: Implement real-time monitoring
-        } else {
-            println!("Running batch profiling...");
-            // TODO: Implement batch profiling
+        use crate::cli::profiler::{PerformanceProfiler, ProfilerConfig, ReportFormat};
+        use std::time::Duration as StdDuration;
+
+        tracing::info!(
+            duration = duration,
+            output_path = ?output,
+            realtime = realtime,
+            "Starting performance profiler"
+        );
+
+        let mut config = ProfilerConfig::default();
+        // These settings are controlled through SessionConfig, not ProfilerConfig
+        config.report_format = ReportFormat::Json;
+
+        if let Some(output_path) = output {
+            config.output_directory = output_path.parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .to_string_lossy()
+                .to_string();
         }
-        
+
+        let mut profiler = PerformanceProfiler::new(config).await?;
+        let session_config = crate::cli::profiler::SessionConfig {
+            target_operations: vec!["cli_operation".to_string()],
+            sampling_rate: 1.0,
+            include_memory: true,
+            include_cpu: true,
+            include_io: true,
+            tags: std::collections::HashMap::new(),
+        };
+        let session_id = profiler.start_session("cli_profiling".to_string(), session_config).await?;
+
+        if realtime {
+            println!("Starting real-time monitoring for {} seconds...", duration);
+
+            // Start real-time monitoring
+            let monitoring_duration = StdDuration::from_secs(duration);
+            let start_time = std::time::Instant::now();
+
+            while start_time.elapsed() < monitoring_duration {
+                profiler.collect_metrics().await?;
+                tokio::time::sleep(StdDuration::from_millis(100)).await;
+
+                // Print real-time stats every second
+                if start_time.elapsed().as_secs() % 1 == 0 {
+                    // Collect current metrics instead
+                    profiler.collect_metrics().await?;
+                    println!("Profiling metrics collected");
+                }
+            }
+        } else {
+            println!("Running batch profiling for {} seconds...", duration);
+
+            // Run batch profiling
+            tokio::time::sleep(StdDuration::from_secs(duration)).await;
+            profiler.collect_metrics().await?;
+        }
+
+        let report = profiler.stop_session(&session_id).await?;
+
+        if let Some(output_path) = output {
+            println!("Performance report saved to: {}", output_path.display());
+        } else {
+            println!("Performance profiling completed. Session ID: {}", session_id);
+        }
+
+        println!("Profiling summary:");
+        println!("  Duration: {}s", duration);
+        println!("  Peak Memory: {:.2}MB", report.summary.memory_usage_mb);
+        println!("  Avg CPU: {:.1}%", report.summary.cpu_utilization);
+
         Ok(())
     }
 }
@@ -1348,7 +1408,7 @@ impl SyQLCommands {
                         }
 
                         // Display sample rows
-                        for (i, row) in result.rows.iter().enumerate().take(5) {
+                        for (_i, row) in result.rows.iter().enumerate().take(5) {
                             let row_data = result.metadata.columns.iter()
                                 .map(|col| {
                                     match row.values.get(&col.name) {
@@ -1382,20 +1442,37 @@ impl SyQLCommands {
                             Ok(formatted_output) => {
                                 match std::fs::write(output_path, formatted_output) {
                                     Ok(_) => {
+                                        tracing::info!(
+                                            output_path = %output_path.display(),
+                                            "Query results written to file"
+                                        );
                                         println!("\n💾 Results written to: {}", output_path.display());
                                     },
                                     Err(e) => {
+                                        tracing::error!(
+                                            output_path = %output_path.display(),
+                                            error = %e,
+                                            "Failed to write query results to file"
+                                        );
                                         println!("\n❌ Failed to write to file: {}", e);
                                     }
                                 }
                             },
                             Err(e) => {
+                                tracing::error!(
+                                    error = %e,
+                                    "Failed to format query results"
+                                );
                                 println!("\n❌ Failed to format results: {}", e);
                             }
                         }
                     }
                 },
                 Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        "Query execution failed"
+                    );
                     println!("❌ Query execution failed: {}", e);
                     println!("   Please check your query syntax and try again");
                 }

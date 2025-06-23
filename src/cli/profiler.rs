@@ -716,7 +716,7 @@ impl PerformanceProfiler {
     }
 
     /// Calculate summary statistics
-    async fn calculate_summary_statistics(&self, metrics: &[PerformanceMetrics], duration: Duration) -> Result<ProfileSummary> {
+    async fn calculate_summary_statistics(&self, metrics: &[PerformanceMetrics], _duration: Duration) -> Result<ProfileSummary> {
         if metrics.is_empty() {
             return Ok(ProfileSummary {
                 total_operations: 0,
@@ -980,16 +980,17 @@ struct CachedService {
 }
 
 impl CachedService {
-    fn get_data(&self, key: &str) -> String {
-        let mut cache = self.cache.lock().unwrap();
+    fn get_data(&self, key: &str) -> Result<String, Box<dyn std::error::Error>> {
+        use synaptic::error_handling::SafeMutex;
+        let mut cache = self.cache.safe_lock("LRU cache access")?;
 
         if let Some(value) = cache.get(key) {
-            return value.clone();
+            return Ok(value.clone());
         }
 
         let value = expensive_computation(key);
         cache.put(key.to_string(), value.clone());
-        value
+        Ok(value)
     }
 }"#.to_string(),
                                 explanation: "Cache expensive computations to avoid redundant work".to_string(),

@@ -75,8 +75,9 @@ impl PartialOrd for PriorityReplayEntry {
 
 impl Ord for PriorityReplayEntry {
     fn cmp(&self, other: &Self) -> Ordering {
+        use crate::error_handling::SafeCompare;
         // Higher priority first (reverse order for max-heap behavior)
-        other.priority.partial_cmp(&self.priority).unwrap_or(Ordering::Equal)
+        other.priority.safe_partial_cmp(&self.priority)
     }
 }
 

@@ -377,7 +377,7 @@ impl GradualForgettingAlgorithm {
     /// Calculate contextual relevance based on current usage patterns
     async fn calculate_contextual_relevance(
         &self,
-        memory: &MemoryEntry,
+        _memory: &MemoryEntry,
         importance: &MemoryImportance,
     ) -> Result<f64> {
         // Simplified contextual relevance based on centrality and uniqueness

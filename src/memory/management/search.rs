@@ -1,13 +1,12 @@
 //! Advanced search engine for memory retrieval
 
 use crate::error::{MemoryError, Result};
+use crate::error_handling::SafeCompare;
 use crate::memory::types::{MemoryEntry, MemoryType};
-use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
+use chrono::{DateTime, Utc, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
-use strsim::{levenshtein, jaro_winkler, normalized_damerau_levenshtein, sorensen_dice};
-use ndarray::{Array1, Array2};
+use strsim::{jaro_winkler, normalized_damerau_levenshtein, sorensen_dice};
 
 
 /// Advanced search query with multiple criteria
@@ -503,12 +502,13 @@ impl AdvancedSearchEngine {
 
     /// Rank search results based on strategy
     async fn rank_results(&self, results: &mut [SearchResult], strategy: &RankingStrategy) -> Result<()> {
+        use crate::error_handling::SafeCompare;
         match strategy {
             RankingStrategy::Relevance => {
-                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+                results.sort_by(|a, b| b.relevance_score.safe_partial_cmp(&a.relevance_score));
             }
             RankingStrategy::Importance => {
-                results.sort_by(|a, b| b.memory.metadata.importance.partial_cmp(&a.memory.metadata.importance).unwrap_or(std::cmp::Ordering::Equal));
+                results.sort_by(|a, b| b.memory.metadata.importance.safe_partial_cmp(&a.memory.metadata.importance));
             }
             RankingStrategy::Recency => {
                 results.sort_by(|a, b| b.memory.created_at().cmp(&a.memory.created_at()));
@@ -517,7 +517,7 @@ impl AdvancedSearchEngine {
                 results.sort_by(|a, b| b.memory.access_count().cmp(&a.memory.access_count()));
             }
             RankingStrategy::Confidence => {
-                results.sort_by(|a, b| b.memory.metadata.confidence.partial_cmp(&a.memory.metadata.confidence).unwrap_or(std::cmp::Ordering::Equal));
+                results.sort_by(|a, b| b.memory.metadata.confidence.safe_partial_cmp(&a.memory.metadata.confidence));
             }
             RankingStrategy::ContentLength => {
                 results.sort_by(|a, b| b.memory.value.len().cmp(&a.memory.value.len()));
@@ -576,7 +576,7 @@ impl AdvancedSearchEngine {
             };
         }
 
-        results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.ranking_score.safe_partial_cmp(&a.ranking_score));
         Ok(())
     }
 
@@ -658,12 +658,12 @@ impl AdvancedSearchEngine {
             _ => {
                 // Default to relevance-based ranking for unknown strategies
                 tracing::warn!("Unknown custom ranking strategy '{}', falling back to relevance", strategy_name);
-                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+                results.sort_by(|a, b| b.relevance_score.safe_partial_cmp(&a.relevance_score));
                 return Ok(());
             }
         }
 
-        results.sort_by(|a, b| b.ranking_score.partial_cmp(&a.ranking_score).unwrap());
+        results.sort_by(|a, b| b.ranking_score.safe_partial_cmp(&a.ranking_score));
         Ok(())
     }
 
@@ -2960,7 +2960,7 @@ impl Default for AdvancedSearchEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::types::{MemoryEntry, MemoryType};
+
 
     #[test]
     fn test_sophisticated_content_type_scoring() {

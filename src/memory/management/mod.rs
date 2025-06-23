@@ -29,7 +29,7 @@ use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::collections::HashMap;
-use uuid::Uuid;
+
 
 /// Simple memory manager for basic operations and testing
 pub struct MemoryManager {
@@ -192,9 +192,24 @@ impl MemoryManager {
                     let stored_f64: Vec<f64> = stored_embedding.iter().map(|&x| x as f64).collect();
 
                     // Calculate cosine similarity
+                    #[cfg(feature = "embeddings")]
                     let similarity = crate::memory::embeddings::similarity::cosine_similarity(
                         &target_f64, &stored_f64
                     );
+
+                    #[cfg(not(feature = "embeddings"))]
+                    let similarity = {
+                        // Simple fallback similarity calculation when embeddings feature is disabled
+                        let dot_product: f64 = target_f64.iter().zip(stored_f64.iter()).map(|(x, y)| x * y).sum();
+                        let magnitude_a: f64 = target_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
+                        let magnitude_b: f64 = stored_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
+
+                        if magnitude_a == 0.0 || magnitude_b == 0.0 {
+                            0.0
+                        } else {
+                            dot_product / (magnitude_a * magnitude_b)
+                        }
+                    };
 
                     if similarity >= similarity_threshold {
                         count += 1;
@@ -887,7 +902,7 @@ impl AdvancedMemoryManager {
         let temporal_config = crate::memory::temporal::TemporalConfig::default();
 
         // Create a default in-memory storage for the optimizer
-        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let _storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
 
         Self {
             summarizer: MemorySummarizer::new(),
@@ -1024,7 +1039,7 @@ impl AdvancedMemoryManager {
     /// Delete a memory with proper cleanup
     pub async fn delete_memory(
         &mut self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_key: &str,
         knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
     ) -> Result<MemoryOperationResult> {
@@ -2095,7 +2110,7 @@ impl AdvancedMemoryManager {
         &self,
         hourly: &[usize],
         daily: &[usize],
-        monthly: &[usize],
+        _monthly: &[usize],
     ) -> Vec<ActivityPeriod> {
         let mut periods = Vec::new();
 

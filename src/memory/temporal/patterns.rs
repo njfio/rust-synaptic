@@ -1632,7 +1632,7 @@ impl PatternDetector {
             return Ok(patterns);
         }
 
-        let feature_dim = features[0].len();
+        let _feature_dim = features[0].len();
 
         // Try different weight combinations to find patterns
         let weight_combinations = vec![

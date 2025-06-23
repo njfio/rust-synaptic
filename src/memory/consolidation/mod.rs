@@ -12,7 +12,7 @@ pub mod gradual_forgetting;
 pub mod adaptive_replay;
 
 use crate::error::Result;
-use crate::memory::types::{MemoryEntry, MemoryType};
+use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

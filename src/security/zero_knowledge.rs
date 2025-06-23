@@ -672,19 +672,30 @@ impl ProofSystem {
 // Type definitions for zero-knowledge components
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Zero-knowledge proof structure for privacy-preserving memory access
 pub struct ZKProof {
+    /// Unique identifier for the proof
     pub id: String,
+    /// Hash of the statement being proven
     pub statement_hash: String,
+    /// Cryptographic proof data
     pub proof_data: Vec<u8>,
+    /// ID of the proving key used
     pub proving_key_id: String,
+    /// Timestamp when proof was created
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Statement about memory access for zero-knowledge proofs
 pub struct AccessStatement {
+    /// Key of the memory being accessed
     pub memory_key: String,
+    /// ID of the user making the access
     pub user_id: String,
+    /// Type of access being performed
     pub access_type: AccessType,
+    /// When the access occurred
     pub timestamp: DateTime<Utc>,
 }
 
@@ -703,10 +714,15 @@ pub struct AggregateStatement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Types of memory access operations
 pub enum AccessType {
+    /// Reading memory content
     Read,
+    /// Writing new memory content
     Write,
+    /// Deleting memory
     Delete,
+    /// Querying memory metadata
     Query,
 }
 

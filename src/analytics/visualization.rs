@@ -2,7 +2,7 @@
 // 3D graph visualization and temporal visualization capabilities
 
 use crate::error::Result;
-use crate::analytics::{AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority};
+use crate::analytics::AnalyticsConfig;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -902,7 +902,7 @@ mod tests {
         let vr_export = engine.export_vr_data().await.unwrap();
 
         assert_eq!(vr_export.webgl_data.node_count, 2);
-        assert!(vr_export.interaction_zones.len() >= 0);
+        // Interaction zones may be empty initially
         assert_eq!(vr_export.spatial_audio_sources.len(), 2); // One per node
         assert!(vr_export.haptic_feedback_points.len() >= 0); // Depends on node importance
         assert!(vr_export.navigation_config.enable_teleportation);

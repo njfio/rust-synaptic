@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Backup data structure for in-memory storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +24,68 @@ struct MemoryStorageBackup {
     version: String,
     /// Number of entries in backup
     entry_count: usize,
+    /// Total size of all entries in bytes
+    total_size: usize,
+    /// Backup metadata
+    metadata: BackupMetadata,
+}
+
+/// Metadata for backup operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BackupMetadata {
+    /// Backup creation method (manual, automatic, etc.)
+    creation_method: String,
+    /// Compression used (if any)
+    compression: Option<String>,
+    /// Checksum for integrity verification
+    checksum: String,
+    /// Additional custom metadata
+    custom_fields: HashMap<String, String>,
+}
+
+/// Options for backup operations
+#[derive(Debug, Clone)]
+pub struct BackupOptions {
+    /// Creation method identifier
+    pub creation_method: String,
+    /// Compression algorithm to use
+    pub compression: Option<String>,
+    /// Whether to format JSON with pretty printing
+    pub pretty_print: bool,
+    /// Custom metadata fields
+    pub custom_fields: HashMap<String, String>,
+}
+
+impl Default for BackupOptions {
+    fn default() -> Self {
+        Self {
+            creation_method: "manual".to_string(),
+            compression: None,
+            pretty_print: true,
+            custom_fields: HashMap::new(),
+        }
+    }
+}
+
+/// Options for restore operations
+#[derive(Debug, Clone)]
+pub struct RestoreOptions {
+    /// Whether to merge with existing data or replace it
+    pub merge_strategy: bool,
+    /// Whether to overwrite existing entries when merging
+    pub overwrite_existing: bool,
+    /// Whether to verify backup integrity
+    pub verify_integrity: bool,
+}
+
+impl Default for RestoreOptions {
+    fn default() -> Self {
+        Self {
+            merge_strategy: false,
+            overwrite_existing: false,
+            verify_integrity: true,
+        }
+    }
 }
 
 /// In-memory storage implementation using DashMap for thread-safe concurrent access
@@ -208,7 +271,22 @@ impl Storage for MemoryStorage {
     }
 
     async fn backup(&self, path: &str) -> Result<()> {
-        tracing::info!("Creating backup of in-memory storage to: {}", path);
+        self.backup_with_options(path, BackupOptions::default()).await
+    }
+
+    async fn restore(&self, path: &str) -> Result<()> {
+        self.restore_with_options(path, RestoreOptions::default()).await
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        Ok(self.entries.iter().map(|entry| entry.value().clone()).collect())
+    }
+}
+
+impl MemoryStorage {
+    /// Create a backup with specific options
+    pub async fn backup_with_options(&self, path: &str, options: BackupOptions) -> Result<()> {
+        tracing::info!("Creating backup of in-memory storage to: {} with options: {:?}", path, options);
 
         // Collect all entries
         let entries: Vec<MemoryEntry> = self.entries
@@ -216,64 +294,275 @@ impl Storage for MemoryStorage {
             .map(|entry| entry.value().clone())
             .collect();
 
+        // Calculate total size
+        let total_size = entries.iter().map(|e| e.estimated_size()).sum();
+
+        // Create backup metadata
+        let json_data = serde_json::to_string_pretty(&entries)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize entries for checksum: {}", e)))?;
+
+        let checksum = self.calculate_checksum(&json_data);
+
+        let metadata = BackupMetadata {
+            creation_method: options.creation_method.clone(),
+            compression: options.compression.clone(),
+            checksum,
+            custom_fields: options.custom_fields.clone(),
+        };
+
         // Create backup data structure
         let backup_data = MemoryStorageBackup {
             entries,
             created_at: self.created_at,
             backup_timestamp: Utc::now(),
-            version: "1.0".to_string(),
+            version: "1.1".to_string(), // Updated version for enhanced format
             entry_count: self.entries.len(),
+            total_size,
+            metadata,
         };
 
         // Serialize to JSON
-        let json_data = serde_json::to_string_pretty(&backup_data)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize backup data: {}", e)))?;
+        let json_data = if options.pretty_print {
+            serde_json::to_string_pretty(&backup_data)
+        } else {
+            serde_json::to_string(&backup_data)
+        }.map_err(|e| MemoryError::storage(format!("Failed to serialize backup data: {}", e)))?;
+
+        // Apply compression if requested
+        let final_data = if options.compression.is_some() {
+            self.compress_data(&json_data)?
+        } else {
+            json_data.into_bytes()
+        };
+
+        // Ensure parent directory exists
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            tokio::fs::create_dir_all(parent).await
+                .map_err(|e| MemoryError::storage(format!("Failed to create backup directory: {}", e)))?;
+        }
 
         // Write to file
-        tokio::fs::write(path, json_data).await
+        tokio::fs::write(path, final_data).await
             .map_err(|e| MemoryError::storage(format!("Failed to write backup file: {}", e)))?;
 
-        tracing::info!("Successfully created backup with {} entries", backup_data.entry_count);
+        tracing::info!(
+            "Successfully created backup with {} entries, total size: {} bytes, compression: {:?}",
+            backup_data.entry_count,
+            backup_data.total_size,
+            options.compression
+        );
         Ok(())
     }
 
-    async fn restore(&self, path: &str) -> Result<()> {
-        tracing::info!("Restoring in-memory storage from: {}", path);
+    /// Restore from backup with specific options
+    pub async fn restore_with_options(&self, path: &str, options: RestoreOptions) -> Result<()> {
+        tracing::info!("Restoring in-memory storage from: {} with options: {:?}", path, options);
 
         // Read backup file
-        let json_data = tokio::fs::read_to_string(path).await
+        let file_data = tokio::fs::read(path).await
             .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
 
-        // Deserialize backup data
-        let backup_data: MemoryStorageBackup = serde_json::from_str(&json_data)
-            .map_err(|e| MemoryError::storage(format!("Failed to deserialize backup data: {}", e)))?;
+        // Decompress if needed
+        let json_data = if self.is_compressed_data(&file_data) {
+            String::from_utf8(self.decompress_data(&file_data)?)
+                .map_err(|e| MemoryError::storage(format!("Failed to decode decompressed data: {}", e)))?
+        } else {
+            String::from_utf8(file_data)
+                .map_err(|e| MemoryError::storage(format!("Failed to decode backup file: {}", e)))?
+        };
+
+        // Try to deserialize as new format first, then fall back to old format
+        let backup_data = match serde_json::from_str::<MemoryStorageBackup>(&json_data) {
+            Ok(data) => data,
+            Err(_) => {
+                // Try legacy format (version 1.0)
+                tracing::warn!("Attempting to restore from legacy backup format");
+                self.restore_legacy_format(&json_data)?
+            }
+        };
 
         // Validate backup version compatibility
-        if backup_data.version != "1.0" {
+        if !self.is_version_compatible(&backup_data.version) {
             return Err(MemoryError::storage(format!(
-                "Unsupported backup version: {}. Expected: 1.0",
+                "Unsupported backup version: {}. Supported versions: 1.0, 1.1",
                 backup_data.version
             )));
         }
 
-        // Clear existing entries
-        self.entries.clear();
+        // Verify checksum if available
+        if backup_data.version == "1.1" {
+            self.verify_backup_integrity(&backup_data)?;
+        }
+
+        // Handle merge vs replace strategy
+        if options.merge_strategy {
+            tracing::info!("Merging backup entries with existing data");
+            // Don't clear existing entries, just add/update from backup
+        } else {
+            tracing::info!("Replacing all existing data with backup");
+            self.entries.clear();
+        }
 
         // Restore entries
+        let mut restored_count = 0;
+        let mut skipped_count = 0;
+
         for entry in backup_data.entries {
+            if options.merge_strategy && self.entries.contains_key(&entry.key) && !options.overwrite_existing {
+                skipped_count += 1;
+                continue;
+            }
+
             self.entries.insert(entry.key.clone(), entry);
+            restored_count += 1;
         }
 
         // Update statistics
         self.update_stats();
 
-        tracing::info!("Successfully restored {} entries from backup", backup_data.entry_count);
+        tracing::info!(
+            "Successfully restored {} entries from backup (skipped: {}, total in backup: {})",
+            restored_count,
+            skipped_count,
+            backup_data.entry_count
+        );
+        Ok(())
+    }
+    /// Calculate checksum for data integrity verification
+    fn calculate_checksum(&self, data: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
+    }
+
+    /// Compress data using simple compression
+    fn compress_data(&self, data: &str) -> Result<Vec<u8>> {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(data.as_bytes())
+            .map_err(|e| MemoryError::storage(format!("Compression failed: {}", e)))?;
+        encoder.finish()
+            .map_err(|e| MemoryError::storage(format!("Compression finalization failed: {}", e)))
+    }
+
+    /// Decompress data
+    fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
+        use std::io::Read;
+        let mut decoder = flate2::read::GzDecoder::new(data);
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed)
+            .map_err(|e| MemoryError::storage(format!("Decompression failed: {}", e)))?;
+        Ok(decompressed)
+    }
+
+    /// Check if data is compressed
+    fn is_compressed_data(&self, data: &[u8]) -> bool {
+        // Check for gzip magic number
+        data.len() >= 2 && data[0] == 0x1f && data[1] == 0x8b
+    }
+
+    /// Check if backup version is compatible
+    fn is_version_compatible(&self, version: &str) -> bool {
+        matches!(version, "1.0" | "1.1")
+    }
+
+    /// Verify backup integrity using checksum
+    fn verify_backup_integrity(&self, backup_data: &MemoryStorageBackup) -> Result<()> {
+        let entries_json = serde_json::to_string_pretty(&backup_data.entries)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize entries for verification: {}", e)))?;
+
+        let calculated_checksum = self.calculate_checksum(&entries_json);
+
+        if calculated_checksum != backup_data.metadata.checksum {
+            return Err(MemoryError::storage(format!(
+                "Backup integrity verification failed. Expected checksum: {}, calculated: {}",
+                backup_data.metadata.checksum,
+                calculated_checksum
+            )));
+        }
+
+        tracing::info!("Backup integrity verification passed");
         Ok(())
     }
 
-    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
-        Ok(self.entries.iter().map(|entry| entry.value().clone()).collect())
+    /// Restore from legacy backup format (version 1.0)
+    fn restore_legacy_format(&self, json_data: &str) -> Result<MemoryStorageBackup> {
+        // Try to parse as legacy format
+        #[derive(Deserialize)]
+        struct LegacyBackup {
+            entries: Vec<MemoryEntry>,
+            created_at: DateTime<Utc>,
+            backup_timestamp: DateTime<Utc>,
+            version: String,
+            entry_count: usize,
+        }
+
+        let legacy_backup: LegacyBackup = serde_json::from_str(json_data)
+            .map_err(|e| MemoryError::storage(format!("Failed to parse legacy backup format: {}", e)))?;
+
+        // Convert to new format
+        let total_size = legacy_backup.entries.iter().map(|e| e.estimated_size()).sum();
+        let checksum = self.calculate_checksum(&serde_json::to_string(&legacy_backup.entries).unwrap_or_default());
+
+        Ok(MemoryStorageBackup {
+            entries: legacy_backup.entries,
+            created_at: legacy_backup.created_at,
+            backup_timestamp: legacy_backup.backup_timestamp,
+            version: legacy_backup.version,
+            entry_count: legacy_backup.entry_count,
+            total_size,
+            metadata: BackupMetadata {
+                creation_method: "legacy".to_string(),
+                compression: None,
+                checksum,
+                custom_fields: HashMap::new(),
+            },
+        })
     }
+
+    /// Get backup information without restoring
+    pub async fn get_backup_info(&self, path: &str) -> Result<BackupInfo> {
+        let file_data = tokio::fs::read(path).await
+            .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
+
+        let json_data = if self.is_compressed_data(&file_data) {
+            String::from_utf8(self.decompress_data(&file_data)?)
+                .map_err(|e| MemoryError::storage(format!("Failed to decode decompressed data: {}", e)))?
+        } else {
+            String::from_utf8(file_data)
+                .map_err(|e| MemoryError::storage(format!("Failed to decode backup file: {}", e)))?
+        };
+
+        let backup_data: MemoryStorageBackup = serde_json::from_str(&json_data)
+            .map_err(|e| MemoryError::storage(format!("Failed to deserialize backup data: {}", e)))?;
+
+        Ok(BackupInfo {
+            version: backup_data.version,
+            entry_count: backup_data.entry_count,
+            total_size: backup_data.total_size,
+            created_at: backup_data.created_at,
+            backup_timestamp: backup_data.backup_timestamp,
+            creation_method: backup_data.metadata.creation_method,
+            compression: backup_data.metadata.compression,
+            is_compressed: self.is_compressed_data(&tokio::fs::read(path).await.unwrap_or_default()),
+        })
+    }
+}
+
+/// Information about a backup file
+#[derive(Debug, Clone)]
+pub struct BackupInfo {
+    pub version: String,
+    pub entry_count: usize,
+    pub total_size: usize,
+    pub created_at: DateTime<Utc>,
+    pub backup_timestamp: DateTime<Utc>,
+    pub creation_method: String,
+    pub compression: Option<String>,
+    pub is_compressed: bool,
 }
 
 #[async_trait]

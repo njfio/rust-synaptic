@@ -261,7 +261,8 @@ impl PrivacyManager {
     async fn private_quantile(&self, entries: &[MemoryEntry], epsilon: f64, quantile: f64) -> Result<PrivateStatistics> {
         // Compute quantile of text lengths
         let mut lengths: Vec<f64> = entries.iter().map(|e| e.value.len() as f64).collect();
-        lengths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        use crate::error_handling::SafeCompare;
+        lengths.sort_by(|a, b| a.safe_partial_cmp(b));
         
         let index = (quantile * (lengths.len() as f64 - 1.0)).round() as usize;
         let true_quantile = lengths.get(index).copied().unwrap_or(0.0);

@@ -4,7 +4,7 @@
 use crate::error::{Result, MemoryError};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
 
 /// Redis configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

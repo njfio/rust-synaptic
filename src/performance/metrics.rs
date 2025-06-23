@@ -3,9 +3,9 @@
 // Provides comprehensive metrics collection, aggregation, and analysis
 // for performance monitoring and optimization.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
@@ -257,7 +257,8 @@ impl MetricsCollector {
         }
         
         let mut sorted_timings: Vec<_> = timings.iter().map(|d| d.as_millis() as f64).collect();
-        sorted_timings.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        use crate::error_handling::SafeCompare;
+        sorted_timings.sort_by(|a, b| a.safe_partial_cmp(b));
         
         let len = sorted_timings.len();
         

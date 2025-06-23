@@ -108,8 +108,11 @@ impl AgentMemory {
         if let Some(ref logging_config) = config.logging_config {
             let logging_manager = logging::LoggingManager::new(logging_config.clone());
             if let Err(e) = logging_manager.initialize() {
-                // Use stderr directly since tracing may not be initialized yet
-                eprintln!("Warning: Failed to initialize logging: {}", e);
+                // Use tracing warn since this is a non-critical initialization failure
+                tracing::warn!(
+                    error = %e,
+                    "Failed to initialize logging system"
+                );
             }
         }
 
@@ -251,7 +254,15 @@ impl AgentMemory {
     /// Store a memory entry with intelligent updating
     #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
+        use crate::error_handling::utils::{validate_non_empty_string, validate_range};
+
         tracing::debug!("Storing memory entry");
+
+        // Validate inputs
+        validate_non_empty_string(key, "memory key")?;
+        validate_non_empty_string(value, "memory value")?;
+        validate_range(value.len(), 1, 10_000_000, "memory value length")?; // Max 10MB
+        validate_range(key.len(), 1, 1000, "memory key length")?; // Max 1000 chars
 
         let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::ShortTerm);
 
@@ -315,7 +326,12 @@ impl AgentMemory {
     /// Retrieve a memory by key
     #[tracing::instrument(skip(self), fields(key = %key))]
     pub async fn retrieve(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
+        use crate::error_handling::utils::validate_non_empty_string;
+
         tracing::debug!("Retrieving memory entry");
+
+        // Validate input
+        validate_non_empty_string(key, "memory key")?;
 
         // First check short-term memory
         if let Some(entry) = self.state.get_memory(key) {
@@ -362,7 +378,14 @@ impl AgentMemory {
     /// Search memories by content similarity
     #[tracing::instrument(skip(self, query), fields(query_len = query.len(), limit = limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
+        use crate::error_handling::utils::{validate_non_empty_string, validate_range};
+
         tracing::debug!("Searching memories by content similarity");
+
+        // Validate inputs
+        validate_non_empty_string(query, "search query")?;
+        validate_range(limit, 1, 10000, "search limit")?; // Max 10k results
+
         let results = self.storage.search(query, limit).await?;
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
@@ -426,6 +449,12 @@ impl AgentMemory {
         to_memory: &str,
         relationship_type: memory::knowledge_graph::RelationshipType,
     ) -> Result<Option<Uuid>> {
+        use crate::error_handling::utils::validate_non_empty_string;
+
+        // Validate inputs
+        validate_non_empty_string(from_memory, "from_memory key")?;
+        validate_non_empty_string(to_memory, "to_memory key")?;
+
         if let Some(ref mut kg) = self.knowledge_graph {
             let relationship_id = kg.create_relationship(
                 from_memory,
