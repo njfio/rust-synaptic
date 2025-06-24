@@ -17,7 +17,7 @@ pub struct SyQLParser {
     /// Functions for completion
     functions: Vec<&'static str>,
     /// Operators for completion
-    operators: Vec<&'static str>,
+    _operators: Vec<&'static str>,
 }
 
 impl SyQLParser {
@@ -45,7 +45,7 @@ impl SyQLParser {
                 "SIMILARITY", "DISTANCE", "CENTRALITY", "PAGERANK", "CLUSTERING",
                 "SHORTEST_PATH", "ALL_PATHS", "CONNECTED_COMPONENTS", "DEGREE",
             ],
-            operators: vec![
+            _operators: vec![
                 "+", "-", "*", "/", "%", "^", "=", "!=", "<>", "<", "<=", ">", ">=",
                 "AND", "OR", "NOT", "LIKE", "REGEX", "IN", "BETWEEN", "EXISTS",
                 "CONTAINS", "STARTS_WITH", "ENDS_WITH", "->", "<-", "<->", "~", "!~",
@@ -136,18 +136,7 @@ impl SyQLParser {
                     }
                 }
             },
-            CompletionContext::Operator => {
-                for operator in &self.operators {
-                    if operator.to_lowercase().starts_with(&current_word.to_lowercase()) {
-                        completions.push(CompletionItem {
-                            text: operator.to_string(),
-                            item_type: CompletionType::Operator,
-                            description: format!("SyQL operator: {}", operator),
-                            documentation: None,
-                        });
-                    }
-                }
-            },
+
         }
         
         // Sort completions by relevance
@@ -262,7 +251,7 @@ enum CompletionContext {
     Property,
     MemoryType,
     RelationshipType,
-    Operator,
+
 }
 
 /// Token types for lexical analysis
@@ -362,10 +351,7 @@ impl Lexer {
         self.input.chars().nth(self.position)
     }
 
-    /// Peek at next character
-    fn peek_char(&self) -> Option<char> {
-        self.input.chars().nth(self.position + 1)
-    }
+
 
     /// Advance position by one character
     fn advance(&mut self) -> Option<char> {

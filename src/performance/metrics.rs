@@ -16,38 +16,61 @@ use super::PerformanceConfig;
 /// Comprehensive performance metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
+    /// Timestamp when metrics were collected
     pub timestamp: DateTime<Utc>,
-    
+
     // Latency metrics
+    /// Average latency in milliseconds
     pub avg_latency_ms: f64,
+    /// 50th percentile latency in milliseconds
     pub p50_latency_ms: f64,
+    /// 95th percentile latency in milliseconds
     pub p95_latency_ms: f64,
+    /// 99th percentile latency in milliseconds
     pub p99_latency_ms: f64,
+    /// Maximum latency in milliseconds
     pub max_latency_ms: f64,
     
     // Throughput metrics
+    /// Operations per second
     pub throughput_ops_per_sec: f64,
+    /// Requests per second
     pub requests_per_sec: f64,
+    /// Successful operations per second
     pub successful_ops_per_sec: f64,
+    /// Failed operations per second
     pub failed_ops_per_sec: f64,
     
     // Resource utilization
+    /// CPU usage percentage
     pub cpu_usage_percent: f64,
+    /// Memory usage in megabytes
     pub memory_usage_mb: f64,
+    /// Memory usage percentage
     pub memory_usage_percent: f64,
+    /// Disk usage percentage
     pub disk_usage_percent: f64,
+    /// Network I/O in megabits per second
     pub network_io_mbps: f64,
     
     // Application-specific metrics
+    /// Cache hit rate percentage
     pub cache_hit_rate: f64,
+    /// Cache miss rate percentage
     pub cache_miss_rate: f64,
+    /// Index efficiency score
     pub index_efficiency: f64,
+    /// Compression ratio achieved
     pub compression_ratio: f64,
+    /// Error rate percentage
     pub error_rate: f64,
     
     // Quality metrics
+    /// System availability percentage
     pub availability_percent: f64,
+    /// Reliability score (0.0 to 1.0)
     pub reliability_score: f64,
+    /// Overall performance score (0.0 to 1.0)
     pub performance_score: f64,
 }
 
@@ -362,19 +385,27 @@ impl Clone for MetricsCollector {
 /// Operation counters for metrics calculation
 #[derive(Debug, Default)]
 pub struct OperationCounters {
+    /// Total number of operations performed
     pub total_operations: u64,
+    /// Number of successful operations
     pub successful_operations: u64,
+    /// Number of failed operations
     pub failed_operations: u64,
+    /// Number of cache hits
     pub cache_hits: u64,
+    /// Number of cache misses
     pub cache_misses: u64,
+    /// Total duration of all operations
     pub total_duration: Duration,
 }
 
 impl OperationCounters {
+    /// Create new performance metrics
     pub fn new() -> Self {
         Self::default()
     }
     
+    /// Reset all metrics to zero
     pub fn reset(&mut self) {
         *self = Self::default();
     }
@@ -387,30 +418,37 @@ pub struct ResourceMonitor {
 }
 
 impl ResourceMonitor {
+    /// Create new system metrics collector
     pub fn new() -> Self {
         Self {}
     }
     
+    /// Get current CPU usage percentage
     pub async fn get_cpu_usage(&self) -> f64 {
         // Mock implementation - would use actual system monitoring
         45.0
     }
     
+    /// Get current memory usage in megabytes
     pub async fn get_memory_usage_mb(&self) -> f64 {
         // Mock implementation
         512.0
     }
     
+    /// Get current memory usage as percentage
+    /// Get current memory usage as percentage
     pub async fn get_memory_usage_percent(&self) -> f64 {
         // Mock implementation
         60.0
     }
     
+    /// Get current disk usage as percentage
     pub async fn get_disk_usage_percent(&self) -> f64 {
         // Mock implementation
         75.0
     }
     
+    /// Get current network I/O in megabits per second
     pub async fn get_network_io_mbps(&self) -> f64 {
         // Mock implementation
         10.5

@@ -439,6 +439,7 @@ impl MemoryStorage {
     }
 
     /// Compress data using simple compression
+    #[cfg(feature = "compression")]
     fn compress_data(&self, data: &str) -> Result<Vec<u8>> {
         use std::io::Write;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -448,7 +449,14 @@ impl MemoryStorage {
             .map_err(|e| MemoryError::storage(format!("Compression finalization failed: {}", e)))
     }
 
+    /// Compress data (no-op when compression feature is disabled)
+    #[cfg(not(feature = "compression"))]
+    fn compress_data(&self, data: &str) -> Result<Vec<u8>> {
+        Ok(data.as_bytes().to_vec())
+    }
+
     /// Decompress data
+    #[cfg(feature = "compression")]
     fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
         use std::io::Read;
         let mut decoder = flate2::read::GzDecoder::new(data);
@@ -456,6 +464,12 @@ impl MemoryStorage {
         decoder.read_to_end(&mut decompressed)
             .map_err(|e| MemoryError::storage(format!("Decompression failed: {}", e)))?;
         Ok(decompressed)
+    }
+
+    /// Decompress data (no-op when compression feature is disabled)
+    #[cfg(not(feature = "compression"))]
+    fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
     }
 
     /// Check if data is compressed

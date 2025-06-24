@@ -11,14 +11,14 @@ use std::collections::HashMap;
 /// Result formatter for SyQL query results
 pub struct ResultFormatter {
     /// Formatting options
-    options: FormatterOptions,
+    _options: FormatterOptions,
 }
 
 impl ResultFormatter {
     /// Create a new result formatter
     pub fn new() -> Result<Self> {
         Ok(Self {
-            options: FormatterOptions::default(),
+            _options: FormatterOptions::default(),
         })
     }
 

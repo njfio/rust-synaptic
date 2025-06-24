@@ -163,9 +163,13 @@ pub enum AnomalyType {
 /// Anomaly severity levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum AnomalySeverity {
+    /// Low severity anomaly
     Low,
+    /// Medium severity anomaly
     Medium,
+    /// High severity anomaly
     High,
+    /// Critical severity anomaly
     Critical,
 }
 
@@ -173,7 +177,7 @@ pub enum AnomalySeverity {
 #[derive(Debug)]
 pub struct MemoryIntelligenceEngine {
     /// Configuration
-    config: AnalyticsConfig,
+    _config: AnalyticsConfig,
     /// Memory intelligence cache
     intelligence_cache: HashMap<String, MemoryIntelligence>,
     /// Recognized patterns
@@ -190,7 +194,7 @@ impl MemoryIntelligenceEngine {
     /// Create a new memory intelligence engine
     pub fn new(config: &AnalyticsConfig) -> Result<Self> {
         Ok(Self {
-            config: config.clone(),
+            _config: config.clone(),
             intelligence_cache: HashMap::new(),
             patterns: Vec::new(),
             anomalies: Vec::new(),

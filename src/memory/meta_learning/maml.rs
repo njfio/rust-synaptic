@@ -33,6 +33,7 @@ pub struct MAMLLearner {
 
 /// Memory feature extractor
 #[derive(Debug)]
+#[allow(dead_code)]
 struct MemoryFeatureExtractor {
     /// Feature dimension
     feature_dim: usize,

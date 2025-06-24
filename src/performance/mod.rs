@@ -3,13 +3,21 @@
 // This module provides comprehensive performance optimization capabilities
 // including advanced profiling, benchmarking, and optimization strategies.
 
+/// Performance profiling and analysis
 pub mod profiler;
+/// Benchmarking and performance testing
 pub mod benchmarks;
+/// Performance optimization strategies
 pub mod optimizer;
+/// Performance metrics collection and analysis
 pub mod metrics;
+/// Caching performance optimization
 pub mod cache;
+/// Memory pool management and optimization
 pub mod memory_pool;
+/// Asynchronous task execution optimization
 pub mod async_executor;
+/// Real-time performance monitoring
 pub mod real_time_monitoring;
 
 
@@ -36,21 +44,28 @@ pub struct PerformanceConfig {
     
     /// Performance target thresholds
     pub target_latency_ms: f64,
+    /// Target throughput in operations per second
     pub target_throughput_ops_per_sec: f64,
+    /// Target memory usage in megabytes
     pub target_memory_usage_mb: f64,
+    /// Target CPU usage percentage
     pub target_cpu_usage_percent: f64,
     
     /// Cache configuration
     pub cache_size_mb: usize,
+    /// Cache time-to-live in seconds
     pub cache_ttl_seconds: u64,
     
     /// Memory pool configuration
     pub memory_pool_size_mb: usize,
+    /// Memory pool chunk size in kilobytes
     pub memory_pool_chunk_size_kb: usize,
     
     /// Async executor configuration
     pub worker_threads: usize,
+    /// Maximum number of blocking threads
     pub max_blocking_threads: usize,
+    /// Thread keep-alive time in seconds
     pub thread_keep_alive_seconds: u64,
 }
 
@@ -311,23 +326,36 @@ impl Clone for PerformanceManager {
 /// Optimization result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationResult {
+    /// Unique identifier for this optimization result
     pub id: Uuid,
+    /// When the optimization was performed
     pub timestamp: DateTime<Utc>,
+    /// Duration of the optimization process
     pub duration: Duration,
+    /// Number of optimizations applied
     pub optimizations_applied: usize,
+    /// Performance improvement percentage
     pub performance_improvement: f64,
+    /// Performance metrics before optimization
     pub metrics_before: metrics::PerformanceMetrics,
+    /// Performance metrics after optimization
     pub metrics_after: metrics::PerformanceMetrics,
+    /// Detailed optimization plan
     pub details: optimizer::OptimizationPlan,
 }
 
 /// Performance report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceReport {
+    /// When the report was generated
     pub timestamp: DateTime<Utc>,
+    /// Current performance metrics
     pub current_metrics: metrics::PerformanceMetrics,
+    /// Profiling data collected
     pub profiling_data: profiler::ProfilingData,
+    /// History of optimization results
     pub optimization_history: Vec<OptimizationResult>,
+    /// Performance improvement recommendations
     pub recommendations: Vec<PerformanceRecommendation>,
 }
 
@@ -349,7 +377,7 @@ pub enum RecommendationCategory {
     Latency,
     Throughput,
     Memory,
-    CPU,
+    Cpu,
     Cache,
     Database,
     Network,

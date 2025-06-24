@@ -16,7 +16,7 @@ use synaptic::{
     },
     error::Result,
 };
-use chrono::{DateTime, Utc, Duration};
+use chrono::Utc;
 use std::collections::HashMap;
 use tokio;
 
@@ -146,7 +146,7 @@ async fn test_consolidation_strategies() -> Result<()> {
     assert!(result.success_rate <= 1.0);
     assert!(result.compression_ratio >= 0.0);
     assert!(result.quality_score >= 0.0);
-    assert!(result.processing_time_ms >= 0);
+    // Processing time is always non-negative by type definition
     
     // Test selective replay strategy
     let result = strategies.apply_strategy(

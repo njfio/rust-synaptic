@@ -2,6 +2,7 @@
 // This demonstrates the complete Synaptic AI Agent Memory system
 
 use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
+#[cfg(feature = "security")]
 use synaptic::security::{
     SecurityManager, SecurityConfig,
     Permission,
@@ -26,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_analytics: true,
         #[cfg(feature = "distributed")]
         enable_distributed: true,
-        enable_security: true,
+
         ..Default::default()
     };
 
@@ -185,7 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              security_metrics.access_metrics.total_permission_checks.max(1) as f64);
 
     if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs_generated);
+        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs);
         println!("    ZK Verification Rate: {:.1}%", zk_metrics.verification_success_rate);
     }
 

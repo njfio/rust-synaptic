@@ -49,9 +49,13 @@ pub struct PerformanceTrend {
 /// Trend directions
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrendDirection {
+    /// Performance is improving over time
     Improving,
+    /// Performance is degrading over time
     Degrading,
+    /// Performance is stable
     Stable,
+    /// Performance is volatile/unpredictable
     Volatile,
 }
 
@@ -83,10 +87,15 @@ pub struct OptimizationRecommendation {
 /// Optimization categories
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum OptimizationCategory {
+    /// Caching optimization
     Caching,
+    /// Indexing optimization
     Indexing,
+    /// Query optimization
     QueryOptimization,
+    /// Memory management optimization
     MemoryManagement,
+    /// Network optimization
     NetworkOptimization,
     AlgorithmImprovement,
     ResourceScaling,
@@ -169,7 +178,7 @@ pub enum BottleneckSeverity {
 #[derive(Debug)]
 pub struct PerformanceAnalyzer {
     /// Configuration
-    config: AnalyticsConfig,
+    _config: AnalyticsConfig,
     /// Performance snapshots history
     snapshots: VecDeque<PerformanceSnapshot>,
     /// Performance trends
@@ -179,7 +188,7 @@ pub struct PerformanceAnalyzer {
     /// Detected bottlenecks
     bottlenecks: Vec<PerformanceBottleneck>,
     /// Baseline performance metrics
-    baseline_metrics: HashMap<String, f64>,
+    _baseline_metrics: HashMap<String, f64>,
     /// Performance targets
     performance_targets: HashMap<String, f64>,
 }
@@ -194,12 +203,12 @@ impl PerformanceAnalyzer {
         performance_targets.insert("error_rate".to_string(), 0.01);
 
         Ok(Self {
-            config: config.clone(),
+            _config: config.clone(),
             snapshots: VecDeque::new(),
             trends: HashMap::new(),
             recommendations: Vec::new(),
             bottlenecks: Vec::new(),
-            baseline_metrics: HashMap::new(),
+            _baseline_metrics: HashMap::new(),
             performance_targets,
         })
     }

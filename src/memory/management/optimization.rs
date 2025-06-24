@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "base64")]
 use base64::{Engine as _, engine::general_purpose};
 
 /// Memory optimizer for improving performance and efficiency
@@ -174,11 +175,11 @@ pub struct PerformanceProfiler {
     /// Completed profiling results
     profiling_results: Vec<ProfilingResult>,
     /// CPU usage tracker
-    cpu_tracker: CpuUsageTracker,
+    _cpu_tracker: CpuUsageTracker,
     /// Memory allocation tracker
-    allocation_tracker: AllocationTracker,
+    _allocation_tracker: AllocationTracker,
     /// I/O performance tracker
-    io_tracker: IoPerformanceTracker,
+    _io_tracker: IoPerformanceTracker,
 }
 
 /// Benchmark runner for performance testing
@@ -1167,13 +1168,13 @@ impl MemoryOptimizer {
         CompressionAnalysis {
             entropy,
             repetition_ratio,
-            whitespace_ratio,
+            _whitespace_ratio: whitespace_ratio,
             char_frequency,
-            bigram_frequency,
-            word_frequency,
+            _bigram_frequency: bigram_frequency,
+            _word_frequency: word_frequency,
             is_json_like,
             is_xml_like,
-            average_word_length,
+            _average_word_length: average_word_length,
         }
     }
 
@@ -1474,7 +1475,10 @@ impl MemoryOptimizer {
         let compressed = lz4_flex::compress_prepend_size(bytes);
 
         CompressionResult {
+            #[cfg(feature = "base64")]
             compressed_data: general_purpose::STANDARD.encode(&compressed),
+            #[cfg(not(feature = "base64"))]
+            compressed_data: hex::encode(&compressed),
             compressed_size: compressed.len(),
             algorithm: "lz4".to_string(),
             compression_ratio: compressed.len() as f64 / bytes.len() as f64,
@@ -1488,12 +1492,12 @@ impl MemoryOptimizer {
 
         // Build Huffman tree (simplified)
         let mut codes = HashMap::new();
-        let mut code_length = 1;
+        let mut _code_length = 1;
 
         for (ch, freq) in frequency_map.iter() {
             let code_bits = if *freq > 10 { 2 } else if *freq > 5 { 4 } else { 8 };
             codes.insert(*ch, code_bits);
-            code_length += code_bits;
+            _code_length += code_bits;
         }
 
         // Estimate compressed size
@@ -1503,7 +1507,10 @@ impl MemoryOptimizer {
         let compressed_size = (estimated_bits + 7) / 8; // Convert bits to bytes
 
         CompressionResult {
+            #[cfg(feature = "base64")]
             compressed_data: format!("huffman:{}", general_purpose::STANDARD.encode(content.as_bytes())),
+            #[cfg(not(feature = "base64"))]
+            compressed_data: format!("huffman:{}", hex::encode(content.as_bytes())),
             compressed_size,
             algorithm: "huffman".to_string(),
             compression_ratio: compressed_size as f64 / content.len() as f64,
@@ -1524,7 +1531,10 @@ impl MemoryOptimizer {
         let compressed_size = (bytes.len() as f64 * compression_ratio) as usize;
 
         CompressionResult {
+            #[cfg(feature = "base64")]
             compressed_data: format!("zstd:{}", general_purpose::STANDARD.encode(bytes)),
+            #[cfg(not(feature = "base64"))]
+            compressed_data: format!("zstd:{}", hex::encode(bytes)),
             compressed_size,
             algorithm: "zstd".to_string(),
             compression_ratio,
@@ -1699,6 +1709,7 @@ impl MemoryOptimizer {
 
 
     /// Find text similarities between memory entries
+    #[allow(dead_code)]
     async fn find_text_similarities(&self, entries: &[MemoryEntry]) -> Result<Vec<Vec<MemoryEntry>>> {
         let mut similarity_groups = Vec::new();
         let mut processed = std::collections::HashSet::new();
@@ -1730,6 +1741,7 @@ impl MemoryOptimizer {
     }
 
     /// Merge similar memories into a single representative memory
+    #[allow(dead_code)]
     async fn merge_similar_memories(&self, group: Vec<MemoryEntry>) -> Result<(usize, usize)> {
         if group.is_empty() {
             return Ok((0, 0));
@@ -1756,6 +1768,7 @@ impl MemoryOptimizer {
     }
 
     /// Deduplicate groups of similar memories
+    #[allow(dead_code)]
     async fn deduplicate_groups(&mut self, groups: Vec<Vec<MemoryEntry>>) -> Result<(usize, usize)> {
         let mut total_removed = 0;
         let mut total_space_saved = 0;
@@ -2000,6 +2013,7 @@ pub struct PerformanceReport {
 
 /// Index optimization result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct IndexOptimizationResult {
     pub strategies_applied: usize,
     pub efficiency_improvement: f64,
@@ -2012,6 +2026,7 @@ struct IndexOptimizationResult {
 
 /// Single index optimization result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SingleIndexOptimization {
     pub index_type: String,
     pub improvement: f64,
@@ -2021,6 +2036,7 @@ struct SingleIndexOptimization {
 
 /// Key distribution analysis
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct KeyDistributionAnalysis {
     pub total_keys: usize,
     pub average_key_length: f64,
@@ -2031,6 +2047,7 @@ struct KeyDistributionAnalysis {
 
 /// Content analysis for indexing
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ContentAnalysis {
     pub total_terms: usize,
     pub unique_terms: usize,
@@ -2040,6 +2057,7 @@ struct ContentAnalysis {
 
 /// Access pattern analysis
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct AccessPatternAnalysis {
     pub total_operations: usize,
     pub read_write_ratio: f64,
@@ -2062,15 +2080,16 @@ struct CompressionResult {
 struct CompressionAnalysis {
     pub entropy: f64,
     pub repetition_ratio: f64,
-    pub whitespace_ratio: f64,
+    pub _whitespace_ratio: f64,
     pub char_frequency: std::collections::HashMap<char, usize>,
-    pub bigram_frequency: std::collections::HashMap<String, usize>,
-    pub word_frequency: std::collections::HashMap<String, usize>,
+    pub _bigram_frequency: std::collections::HashMap<String, usize>,
+    pub _word_frequency: std::collections::HashMap<String, usize>,
     pub is_json_like: bool,
     pub is_xml_like: bool,
-    pub average_word_length: f64,
+    pub _average_word_length: f64,
 }
 
+#[allow(dead_code)]
 impl MetricsCollector {
     /// Create a new metrics collector
     pub fn new() -> Self {
@@ -3256,13 +3275,13 @@ impl MetricsCollector {
         CompressionAnalysis {
             entropy,
             repetition_ratio,
-            whitespace_ratio,
+            _whitespace_ratio: whitespace_ratio,
             char_frequency,
-            bigram_frequency,
-            word_frequency,
+            _bigram_frequency: bigram_frequency,
+            _word_frequency: word_frequency,
             is_json_like: json_like,
             is_xml_like: xml_like,
-            average_word_length,
+            _average_word_length: average_word_length,
         }
     }
 
@@ -3423,7 +3442,7 @@ impl MetricsCollector {
         let mut dictionary = Vec::new();
 
         // Build dictionary from most frequent words
-        let mut word_freq: Vec<_> = analysis.word_frequency.iter().collect();
+        let mut word_freq: Vec<_> = analysis._word_frequency.iter().collect();
         word_freq.sort_by(|a, b| b.1.cmp(a.1));
 
         // Use top 64 most frequent words as dictionary
@@ -3673,9 +3692,9 @@ impl PerformanceProfiler {
         Self {
             active_sessions: HashMap::new(),
             profiling_results: Vec::new(),
-            cpu_tracker: CpuUsageTracker::new(),
-            allocation_tracker: AllocationTracker::new(),
-            io_tracker: IoPerformanceTracker::new(),
+            _cpu_tracker: CpuUsageTracker::new(),
+            _allocation_tracker: AllocationTracker::new(),
+            _io_tracker: IoPerformanceTracker::new(),
         }
     }
 
@@ -4001,7 +4020,7 @@ mod tests {
         let repetitive_content = "aaaaaaaaaa bbbbbbbbbb cccccccccc ".repeat(100);
         opt.add_entry(MemoryEntry::new("a".into(), repetitive_content, MemoryType::ShortTerm));
         let before = opt.get_performance_metrics().memory_usage_bytes;
-        let (count, _) = opt.perform_compression().await.expect("Compression should succeed in test");
+        let (_count, _) = opt.perform_compression().await.expect("Compression should succeed in test");
         // Count should be non-negative (usize is always >= 0)
         // Memory usage should be updated regardless
         let after = opt.get_performance_metrics().memory_usage_bytes;

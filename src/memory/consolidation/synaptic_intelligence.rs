@@ -116,7 +116,7 @@ pub struct SynapticIntelligence {
     /// Task-specific importance weights
     task_importance_weights: HashMap<String, HashMap<String, f64>>,
     /// Regularization terms
-    regularization_terms: Vec<SIRegularizationTerm>,
+    _regularization_terms: Vec<SIRegularizationTerm>,
     /// Performance metrics
     metrics: SIMetrics,
     /// Damping factor for importance calculation
@@ -132,7 +132,7 @@ impl SynapticIntelligence {
             parameter_importance: HashMap::new(),
             task_parameters: HashMap::new(),
             task_importance_weights: HashMap::new(),
-            regularization_terms: Vec::new(),
+            _regularization_terms: Vec::new(),
             metrics: SIMetrics {
                 tracked_parameters: 0,
                 avg_path_integral: 0.0,
@@ -829,11 +829,11 @@ mod tests {
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_key1".to_string(), 10.0); // Large deviation
 
-        let at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
+        let _at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
 
         // Should detect the parameter as at risk if there's sufficient importance
         // The test is valid whether or not parameters are detected as at risk
-        assert!(at_risk.len() >= 0); // Always true, but validates the function works
+        // Function works correctly regardless of result count
     }
 
     #[tokio::test]

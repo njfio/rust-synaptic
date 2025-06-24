@@ -53,109 +53,178 @@ impl Default for RealTimeMonitoringConfig {
 /// Performance anomaly detection
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceAnomaly {
+    /// Unique identifier for the anomaly
     pub id: String,
+    /// Type of anomaly detected
     pub anomaly_type: AnomalyType,
+    /// Severity level of the anomaly
     pub severity: AnomalySeverity,
+    /// Name of the metric that triggered the anomaly
     pub metric_name: String,
+    /// Current value that triggered the anomaly
     pub current_value: f64,
+    /// Expected value based on baseline
     pub expected_value: f64,
+    /// Statistical deviation score
     pub deviation_score: f64,
+    /// Timestamp when the anomaly was detected
     pub detected_at: DateTime<Utc>,
+    /// Human-readable description of the anomaly
     pub description: String,
+    /// List of recommended actions to address the anomaly
     pub recommended_actions: Vec<String>,
 }
 
+/// Types of performance anomalies that can be detected
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnomalyType {
+    /// Sudden increase in metric value
     Spike,
+    /// Sudden decrease in metric value
     Drop,
+    /// Gradual change over time
     Trend,
+    /// Repeated fluctuations
     Oscillation,
+    /// No change in metric value
     Flatline,
 }
 
+/// Severity levels for performance anomalies
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum AnomalySeverity {
+    /// Low impact anomaly
     Low,
+    /// Medium impact anomaly
     Medium,
+    /// High impact anomaly
     High,
+    /// Critical impact anomaly requiring immediate attention
     Critical,
 }
 
 /// Performance alert
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceAlert {
+    /// Unique identifier for the alert
     pub id: String,
+    /// Type of alert
     pub alert_type: AlertType,
+    /// Severity level of the alert
     pub severity: AnomalySeverity,
+    /// Alert title
     pub title: String,
+    /// Detailed alert message
     pub message: String,
+    /// Timestamp when the alert was triggered
     pub triggered_at: DateTime<Utc>,
+    /// Timestamp when the alert was resolved (if applicable)
     pub resolved_at: Option<DateTime<Utc>>,
+    /// Relevant metrics at the time of alert
     pub metrics: HashMap<String, f64>,
+    /// Associated anomalies that triggered this alert
     pub anomalies: Vec<PerformanceAnomaly>,
+    /// Actions taken to address the alert
     pub actions_taken: Vec<String>,
 }
 
+/// Types of performance alerts
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AlertType {
+    /// Alert triggered by anomaly detection
     AnomalyDetected,
+    /// Alert triggered by threshold breach
     ThresholdExceeded,
+    /// Alert for performance degradation
     PerformanceDegradation,
+    /// Alert for resource exhaustion
     ResourceExhaustion,
+    /// Predictive warning before issues occur
     PredictiveWarning,
 }
 
 /// Performance baseline
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceBaseline {
+    /// Name of the metric
     pub metric_name: String,
+    /// Baseline value for the metric
     pub baseline_value: f64,
+    /// Standard deviation of the metric
     pub standard_deviation: f64,
+    /// Confidence interval for the baseline
     pub confidence_interval: (f64, f64),
+    /// Number of samples used to calculate baseline
     pub sample_count: usize,
+    /// When the baseline was calculated
     pub calculated_at: DateTime<Utc>,
+    /// When the baseline expires
     pub valid_until: DateTime<Utc>,
 }
 
 /// Performance trend analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceTrend {
+    /// Name of the metric being analyzed
     pub metric_name: String,
+    /// Direction of the trend
     pub trend_direction: TrendDirection,
+    /// Strength of the trend (0.0 to 1.0)
     pub trend_strength: f64,
+    /// Slope of the trend line
     pub slope: f64,
+    /// R-squared value of the trend fit
     pub r_squared: f64,
+    /// Predicted next value
     pub prediction: Option<f64>,
+    /// Confidence in the prediction
     pub confidence: f64,
+    /// When the analysis was performed
     pub analyzed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Direction of performance trends
 pub enum TrendDirection {
+    /// Performance is improving
     Improving,
+    /// Performance is degrading
     Degrading,
+    /// Performance is stable
     Stable,
+    /// Performance is volatile/unpredictable
     Volatile,
 }
 
 /// Predictive monitoring result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PredictiveMonitoringResult {
+    /// Name of the metric being predicted
     pub metric_name: String,
+    /// Predicted value
     pub predicted_value: f64,
+    /// When the prediction was made
     pub prediction_time: DateTime<Utc>,
+    /// Confidence in the prediction (0.0 to 1.0)
     pub confidence: f64,
+    /// Prediction interval (min, max)
     pub prediction_interval: (f64, f64),
+    /// Risk level associated with the prediction
     pub risk_level: RiskLevel,
+    /// Recommended actions based on the prediction
     pub recommended_actions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Risk levels for performance predictions
 pub enum RiskLevel {
+    /// Low risk - no immediate action needed
     Low,
+    /// Medium risk - monitoring recommended
     Medium,
+    /// High risk - action should be taken
     High,
+    /// Critical risk - immediate action required
     Critical,
 }
 
@@ -387,7 +456,9 @@ impl RealTimePerformanceMonitor {
             return Ok(()); // Need sufficient history
         }
 
-        let latest_metrics = history.back().unwrap();
+        let latest_metrics = history.back().ok_or_else(|| {
+            crate::error::MemoryError::Unexpected { message: "No metrics history available".to_string() }
+        })?;
         let baselines = self.baselines.read().await;
 
         let mut new_anomalies = Vec::new();

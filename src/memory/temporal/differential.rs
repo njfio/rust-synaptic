@@ -719,6 +719,7 @@ impl DiffAnalyzer {
     }
 
     /// Classify the type of modification based on content analysis
+    #[allow(dead_code)]
     fn classify_modification_by_content(&self, old_content: &str, new_content: &str) -> ModificationType {
         // Check for common modification patterns
         if self.is_spelling_correction(old_content, new_content) {
@@ -741,6 +742,7 @@ impl DiffAnalyzer {
     }
 
     /// Classify the type of modification based on line analysis
+    #[allow(dead_code)]
     fn classify_modification(&self, old_lines: &[&str], new_lines: &[&str]) -> ModificationType {
         if old_lines.len() == 1 && new_lines.len() == 1 {
             let old_line = old_lines[0];
@@ -768,6 +770,7 @@ impl DiffAnalyzer {
     }
 
     /// Check if the change is a spelling correction
+    #[allow(dead_code)]
     fn is_spelling_correction(&self, old_text: &str, new_text: &str) -> bool {
         // Simple heuristic: if texts are similar length and have high character overlap
         let len_diff = (old_text.len() as i32 - new_text.len() as i32).abs();
@@ -784,6 +787,7 @@ impl DiffAnalyzer {
     }
 
     /// Check if the change is a rephrase
+    #[allow(dead_code)]
     fn is_rephrase(&self, old_text: &str, new_text: &str) -> bool {
         // Check if word overlap is high but character overlap is lower
         let old_words: std::collections::HashSet<&str> = old_text.split_whitespace().collect();

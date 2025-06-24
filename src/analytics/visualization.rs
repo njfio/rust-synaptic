@@ -227,7 +227,7 @@ pub struct HeatmapColorConfig {
 #[derive(Debug)]
 pub struct VisualizationEngine {
     /// Configuration
-    config: AnalyticsConfig,
+    _config: AnalyticsConfig,
     /// 3D layout configuration
     layout_config: Layout3DConfig,
     /// Visual nodes
@@ -246,7 +246,7 @@ impl VisualizationEngine {
     /// Create a new visualization engine
     pub fn new(config: &AnalyticsConfig) -> Result<Self> {
         Ok(Self {
-            config: config.clone(),
+            _config: config.clone(),
             layout_config: Layout3DConfig::default(),
             nodes: HashMap::new(),
             edges: HashMap::new(),
@@ -844,8 +844,8 @@ mod tests {
 
         // Create some nodes
         let memory_entry = MemoryEntry::new("key1".to_string(), "Test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
 
         // Create an edge
         engine.create_visual_edge("key1", "key2", 0.8, "similarity").await.unwrap();
@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(vr_export.webgl_data.node_count, 2);
         // Interaction zones may be empty initially
         assert_eq!(vr_export.spatial_audio_sources.len(), 2); // One per node
-        assert!(vr_export.haptic_feedback_points.len() >= 0); // Depends on node importance
+        // VR export works correctly regardless of haptic feedback point count
         assert!(vr_export.navigation_config.enable_teleportation);
     }
 }

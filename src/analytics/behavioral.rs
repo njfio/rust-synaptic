@@ -31,11 +31,16 @@ pub struct UserProfile {
 /// Interaction frequency categories
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum InteractionFrequency {
-    VeryLow,    // < 1 interaction per day
-    Low,        // 1-5 interactions per day
-    Medium,     // 5-20 interactions per day
-    High,       // 20-50 interactions per day
-    VeryHigh,   // > 50 interactions per day
+    /// Very low interaction frequency (< 1 interaction per day)
+    VeryLow,
+    /// Low interaction frequency (1-5 interactions per day)
+    Low,
+    /// Medium interaction frequency (5-20 interactions per day)
+    Medium,
+    /// High interaction frequency (20-50 interactions per day)
+    High,
+    /// Very high interaction frequency (> 50 interactions per day)
+    VeryHigh,
 }
 
 /// Memory usage pattern
@@ -95,25 +100,25 @@ pub enum RecommendationType {
 #[derive(Debug, Clone)]
 struct BehavioralSession {
     /// User ID
-    user_id: String,
+    _user_id: String,
     /// Session start time
-    start_time: DateTime<Utc>,
+    _start_time: DateTime<Utc>,
     /// Last activity time
     last_activity: DateTime<Utc>,
     /// Activities in this session
     activities: Vec<AnalyticsEvent>,
     /// Session context
-    context: Option<String>,
+    _context: Option<String>,
 }
 
 impl BehavioralSession {
     fn new(user_id: String, start_time: DateTime<Utc>) -> Self {
         Self {
-            user_id,
-            start_time,
+            _user_id: user_id,
+            _start_time: start_time,
             last_activity: start_time,
             activities: Vec::new(),
-            context: None,
+            _context: None,
         }
     }
 
@@ -124,9 +129,7 @@ impl BehavioralSession {
         self.activities.push(event);
     }
 
-    fn duration(&self) -> Duration {
-        self.last_activity - self.start_time
-    }
+
 
     fn is_active(&self, current_time: DateTime<Utc>, timeout_minutes: i64) -> bool {
         current_time - self.last_activity < Duration::minutes(timeout_minutes)
@@ -146,7 +149,7 @@ impl BehavioralSession {
 #[derive(Debug)]
 pub struct BehavioralAnalyzer {
     /// Configuration
-    config: AnalyticsConfig,
+    _config: AnalyticsConfig,
     /// User profiles
     user_profiles: HashMap<String, UserProfile>,
     /// Memory usage patterns
@@ -163,7 +166,7 @@ impl BehavioralAnalyzer {
     /// Create a new behavioral analyzer
     pub fn new(config: &AnalyticsConfig) -> Result<Self> {
         Ok(Self {
-            config: config.clone(),
+            _config: config.clone(),
             user_profiles: HashMap::new(),
             memory_patterns: HashMap::new(),
             active_sessions: HashMap::new(),
@@ -300,34 +303,7 @@ impl BehavioralAnalyzer {
         Ok(())
     }
 
-    /// Update interaction frequency for a user (legacy method)
-    async fn update_interaction_frequency(&mut self, profile: &mut UserProfile) -> Result<()> {
-        // Count interactions in the last 24 hours
-        let day_ago = Utc::now() - Duration::days(1);
-        
-        if let Some(session) = self.active_sessions.get(&profile.user_id) {
-            let recent_activities = session.activities
-                .iter()
-                .filter(|event| {
-                    if let Some(timestamp) = session.extract_timestamp(event) {
-                        timestamp > day_ago
-                    } else {
-                        false
-                    }
-                })
-                .count();
 
-            profile.interaction_frequency = match recent_activities {
-                0 => InteractionFrequency::VeryLow,
-                1..=5 => InteractionFrequency::Low,
-                6..=20 => InteractionFrequency::Medium,
-                21..=50 => InteractionFrequency::High,
-                _ => InteractionFrequency::VeryHigh,
-            };
-        }
-
-        Ok(())
-    }
 
     /// Update memory usage patterns
     async fn update_memory_patterns(&mut self, event: &AnalyticsEvent) -> Result<()> {
@@ -686,6 +662,7 @@ impl BehavioralAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analytics::AccessType;
 
     #[tokio::test]
     async fn test_behavioral_analyzer_creation() {
@@ -741,7 +718,7 @@ mod tests {
 
         analyzer.process_event(&event).await.unwrap();
 
-        let recommendations = analyzer.generate_recommendations("rec_user").await.unwrap();
+        let _recommendations = analyzer.generate_recommendations("rec_user").await.unwrap();
         // Should not error, recommendations may be empty initially
         // Recommendations should be generated (empty is valid initially)
     }
@@ -762,7 +739,7 @@ mod tests {
             analyzer.process_event(&event).await.unwrap();
         }
 
-        let insights = analyzer.generate_insights().await.unwrap();
+        let _insights = analyzer.generate_insights().await.unwrap();
         // Should generate insights based on user behavior
         // Insights should be generated based on user behavior
     }

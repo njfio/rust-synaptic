@@ -4,9 +4,9 @@
 //! ensuring 90%+ test coverage and comprehensive validation.
 
 use synaptic::memory::temporal::differential::{
-    DiffAnalyzer, DiffConfig, MyersAlgorithm, ContentChangeType, ModificationType
+    DiffAnalyzer, DiffConfig, MyersAlgorithm, ContentChangeType
 };
-use synaptic::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
+use synaptic::memory::types::{MemoryEntry, MemoryType};
 use std::error::Error;
 
 #[tokio::test]

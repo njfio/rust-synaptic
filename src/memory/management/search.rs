@@ -1592,6 +1592,7 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate real semantic similarity using embeddings
+    #[allow(dead_code)]
     fn calculate_semantic_similarity(&self, query_embedding: &[f32], memory_embedding: &[f32]) -> f64 {
         if query_embedding.is_empty() || memory_embedding.is_empty() {
             return 0.0;
@@ -1662,6 +1663,7 @@ impl AdvancedSearchEngine {
     }
 
     /// Enhanced semantic similarity with fallback to content-based similarity
+    #[allow(dead_code)]
     fn enhanced_semantic_similarity(&self, _query_embedding: &[f32], index_entry: &MemoryIndexEntry, query_text: &str) -> f64 {
         // Try to get memory embedding from storage or calculate it
         // For now, we'll use a sophisticated content-based approach as fallback
@@ -1718,6 +1720,7 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate conceptual overlap using advanced text analysis
+    #[allow(dead_code)]
     fn calculate_conceptual_overlap(&self, query_text: &str, content_words: &HashSet<String>) -> f64 {
         let query_words: HashSet<String> = query_text.to_lowercase()
             .split_whitespace()
@@ -1799,6 +1802,7 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate contextual relevance based on query context
+    #[allow(dead_code)]
     fn calculate_contextual_relevance(&self, query_text: &str, index_entry: &MemoryIndexEntry) -> f64 {
         // Temporal relevance (recent memories might be more relevant)
         let now = chrono::Utc::now();
@@ -2161,7 +2165,7 @@ impl AdvancedSearchEngine {
         // In a real ML implementation, these weights would be learned from user feedback
         // For now, use heuristic adaptive weighting
 
-        let mut weights = vec![0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05]; // Base weights
+        let mut weights = [0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05]; // Base weights
 
         // Adjust weights based on factor values
         for (i, (factor_name, value)) in factors.iter().enumerate() {
@@ -2721,6 +2725,7 @@ impl AdvancedSearchEngine {
 
 
     /// Calculate content-based centrality as fallback
+    #[allow(dead_code)]
     async fn calculate_content_based_centrality(&self, memory_key: &str) -> Result<f64> {
         let memory_entry = self.search_index.metadata_index.get(memory_key)
             .ok_or_else(|| MemoryError::NotFound { key: memory_key.to_string() })?;
@@ -2879,6 +2884,7 @@ impl AdvancedSearchEngine {
     }
 
     /// Update performance metrics
+    #[allow(dead_code)]
     fn update_performance_metrics(&mut self, search_time_ms: u64) {
         self.performance_metrics.total_searches += 1;
         

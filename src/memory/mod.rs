@@ -226,7 +226,7 @@ pub trait MemoryOperations {
     /// println!("Total entries: {}", stats.total_entries);
     /// println!("Average size: {:.2} bytes", stats.average_entry_size);
     /// ```
-    fn get_stats(&self) -> MemoryStats;
+    fn get_stats(&self) -> CoreMemoryStats;
 
     /// Clear all memories from the system.
     ///
@@ -276,7 +276,7 @@ pub trait MemoryOperations {
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryStats {
+pub struct CoreMemoryStats {
     /// Total number of memory entries in the system
     pub total_entries: usize,
     /// Number of short-term memory entries
@@ -295,7 +295,7 @@ pub struct MemoryStats {
     pub session_id: Uuid,
 }
 
-impl MemoryStats {
+impl CoreMemoryStats {
     pub fn new(session_id: Uuid) -> Self {
         Self {
             total_entries: 0,
@@ -363,9 +363,9 @@ impl MemoryStats {
     }
 }
 
-/// Memory configuration options
+/// Basic memory configuration options for core memory operations
 #[derive(Debug, Clone)]
-pub struct MemoryConfig {
+pub struct BasicMemoryConfig {
     pub max_short_term_entries: usize,
     pub max_long_term_entries: usize,
     pub checkpoint_interval: usize,
@@ -375,7 +375,7 @@ pub struct MemoryConfig {
     pub storage_path: Option<String>,
 }
 
-impl Default for MemoryConfig {
+impl Default for BasicMemoryConfig {
     fn default() -> Self {
         Self {
             max_short_term_entries: 1000,

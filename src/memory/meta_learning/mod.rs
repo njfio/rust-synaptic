@@ -190,7 +190,7 @@ pub trait MetaLearner: Send + Sync {
 /// Main meta-learning system for memory management
 pub struct MetaLearningSystem {
     /// Configuration
-    config: MetaLearningConfig,
+    _config: MetaLearningConfig,
     /// Active meta-learner
     learner: Box<dyn MetaLearner>,
     /// Task distribution manager
@@ -216,7 +216,7 @@ impl MetaLearningSystem {
         };
 
         Ok(Self {
-            config,
+            _config: config,
             learner,
             task_distribution: Arc::new(RwLock::new(task_distribution::TaskDistribution::new())),
             adaptation_history: Arc::new(RwLock::new(Vec::new())),

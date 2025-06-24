@@ -62,55 +62,55 @@ impl QueryPlanner {
     async fn create_query_plan(&self, query: QueryStatement) -> Result<QueryPlan> {
         let mut nodes = Vec::new();
         let mut estimated_cost = 0.0;
-        let mut estimated_rows = 1000; // Default estimate
+        let mut _estimated_rows = 1000; // Default estimate
 
         // Create plan nodes for FROM clause
         let (from_nodes, from_cost, from_rows) = self.create_from_plan(&query.from).await?;
         nodes.extend(from_nodes);
         estimated_cost += from_cost;
-        estimated_rows = from_rows;
+        _estimated_rows = from_rows;
 
         // Create plan node for WHERE clause
         if let Some(where_expr) = &query.where_clause {
-            let filter_node = self.create_filter_node(where_expr, estimated_rows).await?;
+            let filter_node = self.create_filter_node(where_expr, _estimated_rows).await?;
             estimated_cost += filter_node.cost;
-            estimated_rows = (estimated_rows as f64 * 0.1) as usize; // Assume 10% selectivity
+            _estimated_rows = (_estimated_rows as f64 * 0.1) as usize; // Assume 10% selectivity
             nodes.push(filter_node);
         }
 
         // Create plan node for GROUP BY clause
         if let Some(group_by) = &query.group_by {
-            let group_node = self.create_group_by_node(group_by, estimated_rows).await?;
+            let group_node = self.create_group_by_node(group_by, _estimated_rows).await?;
             estimated_cost += group_node.cost;
-            estimated_rows = (estimated_rows as f64 * 0.5) as usize; // Assume 50% reduction
+            _estimated_rows = (_estimated_rows as f64 * 0.5) as usize; // Assume 50% reduction
             nodes.push(group_node);
         }
 
         // Create plan node for HAVING clause
         if let Some(having_expr) = &query.having {
-            let having_node = self.create_having_node(having_expr, estimated_rows).await?;
+            let having_node = self.create_having_node(having_expr, _estimated_rows).await?;
             estimated_cost += having_node.cost;
-            estimated_rows = (estimated_rows as f64 * 0.1) as usize; // Assume 10% selectivity
+            _estimated_rows = (_estimated_rows as f64 * 0.1) as usize; // Assume 10% selectivity
             nodes.push(having_node);
         }
 
         // Create plan node for ORDER BY clause
         if let Some(order_by) = &query.order_by {
-            let sort_node = self.create_sort_node(order_by, estimated_rows).await?;
+            let sort_node = self.create_sort_node(order_by, _estimated_rows).await?;
             estimated_cost += sort_node.cost;
             nodes.push(sort_node);
         }
 
         // Create plan node for SELECT clause (projection)
-        let project_node = self.create_project_node(&query.select, estimated_rows).await?;
+        let project_node = self.create_project_node(&query.select, _estimated_rows).await?;
         estimated_cost += project_node.cost;
         nodes.push(project_node);
 
         // Create plan node for LIMIT clause
         if let Some(limit) = &query.limit {
-            let limit_node = self.create_limit_node(limit, estimated_rows).await?;
+            let limit_node = self.create_limit_node(limit, _estimated_rows).await?;
             estimated_cost += limit_node.cost;
-            estimated_rows = self.extract_limit_count(limit).min(estimated_rows);
+            _estimated_rows = self.extract_limit_count(limit).min(_estimated_rows);
             nodes.push(limit_node);
         }
 
@@ -124,7 +124,7 @@ impl QueryPlanner {
         Ok(QueryPlan {
             nodes,
             estimated_cost,
-            estimated_rows,
+            estimated_rows: _estimated_rows,
             statistics,
         })
     }

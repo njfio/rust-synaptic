@@ -11,59 +11,112 @@ use uuid::Uuid;
 /// Basic multi-modal content types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum BasicContentType {
-    Text { language: Option<String> },
-    Image { format: String, width: u32, height: u32 },
-    Audio { format: String, duration_ms: u64 },
-    Code { language: String, lines: u32 },
-    Binary { mime_type: String },
+    /// Text content with optional language specification
+    Text {
+        /// Programming or natural language
+        language: Option<String>
+    },
+    /// Image content with format and dimensions
+    Image {
+        /// Image format (PNG, JPEG, etc.)
+        format: String,
+        /// Image width in pixels
+        width: u32,
+        /// Image height in pixels
+        height: u32
+    },
+    /// Audio content with format and duration
+    Audio {
+        /// Audio format (MP3, WAV, etc.)
+        format: String,
+        /// Duration in milliseconds
+        duration_ms: u64
+    },
+    /// Code content with language and line count
+    Code {
+        /// Programming language
+        language: String,
+        /// Number of lines
+        lines: u32
+    },
+    /// Binary content with MIME type
+    Binary {
+        /// MIME type of the binary content
+        mime_type: String
+    },
 }
 
 /// Basic multi-modal memory entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicMultiModalMemory {
+    /// Unique identifier for the memory
     pub id: String,
+    /// Type of content stored
     pub content_type: BasicContentType,
+    /// Raw content data
     pub content: Vec<u8>,
+    /// Associated metadata
     pub metadata: BasicMetadata,
+    /// Relationships to other memories
     pub relationships: Vec<BasicRelationship>,
+    /// When the memory was created
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the memory was last updated
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Basic metadata for multi-modal content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicMetadata {
+    /// Optional title for the memory
     pub title: Option<String>,
+    /// Optional description
     pub description: Option<String>,
+    /// Associated tags
     pub tags: Vec<String>,
+    /// Quality score (0.0 to 1.0)
     pub quality_score: f32,
+    /// Extracted feature vector
     pub extracted_features: Vec<f32>,
 }
 
 /// Basic relationship between multi-modal memories
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicRelationship {
+    /// Target memory ID
     pub target_id: String,
+    /// Type of relationship
     pub relationship_type: String,
+    /// Confidence score (0.0 to 1.0)
     pub confidence: f32,
 }
 
 /// Basic cross-platform adapter
 pub trait BasicCrossPlatformAdapter: Send + Sync {
+    /// Store data with the given key
     fn store(&self, key: &str, data: &[u8]) -> Result<()>;
+    /// Retrieve data by key
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>>;
+    /// Delete data by key
     fn delete(&self, key: &str) -> Result<bool>;
+    /// List all available keys
     fn list_keys(&self) -> Result<Vec<String>>;
+    /// Get platform information
     fn get_platform_info(&self) -> BasicPlatformInfo;
 }
 
 /// Basic platform information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicPlatformInfo {
+    /// Name of the platform
     pub platform_name: String,
+    /// Whether file system access is supported
     pub supports_file_system: bool,
+    /// Whether network access is supported
     pub supports_network: bool,
+    /// Maximum memory in megabytes
     pub max_memory_mb: u64,
+    /// Maximum storage in megabytes
     pub max_storage_mb: u64,
 }
 
@@ -218,8 +271,10 @@ impl BasicMultiModalManager {
 
     /// Get statistics
     pub fn get_statistics(&self) -> BasicStatistics {
-        let mut stats = BasicStatistics::default();
-        stats.total_memories = self.memories.len();
+        let mut stats = BasicStatistics {
+            total_memories: self.memories.len(),
+            ..Default::default()
+        };
 
         for memory in self.memories.values() {
             stats.total_size += memory.content.len();
@@ -260,6 +315,12 @@ use std::sync::{Arc, Mutex};
 pub struct BasicMemoryAdapter {
     storage: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     platform_info: BasicPlatformInfo,
+}
+
+impl Default for BasicMemoryAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BasicMemoryAdapter {

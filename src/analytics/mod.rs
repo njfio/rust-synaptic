@@ -1,10 +1,15 @@
 // Phase 3: Advanced Analytics Module
 // Super professional implementation with zero mocking
 
+/// Predictive analytics for memory patterns
 pub mod predictive;
+/// Behavioral analysis of memory usage
 pub mod behavioral;
+/// Visualization and graphical analytics
 pub mod visualization;
+/// Intelligence and anomaly detection
 pub mod intelligence;
+/// Performance analytics and optimization
 pub mod performance;
 
 #[cfg(test)]
@@ -222,7 +227,7 @@ pub struct AnalyticsEngine {
     /// Behavioral analysis module
     behavioral: behavioral::BehavioralAnalyzer,
     /// Visualization module
-    visualization: visualization::VisualizationEngine,
+    _visualization: visualization::VisualizationEngine,
 }
 
 impl AnalyticsEngine {
@@ -239,7 +244,7 @@ impl AnalyticsEngine {
             metrics: AnalyticsMetrics::default(),
             predictive,
             behavioral,
-            visualization,
+            _visualization: visualization,
         })
     }
 

@@ -54,9 +54,13 @@ pub struct UsageTrend {
 /// Trend directions
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrendDirection {
+    /// Trend is increasing
     Increasing,
+    /// Trend is decreasing
     Decreasing,
+    /// Trend is stable
     Stable,
+    /// Trend is volatile/unpredictable
     Volatile,
 }
 
@@ -78,9 +82,13 @@ pub struct CachingRecommendation {
 /// Cache priority levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum CachePriority {
+    /// Low priority caching
     Low,
+    /// Medium priority caching
     Medium,
+    /// High priority caching
     High,
+    /// Critical priority caching
     Critical,
 }
 
@@ -650,9 +658,9 @@ mod tests {
             analytics.process_event(&event).await.unwrap();
         }
 
-        let recommendations = analytics.generate_caching_recommendations().await.unwrap();
+        let _recommendations = analytics.generate_caching_recommendations().await.unwrap();
         // Should generate recommendations for frequently accessed memory
-        assert!(recommendations.len() >= 0);
+        // Function works correctly regardless of result count
     }
 
     #[tokio::test]
@@ -672,8 +680,8 @@ mod tests {
             analytics.process_event(&event).await.unwrap();
         }
 
-        let insights = analytics.generate_insights().await.unwrap();
+        let _insights = analytics.generate_insights().await.unwrap();
         // Should generate insights based on patterns
-        assert!(insights.len() >= 0);
+        // Function works correctly regardless of result count
     }
 }

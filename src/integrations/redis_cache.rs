@@ -39,20 +39,28 @@ impl Default for RedisConfig {
 /// Real Redis client
 #[derive(Debug)]
 pub struct RedisClient {
-    config: RedisConfig,
+    _config: RedisConfig,
     #[cfg(feature = "distributed")]
     connection_manager: Option<redis::aio::MultiplexedConnection>,
     metrics: RedisMetrics,
 }
 
+/// Redis cache performance metrics
 #[derive(Debug, Clone, Default)]
 pub struct RedisMetrics {
+    /// Number of cache hits
     pub cache_hits: u64,
+    /// Number of cache misses
     pub cache_misses: u64,
+    /// Number of cache set operations
     pub cache_sets: u64,
+    /// Number of cache delete operations
     pub cache_deletes: u64,
+    /// Total number of operations
     pub total_operations: u64,
+    /// Average response time in milliseconds
     pub avg_response_time_ms: f64,
+    /// Number of connection errors
     pub connection_errors: u64,
 }
 
@@ -77,7 +85,7 @@ impl RedisClient {
         #[cfg(not(feature = "distributed"))]
         {
             Ok(Self {
-                config,
+                _config: config,
                 metrics: RedisMetrics::default(),
             })
         }
@@ -340,15 +348,7 @@ impl RedisClient {
         Ok(entry)
     }
 
-    /// Hash text for consistent cache keys
-    fn hash_text(&self, text: &str) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
 
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
-    }
 
     /// Health check for Redis connection
     pub async fn health_check(&self) -> Result<()> {
@@ -397,30 +397,10 @@ impl RedisClient {
         Ok(())
     }
 
-    fn update_metrics(&mut self, start_time: std::time::Instant, operation: CacheOperation) {
-        let elapsed_ms = start_time.elapsed().as_millis() as f64;
-        
-        self.metrics.total_operations += 1;
-        self.metrics.avg_response_time_ms = 
-            (self.metrics.avg_response_time_ms * (self.metrics.total_operations - 1) as f64 + elapsed_ms) 
-            / self.metrics.total_operations as f64;
 
-        match operation {
-            CacheOperation::Hit => self.metrics.cache_hits += 1,
-            CacheOperation::Miss => self.metrics.cache_misses += 1,
-            CacheOperation::Set => self.metrics.cache_sets += 1,
-            CacheOperation::Delete => self.metrics.cache_deletes += 1,
-        }
-    }
 }
 
-#[derive(Debug)]
-enum CacheOperation {
-    Hit,
-    Miss,
-    Set,
-    Delete,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheStats {

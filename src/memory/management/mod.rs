@@ -38,9 +38,9 @@ pub struct MemoryManager {
     /// Knowledge graph for relationships
     knowledge_graph: Option<MemoryKnowledgeGraph>,
     /// Temporal manager for tracking changes
-    temporal_manager: Option<TemporalMemoryManager>,
+    _temporal_manager: Option<TemporalMemoryManager>,
     /// Advanced manager for complex operations
-    advanced_manager: Option<AdvancedMemoryManager>,
+    _advanced_manager: Option<AdvancedMemoryManager>,
 }
 
 impl MemoryManager {
@@ -54,8 +54,8 @@ impl MemoryManager {
         Ok(Self {
             storage,
             knowledge_graph,
-            temporal_manager,
-            advanced_manager,
+            _temporal_manager: temporal_manager,
+            _advanced_manager: advanced_manager,
         })
     }
 
@@ -1677,7 +1677,7 @@ impl AdvancedMemoryManager {
         memories: &[MemoryEntry],
     ) -> Result<AccessPatternAnalysis> {
         // Analyze temporal access patterns
-        let mut hourly_access_counts = vec![0u32; 24];
+        let mut hourly_access_counts = [0u32; 24];
         let mut access_frequency_distribution = HashMap::new();
 
         // Extract access times from memory metadata
@@ -1736,7 +1736,7 @@ impl AdvancedMemoryManager {
         let mut patterns = Vec::new();
 
         // Analyze monthly access patterns
-        let mut monthly_counts = vec![0u32; 12];
+        let mut monthly_counts = [0u32; 12];
         for memory in memories {
             let month = memory.metadata.created_at.month0() as usize;
             if month < 12 {

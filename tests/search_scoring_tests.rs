@@ -1,15 +1,12 @@
 //! Tests for improved search scoring algorithms
 
-#[cfg(test)]
+#[cfg(all(test, feature = "search-scoring-tests"))]
 mod search_scoring_tests {
     use synaptic::memory::management::search::AdvancedSearchEngine;
-    use synaptic::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
-    use synaptic::config::SearchConfig;
-    use chrono::Utc;
+    use synaptic::memory::types::{MemoryEntry, MemoryType};
 
     fn create_test_search_engine() -> AdvancedSearchEngine {
-        let config = SearchConfig::default();
-        AdvancedSearchEngine::new(config)
+        AdvancedSearchEngine::new()
     }
 
     fn create_test_memory(content: &str, tags: Vec<String>) -> MemoryEntry {

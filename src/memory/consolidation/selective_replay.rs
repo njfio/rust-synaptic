@@ -91,7 +91,7 @@ pub struct SelectiveReplayManager {
     /// Replay history for performance tracking
     replay_history: VecDeque<ReplayEntry>,
     /// Replay strategy
-    strategy: ReplayStrategy,
+    _strategy: ReplayStrategy,
     /// Scheduling algorithm
     scheduling: SchedulingAlgorithm,
     /// Performance metrics
@@ -109,7 +109,7 @@ impl SelectiveReplayManager {
             config: config.clone(),
             replay_buffer: BinaryHeap::new(),
             replay_history: VecDeque::new(),
-            strategy: ReplayStrategy::Balanced,
+            _strategy: ReplayStrategy::Balanced,
             scheduling: SchedulingAlgorithm::Adaptive,
             metrics: ReplayMetrics {
                 total_replays: 0,

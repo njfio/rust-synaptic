@@ -146,7 +146,7 @@ pub struct PatternDetector {
     /// Configuration
     config: PatternDetectionConfig,
     /// Pattern detection history
-    detection_history: Vec<PatternDetectionRun>,
+    _detection_history: Vec<PatternDetectionRun>,
 }
 
 /// Configuration for pattern detection
@@ -212,7 +212,7 @@ impl PatternDetector {
         Self {
             patterns: Vec::new(),
             config: PatternDetectionConfig::default(),
-            detection_history: Vec::new(),
+            _detection_history: Vec::new(),
         }
     }
 
@@ -1635,7 +1635,7 @@ impl PatternDetector {
         let _feature_dim = features[0].len();
 
         // Try different weight combinations to find patterns
-        let weight_combinations = vec![
+        let weight_combinations = [
             vec![1.0, 0.0, 0.0, 0.0], // Hour-based
             vec![0.0, 1.0, 0.0, 0.0], // Day-based
             vec![0.0, 0.0, 1.0, 0.0], // Strength-based

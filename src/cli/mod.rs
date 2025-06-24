@@ -87,12 +87,14 @@ pub enum Commands {
     /// Memory management commands
     Memory {
         #[command(subcommand)]
+        /// Memory management action to perform
         action: MemoryAction,
     },
     
     /// Graph operations
     Graph {
         #[command(subcommand)]
+        /// Graph operation action to perform
         action: GraphAction,
     },
     
@@ -114,6 +116,7 @@ pub enum Commands {
     /// Configuration management
     Config {
         #[command(subcommand)]
+        /// Configuration action to perform
         action: ConfigAction,
     },
     
@@ -314,10 +317,15 @@ pub enum ConfigAction {
 /// Output formats
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum OutputFormat {
+    /// Table format output
     Table,
+    /// JSON format output
     Json,
+    /// CSV format output
     Csv,
+    /// YAML format output
     Yaml,
+    /// Graph format output
     Graph,
     Tree,
 }
@@ -528,15 +536,7 @@ impl CliRunner {
         commands::SyQLCommands::execute(&mut self.syql_engine, query, output_file.map(|p| p.as_path()), explain).await
     }
 
-    /// Validate a SyQL query
-    async fn validate_query(&mut self, query: &str) -> Result<()> {
-        commands::SyQLCommands::validate(&mut self.syql_engine, query).await
-    }
 
-    /// Get SyQL query completions
-    async fn complete_query(&mut self, partial_query: &str, cursor_position: usize) -> Result<()> {
-        commands::SyQLCommands::complete(&mut self.syql_engine, partial_query, cursor_position).await
-    }
 
     /// Handle memory actions
     async fn handle_memory_action(&mut self, action: MemoryAction) -> Result<()> {

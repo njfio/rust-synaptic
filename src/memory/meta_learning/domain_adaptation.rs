@@ -163,7 +163,7 @@ pub struct DomainAdaptationEngine {
     /// Feature extractor parameters
     feature_extractor: HashMap<String, Vec<f64>>,
     /// Domain discriminator parameters
-    domain_discriminator: HashMap<String, Vec<f64>>,
+    _domain_discriminator: HashMap<String, Vec<f64>>,
     /// Adaptation history
     adaptation_history: Vec<DomainAdaptationResult>,
     /// Performance metrics
@@ -184,7 +184,7 @@ impl DomainAdaptationEngine {
             config,
             domains: HashMap::new(),
             feature_extractor: Self::initialize_feature_extractor()?,
-            domain_discriminator: Self::initialize_domain_discriminator()?,
+            _domain_discriminator: Self::initialize_domain_discriminator()?,
             adaptation_history: Vec::new(),
             metrics: DomainAdaptationMetrics {
                 total_adaptations: 0,

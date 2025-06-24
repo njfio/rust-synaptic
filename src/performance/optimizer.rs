@@ -18,7 +18,7 @@ use super::{PerformanceConfig, metrics::PerformanceMetrics};
 #[derive(Debug)]
 pub struct PerformanceOptimizer {
     config: PerformanceConfig,
-    optimization_strategies: Arc<RwLock<Vec<OptimizationStrategy>>>,
+    _optimization_strategies: Arc<RwLock<Vec<OptimizationStrategy>>>,
     optimization_history: Arc<RwLock<Vec<OptimizationPlan>>>,
     ml_predictor: Arc<RwLock<MLPredictor>>,
     adaptive_tuner: Arc<RwLock<AdaptiveTuner>>,
@@ -57,7 +57,7 @@ impl PerformanceOptimizer {
         
         Ok(Self {
             config,
-            optimization_strategies: Arc::new(RwLock::new(strategies)),
+            _optimization_strategies: Arc::new(RwLock::new(strategies)),
             optimization_history: Arc::new(RwLock::new(Vec::new())),
             ml_predictor: Arc::new(RwLock::new(MLPredictor::new())),
             adaptive_tuner: Arc::new(RwLock::new(AdaptiveTuner::new())),
@@ -260,12 +260,16 @@ impl PerformanceOptimizer {
 /// Optimization strategy
 #[derive(Debug, Clone)]
 pub struct OptimizationStrategy {
+    /// Type of optimization
     pub optimization_type: OptimizationType,
+    /// Name of the optimization
     pub name: String,
+    /// Effectiveness score (0.0 to 1.0)
     pub effectiveness: f64,
 }
 
 impl OptimizationStrategy {
+    /// Create a new optimization
     pub fn new(optimization_type: OptimizationType, name: &str, effectiveness: f64) -> Self {
         Self {
             optimization_type,
@@ -278,20 +282,30 @@ impl OptimizationStrategy {
 /// Optimization type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OptimizationType {
+    /// Cache optimization strategies
     CacheOptimization,
+    /// Memory pool optimization
     MemoryPoolOptimization,
+    /// Executor optimization
     ExecutorOptimization,
+    /// Index optimization
     IndexOptimization,
+    /// Compression optimization
     CompressionOptimization,
 }
 
 /// Performance analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceAnalysis {
+    /// When the analysis was performed
     pub timestamp: DateTime<Utc>,
+    /// Performance metrics collected
     pub metrics: PerformanceMetrics,
+    /// Identified performance bottlenecks
     pub bottlenecks: Vec<PerformanceBottleneck>,
+    /// Optimization opportunities
     pub opportunities: Vec<OptimizationOpportunity>,
+    /// Overall performance score (0.0 to 1.0)
     pub overall_score: f64,
 }
 
@@ -310,27 +324,39 @@ impl Default for PerformanceAnalysis {
 /// Performance bottleneck
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceBottleneck {
+    /// Component where the bottleneck occurs
     pub component: String,
+    /// Severity of the bottleneck
     pub severity: BottleneckSeverity,
+    /// Impact score (0.0 to 1.0)
     pub impact: f64,
+    /// Description of the bottleneck
     pub description: String,
 }
 
 /// Bottleneck severity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BottleneckSeverity {
+    /// Low severity bottleneck
     Low,
+    /// Medium severity bottleneck
     Medium,
+    /// High severity bottleneck
     High,
+    /// Critical severity bottleneck
     Critical,
 }
 
 /// Optimization opportunity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationOpportunity {
+    /// Type of optimization opportunity
     pub optimization_type: OptimizationType,
+    /// Potential improvement percentage
     pub potential_improvement: f64,
+    /// Confidence in the opportunity (0.0 to 1.0)
     pub confidence: f64,
+    /// Description of the opportunity
     pub description: String,
 }
 

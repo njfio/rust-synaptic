@@ -183,7 +183,12 @@ impl CheckpointManager {
 
         // Store the checkpoint
         let checkpoint_key = format!("checkpoint_{}", metadata.id);
+        #[cfg(feature = "bincode")]
         let serialized_checkpoint = bincode::serialize(&checkpoint)
+            .checkpoint_context("Failed to serialize checkpoint")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let serialized_checkpoint = serde_json::to_vec(&checkpoint)
             .checkpoint_context("Failed to serialize checkpoint")?;
 
         // Create a memory entry for the checkpoint
@@ -220,7 +225,12 @@ impl CheckpointManager {
 
         let checkpoint_bytes = hex::decode(&checkpoint_entry.value)
             .checkpoint_context("Failed to decode checkpoint hex")?;
+        #[cfg(feature = "bincode")]
         let checkpoint: Checkpoint = bincode::deserialize(&checkpoint_bytes)
+            .checkpoint_context("Failed to deserialize checkpoint")?;
+
+        #[cfg(not(feature = "bincode"))]
+        let checkpoint: Checkpoint = serde_json::from_slice(&checkpoint_bytes)
             .checkpoint_context("Failed to deserialize checkpoint")?;
 
         checkpoint.restore_state()

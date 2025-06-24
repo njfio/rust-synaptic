@@ -153,27 +153,7 @@ impl OptimizationRule for PredicatePushdownRule {
 }
 
 impl PredicatePushdownRule {
-    fn push_predicate_to_from(&self, from: FromClause, predicate: Expression) -> Result<FromClause> {
-        match from {
-            FromClause::Memories { alias, filter } => {
-                let new_filter = match filter {
-                    Some(existing) => Some(Expression::Binary {
-                        left: Box::new(existing),
-                        operator: BinaryOperator::And,
-                        right: Box::new(predicate),
-                    }),
-                    None => Some(predicate),
-                };
-                Ok(FromClause::Memories { alias, filter: new_filter })
-            },
-            other => Ok(other),
-        }
-    }
 
-    fn remove_pushed_predicates(&self, where_clause: Option<Expression>) -> Result<Option<Expression>> {
-        // Simplified implementation - in practice would analyze which predicates were pushed
-        Ok(where_clause)
-    }
 }
 
 /// Projection pushdown optimization rule
@@ -229,89 +209,11 @@ impl OptimizationRule for ConstantFoldingRule {
 }
 
 impl ConstantFoldingRule {
-    fn fold_constants(&self, expr: Expression) -> Expression {
-        match expr {
-            Expression::Binary { left, operator, right } => {
-                let folded_left = self.fold_constants(*left);
-                let folded_right = self.fold_constants(*right);
-                
-                // Try to evaluate constant expressions
-                if let (Expression::Literal(left_lit), Expression::Literal(right_lit)) = (&folded_left, &folded_right) {
-                    if let Some(result) = self.evaluate_binary_operation(left_lit, &operator, right_lit) {
-                        return Expression::Literal(result);
-                    }
-                }
-                
-                Expression::Binary {
-                    left: Box::new(folded_left),
-                    operator,
-                    right: Box::new(folded_right),
-                }
-            },
-            Expression::Unary { operator, operand } => {
-                let folded_operand = self.fold_constants(*operand);
-                
-                if let Expression::Literal(lit) = &folded_operand {
-                    if let Some(result) = self.evaluate_unary_operation(&operator, lit) {
-                        return Expression::Literal(result);
-                    }
-                }
-                
-                Expression::Unary {
-                    operator,
-                    operand: Box::new(folded_operand),
-                }
-            },
-            other => other,
-        }
-    }
 
-    fn evaluate_binary_operation(&self, left: &Literal, op: &BinaryOperator, right: &Literal) -> Option<Literal> {
-        match (left, op, right) {
-            (Literal::Integer(a), BinaryOperator::Add, Literal::Integer(b)) => {
-                Some(Literal::Integer(a + b))
-            },
-            (Literal::Integer(a), BinaryOperator::Subtract, Literal::Integer(b)) => {
-                Some(Literal::Integer(a - b))
-            },
-            (Literal::Integer(a), BinaryOperator::Multiply, Literal::Integer(b)) => {
-                Some(Literal::Integer(a * b))
-            },
-            (Literal::Integer(a), BinaryOperator::Divide, Literal::Integer(b)) if *b != 0 => {
-                Some(Literal::Float(*a as f64 / *b as f64))
-            },
-            (Literal::Float(a), BinaryOperator::Add, Literal::Float(b)) => {
-                Some(Literal::Float(a + b))
-            },
-            (Literal::Float(a), BinaryOperator::Subtract, Literal::Float(b)) => {
-                Some(Literal::Float(a - b))
-            },
-            (Literal::Float(a), BinaryOperator::Multiply, Literal::Float(b)) => {
-                Some(Literal::Float(a * b))
-            },
-            (Literal::Float(a), BinaryOperator::Divide, Literal::Float(b)) if *b != 0.0 => {
-                Some(Literal::Float(a / b))
-            },
-            (Literal::String(a), BinaryOperator::Add, Literal::String(b)) => {
-                Some(Literal::String(format!("{}{}", a, b)))
-            },
-            _ => None,
-        }
-    }
 
-    fn evaluate_unary_operation(&self, op: &UnaryOperator, operand: &Literal) -> Option<Literal> {
-        match (op, operand) {
-            (UnaryOperator::Minus, Literal::Integer(n)) => Some(Literal::Integer(-n)),
-            (UnaryOperator::Minus, Literal::Float(f)) => Some(Literal::Float(-f)),
-            (UnaryOperator::Plus, lit) => Some(lit.clone()),
-            (UnaryOperator::Not, Literal::Boolean(b)) => Some(Literal::Boolean(!b)),
-            (UnaryOperator::IsNull, Literal::Null) => Some(Literal::Boolean(true)),
-            (UnaryOperator::IsNull, _) => Some(Literal::Boolean(false)),
-            (UnaryOperator::IsNotNull, Literal::Null) => Some(Literal::Boolean(false)),
-            (UnaryOperator::IsNotNull, _) => Some(Literal::Boolean(true)),
-            _ => None,
-        }
-    }
+
+
+
 }
 
 /// Redundant expression elimination rule
@@ -403,9 +305,9 @@ impl CostModel {
     }
 
     /// Estimate cost of FROM clause
-    fn estimate_from_cost<'a>(&'a self, from: &FromClause, statistics: &'a QueryStatistics) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + '_>> {
+    fn estimate_from_cost<'a>(&'a self, from: &FromClause, statistics: &'a QueryStatistics) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + 'a>> {
         let from = from.clone();
-        let statistics = statistics.clone();
+        let statistics = statistics;
         Box::pin(async move {
             self.estimate_from_cost_impl(&from, &statistics).await
         })

@@ -384,7 +384,7 @@ struct HistoricalStorageData {
     pub daily_sizes: Vec<f64>,
     pub growth_rates: Vec<f64>,
     pub access_patterns: Vec<f64>,
-    pub analysis_period_days: i64,
+    pub _analysis_period_days: i64,
 }
 
 /// Detailed storage analysis
@@ -393,8 +393,8 @@ struct DetailedStorageAnalysis {
     pub total_size: usize,
     pub memory_count: usize,
     pub size_distribution: std::collections::HashMap<String, usize>,
-    pub type_distribution: std::collections::HashMap<String, usize>,
-    pub age_distribution: std::collections::HashMap<String, usize>,
+    pub _type_distribution: std::collections::HashMap<String, usize>,
+    pub _age_distribution: std::collections::HashMap<String, usize>,
     pub average_memory_size: f64,
 }
 
@@ -404,7 +404,7 @@ struct GrowthProjection {
     pub projected_30_days: f64,
     pub projected_90_days: f64,
     pub projected_365_days: f64,
-    pub confidence: f64,
+    pub _confidence: f64,
 }
 
 impl Default for GrowthProjection {
@@ -413,7 +413,7 @@ impl Default for GrowthProjection {
             projected_30_days: 0.0,
             projected_90_days: 0.0,
             projected_365_days: 0.0,
-            confidence: 0.0,
+            _confidence: 0.0,
         }
     }
 }
@@ -447,6 +447,7 @@ struct ActionAnalysisResult {
 
 
 
+#[allow(dead_code)]
 impl MemoryLifecycleManager {
     /// Create a new lifecycle manager
     pub fn new() -> Self {
@@ -1345,7 +1346,7 @@ impl MemoryLifecycleManager {
 
         // Simulate metadata refresh
         let refresh_timestamp = Utc::now();
-        let metadata_fields_updated = vec!["importance", "tags", "relationships", "temporal_data"];
+        let metadata_fields_updated = ["importance", "tags", "relationships", "temporal_data"];
         let new_importance = 0.5 + (memory_key.len() % 5) as f64 * 0.1; // Simulated new importance
 
         // Record metadata refresh event
@@ -1908,7 +1909,7 @@ impl MemoryLifecycleManager {
             daily_sizes,
             growth_rates,
             access_patterns,
-            analysis_period_days: 90,
+            _analysis_period_days: 90,
         })
     }
 
@@ -1968,8 +1969,8 @@ impl MemoryLifecycleManager {
             total_size,
             memory_count: memory_keys.len(),
             size_distribution,
-            type_distribution,
-            age_distribution,
+            _type_distribution: type_distribution,
+            _age_distribution: age_distribution,
             average_memory_size: if memory_keys.is_empty() { 0.0 } else { total_size as f64 / memory_keys.len() as f64 },
         })
     }
@@ -1997,7 +1998,7 @@ impl MemoryLifecycleManager {
             projected_30_days: current_size + daily_growth * 30.0,
             projected_90_days: current_size + daily_growth * 90.0,
             projected_365_days: current_size + daily_growth * 365.0,
-            confidence: 0.7,
+            _confidence: 0.7,
         }
     }
 
@@ -2018,7 +2019,7 @@ impl MemoryLifecycleManager {
             projected_30_days: current_size * (1.0 + monthly_rate),
             projected_90_days: current_size * (1.0 + monthly_rate).powi(3),
             projected_365_days: current_size * (1.0 + monthly_rate).powi(12),
-            confidence: 0.6,
+            _confidence: 0.6,
         }
     }
 
@@ -2053,7 +2054,7 @@ impl MemoryLifecycleManager {
             projected_30_days: current_size * seasonal_factor * 1.05, // 5% monthly growth with seasonal adjustment
             projected_90_days: current_size * seasonal_factor * 1.15, // 15% quarterly growth
             projected_365_days: current_size * seasonal_factor * 1.6,  // 60% yearly growth
-            confidence: 0.5,
+            _confidence: 0.5,
         }
     }
 
@@ -2075,7 +2076,7 @@ impl MemoryLifecycleManager {
             projected_30_days: current_size * prediction.growth_factor_30d,
             projected_90_days: current_size * prediction.growth_factor_90d,
             projected_365_days: current_size * prediction.growth_factor_365d,
-            confidence: prediction.confidence,
+            _confidence: prediction.confidence,
         })
     }
 
@@ -2141,7 +2142,7 @@ impl MemoryLifecycleManager {
         let bias_layer2 = 0.02;
 
         // Forward pass through network
-        let mut hidden_layer = vec![0.0; 4];
+        let mut hidden_layer = [0.0; 4];
         for i in 0..4 {
             let mut sum = bias_layer1[i];
             for j in 0..features.len().min(8) {
@@ -2528,7 +2529,7 @@ impl MemoryLifecycleManager {
                                  seasonal_factor * 0.15 +
                                  storage_pressure_factor * 0.10;
 
-            let confidence = self.calculate_prediction_confidence(
+            let _confidence = self.calculate_prediction_confidence(
                 age_factor,
                 access_pattern_factor,
                 content_importance_factor,
@@ -2536,7 +2537,7 @@ impl MemoryLifecycleManager {
                 storage_pressure_factor,
             );
 
-            let estimated_archival_date = if prediction_score > 0.7 {
+            let _estimated_archival_date = if prediction_score > 0.7 {
                 current_time + Duration::days(7) // High priority
             } else if prediction_score > 0.5 {
                 current_time + Duration::days(30) // Medium priority

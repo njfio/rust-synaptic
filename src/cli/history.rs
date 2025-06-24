@@ -43,8 +43,11 @@ pub struct HistoryEntry {
 /// Command types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CommandType {
+    /// SyQL query command
     SyqlQuery,
+    /// Shell command
     ShellCommand,
+    /// System command
     SystemCommand,
 }
 
@@ -361,10 +364,15 @@ impl HistoryManager {
 /// History statistics
 #[derive(Debug, Clone)]
 pub struct HistoryStatistics {
+    /// Total number of commands executed
     pub total_commands: usize,
+    /// Number of successful commands
     pub successful_commands: usize,
+    /// Number of failed commands
     pub failed_commands: usize,
+    /// Number of SyQL commands
     pub syql_commands: usize,
+    /// Number of shell commands
     pub shell_commands: usize,
     pub system_commands: usize,
     pub avg_duration_ms: Option<u64>,

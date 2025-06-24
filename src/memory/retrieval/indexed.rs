@@ -444,7 +444,7 @@ impl QueryResultCache {
 /// High-performance memory retriever with indexing and caching
 pub struct IndexedMemoryRetriever {
     storage: Arc<dyn Storage + Send + Sync>,
-    config: RetrievalConfig,
+    _config: RetrievalConfig,
     indexing_config: IndexingConfig,
 
     // Indexes
@@ -469,7 +469,7 @@ impl IndexedMemoryRetriever {
     ) -> Self {
         let retriever = Self {
             storage,
-            config,
+            _config: config,
             indexing_config: indexing_config.clone(),
             access_time_index: RwLock::new(AccessTimeIndex::new()),
             frequency_index: RwLock::new(AccessFrequencyIndex::new(

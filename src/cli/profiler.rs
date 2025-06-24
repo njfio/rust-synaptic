@@ -67,10 +67,15 @@ pub struct VisualizationConfig {
 /// Report formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReportFormat {
+    /// Plain text format
     Text,
+    /// JSON format
     Json,
+    /// HTML format
     Html,
+    /// CSV format
     Csv,
+    /// Markdown format
     Markdown,
 }
 
