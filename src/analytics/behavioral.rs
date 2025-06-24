@@ -2,7 +2,8 @@
 // User interaction pattern recognition and personalized recommendations
 
 use crate::error::Result;
-use crate::analytics::{AnalyticsEvent, AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority, AccessType};
+use crate::analytics::{AnalyticsEvent, AnalyticsConfig};
+use crate::analytics::{AnalyticsInsight, InsightType, InsightPriority};
 use chrono::{DateTime, Utc, Duration, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -261,7 +262,7 @@ impl BehavioralAnalyzer {
 
         // Then update interaction frequency in a separate scope
         let user_id_clone = user_id.to_string();
-        if let Some(profile) = self.user_profiles.get_mut(&user_id_clone) {
+        if let Some(_profile) = self.user_profiles.get_mut(&user_id_clone) {
             self.update_interaction_frequency_for_user(&user_id_clone).await?;
         }
 
@@ -742,7 +743,7 @@ mod tests {
 
         let recommendations = analyzer.generate_recommendations("rec_user").await.unwrap();
         // Should not error, recommendations may be empty initially
-        assert!(recommendations.len() >= 0);
+        // Recommendations should be generated (empty is valid initially)
     }
 
     #[tokio::test]
@@ -763,6 +764,6 @@ mod tests {
 
         let insights = analyzer.generate_insights().await.unwrap();
         // Should generate insights based on user behavior
-        assert!(insights.len() >= 0);
+        // Insights should be generated based on user behavior
     }
 }

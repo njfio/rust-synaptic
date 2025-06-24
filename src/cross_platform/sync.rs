@@ -576,29 +576,29 @@ impl SyncManager {
     }
 
     /// Create sync operation for store
-    pub fn create_store_operation(key: String, data: Vec<u8>) -> SyncOperation {
+    pub fn create_store_operation(key: String, data: Vec<u8>) -> Result<SyncOperation, SynapticError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
             .as_secs();
         let checksum = Self::calculate_checksum(&data);
 
-        SyncOperation::Store {
+        Ok(SyncOperation::Store {
             key,
             data,
             timestamp,
             checksum,
-        }
+        })
     }
 
     /// Create sync operation for delete
-    pub fn create_delete_operation(key: String) -> SyncOperation {
+    pub fn create_delete_operation(key: String) -> Result<SyncOperation, SynapticError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
             .as_secs();
 
-        SyncOperation::Delete { key, timestamp }
+        Ok(SyncOperation::Delete { key, timestamp })
     }
 }
 

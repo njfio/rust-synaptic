@@ -2,13 +2,42 @@
 name = "synaptic"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70.0"
 authors = ["Nicholas Ferguson <me@njf.io>"]
 description = "Intelligent AI agent memory system with dynamic knowledge graphs and smart content updates"
 license = "MIT"
 repository = "https://github.com/njfio/rust-synaptic"
+documentation = "https://docs.rs/synaptic"
+readme = "README.md"
 keywords = ["ai", "memory", "knowledge-graph", "agent", "intelligent"]
 categories = ["data-structures", "algorithms", "science"]
 resolver = "2"
+
+# Linting configuration
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+dead_code = "warn"
+
+[lints.clippy]
+# Enforce safety
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# Enforce performance
+inefficient_to_string = "deny"
+clone_on_ref_ptr = "deny"
+
+# Enforce style
+cognitive_complexity = "warn"
+too_many_arguments = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 
 [dependencies]
 # Serialization
@@ -50,6 +79,7 @@ redis = { version = "0.24", features = ["tokio-comp", "cluster"], optional = tru
 lz4 = { version = "1.24", optional = true }
 zstd = { version = "0.13", optional = true }
 brotli = { version = "3.4", optional = true }
+flate2 = { version = "1.0", optional = true }
 crossbeam = "0.8"
 dashmap = "5.5"
 parking_lot = "0.12"
@@ -174,7 +204,7 @@ base64 = "0.21"
 
 [features]
 # Core Features (minimal dependencies) - Updated for development
-default = ["core", "storage", "embeddings", "analytics", "bincode", "base64"]
+default = ["core", "storage", "embeddings", "analytics", "compression", "dep:bincode", "base64"]
 core = []
 storage = ["file-storage", "memory-storage"]
 file-storage = []
@@ -185,7 +215,7 @@ sql-storage = ["sqlx"]
 embeddings = []
 vector-search = []
 analytics = []
-compression = ["lz4", "zstd", "brotli"]
+compression = ["lz4", "zstd", "brotli", "flate2"]
 
 # Advanced Features
 security = ["tfhe", "bellman", "bls12_381"]
@@ -208,7 +238,7 @@ document-processing = ["pulldown-cmark", "mime_guess", "encoding_rs", "csv", "wa
 multimodal = ["image-processing", "audio-processing", "code-analysis", "document-processing"]
 
 # Cross-Platform Support
-wasm = ["wasm-bindgen", "js-sys", "web-sys", "wasm-bindgen-futures", "getrandom", "base64"]
+wasm = ["wasm-bindgen", "js-sys", "web-sys", "wasm-bindgen-futures", "getrandom", "base64", "flate2"]
 mobile = ["jni", "ndk", "swift-bridge"]
 cross-platform = ["wasm", "mobile", "md5", "bincode"]
 
@@ -216,6 +246,7 @@ cross-platform = ["wasm", "mobile", "md5", "bincode"]
 full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal", "distributed"]
 minimal = ["core", "storage"]
 base64 = ["dep:base64"]
+bincode = ["dep:bincode"]
 
 # Testing utilities
 test-utils = []
@@ -278,3 +309,25 @@ panic = "abort"
 opt-level = 1
 debug = true
 overflow-checks = true
+
+[[bench]]
+name = "memory_retrieval_performance"
+harness = false
+
+[[bench]]
+name = "retrieval_comparison"
+harness = false
+
+[[bench]]
+name = "comprehensive_performance_suite"
+harness = false
+
+[[bench]]
+name = "analytics_performance"
+harness = false
+required-features = ["analytics"]
+
+[[bench]]
+name = "security_performance"
+harness = false
+required-features = ["security"]

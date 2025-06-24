@@ -160,9 +160,10 @@ impl PerformanceOptimizer {
         let mut optimizations = Vec::new();
         
         // Sort opportunities by potential improvement
+        use crate::error_handling::SafeCompare;
         let mut sorted_opportunities = analysis.opportunities.clone();
-        sorted_opportunities.sort_by(|a, b| 
-            b.potential_improvement.partial_cmp(&a.potential_improvement).unwrap()
+        sorted_opportunities.sort_by(|a, b|
+            b.potential_improvement.safe_partial_cmp(&a.potential_improvement)
         );
         
         // Generate optimizations for top opportunities

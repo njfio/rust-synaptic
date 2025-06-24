@@ -7,7 +7,7 @@ use super::ast::*;
 use super::{QueryPlan, PlanNode, PlanNodeType, PlanStatistics, QueryValue};
 use crate::error::Result;
 use std::collections::HashMap;
-use uuid::Uuid;
+
 
 /// Query planner for SyQL
 pub struct QueryPlanner {
@@ -215,7 +215,7 @@ impl QueryPlanner {
 
                 Ok((vec![path_node], 200.0, 100))
             },
-            FromClause::Join { left, right, join_type, condition } => {
+            FromClause::Join { left: _, right: _, join_type, condition } => {
                 // Simplified join handling without recursion
                 let left_rows = 1000; // Default estimate
                 let right_rows = 1000; // Default estimate
@@ -276,7 +276,7 @@ impl QueryPlanner {
 
                 Ok((nodes, total_cost, total_rows))
             },
-            FromClause::Subquery { query, alias } => {
+            FromClause::Subquery { query: _, alias } => {
                 // Simplified subquery handling without recursion
                 let estimated_cost = 50.0; // Default subquery cost
                 let estimated_rows = 100; // Default subquery rows

@@ -157,7 +157,8 @@ impl PartialEq for PrefetchRequest {
 
 impl Ord for PrefetchRequest {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.priority.partial_cmp(&other.priority).unwrap_or(Ordering::Equal)
+        use crate::error_handling::SafeCompare;
+        self.priority.safe_partial_cmp(&other.priority)
     }
 }
 
@@ -601,7 +602,8 @@ impl OptimizedVectorSearch {
         }
 
         // Re-sort and truncate
-        candidates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(Ordering::Equal));
+        use crate::error_handling::SafeCompare;
+        candidates.sort_by(|a, b| b.similarity.safe_partial_cmp(&a.similarity));
         candidates.truncate(self.search_config.max_results);
 
         Ok(candidates)

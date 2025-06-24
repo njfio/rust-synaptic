@@ -43,7 +43,7 @@ impl<'a> InteractiveShell<'a> {
         syql_engine: &'a mut SyQLEngine,
         config: &'a CliConfig,
         history_file: Option<PathBuf>,
-        enable_completion: bool,
+        _enable_completion: bool,
     ) -> Result<Self> {
         let mut editor = DefaultEditor::new()?;
 
@@ -147,15 +147,21 @@ impl<'a> InteractiveShell<'a> {
                     self.execute_command(trimmed).await?;
                 },
                 Err(ReadlineError::Interrupted) => {
+                    tracing::debug!("User interrupted input with Ctrl+C");
                     println!("^C");
                     self.state.multi_line_mode = false;
                     self.state.current_query.clear();
                 },
                 Err(ReadlineError::Eof) => {
+                    tracing::info!("User exited shell with EOF");
                     println!("Goodbye!");
                     break;
                 },
                 Err(err) => {
+                    tracing::error!(
+                        error = %err,
+                        "Shell readline error"
+                    );
                     eprintln!("Error: {}", err);
                     break;
                 }

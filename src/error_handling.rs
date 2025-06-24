@@ -285,7 +285,7 @@ pub mod utils {
 
             // Check if circuit is open
             if current_state == 1 {
-                let last_failure = self.last_failure_time.lock().unwrap();
+                let last_failure = self.last_failure_time.safe_lock("circuit breaker last failure time")?;
                 if let Some(last_time) = *last_failure {
                     if last_time.elapsed() < self.recovery_timeout {
                         return Err(MemoryError::resource_exhausted(
@@ -310,7 +310,7 @@ pub mod utils {
 
                     if failures >= self.failure_threshold {
                         self.state.store(1, Ordering::Relaxed); // Open
-                        *self.last_failure_time.lock().unwrap() = Some(std::time::Instant::now());
+                        *self.last_failure_time.safe_lock("circuit breaker failure time update")? = Some(std::time::Instant::now());
                         tracing::error!("Circuit breaker opened for {} after {} failures", context, failures);
                     }
 
@@ -582,7 +582,7 @@ pub mod recovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, RwLock, Mutex};
+
     
     #[test]
     fn test_safe_unwrap_option() {

@@ -778,15 +778,12 @@ impl MemorySummarizer {
 
             for i in 0..n {
                 let mut sum = 0.0;
-                let mut total_similarity = 0.0;
-
                 for j in 0..n {
                     if i != j && similarity_matrix[j][i] > 0.0 {
                         let outgoing_sum: f64 = similarity_matrix[j].iter().sum();
                         if outgoing_sum > 0.0 {
                             sum += similarity_matrix[j][i] * scores[j] / outgoing_sum;
                         }
-                        total_similarity += similarity_matrix[j][i];
                     }
                 }
 

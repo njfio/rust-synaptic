@@ -613,9 +613,10 @@ impl OptimizationEngine {
         }
         
         // Select strategy with highest score
+        use crate::error_handling::SafeCompare;
         let best_strategy_id = strategy_scores
             .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| a.1.safe_partial_cmp(b.1))
             .map(|(id, _)| *id)
             .ok_or_else(|| SynapticError::PerformanceError("No optimization strategies available".to_string()))?;
         

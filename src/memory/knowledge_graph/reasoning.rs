@@ -4,7 +4,7 @@ use super::types::{Node, RelationshipType};
 use super::graph::KnowledgeGraph;
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 /// Graph reasoning engine for inferring new relationships

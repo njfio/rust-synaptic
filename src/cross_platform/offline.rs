@@ -271,7 +271,7 @@ impl LocalStorage {
     fn store(&mut self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
             .as_secs();
 
         // Calculate checksum
@@ -494,14 +494,15 @@ impl OfflineAdapter {
                 }
                 SyncOperation::Download { key, .. } => {
                     if let Some((data, _ver)) = self.remote_backend.download(&key)? {
-                        let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                        use crate::error_handling::SafeLock;
+                        let mut storage = self.storage.safe_write("offline sync download")?;
                         storage.store(&key, &data)?;
                     }
                 }
                 SyncOperation::Delete { key } => {
                     self.remote_backend.delete(&key)?;
                 }
-                SyncOperation::ResolveConflict { key, resolution, local_version, remote_version } => {
+                SyncOperation::ResolveConflict { key, resolution, local_version, remote_version: _ } => {
                     match resolution {
                         ConflictResolution::UseLocal => {
                             let data = {
@@ -518,7 +519,6 @@ impl OfflineAdapter {
                                 storage.store(&key, &data)?;
                             } else {
                                 // remote version missing, nothing to do
-                                let _ = remote_version; // suppress unused warning
                             }
                         }
                         _ => {}

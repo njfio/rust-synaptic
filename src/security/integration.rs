@@ -551,13 +551,15 @@ impl InMemoryAuditStorage {
 
 impl crate::security::policy_engine::AuditStorage for InMemoryAuditStorage {
     fn log_event(&self, event: crate::security::policy_engine::AuditEvent) -> Result<()> {
-        let mut events = self.events.lock().unwrap();
+        use crate::error_handling::SafeMutex;
+        let mut events = self.events.safe_lock("InMemoryAuditStorage::log_event")?;
         events.push(event);
         Ok(())
     }
 
     fn query_events(&self, _query: crate::security::policy_engine::AuditQuery) -> Result<Vec<crate::security::policy_engine::AuditEvent>> {
-        let events = self.events.lock().unwrap();
+        use crate::error_handling::SafeMutex;
+        let events = self.events.safe_lock("InMemoryAuditStorage::query_events")?;
         Ok(events.clone())
     }
 }

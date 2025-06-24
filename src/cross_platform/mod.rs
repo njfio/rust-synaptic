@@ -7,10 +7,10 @@ use crate::error::MemoryError as SynapticError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[cfg(feature = "wasm-support")]
+#[cfg(feature = "wasm")]
 pub mod wasm;
 
-#[cfg(feature = "mobile-support")]
+#[cfg(feature = "mobile")]
 pub mod mobile;
 
 pub mod offline;
@@ -312,21 +312,21 @@ impl CrossPlatformMemoryManager {
     /// Initialize platform-specific adapters
     fn initialize_adapters(&mut self) -> Result<(), SynapticError> {
         // Initialize WebAssembly adapter
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if self.config.enable_wasm {
             let adapter = wasm::WasmAdapter::new()?;
             self.adapters.insert(Platform::WebAssembly, Box::new(adapter));
         }
 
         // Initialize mobile adapters
-        #[cfg(feature = "mobile-support")]
+        #[cfg(feature = "mobile")]
         if self.config.enable_mobile {
             #[cfg(target_os = "ios")]
             {
                 let adapter = mobile::iOSAdapter::new()?;
                 self.adapters.insert(Platform::iOS, Box::new(adapter));
             }
-            
+
             #[cfg(target_os = "android")]
             {
                 let adapter = mobile::AndroidAdapter::new()?;

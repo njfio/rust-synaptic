@@ -10,8 +10,14 @@ use super::{
 use crate::error::MemoryError as SynapticError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
-#[cfg(feature = "wasm-support")]
+mod wasm_worker;
+use wasm_worker::WebWorkerManager;
+
+#[cfg(feature = "wasm")]
 use {
     js_sys::{Array, Object, Promise, Uint8Array},
     wasm_bindgen::{prelude::*, JsCast},
@@ -26,16 +32,19 @@ use {
 #[derive(Debug)]
 pub struct WasmAdapter {
     /// IndexedDB database connection
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     db: Option<IdbDatabase>,
-    
+
     /// Local storage fallback
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     local_storage: Option<Storage>,
-    
-    /// In-memory cache
-    memory_cache: HashMap<String, Vec<u8>>,
-    
+
+    /// In-memory cache with interior mutability
+    memory_cache: RefCell<HashMap<String, Vec<u8>>>,
+
+    /// Web worker manager for background operations
+    worker_manager: RefCell<Option<WebWorkerManager>>,
+
     /// Configuration
     config: WasmConfig,
 }
@@ -45,24 +54,30 @@ pub struct WasmAdapter {
 pub struct WasmConfig {
     /// IndexedDB database name
     pub db_name: String,
-    
+
     /// IndexedDB version
     pub db_version: u32,
-    
+
     /// Object store name
     pub store_name: String,
-    
+
     /// Enable local storage fallback
     pub enable_local_storage_fallback: bool,
-    
+
     /// Enable memory cache
     pub enable_memory_cache: bool,
-    
+
     /// Maximum cache size (bytes)
     pub max_cache_size: usize,
-    
+
     /// Enable compression
     pub enable_compression: bool,
+
+    /// Enable web worker for background operations
+    pub enable_web_worker: bool,
+
+    /// Web worker timeout (seconds)
+    pub worker_timeout_seconds: u64,
 }
 
 impl Default for WasmConfig {
@@ -75,6 +90,8 @@ impl Default for WasmConfig {
             enable_memory_cache: true,
             max_cache_size: 10 * 1024 * 1024, // 10MB
             enable_compression: true,
+            enable_web_worker: true,
+            worker_timeout_seconds: 30,
         }
     }
 }
@@ -83,17 +100,18 @@ impl WasmAdapter {
     /// Create a new WebAssembly adapter
     pub fn new() -> Result<Self, SynapticError> {
         Ok(Self {
-            #[cfg(feature = "wasm-support")]
+            #[cfg(feature = "wasm")]
             db: None,
-            #[cfg(feature = "wasm-support")]
+            #[cfg(feature = "wasm")]
             local_storage: None,
-            memory_cache: HashMap::new(),
+            memory_cache: RefCell::new(HashMap::new()),
+            worker_manager: RefCell::new(None),
             config: WasmConfig::default(),
         })
     }
 
     /// Initialize IndexedDB connection
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     async fn initialize_indexeddb(&mut self) -> Result<(), SynapticError> {
         let window = window().ok_or_else(|| SynapticError::ProcessingError("No window object available".to_string()))?;
         
@@ -152,14 +170,14 @@ impl WasmAdapter {
     }
 
     /// Initialize local storage fallback
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     fn initialize_local_storage(&mut self) -> Result<(), SynapticError> {
         if !self.config.enable_local_storage_fallback {
             return Ok(());
         }
 
         let window = window().ok_or_else(|| SynapticError::ProcessingError("No window object available".to_string()))?;
-        
+
         self.local_storage = window
             .local_storage()
             .map_err(|e| SynapticError::ProcessingError(format!("Failed to get local storage: {:?}", e)))?;
@@ -167,8 +185,24 @@ impl WasmAdapter {
         Ok(())
     }
 
+    /// Initialize web worker for background operations
+    #[cfg(feature = "wasm")]
+    async fn initialize_web_worker(&self) -> Result<(), SynapticError> {
+        if !self.config.enable_web_worker {
+            return Ok(());
+        }
+
+        let mut worker_manager = WebWorkerManager::new()?;
+        worker_manager.initialize().await?;
+
+        *self.worker_manager.borrow_mut() = Some(worker_manager);
+
+        tracing::info!("Web worker initialized for background operations");
+        Ok(())
+    }
+
     /// Store data in IndexedDB
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     async fn store_indexeddb(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
         let db = self.db.as_ref().ok_or_else(|| SynapticError::ProcessingError("IndexedDB not initialized".to_string()))?;
         
@@ -197,7 +231,7 @@ impl WasmAdapter {
     }
 
     /// Retrieve data from IndexedDB
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     async fn retrieve_indexeddb(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
         let db = self.db.as_ref().ok_or_else(|| SynapticError::ProcessingError("IndexedDB not initialized".to_string()))?;
         
@@ -231,7 +265,7 @@ impl WasmAdapter {
     }
 
     /// Store data in local storage (fallback)
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     fn store_local_storage(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
         let storage = self.local_storage.as_ref().ok_or_else(|| SynapticError::ProcessingError("Local storage not available".to_string()))?;
         
@@ -246,7 +280,7 @@ impl WasmAdapter {
     }
 
     /// Retrieve data from local storage (fallback)
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     fn retrieve_local_storage(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
         let storage = self.local_storage.as_ref().ok_or_else(|| SynapticError::ProcessingError("Local storage not available".to_string()))?;
         
@@ -281,25 +315,28 @@ impl WasmAdapter {
     }
 
     /// Update memory cache
-    fn update_cache(&mut self, key: &str, data: &[u8]) {
+    fn update_cache(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
         if !self.config.enable_memory_cache {
-            return;
+            return Ok(());
         }
 
+        let mut cache = self.memory_cache.borrow_mut();
+
         // Check cache size limit
-        let current_size: usize = self.memory_cache.values().map(|v| v.len()).sum();
+        let current_size: usize = cache.values().map(|v| v.len()).sum();
         if current_size + data.len() > self.config.max_cache_size {
             // Simple LRU eviction (remove first entry)
-            if let Some(first_key) = self.memory_cache.keys().next().cloned() {
-                self.memory_cache.remove(&first_key);
+            if let Some(first_key) = cache.keys().next().cloned() {
+                cache.remove(&first_key);
             }
         }
 
-        self.memory_cache.insert(key.to_string(), data.to_vec());
+        cache.insert(key.to_string(), data.to_vec());
+        Ok(())
     }
 
     /// Get browser performance information
-    #[cfg(feature = "wasm-support")]
+    #[cfg(feature = "wasm")]
     fn get_browser_performance(&self) -> PerformanceProfile {
         let window = window();
         let performance = window.and_then(|w| w.performance());
@@ -344,7 +381,7 @@ impl WasmAdapter {
 impl CrossPlatformAdapter for WasmAdapter {
     fn initialize(&mut self, config: &PlatformConfig) -> Result<(), SynapticError> {
         // Initialize storage backends
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         {
             // Initialize IndexedDB
             if config.storage_backends.contains(&StorageBackend::IndexedDB) {
@@ -354,6 +391,9 @@ impl CrossPlatformAdapter for WasmAdapter {
 
             // Initialize local storage fallback
             self.initialize_local_storage()?;
+
+            // Initialize web worker (async operation deferred to first use)
+            // The web worker will be initialized on first async operation
         }
 
         Ok(())
@@ -364,22 +404,20 @@ impl CrossPlatformAdapter for WasmAdapter {
         let compressed_data = self.compress_data(data)?;
 
         // Try IndexedDB first
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if self.db.is_some() {
             // Note: This should be async in a real implementation
             // For now, we'll use local storage as fallback
         }
 
         // Fallback to local storage
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if self.local_storage.is_some() {
             self.store_local_storage(key, &compressed_data)?;
         }
 
-        // Update cache
-        if let Ok(mut adapter) = unsafe { std::ptr::read(self as *const Self as *mut Self) } {
-            adapter.update_cache(key, data);
-        }
+        // Update cache using safe interior mutability
+        let _ = self.update_cache(key, data);
 
         Ok(())
     }
@@ -387,19 +425,20 @@ impl CrossPlatformAdapter for WasmAdapter {
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
         // Check cache first
         if self.config.enable_memory_cache {
-            if let Some(data) = self.memory_cache.get(key) {
+            let cache = self.memory_cache.borrow();
+            if let Some(data) = cache.get(key) {
                 return Ok(Some(data.clone()));
             }
         }
 
         // Try IndexedDB
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if self.db.is_some() {
             // Note: This should be async in a real implementation
         }
 
         // Fallback to local storage
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if let Some(data) = self.retrieve_local_storage(key)? {
             let decompressed = self.decompress_data(&data)?;
             return Ok(Some(decompressed));
@@ -411,13 +450,14 @@ impl CrossPlatformAdapter for WasmAdapter {
     fn delete(&self, key: &str) -> Result<bool, SynapticError> {
         let mut deleted = false;
 
-        // Remove from cache
-        if let Ok(mut adapter) = unsafe { std::ptr::read(self as *const Self as *mut Self) } {
-            deleted = adapter.memory_cache.remove(key).is_some();
+        // Remove from cache using safe interior mutability
+        if self.config.enable_memory_cache {
+            let mut cache = self.memory_cache.borrow_mut();
+            deleted = cache.remove(key).is_some();
         }
 
         // Remove from local storage
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if let Some(ref storage) = self.local_storage {
             storage
                 .remove_item(&format!("synaptic_{}", key))
@@ -432,14 +472,17 @@ impl CrossPlatformAdapter for WasmAdapter {
         let mut keys = Vec::new();
 
         // Get keys from cache
-        keys.extend(self.memory_cache.keys().cloned());
+        {
+            let cache = self.memory_cache.borrow();
+            keys.extend(cache.keys().cloned());
+        }
 
         // Get keys from local storage
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         if let Some(ref storage) = self.local_storage {
             let length = storage.length()
                 .map_err(|e| SynapticError::ProcessingError(format!("Failed to get storage length: {:?}", e)))?;
-            
+
             for i in 0..length {
                 if let Ok(Some(key)) = storage.key(i) {
                     if let Some(synaptic_key) = key.strip_prefix("synaptic_") {
@@ -493,9 +536,9 @@ impl CrossPlatformAdapter for WasmAdapter {
     }
 
     fn get_platform_info(&self) -> PlatformInfo {
-        #[cfg(feature = "wasm-support")]
+        #[cfg(feature = "wasm")]
         let performance_profile = self.get_browser_performance();
-        #[cfg(not(feature = "wasm-support"))]
+        #[cfg(not(feature = "wasm"))]
         let performance_profile = PerformanceProfile {
             cpu_score: 0.8,
             memory_score: 0.7,
@@ -516,5 +559,109 @@ impl CrossPlatformAdapter for WasmAdapter {
             ],
             performance_profile,
         }
+    }
+}
+
+impl WasmAdapter {
+    /// Async store operation using web worker when available
+    pub async fn store_async(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
+        // Try web worker first if enabled
+        if self.config.enable_web_worker {
+            // Initialize worker if not already done
+            if self.worker_manager.borrow().is_none() {
+                #[cfg(feature = "wasm")]
+                self.initialize_web_worker().await?;
+            }
+
+            if let Some(ref worker) = *self.worker_manager.borrow() {
+                return worker.store_async(key, data, self.config.enable_compression).await;
+            }
+        }
+
+        // Fallback to synchronous operation
+        self.store(key, data)
+    }
+
+    /// Async retrieve operation using web worker when available
+    pub async fn retrieve_async(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
+        // Try web worker first if enabled
+        if self.config.enable_web_worker {
+            // Initialize worker if not already done
+            if self.worker_manager.borrow().is_none() {
+                #[cfg(feature = "wasm")]
+                self.initialize_web_worker().await?;
+            }
+
+            if let Some(ref worker) = *self.worker_manager.borrow() {
+                return worker.retrieve_async(key).await;
+            }
+        }
+
+        // Fallback to synchronous operation
+        self.retrieve(key)
+    }
+
+    /// Async delete operation using web worker when available
+    pub async fn delete_async(&self, key: &str) -> Result<bool, SynapticError> {
+        // Try web worker first if enabled
+        if self.config.enable_web_worker {
+            // Initialize worker if not already done
+            if self.worker_manager.borrow().is_none() {
+                #[cfg(feature = "wasm")]
+                self.initialize_web_worker().await?;
+            }
+
+            if let Some(ref worker) = *self.worker_manager.borrow() {
+                return worker.delete_async(key).await;
+            }
+        }
+
+        // Fallback to synchronous operation
+        self.delete(key)
+    }
+
+    /// Async list keys operation using web worker when available
+    pub async fn list_keys_async(&self) -> Result<Vec<String>, SynapticError> {
+        // Try web worker first if enabled
+        if self.config.enable_web_worker {
+            // Initialize worker if not already done
+            if self.worker_manager.borrow().is_none() {
+                #[cfg(feature = "wasm")]
+                self.initialize_web_worker().await?;
+            }
+
+            if let Some(ref worker) = *self.worker_manager.borrow() {
+                return worker.list_keys_async().await;
+            }
+        }
+
+        // Fallback to synchronous operation
+        self.list_keys()
+    }
+
+    /// Search operation using web worker
+    pub async fn search_async(&self, query: &str, limit: usize) -> Result<Vec<wasm_worker::SearchResult>, SynapticError> {
+        // Initialize worker if not already done
+        if self.worker_manager.borrow().is_none() {
+            #[cfg(feature = "wasm")]
+            self.initialize_web_worker().await?;
+        }
+
+        if let Some(ref worker) = *self.worker_manager.borrow() {
+            return worker.search_async(query, limit).await;
+        }
+
+        Err(SynapticError::ProcessingError("Web worker not available for search".to_string()))
+    }
+
+    /// Get web worker statistics
+    pub fn get_worker_stats(&self) -> HashMap<String, String> {
+        let mut stats = HashMap::new();
+
+        stats.insert("worker_enabled".to_string(), self.config.enable_web_worker.to_string());
+        stats.insert("worker_initialized".to_string(), self.worker_manager.borrow().is_some().to_string());
+        stats.insert("worker_timeout".to_string(), format!("{}s", self.config.worker_timeout_seconds));
+
+        stats
     }
 }

@@ -274,10 +274,11 @@ impl PerformanceCache {
         let mut entries: Vec<_> = cache.iter().collect();
         
         // Sort by adaptive score (combination of recency, frequency, and size)
+        use crate::error_handling::SafeCompare;
         entries.sort_by(|(key_a, entry_a), (key_b, entry_b)| {
             let score_a = self.calculate_adaptive_score(key_a, entry_a, &patterns);
             let score_b = self.calculate_adaptive_score(key_b, entry_b, &patterns);
-            score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+            score_a.safe_partial_cmp(&score_b)
         });
         
         let mut freed_space = 0;

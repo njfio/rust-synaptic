@@ -140,9 +140,9 @@ impl OptimizationRule for PredicatePushdownRule {
     fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         let query = query.clone();
         Box::pin(async move {
-            let mut query = query;
+            let query = query;
             // Push WHERE conditions down to the FROM clause when possible
-            if let Some(where_expr) = &query.where_clause {
+            if let Some(_where_expr) = &query.where_clause {
                 // Simplified implementation - in practice would analyze predicates
                 // and push suitable ones down to the FROM clause
             }

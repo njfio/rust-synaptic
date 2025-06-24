@@ -473,7 +473,7 @@ impl SynapticIntelligence {
         let mut task_count = 0;
 
         // Aggregate resistance from all tasks
-        for (task_id, task_weights) in &self.task_importance_weights {
+        for (_task_id, task_weights) in &self.task_importance_weights {
             if let Some(&importance) = task_weights.get(param_id) {
                 // Get path integral contribution
                 let path_integral_contribution = if let Some(path_integral) = self.path_integrals.get(param_id) {

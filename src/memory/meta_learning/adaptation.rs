@@ -88,7 +88,7 @@ pub struct AdaptationManager {
 
 /// Record of adaptation attempts
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AdaptationRecord {
+pub struct AdaptationRecord {
     /// Task ID
     task_id: String,
     /// Source domain

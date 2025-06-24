@@ -4,7 +4,7 @@ use crate::error::{Result, MemoryError};
 use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rand::seq::SliceRandom;
 
 /// Analytics engine for memory insights
@@ -1380,7 +1380,7 @@ impl MemoryAnalytics {
     async fn analyze_behavioral_patterns_ml(&self) -> Result<Option<Insight>> {
         // Analyze user behavior patterns from access data
         let mut behavior_sequences = Vec::new();
-        let mut session_patterns: Vec<String> = Vec::new();
+        let _session_patterns: Vec<String> = Vec::new();
 
         // Extract behavioral sequences
         for access_pattern in self.analytics_data.access_patterns.values() {
@@ -1460,7 +1460,7 @@ impl MemoryAnalytics {
         let ml_insights = self.calculate_ml_usage_insights().await?;
 
         // Add predictive metrics
-        let predictive_metrics = self.calculate_predictive_metrics().await?;
+        let _predictive_metrics = self.calculate_predictive_metrics().await?;
 
         // Enhance the statistics with ML insights
         stats.total_memories_created += ml_insights.projected_growth as usize;
@@ -1751,7 +1751,7 @@ impl MemoryAnalytics {
         let sum_y = data.iter().sum::<f64>();
         let sum_xy = x_values.iter().zip(data.iter()).map(|(x, y)| x * y).sum::<f64>();
         let sum_x_squared = x_values.iter().map(|x| x * x).sum::<f64>();
-        let sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
+        let _sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x_squared - sum_x * sum_x);
         let intercept = (sum_y - slope * sum_x) / n;

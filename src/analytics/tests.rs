@@ -5,7 +5,7 @@
 mod phase3_analytics_tests {
     use super::super::*;
     use crate::memory::types::MemoryEntry;
-    use chrono::{DateTime, Utc, Duration};
+    use chrono::{Utc, Duration};
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -368,7 +368,7 @@ mod phase3_analytics_tests {
 #[cfg(test)]
 mod phase3_integration_tests {
     use super::super::*;
-    use crate::memory::types::MemoryEntry;
+
     use chrono::Duration;
 
     #[tokio::test]

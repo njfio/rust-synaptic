@@ -4,9 +4,9 @@ use crate::error::{MemoryError, Result};
 use chrono::{DateTime, Utc, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use crate::memory::types::{MemoryEntry, MemoryType};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use crate::memory::types::MemoryEntry;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -3982,7 +3982,7 @@ impl RegressionDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::types::MemoryMetadata;
+    use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
 
     #[tokio::test]
     async fn test_deduplication() {
