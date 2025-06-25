@@ -75,13 +75,13 @@ pub enum DomainAlignmentMethod {
 #[derive(Debug)]
 pub struct AdaptationManager {
     /// Configuration
-    config: MetaLearningConfig,
+    _config: MetaLearningConfig,
     /// Adaptation history
     adaptation_history: Vec<AdaptationRecord>,
     /// Domain mappings
-    domain_mappings: HashMap<String, DomainMapping>,
+    _domain_mappings: HashMap<String, DomainMapping>,
     /// Task similarity cache
-    task_similarity_cache: HashMap<(String, String), f64>,
+    _task_similarity_cache: HashMap<(String, String), f64>,
     /// Adaptation strategies
     strategies: HashMap<String, AdaptationStrategy>,
 }
@@ -124,10 +124,10 @@ impl AdaptationManager {
     /// Create a new adaptation manager
     pub fn new(config: MetaLearningConfig) -> Self {
         Self {
-            config,
+            _config: config,
             adaptation_history: Vec::new(),
-            domain_mappings: HashMap::new(),
-            task_similarity_cache: HashMap::new(),
+            _domain_mappings: HashMap::new(),
+            _task_similarity_cache: HashMap::new(),
             strategies: Self::default_strategies(),
         }
     }

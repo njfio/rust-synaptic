@@ -15,7 +15,7 @@ use super::PerformanceConfig;
 /// High-performance memory pool
 #[derive(Debug)]
 pub struct MemoryPool {
-    config: PerformanceConfig,
+    _config: PerformanceConfig,
     pools: Arc<RwLock<HashMap<usize, Pool>>>,
     allocation_stats: Arc<RwLock<AllocationStatistics>>,
     fragmentation_monitor: Arc<RwLock<FragmentationMonitor>>,
@@ -33,7 +33,7 @@ impl MemoryPool {
         }
         
         Ok(Self {
-            config,
+            _config: config,
             pools: Arc::new(RwLock::new(pools)),
             allocation_stats: Arc::new(RwLock::new(AllocationStatistics::new())),
             fragmentation_monitor: Arc::new(RwLock::new(FragmentationMonitor::new())),
@@ -197,9 +197,13 @@ impl MemoryPool {
 /// Memory pool for specific chunk size
 #[derive(Debug)]
 pub struct Pool {
+    /// Size of each chunk in bytes
     pub chunk_size: usize,
+    /// Total number of chunks in the pool
     pub total_chunks: usize,
+    /// Available chunks ready for allocation
     pub available_chunks: VecDeque<MemoryChunk>,
+    /// Maximum capacity of the pool
     pub max_capacity: usize,
 }
 
@@ -273,8 +277,11 @@ impl Pool {
 /// Memory chunk
 #[derive(Debug)]
 pub struct MemoryChunk {
+    /// Memory chunk data
     pub data: Vec<u8>,
+    /// Size of the chunk in bytes
     pub size: usize,
+    /// When the chunk was allocated
     pub allocated_at: Instant,
 }
 
@@ -302,16 +309,30 @@ impl MemoryChunk {
 /// Allocation statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllocationStatistics {
+    /// Total number of allocations
     pub total_allocations: u64,
+    /// Total number of deallocations
     pub total_deallocations: u64,
+    /// Allocations from pool
     pub pool_allocations: u64,
+    /// Deallocations to pool
     pub pool_deallocations: u64,
+    /// Direct allocations (bypassing pool)
     pub direct_allocations: u64,
+    /// Number of direct deallocations bypassing the pool
     pub direct_deallocations: u64,
+    /// Pool hit rate as a percentage (0.0 to 1.0)
     pub pool_hit_rate: f64,
 }
 
+impl Default for AllocationStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AllocationStatistics {
+    /// Create a new allocation statistics instance
     pub fn new() -> Self {
         Self {
             total_allocations: 0,
@@ -324,6 +345,7 @@ impl AllocationStatistics {
         }
     }
     
+    /// Calculate and update the pool hit rate
     pub fn calculate_hit_rate(&mut self) {
         if self.total_allocations > 0 {
             self.pool_hit_rate = self.pool_allocations as f64 / self.total_allocations as f64;
@@ -334,21 +356,35 @@ impl AllocationStatistics {
 /// Pool statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolStatistics {
+    /// Size of each chunk in bytes
     pub chunk_size: usize,
+    /// Total number of chunks in the pool
     pub total_chunks: usize,
+    /// Number of available chunks
     pub available_chunks: usize,
+    /// Pool utilization percentage (0.0 to 1.0)
     pub utilization: f64,
 }
 
 /// Fragmentation monitor
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FragmentationMonitor {
+    /// Internal fragmentation percentage
     pub internal_fragmentation: f64,
+    /// External fragmentation percentage
     pub external_fragmentation: f64,
+    /// Overall fragmentation score (0.0 to 1.0)
     pub fragmentation_score: f64,
 }
 
+impl Default for FragmentationMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FragmentationMonitor {
+    /// Create a new fragmentation monitor
     pub fn new() -> Self {
         Self {
             internal_fragmentation: 0.0,
@@ -361,8 +397,12 @@ impl FragmentationMonitor {
 /// Memory pool statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryPoolStatistics {
+    /// Allocation statistics
     pub allocation_stats: AllocationStatistics,
+    /// Statistics for each pool
     pub pool_stats: Vec<PoolStatistics>,
+    /// Fragmentation monitoring information
     pub fragmentation_info: FragmentationMonitor,
+    /// Total memory in megabytes
     pub total_memory_mb: usize,
 }

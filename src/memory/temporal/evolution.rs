@@ -90,7 +90,7 @@ pub struct EvolutionTracker {
     /// Global evolution metrics
     global_metrics: GlobalEvolutionMetrics,
     /// Configuration
-    config: EvolutionConfig,
+    _config: EvolutionConfig,
 }
 
 /// Global metrics across all memories
@@ -156,7 +156,7 @@ impl EvolutionTracker {
                 most_stable_memory: None,
                 system_growth_rate: 0.0,
             },
-            config: EvolutionConfig::default(),
+            _config: EvolutionConfig::default(),
         }
     }
 

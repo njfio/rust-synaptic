@@ -13,6 +13,7 @@ pub mod llm;
 #[cfg(feature = "visualization")]
 pub mod visualization;
 
+/// Redis cache integration
 pub mod redis_cache;
 
 use crate::error::Result;
@@ -64,7 +65,7 @@ impl Default for IntegrationConfig {
 
 /// Integration manager for coordinating external services
 pub struct IntegrationManager {
-    config: IntegrationConfig,
+    _config: IntegrationConfig,
     
     #[cfg(feature = "sql-storage")]
     database: Option<database::DatabaseClient>,
@@ -85,7 +86,7 @@ impl IntegrationManager {
     /// Create a new integration manager
     pub async fn new(config: IntegrationConfig) -> Result<Self> {
         let mut manager = Self {
-            config: config.clone(),
+            _config: config.clone(),
             
             #[cfg(feature = "sql-storage")]
             database: None,
@@ -234,12 +235,19 @@ impl IntegrationManager {
 /// Integration metrics for monitoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrationMetrics {
+    /// Number of database queries executed
     pub database_queries: u64,
+    /// Number of ML predictions made
     pub ml_predictions: u64,
+    /// Number of LLM requests processed
     pub llm_requests: u64,
+    /// Number of visualizations generated
     pub visualizations_generated: u64,
+    /// Number of cache hits
     pub cache_hits: u64,
+    /// Number of cache misses
     pub cache_misses: u64,
+    /// Total number of errors encountered
     pub total_errors: u64,
     pub avg_response_time_ms: f64,
 }

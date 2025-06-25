@@ -1,10 +1,11 @@
 //! Tests for mobile platform adapters
 
+#![cfg(feature = "cross-platform")]
+
 use synaptic::cross_platform::{
     mobile::{MobileConfig, MobileStorage, GenericMobileAdapter},
     CrossPlatformAdapter, PlatformConfig, PlatformFeature, StorageBackend, Platform,
 };
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[test]

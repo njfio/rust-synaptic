@@ -278,7 +278,7 @@ struct LinearRegressionResult {
 /// Result of time series forecasting
 #[derive(Debug, Clone)]
 struct ForecastResult {
-    pub predictions: Vec<f64>,
+    pub _predictions: Vec<f64>,
     pub confidence: f64,
 }
 
@@ -286,24 +286,24 @@ struct ForecastResult {
 #[derive(Debug, Clone)]
 struct ContentEvolution {
     pub complexity_score: f64,
-    pub diversity_trend: f64,
-    pub growth_rate: f64,
+    pub _diversity_trend: f64,
+    pub _growth_rate: f64,
 }
 
 /// ML usage insights
 #[derive(Debug, Clone)]
 struct MLUsageInsights {
     pub projected_growth: f64,
-    pub efficiency_score: f64,
-    pub optimization_potential: f64,
+    pub _efficiency_score: f64,
+    pub _optimization_potential: f64,
 }
 
 /// Predictive metrics
 #[derive(Debug, Clone)]
 struct PredictiveMetrics {
-    pub future_load: f64,
-    pub capacity_utilization: f64,
-    pub performance_forecast: f64,
+    pub _future_load: f64,
+    pub _capacity_utilization: f64,
+    pub _performance_forecast: f64,
 }
 
 /// Node in an isolation tree for anomaly detection
@@ -322,6 +322,7 @@ enum IsolationNode {
     },
 }
 
+#[allow(dead_code)]
 impl MemoryAnalytics {
     /// Create a new analytics engine
     pub fn new() -> Self {
@@ -907,7 +908,7 @@ impl MemoryAnalytics {
             .collect();
 
         // 4. Calculate peak usage hours from access patterns
-        let mut hour_activity = vec![0u64; 24];
+        let mut hour_activity = [0u64; 24];
         for pattern in self.analytics_data.access_patterns.values() {
             for &hour in &pattern.peak_hours {
                 if (hour as usize) < 24 {
@@ -1697,7 +1698,7 @@ impl MemoryAnalytics {
         }
 
         // Analyze hourly patterns
-        let mut hourly_counts = vec![0; 24];
+        let mut hourly_counts = [0; 24];
         for time in access_times {
             hourly_counts[time.hour() as usize] += 1;
         }
@@ -1715,7 +1716,7 @@ impl MemoryAnalytics {
         }
 
         // Analyze weekly patterns
-        let mut weekly_counts = vec![0; 7];
+        let mut weekly_counts = [0; 7];
         for time in access_times {
             weekly_counts[time.weekday().num_days_from_monday() as usize] += 1;
         }
@@ -1802,7 +1803,7 @@ impl MemoryAnalytics {
     async fn forecast_performance(&self, data: &[f64], periods: usize) -> Result<ForecastResult> {
         if data.len() < 3 {
             return Ok(ForecastResult {
-                predictions: Vec::new(),
+                _predictions: Vec::new(),
                 confidence: 0.0,
             });
         }
@@ -1821,7 +1822,7 @@ impl MemoryAnalytics {
         let predictions = vec![avg; periods];
 
         Ok(ForecastResult {
-            predictions,
+            _predictions: predictions,
             confidence,
         })
     }
@@ -1908,8 +1909,8 @@ impl MemoryAnalytics {
 
         Ok(ContentEvolution {
             complexity_score: avg_complexity,
-            diversity_trend,
-            growth_rate,
+            _diversity_trend: diversity_trend,
+            _growth_rate: growth_rate,
         })
     }
 
@@ -2138,10 +2139,8 @@ impl MemoryAnalytics {
                 let upper_bound = q3 + 1.5 * iqr;
 
                 for (idx, feature) in features.iter().enumerate() {
-                    if feature[dim] < lower_bound || feature[dim] > upper_bound {
-                        if !outliers.contains(&idx) {
-                            outliers.push(idx);
-                        }
+                    if (feature[dim] < lower_bound || feature[dim] > upper_bound) && !outliers.contains(&idx) {
+                        outliers.push(idx);
                     }
                 }
             }
@@ -2488,8 +2487,8 @@ impl MemoryAnalytics {
 
         Ok(MLUsageInsights {
             projected_growth,
-            efficiency_score,
-            optimization_potential,
+            _efficiency_score: efficiency_score,
+            _optimization_potential: optimization_potential,
         })
     }
 
@@ -2515,9 +2514,9 @@ impl MemoryAnalytics {
         };
 
         Ok(PredictiveMetrics {
-            future_load,
-            capacity_utilization,
-            performance_forecast,
+            _future_load: future_load,
+            _capacity_utilization: capacity_utilization,
+            _performance_forecast: performance_forecast,
         })
     }
 }

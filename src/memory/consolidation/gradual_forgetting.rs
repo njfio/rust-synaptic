@@ -124,7 +124,7 @@ pub struct GradualForgettingAlgorithm {
     /// Configuration
     config: ForgettingConfig,
     /// Consolidation configuration
-    consolidation_config: ConsolidationConfig,
+    _consolidation_config: ConsolidationConfig,
     /// Forgetting decisions history
     decision_history: HashMap<String, Vec<ForgettingDecision>>,
     /// Memory retention tracking
@@ -143,7 +143,7 @@ impl GradualForgettingAlgorithm {
     ) -> Result<Self> {
         Ok(Self {
             config,
-            consolidation_config,
+            _consolidation_config: consolidation_config,
             decision_history: HashMap::new(),
             retention_tracking: HashMap::new(),
             metrics: ForgettingMetrics {

@@ -215,12 +215,19 @@ impl BenchmarkSuite {
 
 /// Individual benchmark definition
 pub struct Benchmark {
+    /// Name of the benchmark
     pub name: String,
+    /// Category of the benchmark
     pub category: BenchmarkCategory,
+    /// Description of what the benchmark tests
     pub description: String,
+    /// Number of iterations to run
     pub iterations: usize,
+    /// Number of warmup iterations
     pub warmup_iterations: usize,
+    /// Function to execute for the benchmark
     pub function: Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> + Send + Sync>,
+    /// Additional metadata for the benchmark
     pub metadata: HashMap<String, String>,
 }
 
@@ -258,48 +265,76 @@ impl Benchmark {
 /// Benchmark category
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BenchmarkCategory {
+    /// Memory-related benchmarks
     Memory,
+    /// Storage-related benchmarks
     Storage,
+    /// Search-related benchmarks
     Search,
+    /// Analytics-related benchmarks
     Analytics,
+    /// Security-related benchmarks
     Security,
+    /// Network-related benchmarks
     Network,
+    /// Compression-related benchmarks
     Compression,
+    /// Serialization-related benchmarks
     Serialization,
 }
 
 /// Individual measurement
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Measurement {
+    /// Iteration number
     pub iteration: usize,
+    /// Duration of this measurement
     pub duration: Duration,
+    /// When the measurement was taken
     pub timestamp: DateTime<Utc>,
 }
 
 /// Benchmark result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkResult {
+    /// Unique identifier for this benchmark result
     pub id: Uuid,
+    /// Name of the benchmark
     pub benchmark_name: String,
+    /// Category of the benchmark
     pub benchmark_category: BenchmarkCategory,
+    /// When the benchmark was run
     pub timestamp: DateTime<Utc>,
+    /// Total duration of the benchmark
     pub total_duration: Duration,
+    /// Number of iterations performed
     pub iterations: usize,
+    /// Individual measurements
     pub measurements: Vec<Measurement>,
+    /// Statistical analysis of the results
     pub statistics: BenchmarkStatistics,
+    /// Additional metadata
     pub metadata: HashMap<String, String>,
 }
 
 /// Benchmark statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkStatistics {
+    /// Mean duration across all measurements
     pub mean_duration: Duration,
+    /// Median duration
     pub median_duration: Duration,
+    /// Minimum duration observed
     pub min_duration: Duration,
+    /// Maximum duration observed
     pub max_duration: Duration,
+    /// 95th percentile duration
     pub p95_duration: Duration,
+    /// 99th percentile duration
     pub p99_duration: Duration,
+    /// Standard deviation of durations
     pub std_deviation: Duration,
+    /// Throughput in operations per second
     pub throughput_ops_per_sec: f64,
 }
 

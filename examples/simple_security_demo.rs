@@ -1,7 +1,8 @@
 // Simple Security Demo - Demonstrates Phase 4 security features
 // This example shows the security system working correctly
 
-use synaptic::{AgentMemory, MemoryConfig, MemoryEntry};
+use synaptic::MemoryEntry;
+#[cfg(feature = "security")]
 use synaptic::security::{
     SecurityManager, SecurityConfig, SecurityContext,
     Permission, SecureOperation,
@@ -146,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("    Access Time: {:.2}ms", security_metrics.access_metrics.total_access_time_ms);
 
             if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-                println!("    Zero-Knowledge Proofs Generated: {}", zk_metrics.total_proofs_generated);
+                println!("    Zero-Knowledge Proofs Generated: {}", zk_metrics.total_proofs);
                 println!("    Zero-Knowledge Proofs Verified: {}", zk_metrics.total_proofs_verified);
                 println!("    Verification Success Rate: {:.1}%", zk_metrics.verification_success_rate);
             }

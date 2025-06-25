@@ -149,7 +149,7 @@ pub struct MemoryConsolidationSystem {
     /// Selective replay manager
     replay_manager: selective_replay::SelectiveReplayManager,
     /// Consolidation strategies
-    strategies: consolidation_strategies::ConsolidationStrategies,
+    _strategies: consolidation_strategies::ConsolidationStrategies,
     /// EWC implementation
     ewc: elastic_weight_consolidation::ElasticWeightConsolidation,
     /// Synaptic Intelligence implementation
@@ -185,7 +185,7 @@ impl MemoryConsolidationSystem {
             config,
             importance_scorer,
             replay_manager,
-            strategies,
+            _strategies: strategies,
             ewc,
             synaptic_intelligence,
             gradual_forgetting,

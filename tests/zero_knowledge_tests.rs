@@ -3,6 +3,7 @@
 //! Tests the Bellman-based zk-SNARKs with production-ready algorithms
 //! ensuring 90%+ test coverage and comprehensive validation.
 
+#[cfg(feature = "security")]
 use synaptic::security::{SecurityManager, SecurityConfig, SecurityContext};
 use std::error::Error;
 

@@ -53,6 +53,8 @@ pub mod analytics;
 
 pub mod integrations;
 pub mod performance;
+
+#[cfg(feature = "security")]
 pub mod security;
 
 #[cfg(feature = "multimodal")]
@@ -76,10 +78,11 @@ pub use memory::{
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Main memory system for AI agents
 pub struct AgentMemory {
-    config: MemoryConfig,
+    _config: MemoryConfig,
     state: memory::state::AgentState,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     checkpoint_manager: memory::checkpoint::CheckpointManager,
@@ -92,8 +95,11 @@ pub struct AgentMemory {
     distributed_coordinator: Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
     #[cfg(feature = "analytics")]
     analytics_engine: Option<analytics::AnalyticsEngine>,
-    integration_manager: Option<integrations::IntegrationManager>,
-    security_manager: Option<security::SecurityManager>,
+    _integration_manager: Option<integrations::IntegrationManager>,
+    #[cfg(feature = "security")]
+    _security_manager: Option<security::SecurityManager>,
+    #[cfg(not(feature = "security"))]
+    _security_manager: Option<()>,
     #[cfg(feature = "multimodal")]
     multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
     #[cfg(feature = "cross-platform")]
@@ -123,7 +129,7 @@ impl AgentMemory {
 
         let checkpoint_manager = memory::checkpoint::CheckpointManager::new(
             config.checkpoint_interval,
-            storage.clone(),
+            Arc::clone(&storage),
         );
         tracing::debug!("Checkpoint manager initialized with interval: {:?}", config.checkpoint_interval);
 
@@ -194,12 +200,16 @@ impl AgentMemory {
         };
 
         // Initialize security manager if enabled
+        #[cfg(feature = "security")]
         let security_manager = if config.enable_security {
             let security_config = config.security_config.clone().unwrap_or_default();
             Some(security::SecurityManager::new(security_config).await?)
         } else {
             None
         };
+
+        #[cfg(not(feature = "security"))]
+        let security_manager: Option<()> = None;
 
         // Initialize cross-platform manager if enabled
         #[cfg(feature = "cross-platform")]
@@ -212,7 +222,7 @@ impl AgentMemory {
 
         // Build base agent without multimodal memory initialized
         let agent = Self {
-            config: config.clone(),
+            _config: config.clone(),
             state,
             storage,
             checkpoint_manager,
@@ -225,8 +235,8 @@ impl AgentMemory {
             distributed_coordinator,
             #[cfg(feature = "analytics")]
             analytics_engine,
-            integration_manager,
-            security_manager,
+            _integration_manager: integration_manager,
+            _security_manager: security_manager,
             #[cfg(feature = "multimodal")]
             multimodal_memory: None,
             #[cfg(feature = "cross-platform")]
@@ -406,10 +416,10 @@ impl AgentMemory {
         self.storage.clear().await?;
 
         // Re-populate storage with memories from restored state
-        for (_, entry) in self.state.get_short_term_memories() {
+        for entry in self.state.get_short_term_memories().values() {
             self.storage.store(entry).await?;
         }
-        for (_, entry) in self.state.get_long_term_memories() {
+        for entry in self.state.get_long_term_memories().values() {
             self.storage.store(entry).await?;
         }
 
@@ -618,7 +628,9 @@ pub struct MemoryConfig {
     pub analytics_config: Option<analytics::AnalyticsConfig>,
     pub enable_integrations: bool,
     pub integrations_config: Option<integrations::IntegrationConfig>,
+    #[cfg(feature = "security")]
     pub enable_security: bool,
+    #[cfg(feature = "security")]
     pub security_config: Option<security::SecurityConfig>,
     #[cfg(feature = "multimodal")]
     pub enable_multimodal: bool,
@@ -656,7 +668,9 @@ impl Default for MemoryConfig {
             analytics_config: None,
             enable_integrations: false,
             integrations_config: None,
+            #[cfg(feature = "security")]
             enable_security: false,
+            #[cfg(feature = "security")]
             security_config: None,
             #[cfg(feature = "multimodal")]
             enable_multimodal: false,

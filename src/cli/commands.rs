@@ -15,7 +15,11 @@ pub struct MemoryCommands;
 impl MemoryCommands {
     /// List memories
     pub async fn list(agent_memory: &mut AgentMemory, limit: usize, memory_type: Option<String>) -> Result<()> {
-        println!("📋 Listing memories (limit: {}, type: {:?})", limit, memory_type);
+        tracing::info!(
+            limit = limit,
+            memory_type = ?memory_type,
+            "Listing memories"
+        );
 
         // Get all memory keys - using search with empty query to get all
         let all_memories = agent_memory.search("", 1000).await?;
@@ -110,6 +114,7 @@ impl MemoryCommands {
                 println!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
             },
             None => {
+                tracing::warn!(memory_id = %id, "Memory not found");
                 println!("❌ Memory not found: {}", id);
             }
         }
@@ -119,7 +124,12 @@ impl MemoryCommands {
 
     /// Create new memory
     pub async fn create(agent_memory: &mut AgentMemory, content: &str, memory_type: &str, tags: &[String]) -> Result<()> {
-        println!("✨ Creating new memory...");
+        tracing::info!(
+            memory_type = memory_type,
+            content_length = content.len(),
+            tags = ?tags,
+            "Creating new memory"
+        );
 
         // Generate a unique key
         let key = format!("cli_{}", Uuid::new_v4());
@@ -144,6 +154,13 @@ impl MemoryCommands {
         // Store the memory
         agent_memory.store(&key, content).await?;
 
+        tracing::info!(
+            key = %key,
+            memory_type = ?mem_type,
+            size_bytes = content.len(),
+            tags = ?tags,
+            "Memory created successfully"
+        );
         println!("✅ Memory created successfully!");
         println!("   Key: {}", key);
         println!("   Type: {:?}", mem_type);

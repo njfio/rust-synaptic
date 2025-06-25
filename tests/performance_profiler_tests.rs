@@ -34,7 +34,7 @@ async fn test_profiler_custom_config() -> Result<()> {
     config.output_directory = temp_dir.path().to_string_lossy().to_string();
     config.report_format = ReportFormat::Json;
     
-    let profiler = PerformanceProfiler::new(config).await?;
+    let _profiler = PerformanceProfiler::new(config).await?;
     
     // Profiler should respect custom configuration
     // In a real test, you'd verify the configuration is applied
@@ -202,7 +202,7 @@ async fn test_bottleneck_detection() -> Result<()> {
     profiler.collect_metrics().await?;
     
     // Stop the session and get report
-    let report = profiler.stop_session(&session_id).await?;
+    let _report = profiler.stop_session(&session_id).await?;
     
     // Bottleneck detection should have run
     // In a real scenario with high resource usage, bottlenecks would be detected
@@ -228,7 +228,7 @@ async fn test_optimization_recommendations() -> Result<()> {
     profiler.collect_metrics().await?;
     
     // Stop the session and get report
-    let report = profiler.stop_session(&session_id).await?;
+    let _report = profiler.stop_session(&session_id).await?;
     
     // Recommendations should be generated based on bottlenecks
     // In a real scenario with performance issues, recommendations would be provided

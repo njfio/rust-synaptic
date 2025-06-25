@@ -107,7 +107,7 @@ async fn advanced_search_example() -> Result<()> {
     println!("✓ Stored memories with metadata and tags");
 
     // Perform advanced search
-    let search_query = SearchQuery::new("project".to_string())
+    let _search_query = SearchQuery::new("project".to_string())
         .with_memory_type(MemoryType::LongTerm)
         .with_sort_by(SortBy::Importance)
         .with_limit(10);
@@ -207,46 +207,6 @@ async fn storage_backends_example() -> Result<()> {
     Ok(())
 }
 
-/// Helper function to demonstrate memory entry creation with rich metadata
-fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>, importance: f64) -> MemoryEntry {
-    let mut entry = MemoryEntry::new(
-        key.to_string(),
-        value.to_string(),
-        MemoryType::LongTerm,
-    );
-    
-    entry.metadata = entry.metadata
-        .with_tags(tags.iter().map(|s| s.to_string()).collect())
-        .with_importance(importance);
-    
-    // Add some custom fields
-    entry.metadata.set_custom_field("category".to_string(), "example".to_string());
-    entry.metadata.set_custom_field("source".to_string(), "basic_usage_demo".to_string());
-    
-    entry
-}
 
-/// Demonstrate error handling patterns
-async fn error_handling_example() -> Result<()> {
-    println!("  Example 5: Error Handling");
-    println!("-----------------------------");
 
-    let config = MemoryConfig::default();
-    let mut memory = AgentMemory::new(config).await?;
 
-    // Try to retrieve a non-existent memory
-    match memory.retrieve("non_existent_key").await? {
-        Some(entry) => println!(" Unexpected: found entry {}", entry.value),
-        None => println!("✓ Correctly handled missing memory"),
-    }
-
-    // Try to restore from a non-existent checkpoint
-    let fake_checkpoint_id = Uuid::new_v4();
-    match memory.restore_checkpoint(fake_checkpoint_id).await {
-        Ok(_) => println!(" Unexpected: restore succeeded"),
-        Err(e) => println!("✓ Correctly handled missing checkpoint: {}", e),
-    }
-
-    println!();
-    Ok(())
-}

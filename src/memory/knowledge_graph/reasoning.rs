@@ -12,7 +12,7 @@ pub struct GraphReasoner {
     /// Inference rules
     rules: Vec<InferenceRule>,
     /// Configuration
-    config: ReasoningConfig,
+    _config: ReasoningConfig,
 }
 
 /// Configuration for the reasoning engine
@@ -116,7 +116,7 @@ pub struct InferenceResult {
 /// Inference engine for the knowledge graph
 pub struct InferenceEngine {
     /// Reasoning configuration
-    config: ReasoningConfig,
+    _config: ReasoningConfig,
 }
 
 impl GraphReasoner {
@@ -124,7 +124,7 @@ impl GraphReasoner {
     pub fn new() -> Self {
         let mut reasoner = Self {
             rules: Vec::new(),
-            config: ReasoningConfig::default(),
+            _config: ReasoningConfig::default(),
         };
         
         // Add default inference rules
@@ -136,7 +136,7 @@ impl GraphReasoner {
     pub fn with_config(config: ReasoningConfig) -> Self {
         let mut reasoner = Self {
             rules: Vec::new(),
-            config,
+            _config: config,
         };
         
         reasoner.add_default_rules();
@@ -182,7 +182,7 @@ impl GraphReasoner {
         }
         
         // Filter by confidence threshold
-        inferences.retain(|inf| inf.confidence >= self.config.min_confidence_threshold);
+        inferences.retain(|inf| inf.confidence >= self._config.min_confidence_threshold);
         
         // Sort by confidence (highest first)
         inferences.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
@@ -244,7 +244,7 @@ impl GraphReasoner {
                     if existing_edge.is_none() {
                         let confidence = (edge1.relationship.confidence * edge2.relationship.confidence * rule.confidence_weight).min(1.0);
                         
-                        if confidence >= self.config.min_confidence_threshold {
+                        if confidence >= self._config.min_confidence_threshold {
                             inferences.push(InferenceResult {
                                 from_node: edge1.from_node,
                                 to_node: edge2.to_node,
@@ -289,7 +289,7 @@ impl GraphReasoner {
                 if !reverse_exists {
                     let confidence = edge.relationship.confidence * rule.confidence_weight;
                     
-                    if confidence >= self.config.min_confidence_threshold {
+                    if confidence >= self._config.min_confidence_threshold {
                         inferences.push(InferenceResult {
                             from_node: edge.to_node,
                             to_node: edge.from_node,
@@ -332,7 +332,7 @@ impl GraphReasoner {
                 if !inverse_exists {
                     let confidence = edge.relationship.confidence * rule.confidence_weight;
                     
-                    if confidence >= self.config.min_confidence_threshold {
+                    if confidence >= self._config.min_confidence_threshold {
                         inferences.push(InferenceResult {
                             from_node: edge.to_node,
                             to_node: edge.from_node,
@@ -390,7 +390,7 @@ impl GraphReasoner {
                                 if !exists {
                                     let confidence = similarity * edge.relationship.confidence * rule.confidence_weight;
                                     
-                                    if confidence >= self.config.min_confidence_threshold {
+                                    if confidence >= self._config.min_confidence_threshold {
                                         inferences.push(InferenceResult {
                                             from_node: node1.id,
                                             to_node: edge.to_node,
@@ -447,7 +447,7 @@ impl GraphReasoner {
                             if !exists {
                                 let confidence = (1.0 - (time_diff.num_minutes() as f64 / (max_time_diff_hours * 60) as f64)) * rule.confidence_weight;
                                 
-                                if confidence >= self.config.min_confidence_threshold {
+                                if confidence >= self._config.min_confidence_threshold {
                                     inferences.push(InferenceResult {
                                         from_node: node1.id,
                                         to_node: node2.id,

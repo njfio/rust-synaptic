@@ -228,12 +228,12 @@ pub trait TransactionHandle: Send + Sync {
 /// Storage middleware for adding functionality like caching, compression, etc.
 pub struct StorageMiddleware {
     inner: Arc<dyn Storage + Send + Sync>,
-    config: StorageConfig,
+    _config: StorageConfig,
 }
 
 impl StorageMiddleware {
     pub fn new(inner: Arc<dyn Storage + Send + Sync>, config: StorageConfig) -> Self {
-        Self { inner, config }
+        Self { inner, _config: config }
     }
 }
 

@@ -419,9 +419,9 @@ pub struct OptimizationResult {
     pub performance_improvement: f64,
 }
 
-/// Memory statistics
+/// Memory optimization statistics
 #[derive(Debug, Clone)]
-pub struct MemoryStats {
+pub struct MemoryOptimizationStats {
     pub allocation_stats: AllocationStats,
     pub pool_stats: HashMap<String, PoolStats>,
     pub gc_stats: GCStats,

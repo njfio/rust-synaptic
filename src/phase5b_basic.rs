@@ -26,31 +26,48 @@
 use crate::error::MemoryError;
 
 // Define types for Phase 5B
+/// Unique identifier for memories
 pub type MemoryId = String;
+/// Error type for synaptic operations
 pub type SynapticError = MemoryError;
+/// Result type for multi-modal operations
 pub type MultiModalResult<T> = Result<T, SynapticError>;
 
 /// Content types for Phase 5B
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ContentType {
+    /// Document content (PDF, DOC, etc.)
     Document {
+        /// Document format
         format: String,
+        /// Document language
         language: Option<String>,
     },
+    /// Structured data (CSV, JSON, etc.)
     Data {
+        /// Data format
         format: String,
+        /// Data schema definition
         schema: Option<String>,
     },
+    /// Plain text content
     Text {
+        /// Text language
         language: Option<String>,
     },
+    /// Image content
     Image {
+        /// Image format
         format: String,
     },
+    /// Audio content
     Audio {
+        /// Audio format
         format: String,
     },
+    /// Code content
     Code {
+        /// Programming language
         language: String,
     },
 }
@@ -58,25 +75,40 @@ pub enum ContentType {
 /// Multi-modal memory entry for Phase 5B
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiModalMemory {
+    /// Unique memory identifier
     pub id: MemoryId,
+    /// Type of content stored
     pub content_type: ContentType,
+    /// Primary content data
     pub primary_content: Vec<u8>,
+    /// Associated metadata
     pub metadata: MultiModalMetadata,
+    /// Extracted features from content
     pub extracted_features: HashMap<String, serde_json::Value>,
+    /// Links to related memories across modalities
     pub cross_modal_links: Vec<String>,
+    /// When the memory was created
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the memory was last updated
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Metadata for multi-modal content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiModalMetadata {
+    /// Optional title for the memory
     pub title: Option<String>,
+    /// Optional description
     pub description: Option<String>,
+    /// Associated tags
     pub tags: Vec<String>,
+    /// Quality score (0.0 to 1.0)
     pub quality_score: f64,
+    /// Confidence score (0.0 to 1.0)
     pub confidence: f64,
+    /// Processing time in milliseconds
     pub processing_time_ms: u64,
+    /// Extracted features from content analysis
     pub extracted_features: HashMap<String, serde_json::Value>,
 }
 use serde::{Deserialize, Serialize};

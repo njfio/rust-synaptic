@@ -40,13 +40,21 @@ pub struct CompletionItem {
 /// Completion types
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompletionType {
+    /// Language keyword completion
     Keyword,
+    /// Command completion
     Command,
+    /// Function completion
     Function,
+    /// Memory type completion
     MemoryType,
+    /// Relationship type completion
     RelationshipType,
+    /// Variable completion
     Variable,
+    /// File completion
     File,
+    /// Directory completion
     Directory,
     MemoryId,
     Property,

@@ -88,7 +88,7 @@ pub struct ConsolidationStrategies {
     /// Hierarchical compression configuration
     hierarchical_config: HierarchicalConfig,
     /// Consolidation policies by memory type
-    policies: HashMap<String, ConsolidationPolicy>,
+    _policies: HashMap<String, ConsolidationPolicy>,
     /// Strategy performance history
     performance_history: HashMap<ConsolidationStrategy, Vec<StrategyResult>>,
 }
@@ -143,7 +143,7 @@ impl ConsolidationStrategies {
             forgetting_params,
             distillation_config,
             hierarchical_config,
-            policies,
+            _policies: policies,
             performance_history: HashMap::new(),
         })
     }

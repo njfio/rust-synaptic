@@ -16,7 +16,7 @@ resolver = "2"
 # Linting configuration
 [lints.rust]
 unsafe_code = "forbid"
-missing_docs = "warn"
+missing_docs = "allow"
 unused_imports = "warn"
 unused_variables = "warn"
 dead_code = "warn"

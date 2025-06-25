@@ -26,6 +26,7 @@ macro_rules! log_operation_start {
     };
 }
 
+/// Log successful operation completion with metrics
 #[macro_export]
 macro_rules! log_operation_success {
     ($operation:expr, $duration:expr, $($key:ident = $value:expr),*) => {
@@ -38,6 +39,7 @@ macro_rules! log_operation_success {
     };
 }
 
+/// Log operation errors with context
 #[macro_export]
 macro_rules! log_operation_error {
     ($operation:expr, $error:expr, $($key:ident = $value:expr),*) => {
@@ -50,6 +52,7 @@ macro_rules! log_operation_error {
     };
 }
 
+/// Log performance metrics with values and units
 #[macro_export]
 macro_rules! log_performance_metric {
     ($metric_name:expr, $value:expr, $unit:expr) => {
@@ -62,6 +65,7 @@ macro_rules! log_performance_metric {
     };
 }
 
+/// Log memory operations with context
 #[macro_export]
 macro_rules! log_memory_operation {
     ($operation:expr, $memory_key:expr, $($key:ident = $value:expr),*) => {
@@ -74,6 +78,7 @@ macro_rules! log_memory_operation {
     };
 }
 
+/// Log security events with severity levels
 #[macro_export]
 macro_rules! log_security_event {
     ($event_type:expr, $severity:expr, $resource:expr, $($key:ident = $value:expr),*) => {

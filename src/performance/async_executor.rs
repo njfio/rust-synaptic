@@ -188,7 +188,7 @@ impl AsyncExecutor {
         // Apply scheduling optimization
         if let Some(strategy_str) = parameters.get("scheduling_strategy") {
             let strategy = match strategy_str.as_str() {
-                "fifo" => SchedulingStrategy::FIFO,
+                "fifo" => SchedulingStrategy::Fifo,
                 "priority" => SchedulingStrategy::Priority,
                 "adaptive" => SchedulingStrategy::Adaptive,
                 _ => SchedulingStrategy::Priority,
@@ -315,34 +315,48 @@ impl Clone for AsyncExecutor {
 /// Task representation
 #[derive(Debug, Clone)]
 pub struct Task {
+    /// Unique task identifier
     pub id: String,
+    /// Task priority level
     pub priority: TaskPriority,
+    /// Type of task
     pub task_type: TaskType,
+    /// When the task was submitted
     pub submitted_at: Instant,
+    /// Estimated execution duration
     pub estimated_duration: Duration,
 }
 
 /// Active task with execution information
 #[derive(Debug)]
 pub struct ActiveTask {
+    /// The task being executed
     pub task: Task,
+    /// When execution started
     pub started_at: Instant,
+    /// Task execution handle
     pub handle: Option<JoinHandle<()>>,
 }
 
 /// Task priority
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TaskPriority {
+    /// Low priority task
     Low = 1,
+    /// Normal priority task
     Normal = 2,
+    /// High priority task
     High = 3,
+    /// Critical priority task
     Critical = 4,
 }
 
 /// Task type
 #[derive(Debug, Clone)]
 pub enum TaskType {
+    /// CPU-intensive computation task
     Compute,
+    /// Blocking I/O task
     Blocking,
 }
 
@@ -354,6 +368,7 @@ pub struct TaskScheduler {
 }
 
 impl TaskScheduler {
+    /// Create a new task scheduler
     pub fn new() -> Self {
         Self {
             strategy: SchedulingStrategy::Priority,
@@ -361,18 +376,20 @@ impl TaskScheduler {
         }
     }
     
+    /// Set the scheduling strategy
     pub async fn set_strategy(&mut self, strategy: SchedulingStrategy) -> Result<()> {
         self.strategy = strategy;
         Ok(())
     }
     
+    /// Select the next task to execute from the queue
     pub async fn select_next_task(&mut self, queue: &mut VecDeque<Task>) -> Result<Option<Task>> {
         if queue.is_empty() {
             return Ok(None);
         }
         
         match self.strategy {
-            SchedulingStrategy::FIFO => Ok(queue.pop_front()),
+            SchedulingStrategy::Fifo => Ok(queue.pop_front()),
             SchedulingStrategy::Priority => self.select_priority_task(queue).await,
             SchedulingStrategy::Adaptive => self.select_adaptive_task(queue).await,
         }
@@ -411,24 +428,29 @@ impl TaskScheduler {
 /// Scheduling strategy
 #[derive(Debug, Clone)]
 pub enum SchedulingStrategy {
-    FIFO,
+    /// First-in-first-out scheduling
+    Fifo,
+    /// Priority-based scheduling
     Priority,
+    /// Adaptive scheduling based on performance
     Adaptive,
 }
 
 /// Load balancer for task selection
 #[derive(Debug)]
 pub struct LoadBalancer {
-    task_history: VecDeque<TaskExecutionRecord>,
+    _task_history: VecDeque<TaskExecutionRecord>,
 }
 
 impl LoadBalancer {
+    /// Create a new load balancer
     pub fn new() -> Self {
         Self {
-            task_history: VecDeque::new(),
+            _task_history: VecDeque::new(),
         }
     }
     
+    /// Select the optimal task from the queue based on load balancing
     pub async fn select_optimal_task(&mut self, queue: &VecDeque<Task>) -> Result<usize> {
         if queue.is_empty() {
             return Ok(0);
@@ -463,29 +485,45 @@ impl LoadBalancer {
 /// Task execution record for load balancing
 #[derive(Debug, Clone)]
 pub struct TaskExecutionRecord {
+    /// Type of the executed task
     pub task_type: TaskType,
+    /// Priority of the executed task
     pub priority: TaskPriority,
+    /// Estimated execution duration
     pub estimated_duration: Duration,
+    /// Actual execution duration
     pub actual_duration: Duration,
+    /// When the task completed
     pub completed_at: Instant,
 }
 
 /// Executor statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutorStatistics {
+    /// Total number of tasks submitted
     pub tasks_submitted: u64,
+    /// Total number of tasks completed
     pub tasks_completed: u64,
+    /// Number of blocking tasks submitted
     pub blocking_tasks_submitted: u64,
+    /// Number of currently active tasks
     pub active_tasks: usize,
+    /// Current queue length
     pub queue_length: usize,
+    /// Total execution time across all tasks
     pub total_execution_time: Duration,
+    /// Average execution time per task
     pub avg_execution_time: Duration,
+    /// Throughput in tasks per second
     pub throughput_tasks_per_sec: f64,
+    /// Worker thread utilization percentage
     pub worker_utilization: f64,
+    /// Blocking thread utilization percentage
     pub blocking_utilization: f64,
 }
 
 impl ExecutorStatistics {
+    /// Create new executor statistics
     pub fn new() -> Self {
         Self {
             tasks_submitted: 0,

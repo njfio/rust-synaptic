@@ -1,5 +1,7 @@
 //! Comprehensive tests for the security module
 
+#![cfg(feature = "security")]
+
 use synaptic::{
     security::{SecurityManager, SecurityConfig, Permission},
     security::access_control::{AccessControlManager, AuthenticationCredentials, AuthenticationType},

@@ -321,10 +321,15 @@ impl PerformanceCache {
 /// Cache entry
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
+    /// Cached data
     pub data: Vec<u8>,
+    /// When the entry was created
     pub created_at: Instant,
+    /// When the entry was last accessed
     pub last_accessed: Instant,
+    /// Number of times accessed
     pub access_count: u64,
+    /// Time to live for this entry
     pub ttl: Duration,
 }
 
@@ -338,26 +343,45 @@ impl CacheEntry {
 /// Access pattern tracking
 #[derive(Debug, Clone)]
 pub struct AccessPattern {
+    /// Cache key
     pub key: String,
+    /// Number of times accessed
     pub access_count: u64,
+    /// Last access time
     pub last_access: Instant,
+    /// Access frequency (accesses per second)
     pub access_frequency: f64,
+    /// Intervals between accesses
     pub access_intervals: Vec<Duration>,
 }
 
 /// Cache statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStatistics {
+    /// Number of cache hits
     pub hits: u64,
+    /// Number of cache misses
     pub misses: u64,
+    /// Number of evictions
     pub evictions: u64,
+    /// Total number of entries
     pub total_entries: usize,
+    /// Total size in bytes
     pub total_size_bytes: usize,
+    /// Hit rate percentage
     pub hit_rate: f64,
+    /// Miss rate percentage
     pub miss_rate: f64,
 }
 
+impl Default for CacheStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CacheStatistics {
+    /// Create new cache statistics
     pub fn new() -> Self {
         Self {
             hits: 0,
@@ -370,6 +394,7 @@ impl CacheStatistics {
         }
     }
     
+    /// Calculate hit and miss rates
     pub fn calculate_rates(&mut self) {
         let total_accesses = self.hits + self.misses;
         if total_accesses > 0 {
@@ -382,7 +407,10 @@ impl CacheStatistics {
 /// Cache eviction policy
 #[derive(Debug, Clone)]
 pub enum EvictionPolicy {
-    LRU,      // Least Recently Used
-    LFU,      // Least Frequently Used
-    Adaptive, // Adaptive based on access patterns
+    /// Least Recently Used eviction policy
+    LRU,
+    /// Least Frequently Used eviction policy
+    LFU,
+    /// Adaptive eviction based on access patterns
+    Adaptive,
 }

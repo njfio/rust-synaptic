@@ -398,9 +398,13 @@ pub struct MemorySample {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IoSample {
     pub timestamp: DateTime<Utc>,
+    /// Number of read operations
     pub read_operations: u64,
+    /// Number of write operations
     pub write_operations: u64,
+    /// Total bytes read
     pub read_bytes: u64,
+    /// Total bytes written
     pub write_bytes: u64,
 }
 
@@ -411,20 +415,24 @@ pub struct CpuProfiler {
 }
 
 impl CpuProfiler {
+    /// Create a new CPU profiler
     pub fn new() -> Self {
         Self { is_running: false }
     }
     
+    /// Start CPU profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
     
+    /// Stop CPU profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
     
+    /// Get current CPU profiling data
     pub async fn get_current_data(&self) -> Result<CpuSample> {
         // In a real implementation, this would collect actual CPU metrics
         Ok(CpuSample {
@@ -443,20 +451,24 @@ pub struct MemoryProfiler {
 }
 
 impl MemoryProfiler {
+    /// Create a new memory profiler
     pub fn new() -> Self {
         Self { is_running: false }
     }
     
+    /// Start memory profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
     
+    /// Stop memory profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
     
+    /// Get current memory profiling data
     pub async fn get_current_data(&self) -> Result<MemorySample> {
         // In a real implementation, this would collect actual memory metrics
         Ok(MemorySample {
@@ -476,20 +488,24 @@ pub struct IoProfiler {
 }
 
 impl IoProfiler {
+    /// Create a new I/O profiler
     pub fn new() -> Self {
         Self { is_running: false }
     }
     
+    /// Start I/O profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
     
+    /// Stop I/O profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
     
+    /// Get current I/O profiling data
     pub async fn get_current_data(&self) -> Result<IoSample> {
         // In a real implementation, this would collect actual I/O metrics
         Ok(IoSample {
@@ -509,12 +525,14 @@ pub struct CustomProfiler {
 }
 
 impl CustomProfiler {
+    /// Create a new custom metrics collector
     pub fn new() -> Self {
         Self {
             metrics: HashMap::new(),
         }
     }
     
+    /// Record a custom metric value
     pub async fn record_metric(&mut self, name: String, value: f64) -> Result<()> {
         let entry = self.metrics.entry(name).or_insert_with(VecDeque::new);
         
@@ -527,10 +545,12 @@ impl CustomProfiler {
         Ok(())
     }
 
+    /// Get metric history for a specific metric
     pub async fn get_metric_history(&self, name: &str) -> Option<&VecDeque<f64>> {
         self.metrics.get(name)
     }
 
+    /// Get all recorded metrics
     pub async fn get_all_metrics(&self) -> &HashMap<String, VecDeque<f64>> {
         &self.metrics
     }

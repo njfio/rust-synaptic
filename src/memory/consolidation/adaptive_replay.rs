@@ -197,7 +197,7 @@ pub struct AdaptiveReplayMechanisms {
     /// Configuration
     config: AdaptiveReplayConfig,
     /// Consolidation configuration
-    consolidation_config: ConsolidationConfig,
+    _consolidation_config: ConsolidationConfig,
     /// Current active strategy
     current_strategy: AdaptiveReplayStrategy,
     /// Performance feedback history
@@ -223,7 +223,7 @@ impl AdaptiveReplayMechanisms {
         Ok(Self {
             current_strategy: config.base_strategy.clone(),
             config,
-            consolidation_config,
+            _consolidation_config: consolidation_config,
             performance_feedback: VecDeque::new(),
             context_history: VecDeque::new(),
             decision_history: VecDeque::new(),

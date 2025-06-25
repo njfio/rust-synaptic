@@ -26,7 +26,7 @@ pub struct InteractiveShell<'a> {
     /// SyQL engine reference
     syql_engine: &'a mut SyQLEngine,
     /// CLI configuration
-    config: &'a CliConfig,
+    _config: &'a CliConfig,
     /// Shell state
     state: ShellState,
     /// Completion engine
@@ -70,7 +70,7 @@ impl<'a> InteractiveShell<'a> {
             show_statistics: false,
             multi_line_mode: false,
             current_query: String::new(),
-            command_chain: Vec::new(),
+            _command_chain: Vec::new(),
             error_recovery_mode: false,
             last_error: None,
         };
@@ -78,7 +78,7 @@ impl<'a> InteractiveShell<'a> {
         Ok(Self {
             editor,
             syql_engine,
-            config,
+            _config: config,
             state,
             completion_engine,
             history_manager,
@@ -763,7 +763,7 @@ struct ShellState {
     /// Current multi-line query
     current_query: String,
     /// Command chain for piping
-    command_chain: Vec<String>,
+    _command_chain: Vec<String>,
     /// Error recovery mode
     error_recovery_mode: bool,
     /// Last error for recovery
@@ -771,6 +771,7 @@ struct ShellState {
 }
 
 /// Helper for rustyline with completion and highlighting
+#[allow(dead_code)]
 struct SynapticHelper {
     /// Filename completer
     completer: FilenameCompleter,
@@ -785,6 +786,7 @@ struct SynapticHelper {
 }
 
 impl SynapticHelper {
+    #[allow(dead_code)]
     fn new(completion_enabled: bool) -> Self {
         Self {
             completer: FilenameCompleter::new(),

@@ -3,57 +3,7 @@ avoid-breaking-exported-api = false
 msrv = "1.70.0"
 
 # Allowed lints (use sparingly)
-allow = [
-    # Allow complex types in some cases for advanced memory structures
-    "clippy::type_complexity",
-    # Allow module inception for organized code structure
-    "clippy::module_inception",
-]
-
-# Denied lints (enforce strictly)
-deny = [
-    # Safety and correctness
-    "clippy::unwrap_used",
-    "clippy::expect_used", 
-    "clippy::panic",
-    "clippy::unreachable",
-    "clippy::todo",
-    "clippy::unimplemented",
-    "clippy::indexing_slicing",
-    "clippy::integer_arithmetic",
-    "clippy::float_arithmetic",
-    
-    # Performance
-    "clippy::inefficient_to_string",
-    "clippy::clone_on_ref_ptr",
-    "clippy::large_enum_variant",
-    "clippy::large_stack_arrays",
-    "clippy::rc_buffer",
-    "clippy::unnecessary_wraps",
-    
-    # Style and clarity
-    "clippy::cognitive_complexity",
-    "clippy::too_many_arguments",
-    "clippy::too_many_lines",
-    "clippy::similar_names",
-    "clippy::many_single_char_names",
-    
-    # Documentation
-    "clippy::missing_errors_doc",
-    "clippy::missing_panics_doc",
-    "clippy::missing_safety_doc",
-    
-    # Correctness
-    "clippy::mem_forget",
-    "clippy::mem_replace_with_uninit",
-    "clippy::cast_ptr_alignment",
-    "clippy::mut_from_ref",
-]
-
-# Warn lints (should be addressed but not blocking)
-warn = [
-    "clippy::pedantic",
-    "clippy::nursery",
-    "clippy::cargo",
-    "clippy::missing_docs_in_private_items",
-]
+type-complexity-threshold = 250
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 8
+too-many-lines-threshold = 150

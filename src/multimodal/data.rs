@@ -586,8 +586,12 @@ impl DataMemoryProcessor {
                     .collect();
 
                 if !numeric_values.is_empty() {
-                    stats.min = numeric_values.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).copied();
-                    stats.max = numeric_values.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).copied();
+                    stats.min = numeric_values.iter().min_by(|a, b| {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }).copied();
+                    stats.max = numeric_values.iter().max_by(|a, b| {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }).copied();
 
                     let sum: f64 = numeric_values.iter().sum();
                     stats.mean = Some(sum / numeric_values.len() as f64);
@@ -601,7 +605,9 @@ impl DataMemoryProcessor {
 
                     // Calculate median
                     let mut sorted_values = numeric_values.clone();
-                    sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    sorted_values.sort_by(|a, b| {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    });
                     let len = sorted_values.len();
                     stats.median = if len % 2 == 0 {
                         Some((sorted_values[len / 2 - 1] + sorted_values[len / 2]) / 2.0)
@@ -878,7 +884,9 @@ impl MultiModalProcessor for DataMemoryProcessor {
         }
 
         // Sort by similarity (highest first)
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(results)
     }

@@ -3,6 +3,9 @@
 //! Tests the TFHE-based homomorphic encryption with production-ready algorithms
 //! ensuring 90%+ test coverage and comprehensive validation.
 
+#![cfg(feature = "security")]
+
+#[cfg(feature = "security")]
 use synaptic::security::{SecurityManager, SecurityConfig};
 use synaptic::{MemoryEntry, MemoryType};
 use std::error::Error;
