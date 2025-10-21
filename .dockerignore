@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Development
+.env
+.env.local
+*.log
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+benches/
+examples/
+
+# Visualization outputs
+visualizations/
+
+# Cargo lock for applications (keep for reproducible builds)
+# Cargo.lock
+
+# Other
+*.bak
+*.tmp

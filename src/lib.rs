@@ -44,6 +44,7 @@ pub mod error_handling;
 pub mod memory;
 pub mod logging;
 pub mod cli;
+pub mod observability;
 
 #[cfg(feature = "distributed")]
 pub mod distributed;
