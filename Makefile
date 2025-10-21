@@ -7,6 +7,8 @@
 .PHONY: test-logging test-visualization test-sync
 .PHONY: build clean fmt clippy check coverage audit docs
 .PHONY: ci-setup ci-test ci-full
+.PHONY: docker-build docker-up docker-down docker-logs docker-clean
+.PHONY: install-hooks dev watch bench format lint
 
 # Default target
 help:
@@ -48,6 +50,19 @@ help:
 	@echo "  ci-setup          Setup CI environment"
 	@echo "  ci-test           Run CI test suite"
 	@echo "  ci-full           Run full CI pipeline"
+	@echo ""
+	@echo "Docker Commands:"
+	@echo "  docker-build      Build Docker image"
+	@echo "  docker-up         Start all services with Docker Compose"
+	@echo "  docker-down       Stop all services"
+	@echo "  docker-logs       Show Docker Compose logs"
+	@echo "  docker-clean      Clean Docker resources"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  install-hooks     Install pre-commit hooks"
+	@echo "  dev               Quick development check (fmt + clippy + test)"
+	@echo "  watch             Watch for changes and run tests"
+	@echo "  bench             Run performance benchmarks"
 
 # Test execution using the organized test runner
 test-all:
@@ -172,6 +187,51 @@ ci-test:
 
 ci-full: ci-setup ci-test coverage audit docs
 	@echo "Full CI pipeline completed successfully!"
+
+# Docker commands
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t synaptic:latest .
+
+docker-up:
+	@echo "Starting services..."
+	docker-compose up -d
+
+docker-down:
+	@echo "Stopping services..."
+	docker-compose down
+
+docker-logs:
+	@echo "Showing logs..."
+	docker-compose logs -f
+
+docker-clean:
+	@echo "Cleaning Docker resources..."
+	docker-compose down -v
+	docker system prune -f
+
+# Utility commands
+install-hooks:
+	@echo "Installing git hooks..."
+	@if [ -d .git ]; then \
+		cp scripts/pre-commit.sh .git/hooks/pre-commit && \
+		chmod +x .git/hooks/pre-commit && \
+		echo "Pre-commit hook installed!"; \
+	else \
+		echo "Not a git repository!"; \
+		exit 1; \
+	fi
+
+dev: fmt clippy test-critical
+	@echo "Development checks completed!"
+
+watch:
+	@echo "Watching for changes..."
+	cargo watch -x check -x test -x clippy
+
+bench:
+	@echo "Running benchmarks..."
+	cargo bench
 
 # Convenience aliases
 test: test-all
