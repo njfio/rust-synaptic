@@ -315,6 +315,7 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Update an existing node with new memory data
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key, node_id = %node_id))]
     async fn update_existing_node(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<Uuid> {
         if let Some(mut node) = self.graph.get_node(node_id).await? {
             // Track changes for differential analysis
@@ -352,13 +353,18 @@ impl MemoryKnowledgeGraph {
             // Update relationships based on content changes
             self.update_relationships_for_changed_node(node_id, &old_content, &new_content).await?;
 
-            println!("Updated existing node {} for memory '{}'", node_id, memory.key);
+            tracing::debug!(
+                node_id = %node_id,
+                memory_key = %memory.key,
+                "Updated existing node for memory"
+            );
         }
 
         Ok(node_id)
     }
 
     /// Find a similar existing node that could be merged
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key))]
     async fn find_similar_node(&self, memory: &MemoryEntry) -> Result<Option<Uuid>> {
         let similarity_threshold = self.config.semantic_similarity_threshold;
         let mut best_match: Option<(Uuid, f64)> = None;
@@ -391,9 +397,14 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Merge memory with an existing similar node
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key, node_id = %node_id))]
     async fn merge_with_existing_node(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<Uuid> {
         if let Some(mut node) = self.graph.get_node(node_id).await? {
-            println!("Merging memory '{}' with existing node {}", memory.key, node_id);
+            tracing::info!(
+                memory_key = %memory.key,
+                node_id = %node_id,
+                "Merging memory with existing node"
+            );
 
             // Combine content intelligently
             let combined_content = self.merge_content(
@@ -450,7 +461,11 @@ impl MemoryKnowledgeGraph {
         // Auto-detect relationships with existing nodes
         self.auto_detect_relationships(node_id, memory).await?;
 
-        println!("Created new node {} for memory '{}'", node_id, memory.key);
+        tracing::info!(
+            node_id = %node_id,
+            memory_key = %memory.key,
+            "Created new node for memory"
+        );
         Ok(node_id)
     }
 
