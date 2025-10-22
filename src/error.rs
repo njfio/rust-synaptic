@@ -616,4 +616,219 @@ impl From<candle_core::Error> for MemoryError {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_error_creation() {
+        let err = MemoryError::storage("test error");
+        assert!(matches!(err, MemoryError::Storage { .. }));
+        assert_eq!(err.to_string(), "Storage error: test error");
+    }
+
+    #[test]
+    fn test_checkpoint_error_creation() {
+        let err = MemoryError::checkpoint("checkpoint failed");
+        assert!(matches!(err, MemoryError::Checkpoint { .. }));
+        assert_eq!(err.to_string(), "Checkpoint error: checkpoint failed");
+    }
+
+    #[test]
+    fn test_configuration_error_creation() {
+        let err = MemoryError::configuration("invalid config");
+        assert!(matches!(err, MemoryError::Configuration { .. }));
+        assert_eq!(err.to_string(), "Configuration error: invalid config");
+    }
+
+    #[test]
+    fn test_concurrency_error_creation() {
+        let err = MemoryError::concurrency("lock contention");
+        assert!(matches!(err, MemoryError::Concurrency { .. }));
+        assert_eq!(err.to_string(), "Concurrency error: lock contention");
+    }
+
+    #[test]
+    fn test_vector_operation_error_creation() {
+        let err = MemoryError::vector_operation("dimension mismatch");
+        assert!(matches!(err, MemoryError::VectorOperation { .. }));
+        assert_eq!(err.to_string(), "Vector operation error: dimension mismatch");
+    }
+
+    #[test]
+    fn test_unexpected_error_creation() {
+        let err = MemoryError::unexpected("something went wrong");
+        assert!(matches!(err, MemoryError::Unexpected { .. }));
+        assert_eq!(err.to_string(), "Unexpected error: something went wrong");
+    }
+
+    #[test]
+    fn test_not_found_error() {
+        let err = MemoryError::NotFound {
+            key: "test_key".to_string(),
+        };
+        assert_eq!(err.to_string(), "Memory entry not found: test_key");
+    }
+
+    #[test]
+    fn test_invalid_memory_type_error() {
+        let err = MemoryError::InvalidMemoryType {
+            memory_type: "invalid".to_string(),
+        };
+        assert_eq!(err.to_string(), "Invalid memory type: invalid");
+    }
+
+    #[test]
+    fn test_memory_limit_exceeded_error() {
+        let err = MemoryError::MemoryLimitExceeded { limit: 1000 };
+        assert_eq!(err.to_string(), "Memory limit exceeded: 1000 entries");
+    }
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let mem_err: MemoryError = io_err.into();
+        assert!(matches!(mem_err, MemoryError::Io(_)));
+    }
+
+    #[test]
+    fn test_serde_json_error_conversion() {
+        let json_str = "{invalid json}";
+        let result: Result<serde_json::Value, _> = serde_json::from_str(json_str);
+        if let Err(json_err) = result {
+            let mem_err: MemoryError = json_err.into();
+            assert!(matches!(mem_err, MemoryError::Serialization(_)));
+        }
+    }
+
+    #[test]
+    fn test_uuid_error_conversion() {
+        let result = uuid::Uuid::parse_str("invalid-uuid");
+        if let Err(uuid_err) = result {
+            let mem_err: MemoryError = uuid_err.into();
+            assert!(matches!(mem_err, MemoryError::InvalidUuid(_)));
+        }
+    }
+
+    #[test]
+    fn test_sled_error_conversion() {
+        // Create a sled error by trying to use an invalid path
+        let result = sled::Config::new()
+            .path("\0invalid")
+            .open();
+        if let Err(sled_err) = result {
+            let mem_err: MemoryError = sled_err.into();
+            assert!(matches!(mem_err, MemoryError::Sled(_)));
+        }
+    }
+
+    #[test]
+    fn test_error_helper_with_string() {
+        let err = MemoryError::storage(String::from("owned string"));
+        assert_eq!(err.to_string(), "Storage error: owned string");
+    }
+
+    #[test]
+    fn test_error_helper_with_str() {
+        let err = MemoryError::storage("borrowed str");
+        assert_eq!(err.to_string(), "Storage error: borrowed str");
+    }
+
+    #[test]
+    fn test_invalid_configuration_error() {
+        let err = MemoryError::InvalidConfiguration {
+            message: "missing required field".to_string(),
+        };
+        assert_eq!(err.to_string(), "Invalid configuration: missing required field");
+    }
+
+    #[test]
+    fn test_invalid_input_error() {
+        let err = MemoryError::InvalidInput {
+            message: "value out of range".to_string(),
+        };
+        assert_eq!(err.to_string(), "Invalid input: value out of range");
+    }
+
+    #[test]
+    fn test_encryption_error() {
+        let err = MemoryError::Encryption {
+            message: "key derivation failed".to_string(),
+        };
+        assert_eq!(err.to_string(), "Encryption error: key derivation failed");
+    }
+
+    #[test]
+    fn test_privacy_error() {
+        let err = MemoryError::Privacy {
+            message: "differential privacy violation".to_string(),
+        };
+        assert_eq!(err.to_string(), "Privacy error: differential privacy violation");
+    }
+
+    #[test]
+    fn test_consensus_error() {
+        let err = MemoryError::ConsensusError {
+            message: "quorum not reached".to_string(),
+        };
+        assert_eq!(err.to_string(), "Consensus error: quorum not reached");
+    }
+
+    #[test]
+    fn test_network_error() {
+        let err = MemoryError::NetworkError {
+            message: "connection timeout".to_string(),
+        };
+        assert_eq!(err.to_string(), "Network error: connection timeout");
+    }
+
+    #[test]
+    fn test_distributed_error() {
+        let err = MemoryError::DistributedError {
+            message: "shard unavailable".to_string(),
+        };
+        assert_eq!(err.to_string(), "Distributed system error: shard unavailable");
+    }
+
+    #[test]
+    fn test_serialization_error() {
+        let err = MemoryError::SerializationError {
+            message: "failed to encode".to_string(),
+        };
+        assert_eq!(err.to_string(), "Serialization error: failed to encode");
+    }
+
+    #[test]
+    fn test_result_type_alias() {
+        // Test that Result<T> is properly aliased
+        let ok_result: Result<i32> = Ok(42);
+        assert_eq!(ok_result.unwrap(), 42);
+
+        let err_result: Result<i32> = Err(MemoryError::storage("test"));
+        assert!(err_result.is_err());
+    }
+
+    #[test]
+    fn test_error_is_send_sync() {
+        // Verify error implements Send + Sync for thread safety
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<MemoryError>();
+    }
+
+    #[test]
+    fn test_error_debug_format() {
+        let err = MemoryError::storage("test");
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("Storage"));
+        assert!(debug_str.contains("test"));
+    }
+
+    #[test]
+    fn test_invalid_query_error() {
+        let err = MemoryError::InvalidQuery {
+            message: "syntax error".to_string(),
+        };
+        assert_eq!(err.to_string(), "Invalid query: syntax error");
+    }
+}
 
