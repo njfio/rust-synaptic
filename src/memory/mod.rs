@@ -23,6 +23,9 @@ pub mod promotion;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 
+pub mod indexing;
+pub mod context;
+
 // Re-export commonly used types
 pub use types::{MemoryEntry, MemoryFragment, MemoryType, MemoryMetadata};
 pub use state::AgentState;

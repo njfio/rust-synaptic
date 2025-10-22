@@ -1,23 +1,33 @@
 //! Dense vector retriever using embeddings
 //!
 //! This retriever uses embedding providers to perform semantic similarity search.
+//! Optionally uses ANN (Approximate Nearest Neighbor) index for efficient search at scale.
 
 use super::pipeline::{RetrievalPipeline, RetrievalSignal, ScoredMemory, PipelineConfig};
 use crate::error::{MemoryError, Result};
 use crate::memory::embeddings::{EmbeddingProvider, Embedding, EmbedOptions};
+use crate::memory::indexing::VectorIndex;
 use crate::memory::storage::Storage;
 use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Dense vector retriever using semantic embeddings
 ///
 /// This retriever generates embeddings for the query and memories,
 /// then ranks results by cosine similarity in the embedding space.
+///
+/// # Performance Modes
+///
+/// - **With ANN Index**: O(log n) search using HNSW for large-scale datasets
+/// - **Without Index**: O(n) brute-force search for small datasets or prototyping
 pub struct DenseVectorRetriever {
     storage: Arc<dyn Storage + Send + Sync>,
     provider: Arc<dyn EmbeddingProvider>,
     similarity_threshold: f64,
+    /// Optional ANN index for efficient similarity search
+    vector_index: Option<Arc<RwLock<Box<dyn VectorIndex>>>>,
 }
 
 impl DenseVectorRetriever {
@@ -34,6 +44,7 @@ impl DenseVectorRetriever {
             storage,
             provider,
             similarity_threshold: 0.3, // Default threshold
+            vector_index: None,
         }
     }
 
@@ -41,6 +52,122 @@ impl DenseVectorRetriever {
     pub fn with_threshold(mut self, threshold: f64) -> Self {
         self.similarity_threshold = threshold;
         self
+    }
+
+    /// Attach an ANN vector index for efficient search
+    ///
+    /// When an index is attached, searches will use O(log n) ANN instead of O(n) brute-force.
+    /// This is recommended for datasets with >10,000 memories.
+    ///
+    /// # Arguments
+    /// * `index` - Vector index implementing VectorIndex trait (e.g., HnswIndex)
+    pub fn with_vector_index(mut self, index: Box<dyn VectorIndex>) -> Self {
+        self.vector_index = Some(Arc::new(RwLock::new(index)));
+        self
+    }
+
+    /// Get a reference to the vector index if one is attached
+    pub fn vector_index(&self) -> Option<Arc<RwLock<Box<dyn VectorIndex>>>> {
+        self.vector_index.clone()
+    }
+
+    /// Search using ANN index (efficient for large datasets)
+    async fn search_with_index(
+        &self,
+        query_embedding: &Embedding,
+        limit: usize,
+        index: &Arc<RwLock<Box<dyn VectorIndex>>>,
+    ) -> Result<Vec<ScoredMemory>> {
+        tracing::debug!("Using ANN index for search");
+
+        // Get query vector
+        let query_vector = query_embedding.vector();
+
+        // Search the index
+        let index_guard = index.read();
+        let search_results = index_guard
+            .search_threshold(query_vector, limit, self.similarity_threshold)
+            .await
+            .map_err(|e| MemoryError::RetrievalError(format!("ANN search failed: {}", e)))?;
+        drop(index_guard);
+
+        tracing::debug!(
+            found = search_results.len(),
+            "ANN search returned {} results",
+            search_results.len()
+        );
+
+        // Convert to ScoredMemory
+        let mut scored_results = Vec::new();
+        for result in search_results {
+            let fragment = MemoryFragment {
+                entry: result.entry,
+                content: result.entry.value.clone(),
+                context: String::new(),
+                relevance_score: result.score,
+            };
+
+            let scored = ScoredMemory::new(fragment, result.score, RetrievalSignal::DenseVector)
+                .with_explanation(format!(
+                    "ANN similarity: {:.3} (model: {}, distance: {:.4})",
+                    result.score,
+                    self.provider.model_id(),
+                    result.distance
+                ));
+
+            scored_results.push(scored);
+        }
+
+        Ok(scored_results)
+    }
+
+    /// Search using brute-force comparison (fallback for small datasets)
+    async fn search_brute_force(
+        &self,
+        query: &str,
+        query_embedding: &Embedding,
+        limit: usize,
+    ) -> Result<Vec<ScoredMemory>> {
+        tracing::debug!("Using brute-force search");
+
+        // Get candidate memories from storage
+        let fragments = self.storage.search(query, limit * 3).await?;
+
+        tracing::debug!(
+            candidate_count = fragments.len(),
+            "Brute-force: retrieved {} candidates",
+            fragments.len()
+        );
+
+        // Score each fragment by semantic similarity
+        let mut scored_results = Vec::new();
+
+        for fragment in fragments {
+            let similarity = self.compute_similarity_score(&fragment, query_embedding).await?;
+
+            if similarity >= self.similarity_threshold {
+                let scored = ScoredMemory::new(fragment, similarity, RetrievalSignal::DenseVector)
+                    .with_explanation(format!(
+                        "Semantic similarity: {:.3} (model: {})",
+                        similarity,
+                        self.provider.model_id()
+                    ));
+
+                scored_results.push(scored);
+            }
+        }
+
+        // Sort by similarity score descending
+        scored_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Take top limit
+        scored_results.truncate(limit);
+
+        Ok(scored_results)
     }
 
     /// Compute similarity score for a fragment against query embedding
@@ -74,53 +201,24 @@ impl RetrievalPipeline for DenseVectorRetriever {
             query = %query,
             limit = limit,
             provider = self.provider.name(),
+            has_index = self.vector_index.is_some(),
             "DenseVectorRetriever: starting semantic search"
         );
 
         // Generate embedding for the query
         let query_embedding = self.provider.embed(query, None).await?;
 
-        // Get candidate memories from storage
-        // In a production system, this would use an ANN index
-        // For now, we retrieve more candidates and filter
-        let fragments = self.storage.search(query, limit * 3).await?;
-
-        tracing::debug!(
-            candidate_count = fragments.len(),
-            "DenseVectorRetriever: retrieved candidates"
-        );
-
-        // Score each fragment by semantic similarity
-        let mut scored_results = Vec::new();
-
-        for fragment in fragments {
-            let similarity = self.compute_similarity_score(&fragment, &query_embedding).await?;
-
-            if similarity >= self.similarity_threshold {
-                let scored = ScoredMemory::new(fragment, similarity, RetrievalSignal::DenseVector)
-                    .with_explanation(format!(
-                        "Semantic similarity: {:.3} (model: {})",
-                        similarity,
-                        self.provider.model_id()
-                    ));
-
-                scored_results.push(scored);
-            }
-        }
-
-        // Sort by similarity score descending
-        scored_results.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // Take top limit
-        scored_results.truncate(limit);
+        // Use ANN index if available, otherwise fall back to brute-force
+        let scored_results = if let Some(ref index_arc) = self.vector_index {
+            self.search_with_index(&query_embedding, limit, index_arc).await?
+        } else {
+            self.search_brute_force(query, &query_embedding, limit).await?
+        };
 
         tracing::info!(
             result_count = scored_results.len(),
             provider = self.provider.name(),
+            method = if self.vector_index.is_some() { "ANN" } else { "brute-force" },
             "DenseVectorRetriever: semantic search completed"
         );
 

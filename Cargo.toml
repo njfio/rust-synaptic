@@ -92,6 +92,9 @@ similar = "2.4"
 # Advanced Similarity and Search Algorithms
 strsim = "0.11"
 
+# Vector Index for ANN (Approximate Nearest Neighbor) search
+hnsw_rs = "0.3"
+
 # Advanced Theme Extraction and Topic Modeling
 linfa = "0.7"
 linfa-clustering = "0.7"
@@ -331,3 +334,7 @@ required-features = ["analytics"]
 name = "security_performance"
 harness = false
 required-features = ["security"]
+
+[[bench]]
+name = "ann_vs_bruteforce"
+harness = false
