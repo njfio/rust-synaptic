@@ -34,30 +34,43 @@ Refactored MemoryStorage to wrap entries in `Arc<DashMap>` and updated
 a new storage instance. Added 10 comprehensive tests covering all transaction
 scenarios including concurrent transactions and isolation.
 
-### 4.2 Replace println! with Structured Tracing (P0)
+### 4.2 Replace println! with Structured Tracing (P0) ✅ **COMPLETED**
 **Issue**: Knowledge graph and other modules use `println!` instead of `tracing`
 
 **Tasks**:
-- [ ] Audit codebase for all `println!` calls: `grep -r "println!" src/`
-- [ ] Replace with appropriate tracing levels:
-  - Info: `tracing::info!("Updated node {} for memory '{}'", node_id, memory.key)`
-  - Debug: `tracing::debug!("Merging content...")`
-  - Warn: `tracing::warn!("Weak relationships found...")`
-- [ ] Add tracing spans for expensive operations
-- [ ] Update `src/memory/knowledge_graph/mod.rs` lines 355, 396, 453
+- [x] Audit codebase for all `println!` calls: `grep -r "println!" src/`
+- [x] Replace with appropriate tracing levels in library code
+- [x] Add tracing spans for expensive operations
+- [x] Update `src/memory/knowledge_graph/mod.rs` lines 355, 396, 453
 
-**Files**: `src/memory/knowledge_graph/mod.rs`, others with println!
-**Tests**: Add tracing subscriber tests
-**Estimated**: 1-2 days
+**Files**: `src/memory/knowledge_graph/mod.rs`, `src/memory/embeddings/simple_embeddings.rs`
+**Completed**: 2025-10-22
+**Commit**: ffdcde2
 
-### 4.3 Fix Redundant Backup I/O (P1)
+**Solution Summary**:
+Replaced all println! in library code with appropriate tracing calls (info/debug).
+Added #[tracing::instrument] spans to 3 expensive async operations for performance
+tracking. CLI code intentionally kept println! for user-facing output.
+
+### 4.3 Fix Redundant Backup I/O (P1) ✅ **COMPLETED**
+**Completed**: 2025-10-22
+**Commit**: d02560e
+
+**Solution Summary**:
+Fixed critical performance issue where `get_backup_info()` read backup files twice.
+Changed line 564 to reuse cached `file_data` instead of redundant `tokio::fs::read()`.
+Removed problematic `unwrap_or_default()` that silently swallowed errors. Fixed similar
+issue in `restore_legacy_format()` line 522-524 with proper error propagation. Added
+13 comprehensive tests in `tests/backup_corruption.rs` covering all corruption scenarios.
+**Performance**: 50% reduction in I/O operations for backup info queries.
+
 **Issue**: `get_backup_info()` rereads files unnecessarily
 
 **Tasks**:
-- [ ] Refactor `src/memory/storage/memory.rs::get_backup_info()`
-- [ ] Cache initial read, reuse for compression check
-- [ ] Propagate errors instead of `unwrap_or_default()`
-- [ ] Add error handling for corrupted backups
+- [x] Refactor `src/memory/storage/memory.rs::get_backup_info()`
+- [x] Cache initial read, reuse for compression check
+- [x] Propagate errors instead of `unwrap_or_default()`
+- [x] Add error handling for corrupted backups
 
 **Files**: `src/memory/storage/memory.rs`
 **Tests**: Add backup corruption tests
