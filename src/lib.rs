@@ -693,3 +693,247 @@ pub enum StorageBackend {
     #[cfg(feature = "sql-storage")]
     Sql { connection_string: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_config_default() {
+        let config = MemoryConfig::default();
+
+        assert!(matches!(config.storage_backend, StorageBackend::Memory));
+        assert!(config.session_id.is_none());
+        assert_eq!(config.checkpoint_interval, 100);
+        assert_eq!(config.max_short_term_memories, 1000);
+        assert_eq!(config.max_long_term_memories, 10000);
+        assert_eq!(config.similarity_threshold, 0.7);
+        assert!(config.enable_knowledge_graph);
+        assert!(config.enable_temporal_tracking);
+        assert!(config.enable_advanced_management);
+        assert!(!config.enable_integrations);
+        assert!(config.logging_config.is_some());
+    }
+
+    #[test]
+    fn test_memory_config_clone() {
+        let config1 = MemoryConfig::default();
+        let config2 = config1.clone();
+
+        assert_eq!(config1.checkpoint_interval, config2.checkpoint_interval);
+        assert_eq!(config1.max_short_term_memories, config2.max_short_term_memories);
+        assert_eq!(config1.max_long_term_memories, config2.max_long_term_memories);
+        assert_eq!(config1.similarity_threshold, config2.similarity_threshold);
+    }
+
+    #[test]
+    fn test_memory_config_custom_values() {
+        let session_id = Uuid::new_v4();
+        let mut config = MemoryConfig::default();
+        config.session_id = Some(session_id);
+        config.checkpoint_interval = 50;
+        config.max_short_term_memories = 500;
+        config.max_long_term_memories = 5000;
+        config.similarity_threshold = 0.8;
+        config.enable_knowledge_graph = false;
+
+        assert_eq!(config.session_id, Some(session_id));
+        assert_eq!(config.checkpoint_interval, 50);
+        assert_eq!(config.max_short_term_memories, 500);
+        assert_eq!(config.max_long_term_memories, 5000);
+        assert_eq!(config.similarity_threshold, 0.8);
+        assert!(!config.enable_knowledge_graph);
+    }
+
+    #[test]
+    fn test_storage_backend_memory() {
+        let backend = StorageBackend::Memory;
+        assert!(matches!(backend, StorageBackend::Memory));
+    }
+
+    #[test]
+    fn test_storage_backend_file() {
+        let backend = StorageBackend::File {
+            path: "/tmp/test.db".to_string(),
+        };
+
+        match backend {
+            StorageBackend::File { path } => {
+                assert_eq!(path, "/tmp/test.db");
+            }
+            _ => panic!("Expected File backend"),
+        }
+    }
+
+    #[test]
+    fn test_storage_backend_clone() {
+        let backend1 = StorageBackend::File {
+            path: "/tmp/test.db".to_string(),
+        };
+        let backend2 = backend1.clone();
+
+        match (backend1, backend2) {
+            (StorageBackend::File { path: p1 }, StorageBackend::File { path: p2 }) => {
+                assert_eq!(p1, p2);
+            }
+            _ => panic!("Clone failed"),
+        }
+    }
+
+    #[cfg(feature = "sql-storage")]
+    #[test]
+    fn test_storage_backend_sql() {
+        let backend = StorageBackend::Sql {
+            connection_string: "postgres://localhost/test".to_string(),
+        };
+
+        match backend {
+            StorageBackend::Sql { connection_string } => {
+                assert_eq!(connection_string, "postgres://localhost/test");
+            }
+            _ => panic!("Expected Sql backend"),
+        }
+    }
+
+    #[test]
+    fn test_memory_config_with_session_id() {
+        let session_id = Uuid::new_v4();
+        let mut config = MemoryConfig::default();
+        config.session_id = Some(session_id);
+
+        assert_eq!(config.session_id, Some(session_id));
+    }
+
+    #[test]
+    fn test_memory_config_knowledge_graph_disabled() {
+        let mut config = MemoryConfig::default();
+        config.enable_knowledge_graph = false;
+        config.enable_temporal_tracking = false;
+        config.enable_advanced_management = false;
+
+        assert!(!config.enable_knowledge_graph);
+        assert!(!config.enable_temporal_tracking);
+        assert!(!config.enable_advanced_management);
+    }
+
+    #[test]
+    fn test_memory_config_similarity_threshold() {
+        let mut config = MemoryConfig::default();
+
+        // Test default
+        assert_eq!(config.similarity_threshold, 0.7);
+
+        // Test custom values
+        config.similarity_threshold = 0.9;
+        assert_eq!(config.similarity_threshold, 0.9);
+
+        config.similarity_threshold = 0.5;
+        assert_eq!(config.similarity_threshold, 0.5);
+    }
+
+    #[test]
+    fn test_memory_config_checkpoint_interval() {
+        let mut config = MemoryConfig::default();
+
+        // Test default
+        assert_eq!(config.checkpoint_interval, 100);
+
+        // Test custom values
+        config.checkpoint_interval = 10;
+        assert_eq!(config.checkpoint_interval, 10);
+
+        config.checkpoint_interval = 1000;
+        assert_eq!(config.checkpoint_interval, 1000);
+    }
+
+    #[test]
+    fn test_memory_config_memory_limits() {
+        let mut config = MemoryConfig::default();
+
+        // Test defaults
+        assert_eq!(config.max_short_term_memories, 1000);
+        assert_eq!(config.max_long_term_memories, 10000);
+
+        // Test custom values
+        config.max_short_term_memories = 100;
+        config.max_long_term_memories = 1000;
+
+        assert_eq!(config.max_short_term_memories, 100);
+        assert_eq!(config.max_long_term_memories, 1000);
+    }
+
+    #[test]
+    fn test_memory_config_file_storage_backend() {
+        let mut config = MemoryConfig::default();
+        config.storage_backend = StorageBackend::File {
+            path: "/tmp/memory.db".to_string(),
+        };
+
+        match config.storage_backend {
+            StorageBackend::File { path } => {
+                assert_eq!(path, "/tmp/memory.db");
+            }
+            _ => panic!("Expected File backend"),
+        }
+    }
+
+    #[test]
+    fn test_memory_config_integrations_disabled() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_integrations);
+        assert!(config.integrations_config.is_none());
+    }
+
+    #[test]
+    fn test_memory_config_logging_enabled_by_default() {
+        let config = MemoryConfig::default();
+        assert!(config.logging_config.is_some());
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn test_memory_config_embeddings_feature() {
+        let config = MemoryConfig::default();
+        assert!(config.enable_embeddings);
+    }
+
+    #[cfg(feature = "distributed")]
+    #[test]
+    fn test_memory_config_distributed_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_distributed);
+        assert!(config.distributed_config.is_none());
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn test_memory_config_analytics_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_analytics);
+        assert!(config.analytics_config.is_none());
+    }
+
+    #[cfg(feature = "security")]
+    #[test]
+    fn test_memory_config_security_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_security);
+        assert!(config.security_config.is_none());
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn test_memory_config_multimodal_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_multimodal);
+        assert!(config.multimodal_config.is_none());
+    }
+
+    #[cfg(feature = "cross-platform")]
+    #[test]
+    fn test_memory_config_cross_platform_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_cross_platform);
+        assert!(config.cross_platform_config.is_none());
+    }
+}
