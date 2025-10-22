@@ -404,3 +404,335 @@ impl CheckpointManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checkpoint_config_default() {
+        let config = CheckpointConfig::default();
+        assert_eq!(config.auto_checkpoint_interval, 100);
+        assert_eq!(config.max_checkpoints, 50);
+        assert!(config.enable_compression);
+        match config.retention_policy {
+            RetentionPolicy::KeepRecent { count } => assert_eq!(count, 10),
+            _ => panic!("Expected KeepRecent retention policy"),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_config_clone() {
+        let config1 = CheckpointConfig::default();
+        let config2 = config1.clone();
+        assert_eq!(config1.auto_checkpoint_interval, config2.auto_checkpoint_interval);
+        assert_eq!(config1.max_checkpoints, config2.max_checkpoints);
+        assert_eq!(config1.enable_compression, config2.enable_compression);
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_new() {
+        let session_id = Uuid::new_v4();
+        let state_version = 42;
+        let metadata = CheckpointMetadata::new(session_id, state_version);
+
+        assert_eq!(metadata.session_id, session_id);
+        assert_eq!(metadata.state_version, state_version);
+        assert_eq!(metadata.size_bytes, 0);
+        assert_eq!(metadata.memory_count, 0);
+        assert_eq!(metadata.importance, 0.5);
+        assert!(metadata.description.is_none());
+        assert!(metadata.custom_fields.is_empty());
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_with_description() {
+        let session_id = Uuid::new_v4();
+        let metadata = CheckpointMetadata::new(session_id, 1)
+            .with_description("Test checkpoint".to_string());
+
+        assert_eq!(metadata.description, Some("Test checkpoint".to_string()));
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_with_importance() {
+        let session_id = Uuid::new_v4();
+        let metadata = CheckpointMetadata::new(session_id, 1)
+            .with_importance(0.8);
+
+        assert_eq!(metadata.importance, 0.8);
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_with_importance_clamping() {
+        let session_id = Uuid::new_v4();
+
+        // Test upper bound clamping
+        let metadata1 = CheckpointMetadata::new(session_id, 1)
+            .with_importance(1.5);
+        assert_eq!(metadata1.importance, 1.0);
+
+        // Test lower bound clamping
+        let metadata2 = CheckpointMetadata::new(session_id, 1)
+            .with_importance(-0.5);
+        assert_eq!(metadata2.importance, 0.0);
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_builder_chaining() {
+        let session_id = Uuid::new_v4();
+        let metadata = CheckpointMetadata::new(session_id, 10)
+            .with_description("Important checkpoint".to_string())
+            .with_importance(0.9);
+
+        assert_eq!(metadata.description, Some("Important checkpoint".to_string()));
+        assert_eq!(metadata.importance, 0.9);
+        assert_eq!(metadata.state_version, 10);
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_clone() {
+        let session_id = Uuid::new_v4();
+        let metadata1 = CheckpointMetadata::new(session_id, 5)
+            .with_description("Test".to_string());
+
+        let metadata2 = metadata1.clone();
+        assert_eq!(metadata1.id, metadata2.id);
+        assert_eq!(metadata1.session_id, metadata2.session_id);
+        assert_eq!(metadata1.state_version, metadata2.state_version);
+        assert_eq!(metadata1.description, metadata2.description);
+    }
+
+    #[test]
+    fn test_checkpoint_metadata_serialization() {
+        let session_id = Uuid::new_v4();
+        let metadata = CheckpointMetadata::new(session_id, 100)
+            .with_description("Serialization test".to_string())
+            .with_importance(0.75);
+
+        let serialized = serde_json::to_string(&metadata).unwrap();
+        let deserialized: CheckpointMetadata = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(metadata.id, deserialized.id);
+        assert_eq!(metadata.session_id, deserialized.session_id);
+        assert_eq!(metadata.state_version, deserialized.state_version);
+        assert_eq!(metadata.importance, deserialized.importance);
+        assert_eq!(metadata.description, deserialized.description);
+    }
+
+    #[test]
+    fn test_retention_policy_keep_recent() {
+        let policy = RetentionPolicy::KeepRecent { count: 5 };
+        match policy {
+            RetentionPolicy::KeepRecent { count } => assert_eq!(count, 5),
+            _ => panic!("Expected KeepRecent"),
+        }
+    }
+
+    #[test]
+    fn test_retention_policy_keep_by_age() {
+        let policy = RetentionPolicy::KeepByAge { max_age_hours: 24 };
+        match policy {
+            RetentionPolicy::KeepByAge { max_age_hours } => assert_eq!(max_age_hours, 24),
+            _ => panic!("Expected KeepByAge"),
+        }
+    }
+
+    #[test]
+    fn test_retention_policy_keep_by_importance() {
+        let policy = RetentionPolicy::KeepByImportance { max_count: 100 };
+        match policy {
+            RetentionPolicy::KeepByImportance { max_count } => assert_eq!(max_count, 100),
+            _ => panic!("Expected KeepByImportance"),
+        }
+    }
+
+    #[test]
+    fn test_retention_policy_clone() {
+        let policy1 = RetentionPolicy::KeepRecent { count: 10 };
+        let policy2 = policy1.clone();
+
+        match (policy1, policy2) {
+            (RetentionPolicy::KeepRecent { count: c1 }, RetentionPolicy::KeepRecent { count: c2 }) => {
+                assert_eq!(c1, c2);
+            }
+            _ => panic!("Clone failed"),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_new_and_restore() {
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+        let metadata = CheckpointMetadata::new(session_id, state.version());
+
+        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
+        let restored_state = checkpoint.restore_state().unwrap();
+
+        assert_eq!(state.session_id(), restored_state.session_id());
+        assert_eq!(state.version(), restored_state.version());
+    }
+
+    #[test]
+    fn test_checkpoint_size() {
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+        let metadata = CheckpointMetadata::new(session_id, state.version());
+
+        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
+        let size = checkpoint.size();
+
+        // Size should be greater than 0
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_checkpoint_clone() {
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+        let metadata = CheckpointMetadata::new(session_id, state.version());
+
+        let checkpoint1 = Checkpoint::new(&state, metadata).unwrap();
+        let checkpoint2 = checkpoint1.clone();
+
+        assert_eq!(checkpoint1.metadata.id, checkpoint2.metadata.id);
+        assert_eq!(checkpoint1.state_data.len(), checkpoint2.state_data.len());
+    }
+
+    #[test]
+    fn test_checkpoint_serialization() {
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+        let metadata = CheckpointMetadata::new(session_id, state.version());
+
+        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
+
+        let serialized = serde_json::to_string(&checkpoint).unwrap();
+        let deserialized: Checkpoint = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(checkpoint.metadata.id, deserialized.metadata.id);
+        assert_eq!(checkpoint.state_data.len(), deserialized.state_data.len());
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_new() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(50, storage);
+
+        assert_eq!(manager.config.auto_checkpoint_interval, 50);
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_with_config() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let config = CheckpointConfig {
+            auto_checkpoint_interval: 25,
+            max_checkpoints: 100,
+            enable_compression: false,
+            retention_policy: RetentionPolicy::KeepByAge { max_age_hours: 48 },
+        };
+
+        let manager = CheckpointManager::with_config(storage, config.clone());
+
+        assert_eq!(manager.config.auto_checkpoint_interval, 25);
+        assert_eq!(manager.config.max_checkpoints, 100);
+        assert!(!manager.config.enable_compression);
+    }
+
+    #[test]
+    fn test_checkpoint_manager_should_checkpoint() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(10, storage);
+
+        let session_id = Uuid::new_v4();
+        let mut state = AgentState::new(session_id);
+
+        // At version 1, should not checkpoint (1 % 10 != 0)
+        assert!(!manager.should_checkpoint(&state));
+
+        // Simulate state updates to reach version 10
+        for _ in 0..9 {
+            state.add_memory(crate::memory::types::MemoryEntry::new(
+                format!("key_{}", Uuid::new_v4()),
+                "test".to_string(),
+                crate::memory::types::MemoryType::ShortTerm,
+            ));
+        }
+
+        // At version 10, should checkpoint (10 % 10 == 0)
+        assert!(manager.should_checkpoint(&state));
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_create_and_restore() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(10, storage);
+
+        let session_id = Uuid::new_v4();
+        let mut state = AgentState::new(session_id);
+
+        // Add some data to the state
+        state.add_memory(crate::memory::types::MemoryEntry::new(
+            "test_key".to_string(),
+            "test_value".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        ));
+
+        // Create checkpoint
+        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
+
+        // Restore checkpoint
+        let restored_state = manager.restore_checkpoint(checkpoint_id).await.unwrap();
+
+        assert_eq!(state.session_id(), restored_state.session_id());
+        assert!(restored_state.has_memory("test_key"));
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_list_checkpoints() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(10, storage);
+
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+
+        // Create multiple checkpoints
+        let _ = manager.create_checkpoint(&state).await.unwrap();
+        let _ = manager.create_checkpoint(&state).await.unwrap();
+
+        let checkpoints = manager.list_checkpoints(Some(session_id)).await.unwrap();
+        assert_eq!(checkpoints.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_get_checkpoint_metadata() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(10, storage);
+
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+
+        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
+        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.unwrap();
+
+        assert!(metadata.is_some());
+        assert_eq!(metadata.unwrap().id, checkpoint_id);
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_manager_delete_checkpoint() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let manager = CheckpointManager::new(10, storage);
+
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+
+        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
+        let deleted = manager.delete_checkpoint(checkpoint_id).await.unwrap();
+
+        assert!(deleted);
+
+        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.unwrap();
+        assert!(metadata.is_none());
+    }
+}
