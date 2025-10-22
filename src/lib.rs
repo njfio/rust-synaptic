@@ -105,6 +105,8 @@ pub struct AgentMemory {
     multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
     #[cfg(feature = "cross-platform")]
     cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
+    /// Memory promotion manager for hierarchical memory management
+    promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
 }
 
 impl AgentMemory {
@@ -221,6 +223,18 @@ impl AgentMemory {
             None
         };
 
+        // Initialize memory promotion manager if enabled
+        let promotion_manager = if config.enable_memory_promotion {
+            let promo_config = config.promotion_config.clone().unwrap_or_default();
+            tracing::debug!(
+                policy_type = ?promo_config.policy_type,
+                "Initializing memory promotion manager"
+            );
+            Some(promo_config.create_manager())
+        } else {
+            None
+        };
+
         // Build base agent without multimodal memory initialized
         let agent = Self {
             _config: config.clone(),
@@ -242,6 +256,7 @@ impl AgentMemory {
             multimodal_memory: None,
             #[cfg(feature = "cross-platform")]
             cross_platform_manager,
+            promotion_manager,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -345,8 +360,25 @@ impl AgentMemory {
         validate_non_empty_string(key, "memory key")?;
 
         // First check short-term memory
-        if let Some(entry) = self.state.get_memory(key) {
+        if let Some(mut entry) = self.state.get_memory(key) {
             tracing::debug!("Memory found in short-term memory");
+
+            // Check if memory should be promoted to long-term
+            if let Some(ref pm) = self.promotion_manager {
+                if pm.should_promote(&entry) {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        access_count = entry.access_count,
+                        importance = entry.importance,
+                        "Automatically promoting memory to long-term storage"
+                    );
+                    entry = pm.promote_memory(entry)?;
+                    // Update in state and storage
+                    self.state.add_memory(entry.clone());
+                    self.storage.store(&entry).await?;
+                }
+            }
+
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
@@ -374,6 +406,21 @@ impl AgentMemory {
 
             // Update access patterns
             entry.mark_accessed();
+
+            // Check if memory should be promoted to long-term
+            if let Some(ref pm) = self.promotion_manager {
+                if pm.should_promote(&entry) {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        access_count = entry.access_count,
+                        importance = entry.importance,
+                        "Automatically promoting memory to long-term storage"
+                    );
+                    entry = pm.promote_memory(entry)?;
+                    // Store the promoted memory back
+                    self.storage.store(&entry).await?;
+                }
+            }
 
             // Add to state for future fast access
             self.state.add_memory(entry.clone());
@@ -660,6 +707,10 @@ pub struct MemoryConfig {
     pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
     /// Logging and monitoring configuration
     pub logging_config: Option<logging::LoggingConfig>,
+    /// Enable automatic memory promotion from short-term to long-term
+    pub enable_memory_promotion: bool,
+    /// Memory promotion configuration
+    pub promotion_config: Option<memory::promotion::PromotionConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -699,6 +750,8 @@ impl Default for MemoryConfig {
             #[cfg(feature = "cross-platform")]
             cross_platform_config: None,
             logging_config: Some(logging::LoggingConfig::default()),
+            enable_memory_promotion: true,
+            promotion_config: Some(memory::promotion::PromotionConfig::default()),
         }
     }
 }
