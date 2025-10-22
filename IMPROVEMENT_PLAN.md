@@ -13,19 +13,26 @@ This plan addresses critical bugs, architectural gaps, and quality improvements 
 
 **Goal**: Fix data-losing bugs and observability issues immediately
 
-### 4.1 Transactional Storage Bug (CRITICAL - P0)
+### 4.1 Transactional Storage Bug (CRITICAL - P0) ✅ **COMPLETED**
 **Issue**: `MemoryStorage::begin_transaction()` creates a new instance, causing silent data loss
 
 **Tasks**:
-- [ ] Fix `src/memory/storage/memory.rs::begin_transaction()` to use `Arc::clone(self)`
-- [ ] Add transaction tests that verify commit writes to live storage
-- [ ] Add rollback tests that verify data remains unchanged
-- [ ] Test concurrent transaction handling
-- [ ] Document transaction semantics in module docs
+- [x] Fix `src/memory/storage/memory.rs::begin_transaction()` to use `Arc::clone(&self.entries)`
+- [x] Add transaction tests that verify commit writes to live storage
+- [x] Add rollback tests that verify data remains unchanged
+- [x] Test concurrent transaction handling
+- [x] Document transaction semantics in module docs
 
-**Files**: `src/memory/storage/memory.rs`, `src/memory/storage/file.rs`
-**Tests**: Add `tests/transaction_consistency.rs`
-**Estimated**: 2-3 days
+**Files**: `src/memory/storage/memory.rs`
+**Tests**: `tests/transaction_consistency.rs` (10 comprehensive tests)
+**Completed**: 2025-10-22
+**Commit**: 96f84b1
+
+**Solution Summary**:
+Refactored MemoryStorage to wrap entries in `Arc<DashMap>` and updated
+`begin_transaction()` to pass `Arc::clone(&self.entries)` instead of creating
+a new storage instance. Added 10 comprehensive tests covering all transaction
+scenarios including concurrent transactions and isolation.
 
 ### 4.2 Replace println! with Structured Tracing (P0)
 **Issue**: Knowledge graph and other modules use `println!` instead of `tracing`
