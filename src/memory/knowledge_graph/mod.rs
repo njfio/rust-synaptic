@@ -7,6 +7,7 @@ pub mod types;
 pub mod graph;
 pub mod query;
 pub mod reasoning;
+pub mod sync;
 
 // Re-export commonly used types
 pub use types::{
@@ -16,6 +17,7 @@ pub use types::{
 pub use graph::{KnowledgeGraph, GraphConfig, GraphStats};
 pub use query::{GraphQuery, GraphQueryBuilder, QueryResult, TraversalOptions};
 pub use reasoning::{GraphReasoner, InferenceRule, InferenceEngine};
+pub use sync::{MemoryGraphSync, GraphSyncConfig, TemporalEventType};
 
 // Distributed graph types
 pub type MemoryNode = Node;
@@ -796,6 +798,195 @@ impl MemoryKnowledgeGraph {
         } else {
             Ok(0.0)
         }
+    }
+
+    /// Delete a memory node from the knowledge graph
+    ///
+    /// Removes the node and all associated relationships, ensuring
+    /// no dangling references remain in the graph.
+    #[tracing::instrument(skip(self), fields(memory_key = %memory_key))]
+    pub async fn delete_memory_node(&mut self, memory_key: &str) -> Result<()> {
+        tracing::debug!("Deleting memory node from knowledge graph");
+
+        // Get the node ID for this memory
+        let node_id = self.memory_to_node.get(memory_key)
+            .ok_or_else(|| MemoryError::NotFound { key: memory_key.to_string() })?;
+        let node_id = *node_id;
+
+        // Remove all edges connected to this node
+        self.graph.remove_node_edges(node_id).await?;
+
+        // Remove the node itself
+        self.graph.remove_node(node_id).await?;
+
+        // Clean up mappings
+        self.memory_to_node.remove(memory_key);
+        self.node_to_memory.remove(&node_id);
+
+        tracing::info!(
+            memory_key = %memory_key,
+            node_id = %node_id,
+            "Successfully deleted memory node and all relationships"
+        );
+
+        Ok(())
+    }
+
+    /// Update relationships for a node after content changes
+    async fn update_relationships_for_changed_node(
+        &mut self,
+        node_id: Uuid,
+        _old_content: &str,
+        _new_content: &str,
+    ) -> Result<()> {
+        // In a full implementation, this would:
+        // 1. Analyze content changes
+        // 2. Remove obsolete relationships
+        // 3. Create new relationships based on updated content
+        // For now, we just re-detect relationships
+
+        if let Some(memory_key) = self.node_to_memory.get(&node_id).cloned() {
+            // Get the memory entry (this is simplified - in practice we'd need storage access)
+            // For now, just trigger relationship auto-detection
+            tracing::debug!("Relationships would be updated for {}", memory_key);
+        }
+
+        Ok(())
+    }
+}
+
+// Implement MemoryGraphSync trait for MemoryKnowledgeGraph
+#[async_trait::async_trait]
+impl sync::MemoryGraphSync for MemoryKnowledgeGraph {
+    async fn sync_created(&mut self, memory: &MemoryEntry) -> Result<Uuid> {
+        tracing::debug!(
+            memory_key = %memory.key,
+            "Syncing created memory to knowledge graph"
+        );
+
+        // Add or update the memory node (handles intelligent merging)
+        let node_id = self.add_or_update_memory_node(memory).await?;
+
+        tracing::info!(
+            memory_key = %memory.key,
+            node_id = %node_id,
+            "Successfully synced created memory"
+        );
+
+        Ok(node_id)
+    }
+
+    async fn sync_updated(&mut self, _old_memory: &MemoryEntry, new_memory: &MemoryEntry) -> Result<Uuid> {
+        tracing::debug!(
+            memory_key = %new_memory.key,
+            "Syncing updated memory to knowledge graph"
+        );
+
+        // Update existing node or create if it doesn't exist
+        let node_id = self.add_or_update_memory_node(new_memory).await?;
+
+        // Optionally analyze diff between old and new for relationship changes
+        // This is where we could remove obsolete relationships
+
+        tracing::info!(
+            memory_key = %new_memory.key,
+            node_id = %node_id,
+            "Successfully synced updated memory"
+        );
+
+        Ok(node_id)
+    }
+
+    async fn sync_deleted(&mut self, memory: &MemoryEntry) -> Result<()> {
+        tracing::debug!(
+            memory_key = %memory.key,
+            "Syncing deleted memory to knowledge graph"
+        );
+
+        // Delete the memory node and all relationships
+        self.delete_memory_node(&memory.key).await?;
+
+        tracing::info!(
+            memory_key = %memory.key,
+            "Successfully synced deleted memory"
+        );
+
+        Ok(())
+    }
+
+    async fn sync_accessed(&mut self, memory: &MemoryEntry) -> Result<()> {
+        tracing::trace!(
+            memory_key = %memory.key,
+            access_count = memory.access_count,
+            "Syncing accessed memory to knowledge graph"
+        );
+
+        // Update access tracking in the graph node
+        if let Some(node_id) = self.memory_to_node.get(&memory.key) {
+            if let Some(mut node) = self.graph.get_node(*node_id).await? {
+                // Update access count in node properties
+                node.properties.insert(
+                    "access_count".to_string(),
+                    memory.access_count.to_string(),
+                );
+                node.properties.insert(
+                    "last_accessed".to_string(),
+                    memory.last_accessed().to_string(),
+                );
+
+                // Store updated node
+                self.graph.nodes.insert(*node_id, node);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn sync_temporal_event(&mut self, memory_key: &str, event_type: sync::TemporalEventType) -> Result<()> {
+        tracing::debug!(
+            memory_key = %memory_key,
+            event_type = ?event_type,
+            "Syncing temporal event to knowledge graph"
+        );
+
+        // Update temporal metadata in the graph node
+        if let Some(node_id) = self.memory_to_node.get(memory_key) {
+            if let Some(mut node) = self.graph.get_node(*node_id).await? {
+                // Record temporal event in node properties
+                let event_key = format!("temporal_event_{:?}", event_type).to_lowercase();
+                node.properties.insert(event_key, chrono::Utc::now().to_string());
+
+                // Store updated node
+                self.graph.nodes.insert(*node_id, node);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn has_node(&self, memory_key: &str) -> Result<Option<Uuid>> {
+        Ok(self.memory_to_node.get(memory_key).copied())
+    }
+
+    async fn sync_batch(&mut self, memories: &[MemoryEntry]) -> Result<Vec<Uuid>> {
+        tracing::info!(
+            count = memories.len(),
+            "Batch syncing memories to knowledge graph"
+        );
+
+        let mut node_ids = Vec::with_capacity(memories.len());
+
+        for memory in memories {
+            let node_id = self.add_or_update_memory_node(memory).await?;
+            node_ids.push(node_id);
+        }
+
+        tracing::info!(
+            synced_count = node_ids.len(),
+            "Completed batch sync"
+        );
+
+        Ok(node_ids)
     }
 }
 

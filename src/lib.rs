@@ -323,9 +323,10 @@ impl AgentMemory {
             let _ = analytics.record_event(event).await;
         }
 
-        // Add or update in knowledge graph if enabled (intelligent merging)
+        // Sync with knowledge graph if enabled (uses MemoryGraphSync trait)
         if let Some(ref mut kg) = self.knowledge_graph {
-            let _ = kg.add_or_update_memory_node(&entry).await;
+            use memory::knowledge_graph::MemoryGraphSync;
+            let _ = kg.sync_created(&entry).await;
         }
 
         // Use advanced management if enabled
@@ -448,6 +449,124 @@ impl AgentMemory {
             tracing::debug!("Memory not found in storage");
             Ok(None)
         }
+    }
+
+    /// Update an existing memory entry
+    ///
+    /// This method updates the value of an existing memory while preserving its metadata
+    /// and automatically synchronizing changes with the knowledge graph.
+    #[tracing::instrument(skip(self, new_value), fields(key = %key, new_value_len = new_value.len()))]
+    pub async fn update(&mut self, key: &str, new_value: &str) -> Result<()> {
+        use crate::error_handling::utils::{validate_non_empty_string, validate_range};
+
+        tracing::debug!("Updating memory entry");
+
+        // Validate inputs
+        validate_non_empty_string(key, "memory key")?;
+        validate_non_empty_string(new_value, "memory value")?;
+        validate_range(new_value.len(), 1, 10_000_000, "memory value length")?; // Max 10MB
+
+        // Retrieve existing memory
+        let mut existing = self.retrieve(key).await?
+            .ok_or_else(|| MemoryError::not_found(key))?;
+
+        // Keep a copy of the old memory for graph sync
+        let old_memory = existing.clone();
+
+        // Update the memory value
+        existing.update_value(new_value.to_string());
+
+        // Update in state and storage
+        self.state.add_memory(existing.clone());
+        self.storage.store(&existing).await?;
+
+        tracing::debug!("Memory updated in state and storage");
+
+        // Track temporal changes if enabled
+        if let Some(ref mut tm) = self.temporal_manager {
+            let _ = tm.track_memory_change(&existing, memory::temporal::ChangeType::Updated).await;
+        }
+
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            use crate::analytics::{AnalyticsEvent, ModificationType};
+            let event = AnalyticsEvent::MemoryModification {
+                memory_key: key.to_string(),
+                modification_type: ModificationType::ContentUpdate,
+                timestamp: Utc::now(),
+                change_magnitude: 1.0,
+            };
+            let _ = analytics.record_event(event).await;
+        }
+
+        // Sync with knowledge graph if enabled
+        if let Some(ref mut kg) = self.knowledge_graph {
+            use memory::knowledge_graph::MemoryGraphSync;
+            let _ = kg.sync_updated(&old_memory, &existing).await;
+        }
+
+        tracing::info!(
+            memory_key = %key,
+            "Successfully updated memory"
+        );
+
+        Ok(())
+    }
+
+    /// Delete a memory entry
+    ///
+    /// This method removes a memory from both state and storage, and automatically
+    /// cleans up the corresponding node in the knowledge graph.
+    #[tracing::instrument(skip(self), fields(key = %key))]
+    pub async fn delete(&mut self, key: &str) -> Result<()> {
+        use crate::error_handling::utils::validate_non_empty_string;
+
+        tracing::debug!("Deleting memory entry");
+
+        // Validate input
+        validate_non_empty_string(key, "memory key")?;
+
+        // Retrieve the memory before deletion (for graph sync)
+        let existing = self.retrieve(key).await?
+            .ok_or_else(|| MemoryError::not_found(key))?;
+
+        // Delete from state
+        self.state.remove_memory(key);
+
+        // Delete from storage
+        self.storage.delete(key).await?;
+
+        tracing::debug!("Memory deleted from state and storage");
+
+        // Track deletion in temporal manager
+        if let Some(ref mut tm) = self.temporal_manager {
+            let _ = tm.track_memory_change(&existing, memory::temporal::ChangeType::Deleted).await;
+        }
+
+        #[cfg(feature = "analytics")]
+        if let Some(ref mut analytics) = self.analytics_engine {
+            use crate::analytics::{AnalyticsEvent, ModificationType};
+            let event = AnalyticsEvent::MemoryModification {
+                memory_key: key.to_string(),
+                modification_type: ModificationType::Deleted,
+                timestamp: Utc::now(),
+                change_magnitude: 0.0,
+            };
+            let _ = analytics.record_event(event).await;
+        }
+
+        // Sync deletion with knowledge graph if enabled
+        if let Some(ref mut kg) = self.knowledge_graph {
+            use memory::knowledge_graph::MemoryGraphSync;
+            let _ = kg.sync_deleted(&existing).await;
+        }
+
+        tracing::info!(
+            memory_key = %key,
+            "Successfully deleted memory"
+        );
+
+        Ok(())
     }
 
     /// Search memories by content similarity
@@ -597,6 +716,61 @@ impl AgentMemory {
         }
     }
 
+    /// Query memories with full graph context
+    ///
+    /// This unified API retrieves memories that match the query and enriches them with
+    /// knowledge graph context including related memories, relationships, and graph metrics.
+    #[tracing::instrument(skip(self), fields(query = %query, max_depth = options.max_depth))]
+    pub async fn query_with_graph_context(
+        &mut self,
+        query: &str,
+        options: QueryContextOptions,
+    ) -> Result<Vec<MemoryWithGraphContext>> {
+        tracing::debug!("Querying memories with graph context");
+
+        // Step 1: Search for relevant memories
+        let search_results = self.search(query, options.search_limit).await?;
+
+        let mut contextualized_memories = Vec::new();
+
+        for fragment in search_results {
+            // Retrieve full memory entry
+            let memory = match self.retrieve(&fragment.key).await? {
+                Some(m) => m,
+                None => continue, // Skip if memory was deleted
+            };
+
+            // Step 2: Get graph context if enabled
+            let graph_context = if options.include_graph_context && self.knowledge_graph.is_some() {
+                let related = self.find_related_memories(
+                    &fragment.key,
+                    options.max_depth,
+                    None,
+                ).await.unwrap_or_default();
+
+                Some(GraphContext {
+                    related_memories: related,
+                    total_relationships: related.len(),
+                })
+            } else {
+                None
+            };
+
+            contextualized_memories.push(MemoryWithGraphContext {
+                memory,
+                relevance_score: fragment.relevance_score,
+                graph_context,
+            });
+        }
+
+        tracing::info!(
+            found_count = contextualized_memories.len(),
+            "Query with graph context completed"
+        );
+
+        Ok(contextualized_memories)
+    }
+
     /// Check if a memory exists
     pub fn has_memory(&self, key: &str) -> bool {
         self.state.has_memory(key)
@@ -669,6 +843,67 @@ pub struct MemoryStats {
     pub created_at: DateTime<Utc>,
 }
 
+/// Options for querying memories with graph context
+#[derive(Debug, Clone)]
+pub struct QueryContextOptions {
+    /// Maximum number of memories to return from search
+    pub search_limit: usize,
+    /// Include graph context (related memories, relationships)
+    pub include_graph_context: bool,
+    /// Maximum depth for relationship traversal
+    pub max_depth: usize,
+}
+
+impl Default for QueryContextOptions {
+    fn default() -> Self {
+        Self {
+            search_limit: 10,
+            include_graph_context: true,
+            max_depth: 2,
+        }
+    }
+}
+
+impl QueryContextOptions {
+    /// Create options with custom search limit
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.search_limit = limit;
+        self
+    }
+
+    /// Create options with custom max depth
+    pub fn with_depth(mut self, depth: usize) -> Self {
+        self.max_depth = depth;
+        self
+    }
+
+    /// Create options without graph context
+    pub fn without_graph_context(mut self) -> Self {
+        self.include_graph_context = false;
+        self
+    }
+}
+
+/// A memory enriched with knowledge graph context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryWithGraphContext {
+    /// The core memory entry
+    pub memory: MemoryEntry,
+    /// Relevance score from search
+    pub relevance_score: f64,
+    /// Optional graph context with relationships
+    pub graph_context: Option<GraphContext>,
+}
+
+/// Graph context for a memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphContext {
+    /// Related memories discovered through graph traversal
+    pub related_memories: Vec<memory::knowledge_graph::RelatedMemory>,
+    /// Total number of relationships
+    pub total_relationships: usize,
+}
+
 /// Configuration for the memory system
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
@@ -679,6 +914,8 @@ pub struct MemoryConfig {
     pub max_long_term_memories: usize,
     pub similarity_threshold: f64,
     pub enable_knowledge_graph: bool,
+    /// Knowledge graph synchronization configuration
+    pub graph_sync_config: Option<memory::knowledge_graph::GraphSyncConfig>,
     pub enable_temporal_tracking: bool,
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
@@ -723,6 +960,7 @@ impl Default for MemoryConfig {
             max_long_term_memories: 10000,
             similarity_threshold: 0.7,
             enable_knowledge_graph: true,
+            graph_sync_config: Some(memory::knowledge_graph::GraphSyncConfig::default()),
             enable_temporal_tracking: true,
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
