@@ -300,3 +300,336 @@ fn text_similarity(text1: &str, text2: &str) -> f64 {
         intersection as f64 / union as f64
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_type_display() {
+        assert_eq!(MemoryType::ShortTerm.to_string(), "short_term");
+        assert_eq!(MemoryType::LongTerm.to_string(), "long_term");
+    }
+
+    #[test]
+    fn test_memory_type_from_str() {
+        assert_eq!("short_term".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
+        assert_eq!("short".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
+        assert_eq!("st".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
+
+        assert_eq!("long_term".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
+        assert_eq!("long".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
+        assert_eq!("lt".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
+
+        assert!("invalid".parse::<MemoryType>().is_err());
+    }
+
+    #[test]
+    fn test_memory_metadata_new() {
+        let metadata = MemoryMetadata::new();
+
+        assert_eq!(metadata.access_count, 0);
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.custom_fields.is_empty());
+        assert_eq!(metadata.importance, 0.5);
+        assert_eq!(metadata.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_memory_metadata_builder_pattern() {
+        let metadata = MemoryMetadata::new()
+            .with_tags(vec!["test".to_string(), "example".to_string()])
+            .with_importance(0.8)
+            .with_confidence(0.9);
+
+        assert_eq!(metadata.tags.len(), 2);
+        assert_eq!(metadata.importance, 0.8);
+        assert_eq!(metadata.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_memory_metadata_importance_clamping() {
+        let metadata1 = MemoryMetadata::new().with_importance(1.5);
+        assert_eq!(metadata1.importance, 1.0);
+
+        let metadata2 = MemoryMetadata::new().with_importance(-0.5);
+        assert_eq!(metadata2.importance, 0.0);
+    }
+
+    #[test]
+    fn test_memory_metadata_tag_management() {
+        let mut metadata = MemoryMetadata::new();
+
+        // Add tags
+        metadata.add_tag("test".to_string());
+        metadata.add_tag("example".to_string());
+        assert_eq!(metadata.tags.len(), 2);
+
+        // Adding duplicate should not increase count
+        metadata.add_tag("test".to_string());
+        assert_eq!(metadata.tags.len(), 2);
+
+        // Remove tag
+        metadata.remove_tag("test");
+        assert_eq!(metadata.tags.len(), 1);
+        assert!(metadata.tags.contains(&"example".to_string()));
+    }
+
+    #[test]
+    fn test_memory_metadata_custom_fields() {
+        let mut metadata = MemoryMetadata::new();
+
+        metadata.set_custom_field("author".to_string(), "Alice".to_string());
+        metadata.set_custom_field("version".to_string(), "1.0".to_string());
+
+        assert_eq!(metadata.get_custom_field("author"), Some(&"Alice".to_string()));
+        assert_eq!(metadata.get_custom_field("version"), Some(&"1.0".to_string()));
+        assert_eq!(metadata.get_custom_field("missing"), None);
+    }
+
+    #[test]
+    fn test_memory_metadata_access_tracking() {
+        let mut metadata = MemoryMetadata::new();
+        let initial_accessed = metadata.last_accessed;
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        metadata.mark_accessed();
+
+        assert_eq!(metadata.access_count, 1);
+        assert!(metadata.last_accessed > initial_accessed);
+    }
+
+    #[test]
+    fn test_memory_metadata_modification_tracking() {
+        let mut metadata = MemoryMetadata::new();
+        let initial_modified = metadata.last_modified;
+        let initial_count = metadata.access_count;
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        metadata.mark_modified();
+
+        assert!(metadata.last_modified > initial_modified);
+        assert_eq!(metadata.access_count, initial_count + 1);
+    }
+
+    #[test]
+    fn test_memory_entry_new() {
+        let entry = MemoryEntry::new(
+            "test_key".to_string(),
+            "test_value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        assert_eq!(entry.key, "test_key");
+        assert_eq!(entry.value, "test_value");
+        assert_eq!(entry.memory_type, MemoryType::ShortTerm);
+        assert!(entry.embedding.is_none());
+    }
+
+    #[test]
+    fn test_memory_entry_builder_pattern() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::LongTerm,
+        )
+        .with_tags(vec!["tag1".to_string()])
+        .with_importance(0.9)
+        .with_embedding(vec![1.0, 2.0, 3.0]);
+
+        assert_eq!(entry.tags().len(), 1);
+        assert_eq!(entry.metadata.importance, 0.9);
+        assert!(entry.embedding.is_some());
+    }
+
+    #[test]
+    fn test_memory_entry_update_value() {
+        let mut entry = MemoryEntry::new(
+            "key".to_string(),
+            "old_value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let initial_modified = entry.metadata.last_modified;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        entry.update_value("new_value".to_string());
+
+        assert_eq!(entry.value, "new_value");
+        assert!(entry.metadata.last_modified > initial_modified);
+        assert_eq!(entry.metadata.access_count, 1);
+    }
+
+    #[test]
+    fn test_memory_entry_tag_operations() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::ShortTerm,
+        )
+        .with_tags(vec!["tag1".to_string(), "tag2".to_string()]);
+
+        assert!(entry.has_tag("tag1"));
+        assert!(entry.has_tag("tag2"));
+        assert!(!entry.has_tag("tag3"));
+        assert_eq!(entry.tags().len(), 2);
+    }
+
+    #[test]
+    fn test_memory_entry_estimated_size() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let size = entry.estimated_size();
+        assert!(size > 200); // Should be at least the overhead
+        assert!(size < 1000); // Should be reasonable for small entry
+    }
+
+    #[test]
+    fn test_memory_entry_expiration() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        // Shouldn't be expired immediately
+        assert!(!entry.is_expired(1));
+
+        // Should definitely be expired after 0 hours
+        assert!(entry.is_expired(0));
+    }
+
+    #[test]
+    fn test_memory_fragment_new() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let fragment = MemoryFragment::new(entry.clone(), 0.95);
+
+        assert_eq!(fragment.entry.key, "key");
+        assert_eq!(fragment.relevance_score, 0.95);
+        assert!(fragment.highlights.is_empty());
+    }
+
+    #[test]
+    fn test_memory_fragment_with_highlights() {
+        let entry = MemoryEntry::new(
+            "key".to_string(),
+            "value".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let fragment = MemoryFragment::new(entry, 0.8)
+            .with_highlights(vec!["highlight1".to_string(), "highlight2".to_string()]);
+
+        assert_eq!(fragment.highlights.len(), 2);
+    }
+
+    #[test]
+    fn test_cosine_similarity_identical_vectors() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![1.0, 2.0, 3.0];
+
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert!((similarity - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal_vectors() {
+        let vec1 = vec![1.0, 0.0];
+        let vec2 = vec![0.0, 1.0];
+
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert!((similarity - 0.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![1.0, 2.0];
+
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vectors() {
+        let vec1 = vec![0.0, 0.0, 0.0];
+        let vec2 = vec![1.0, 2.0, 3.0];
+
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_text_similarity_identical_text() {
+        let similarity = text_similarity("hello world", "hello world");
+        assert_eq!(similarity, 1.0);
+    }
+
+    #[test]
+    fn test_text_similarity_no_overlap() {
+        let similarity = text_similarity("hello world", "foo bar");
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_text_similarity_partial_overlap() {
+        let similarity = text_similarity("hello world test", "hello test example");
+        // Intersection: {"hello", "test"} = 2
+        // Union: {"hello", "world", "test", "example"} = 4
+        assert!((similarity - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_text_similarity_empty_strings() {
+        let similarity = text_similarity("", "");
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_memory_entry_similarity_with_embeddings() {
+        let entry1 = MemoryEntry::new(
+            "key1".to_string(),
+            "value1".to_string(),
+            MemoryType::ShortTerm,
+        )
+        .with_embedding(vec![1.0, 0.0]);
+
+        let entry2 = MemoryEntry::new(
+            "key2".to_string(),
+            "value2".to_string(),
+            MemoryType::ShortTerm,
+        )
+        .with_embedding(vec![0.0, 1.0]);
+
+        let similarity = entry1.similarity_score(&entry2);
+        assert!((similarity - 0.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_memory_entry_similarity_without_embeddings() {
+        let entry1 = MemoryEntry::new(
+            "key1".to_string(),
+            "hello world test".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let entry2 = MemoryEntry::new(
+            "key2".to_string(),
+            "hello world example".to_string(),
+            MemoryType::ShortTerm,
+        );
+
+        let similarity = entry1.similarity_score(&entry2);
+        assert!(similarity > 0.0);
+        assert!(similarity < 1.0);
+    }
+}

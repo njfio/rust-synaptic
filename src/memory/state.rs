@@ -290,3 +290,346 @@ impl AgentState {
         self.version += 1;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::types::MemoryMetadata;
+
+    fn create_test_memory_entry(key: &str, memory_type: MemoryType) -> MemoryEntry {
+        MemoryEntry {
+            id: Uuid::new_v4(),
+            key: key.to_string(),
+            value: format!("Test value for {}", key),
+            memory_type,
+            content: format!("Test content for {}", key),
+            metadata: MemoryMetadata::new(),
+            created_at: Utc::now(),
+            accessed_at: Utc::now(),
+            access_count: 0,
+            embedding: None,
+        }
+    }
+
+    #[test]
+    fn test_agent_state_new() {
+        let session_id = Uuid::new_v4();
+        let state = AgentState::new(session_id);
+
+        assert_eq!(state.session_id(), session_id);
+        assert_eq!(state.version(), 1);
+        assert_eq!(state.short_term_memory_count(), 0);
+        assert_eq!(state.long_term_memory_count(), 0);
+    }
+
+    #[test]
+    fn test_agent_state_add_short_term_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+
+        state.add_memory(entry);
+
+        assert_eq!(state.short_term_memory_count(), 1);
+        assert_eq!(state.long_term_memory_count(), 0);
+        assert!(state.has_memory("test_key"));
+        assert_eq!(state.version(), 2); // Version incremented after add
+    }
+
+    #[test]
+    fn test_agent_state_add_long_term_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("long_term_key", MemoryType::LongTerm);
+
+        state.add_memory(entry);
+
+        assert_eq!(state.short_term_memory_count(), 0);
+        assert_eq!(state.long_term_memory_count(), 1);
+        assert!(state.has_memory("long_term_key"));
+    }
+
+    #[test]
+    fn test_agent_state_get_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+        state.add_memory(entry);
+
+        let retrieved = state.get_memory("test_key");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().key, "test_key");
+    }
+
+    #[test]
+    fn test_agent_state_get_nonexistent_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let retrieved = state.get_memory("nonexistent");
+        assert!(retrieved.is_none());
+    }
+
+    #[test]
+    fn test_agent_state_has_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        assert!(!state.has_memory("test_key"));
+
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+        state.add_memory(entry);
+
+        assert!(state.has_memory("test_key"));
+    }
+
+    #[test]
+    fn test_agent_state_update_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+        state.add_memory(entry);
+
+        let result = state.update_memory("test_key", "Updated value".to_string());
+        assert!(result.is_ok());
+
+        let retrieved = state.get_memory("test_key");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().value, "Updated value");
+    }
+
+    #[test]
+    fn test_agent_state_update_nonexistent_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let result = state.update_memory("nonexistent", "Value".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_agent_state_remove_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+        state.add_memory(entry);
+
+        let removed = state.remove_memory("test_key");
+        assert!(removed.is_some());
+        assert!(!state.has_memory("test_key"));
+        assert_eq!(state.short_term_memory_count(), 0);
+    }
+
+    #[test]
+    fn test_agent_state_remove_nonexistent_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let removed = state.remove_memory("nonexistent");
+        assert!(removed.is_none());
+    }
+
+    #[test]
+    fn test_agent_state_get_all_keys() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("short1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("short2", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
+
+        let keys = state.get_all_keys();
+        assert_eq!(keys.len(), 3);
+        assert!(keys.contains(&"short1".to_string()));
+        assert!(keys.contains(&"short2".to_string()));
+        assert!(keys.contains(&"long1".to_string()));
+    }
+
+    #[test]
+    fn test_agent_state_clear() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("key2", MemoryType::LongTerm));
+
+        state.clear();
+
+        assert_eq!(state.short_term_memory_count(), 0);
+        assert_eq!(state.long_term_memory_count(), 0);
+        assert_eq!(state.get_all_keys().len(), 0);
+    }
+
+    #[test]
+    fn test_agent_state_clear_short_term() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("short1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
+
+        state.clear_short_term();
+
+        assert_eq!(state.short_term_memory_count(), 0);
+        assert_eq!(state.long_term_memory_count(), 1);
+        assert!(state.has_memory("long1"));
+        assert!(!state.has_memory("short1"));
+    }
+
+    #[test]
+    fn test_agent_state_promote_to_long_term() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let entry = create_test_memory_entry("test_key", MemoryType::ShortTerm);
+        state.add_memory(entry);
+
+        assert_eq!(state.short_term_memory_count(), 1);
+        assert_eq!(state.long_term_memory_count(), 0);
+
+        let result = state.promote_to_long_term("test_key");
+        assert!(result.is_ok());
+
+        assert_eq!(state.short_term_memory_count(), 0);
+        assert_eq!(state.long_term_memory_count(), 1);
+
+        let retrieved = state.get_memory("test_key");
+        assert!(retrieved.is_some());
+        assert!(matches!(retrieved.unwrap().memory_type, MemoryType::LongTerm));
+    }
+
+    #[test]
+    fn test_agent_state_promote_nonexistent_memory() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let result = state.promote_to_long_term("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_agent_state_filter_memories() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("short1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("short2", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
+
+        let short_term_only = state.filter_memories(|entry| {
+            matches!(entry.memory_type, MemoryType::ShortTerm)
+        });
+
+        assert_eq!(short_term_only.len(), 2);
+    }
+
+    #[test]
+    fn test_agent_state_total_memory_size() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("key2", MemoryType::LongTerm));
+
+        let total_size = state.total_memory_size();
+        assert!(total_size > 0);
+    }
+
+    #[test]
+    fn test_agent_state_version_increments() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        assert_eq!(state.version(), 1);
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        assert_eq!(state.version(), 2);
+
+        state.update_memory("key1", "Updated".to_string()).unwrap();
+        assert_eq!(state.version(), 3);
+
+        state.remove_memory("key1");
+        assert_eq!(state.version(), 4);
+    }
+
+    #[test]
+    fn test_agent_state_last_modified_updates() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let initial_modified = state.last_modified();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        let after_add = state.last_modified();
+
+        assert!(after_add > initial_modified);
+    }
+
+    #[test]
+    fn test_agent_state_get_short_term_memories() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("short1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
+
+        let short_term = state.get_short_term_memories();
+        assert_eq!(short_term.len(), 1);
+        assert!(short_term.contains_key("short1"));
+    }
+
+    #[test]
+    fn test_agent_state_get_long_term_memories() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("short1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
+
+        let long_term = state.get_long_term_memories();
+        assert_eq!(long_term.len(), 1);
+        assert!(long_term.contains_key("long1"));
+    }
+
+    #[test]
+    fn test_agent_state_clone() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+
+        let cloned = state.clone();
+
+        assert_eq!(state.session_id(), cloned.session_id());
+        assert_eq!(state.version(), cloned.version());
+        assert_eq!(state.short_term_memory_count(), cloned.short_term_memory_count());
+    }
+
+    #[test]
+    fn test_agent_state_get_most_accessed() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("key2", MemoryType::ShortTerm));
+
+        // Access key1 multiple times
+        for _ in 0..5 {
+            state.get_memory("key1");
+        }
+
+        // Access key2 once
+        state.get_memory("key2");
+
+        let most_accessed = state.get_most_accessed(1);
+        assert_eq!(most_accessed.len(), 1);
+        assert_eq!(most_accessed[0].key, "key1");
+    }
+
+    #[test]
+    fn test_agent_state_get_recently_accessed() {
+        let mut state = AgentState::new(Uuid::new_v4());
+
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+        state.add_memory(create_test_memory_entry("key2", MemoryType::ShortTerm));
+
+        // Access key1 first
+        state.get_memory("key1");
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Access key2 later
+        state.get_memory("key2");
+
+        let recently_accessed = state.get_recently_accessed(1);
+        assert_eq!(recently_accessed.len(), 1);
+        assert_eq!(recently_accessed[0].key, "key2");
+    }
+
+    #[test]
+    fn test_access_pattern_updates() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
+
+        // Access multiple times
+        for _ in 0..3 {
+            state.get_memory("key1");
+        }
+
+        // Access patterns should be tracked
+        assert!(state.access_patterns.contains_key("key1"));
+        let pattern = state.access_patterns.get("key1").unwrap();
+        assert!(pattern.access_count > 0);
+    }
+}
