@@ -403,3 +403,301 @@ impl TemporalMemoryManager {
         Some(TimeRange::new(start, start + bucket_size))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temporal_config_default() {
+        let config = TemporalConfig::default();
+        assert_eq!(config.max_versions_per_memory, 100);
+        assert_eq!(config.max_version_age_days, 365);
+        assert!(config.enable_pattern_detection);
+        assert!(config.enable_evolution_tracking);
+        assert_eq!(config.min_version_interval_minutes, 5);
+        assert!(config.enable_diff_compression);
+    }
+
+    #[test]
+    fn test_temporal_config_clone() {
+        let config1 = TemporalConfig::default();
+        let config2 = config1.clone();
+        assert_eq!(config1.max_versions_per_memory, config2.max_versions_per_memory);
+        assert_eq!(config1.max_version_age_days, config2.max_version_age_days);
+        assert_eq!(config1.enable_pattern_detection, config2.enable_pattern_detection);
+    }
+
+    #[test]
+    fn test_temporal_config_custom_values() {
+        let config = TemporalConfig {
+            max_versions_per_memory: 50,
+            max_version_age_days: 180,
+            enable_pattern_detection: false,
+            enable_evolution_tracking: false,
+            min_version_interval_minutes: 10,
+            enable_diff_compression: false,
+        };
+
+        assert_eq!(config.max_versions_per_memory, 50);
+        assert_eq!(config.max_version_age_days, 180);
+        assert!(!config.enable_pattern_detection);
+        assert!(!config.enable_evolution_tracking);
+        assert_eq!(config.min_version_interval_minutes, 10);
+        assert!(!config.enable_diff_compression);
+    }
+
+    #[test]
+    fn test_time_range_new() {
+        let start = Utc::now();
+        let end = start + Duration::hours(2);
+        let range = TimeRange::new(start, end);
+
+        assert_eq!(range.start, start);
+        assert_eq!(range.end, end);
+    }
+
+    #[test]
+    fn test_time_range_last_hours() {
+        let range = TimeRange::last_hours(24);
+        let duration = range.duration();
+
+        // Should be approximately 24 hours (allowing small timing variance)
+        assert!((duration.num_hours() - 24).abs() < 1);
+    }
+
+    #[test]
+    fn test_time_range_last_days() {
+        let range = TimeRange::last_days(7);
+        let duration = range.duration();
+
+        // Should be approximately 7 days
+        assert!((duration.num_days() - 7).abs() < 1);
+    }
+
+    #[test]
+    fn test_time_range_contains() {
+        let start = Utc::now();
+        let end = start + Duration::hours(2);
+        let range = TimeRange::new(start, end);
+
+        // Time within range
+        let mid_time = start + Duration::hours(1);
+        assert!(range.contains(mid_time));
+
+        // Time at boundaries
+        assert!(range.contains(start));
+        assert!(range.contains(end));
+
+        // Time outside range
+        let before = start - Duration::hours(1);
+        assert!(!range.contains(before));
+
+        let after = end + Duration::hours(1);
+        assert!(!range.contains(after));
+    }
+
+    #[test]
+    fn test_time_range_duration() {
+        let start = Utc::now();
+        let end = start + Duration::hours(5);
+        let range = TimeRange::new(start, end);
+
+        assert_eq!(range.duration(), Duration::hours(5));
+    }
+
+    #[test]
+    fn test_time_range_serialization() {
+        let start = Utc::now();
+        let end = start + Duration::hours(1);
+        let range = TimeRange::new(start, end);
+
+        let serialized = serde_json::to_string(&range).unwrap();
+        let deserialized: TimeRange = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(range.start, deserialized.start);
+        assert_eq!(range.end, deserialized.end);
+    }
+
+    #[test]
+    fn test_time_range_clone() {
+        let start = Utc::now();
+        let end = start + Duration::hours(1);
+        let range1 = TimeRange::new(start, end);
+        let range2 = range1.clone();
+
+        assert_eq!(range1.start, range2.start);
+        assert_eq!(range1.end, range2.end);
+    }
+
+    #[test]
+    fn test_temporal_memory_manager_new() {
+        let config = TemporalConfig::default();
+        let manager = TemporalMemoryManager::new(config.clone());
+
+        // Manager should be initialized with the config
+        assert_eq!(manager.config.max_versions_per_memory, config.max_versions_per_memory);
+    }
+
+    #[test]
+    fn test_temporal_usage_stats_serialization() {
+        let stats = TemporalUsageStats {
+            total_versions: 100,
+            total_diffs: 50,
+            total_evolution_events: 25,
+        };
+
+        let serialized = serde_json::to_string(&stats).unwrap();
+        let deserialized: TemporalUsageStats = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(stats.total_versions, deserialized.total_versions);
+        assert_eq!(stats.total_diffs, deserialized.total_diffs);
+        assert_eq!(stats.total_evolution_events, deserialized.total_evolution_events);
+    }
+
+    #[test]
+    fn test_temporal_usage_stats_clone() {
+        let stats1 = TemporalUsageStats {
+            total_versions: 100,
+            total_diffs: 50,
+            total_evolution_events: 25,
+        };
+
+        let stats2 = stats1.clone();
+        assert_eq!(stats1.total_versions, stats2.total_versions);
+        assert_eq!(stats1.total_diffs, stats2.total_diffs);
+    }
+
+    #[test]
+    fn test_temporal_summary_serialization() {
+        let summary = TemporalSummary {
+            total_versions: 50,
+            total_changes: 30,
+            most_active_period: Some(TimeRange::last_hours(1)),
+            avg_change_frequency: 1.5,
+            most_common_change_type: Some(ChangeType::Updated),
+            stability_score: 0.8,
+        };
+
+        let serialized = serde_json::to_string(&summary).unwrap();
+        let deserialized: TemporalSummary = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(summary.total_versions, deserialized.total_versions);
+        assert_eq!(summary.total_changes, deserialized.total_changes);
+        assert_eq!(summary.avg_change_frequency, deserialized.avg_change_frequency);
+        assert_eq!(summary.stability_score, deserialized.stability_score);
+    }
+
+    #[test]
+    fn test_temporal_summary_clone() {
+        let summary1 = TemporalSummary {
+            total_versions: 50,
+            total_changes: 30,
+            most_active_period: None,
+            avg_change_frequency: 1.5,
+            most_common_change_type: None,
+            stability_score: 0.8,
+        };
+
+        let summary2 = summary1.clone();
+        assert_eq!(summary1.total_versions, summary2.total_versions);
+        assert_eq!(summary1.stability_score, summary2.stability_score);
+    }
+
+    #[test]
+    fn test_temporal_query_clone() {
+        let query1 = TemporalQuery {
+            memory_key: Some("test_key".to_string()),
+            time_range: Some(TimeRange::last_days(7)),
+            change_types: vec![ChangeType::Created, ChangeType::Updated],
+            min_significance: Some(0.5),
+            include_patterns: true,
+            include_evolution: true,
+        };
+
+        let query2 = query1.clone();
+        assert_eq!(query1.memory_key, query2.memory_key);
+        assert_eq!(query1.include_patterns, query2.include_patterns);
+        assert_eq!(query1.include_evolution, query2.include_evolution);
+    }
+
+    #[test]
+    fn test_temporal_analysis_serialization() {
+        let time_range = TimeRange::last_hours(24);
+        let analysis = TemporalAnalysis {
+            query: "test query".to_string(),
+            time_range: time_range.clone(),
+            version_history: vec![],
+            changes: vec![],
+            patterns: vec![],
+            evolution_metrics: None,
+            summary: TemporalSummary {
+                total_versions: 0,
+                total_changes: 0,
+                most_active_period: None,
+                avg_change_frequency: 0.0,
+                most_common_change_type: None,
+                stability_score: 1.0,
+            },
+        };
+
+        let serialized = serde_json::to_string(&analysis).unwrap();
+        let deserialized: TemporalAnalysis = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(analysis.query, deserialized.query);
+        assert_eq!(analysis.summary.total_versions, deserialized.summary.total_versions);
+    }
+
+    #[test]
+    fn test_determine_bucket_size_hourly() {
+        let range = TimeRange::last_hours(12);
+        let bucket_size = TemporalMemoryManager::determine_bucket_size(&range);
+        assert_eq!(bucket_size, Duration::hours(1));
+    }
+
+    #[test]
+    fn test_determine_bucket_size_daily() {
+        let range = TimeRange::last_days(7);
+        let bucket_size = TemporalMemoryManager::determine_bucket_size(&range);
+        assert_eq!(bucket_size, Duration::days(1));
+    }
+
+    #[test]
+    fn test_time_range_boundary_conditions() {
+        let now = Utc::now();
+        let range = TimeRange::new(now, now);
+
+        // Zero duration range
+        assert_eq!(range.duration(), Duration::zero());
+        assert!(range.contains(now));
+    }
+
+    #[test]
+    fn test_temporal_config_edge_cases() {
+        // Test with minimal values
+        let config = TemporalConfig {
+            max_versions_per_memory: 1,
+            max_version_age_days: 1,
+            enable_pattern_detection: false,
+            enable_evolution_tracking: false,
+            min_version_interval_minutes: 1,
+            enable_diff_compression: false,
+        };
+
+        assert_eq!(config.max_versions_per_memory, 1);
+        assert_eq!(config.max_version_age_days, 1);
+    }
+
+    #[test]
+    fn test_temporal_usage_stats_zero_values() {
+        let stats = TemporalUsageStats {
+            total_versions: 0,
+            total_diffs: 0,
+            total_evolution_events: 0,
+        };
+
+        assert_eq!(stats.total_versions, 0);
+        assert_eq!(stats.total_diffs, 0);
+        assert_eq!(stats.total_evolution_events, 0);
+    }
+}
