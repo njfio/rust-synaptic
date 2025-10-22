@@ -12,6 +12,17 @@ use chrono::{DateTime, Utc};
 
 pub mod simple_embeddings;
 pub mod similarity;
+pub mod provider;
+pub mod providers;
+
+// Re-export provider types
+pub use provider::{
+    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities,
+    EmbeddingCache, CacheStats, compute_content_hash, normalize_vector,
+};
+
+// Re-export concrete providers
+pub use providers::{TfIdfProvider, TfIdfConfig};
 
 /// Configuration for embedding system
 #[derive(Debug, Clone, Serialize, Deserialize)]
