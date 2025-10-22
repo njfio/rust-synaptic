@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub mod indexed;
 pub mod pipeline;
 pub mod strategies;
+pub mod dense_vector;
 
 // Re-export pipeline types
 pub use pipeline::{
@@ -20,6 +21,9 @@ pub use pipeline::{
 pub use strategies::{
     KeywordRetriever, TemporalRetriever, GraphRetriever,
 };
+
+// Re-export dense vector retriever
+pub use dense_vector::DenseVectorRetriever;
 
 /// Configuration for memory retrieval operations
 #[derive(Debug, Clone)]
