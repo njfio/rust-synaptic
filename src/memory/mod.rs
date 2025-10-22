@@ -17,6 +17,7 @@ pub mod temporal;
 pub mod management;
 pub mod consolidation;
 pub mod meta_learning;
+pub mod operations;
 
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
