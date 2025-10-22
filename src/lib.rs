@@ -105,6 +105,8 @@ pub struct AgentMemory {
     multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
     #[cfg(feature = "cross-platform")]
     cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
+    /// Memory promotion manager for hierarchical memory management
+    promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
 }
 
 impl AgentMemory {
@@ -221,6 +223,18 @@ impl AgentMemory {
             None
         };
 
+        // Initialize memory promotion manager if enabled
+        let promotion_manager = if config.enable_memory_promotion {
+            let promo_config = config.promotion_config.clone().unwrap_or_default();
+            tracing::debug!(
+                policy_type = ?promo_config.policy_type,
+                "Initializing memory promotion manager"
+            );
+            Some(promo_config.create_manager())
+        } else {
+            None
+        };
+
         // Build base agent without multimodal memory initialized
         let agent = Self {
             _config: config.clone(),
@@ -242,6 +256,7 @@ impl AgentMemory {
             multimodal_memory: None,
             #[cfg(feature = "cross-platform")]
             cross_platform_manager,
+            promotion_manager,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -345,8 +360,25 @@ impl AgentMemory {
         validate_non_empty_string(key, "memory key")?;
 
         // First check short-term memory
-        if let Some(entry) = self.state.get_memory(key) {
+        if let Some(mut entry) = self.state.get_memory(key) {
             tracing::debug!("Memory found in short-term memory");
+
+            // Check if memory should be promoted to long-term
+            if let Some(ref pm) = self.promotion_manager {
+                if pm.should_promote(&entry) {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        access_count = entry.access_count,
+                        importance = entry.importance,
+                        "Automatically promoting memory to long-term storage"
+                    );
+                    entry = pm.promote_memory(entry)?;
+                    // Update in state and storage
+                    self.state.add_memory(entry.clone());
+                    self.storage.store(&entry).await?;
+                }
+            }
+
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
@@ -365,14 +397,42 @@ impl AgentMemory {
         tracing::debug!("Memory not found in short-term, checking storage");
         let result = self.storage.retrieve(key).await?;
 
-        if result.is_some() {
-            tracing::debug!("Memory found in storage");
-        } else {
-            tracing::debug!("Memory not found");
-        }
-        #[cfg(feature = "analytics")]
-        if let Some(ref mut analytics) = self.analytics_engine {
-            if result.is_some() {
+        if let Some(mut entry) = result {
+            tracing::debug!("Memory found in storage (cache miss), rehydrating state");
+
+            // CRITICAL: Inject cache miss back into state for future fast access
+            // This fixes the cache synchronization issue where repeated access
+            // to the same memory would hit storage every time.
+
+            // Update access patterns
+            entry.mark_accessed();
+
+            // Check if memory should be promoted to long-term
+            if let Some(ref pm) = self.promotion_manager {
+                if pm.should_promote(&entry) {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        access_count = entry.access_count,
+                        importance = entry.importance,
+                        "Automatically promoting memory to long-term storage"
+                    );
+                    entry = pm.promote_memory(entry)?;
+                    // Store the promoted memory back
+                    self.storage.store(&entry).await?;
+                }
+            }
+
+            // Add to state for future fast access
+            self.state.add_memory(entry.clone());
+
+            // Refresh knowledge graph if enabled
+            if let Some(ref mut kg) = self.knowledge_graph {
+                tracing::debug!("Refreshing knowledge graph node for cache miss");
+                let _ = kg.add_or_update_memory_node(&entry).await;
+            }
+
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
                 let event = AnalyticsEvent::MemoryAccess {
                     memory_key: key.to_string(),
@@ -382,8 +442,12 @@ impl AgentMemory {
                 };
                 let _ = analytics.record_event(event).await;
             }
+
+            Ok(Some(entry))
+        } else {
+            tracing::debug!("Memory not found in storage");
+            Ok(None)
         }
-        Ok(result)
     }
 
     /// Search memories by content similarity
@@ -643,6 +707,10 @@ pub struct MemoryConfig {
     pub cross_platform_config: Option<cross_platform::CrossPlatformConfig>,
     /// Logging and monitoring configuration
     pub logging_config: Option<logging::LoggingConfig>,
+    /// Enable automatic memory promotion from short-term to long-term
+    pub enable_memory_promotion: bool,
+    /// Memory promotion configuration
+    pub promotion_config: Option<memory::promotion::PromotionConfig>,
 }
 
 impl Default for MemoryConfig {
@@ -682,6 +750,8 @@ impl Default for MemoryConfig {
             #[cfg(feature = "cross-platform")]
             cross_platform_config: None,
             logging_config: Some(logging::LoggingConfig::default()),
+            enable_memory_promotion: true,
+            promotion_config: Some(memory::promotion::PromotionConfig::default()),
         }
     }
 }
@@ -693,4 +763,248 @@ pub enum StorageBackend {
     File { path: String },
     #[cfg(feature = "sql-storage")]
     Sql { connection_string: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_config_default() {
+        let config = MemoryConfig::default();
+
+        assert!(matches!(config.storage_backend, StorageBackend::Memory));
+        assert!(config.session_id.is_none());
+        assert_eq!(config.checkpoint_interval, 100);
+        assert_eq!(config.max_short_term_memories, 1000);
+        assert_eq!(config.max_long_term_memories, 10000);
+        assert_eq!(config.similarity_threshold, 0.7);
+        assert!(config.enable_knowledge_graph);
+        assert!(config.enable_temporal_tracking);
+        assert!(config.enable_advanced_management);
+        assert!(!config.enable_integrations);
+        assert!(config.logging_config.is_some());
+    }
+
+    #[test]
+    fn test_memory_config_clone() {
+        let config1 = MemoryConfig::default();
+        let config2 = config1.clone();
+
+        assert_eq!(config1.checkpoint_interval, config2.checkpoint_interval);
+        assert_eq!(config1.max_short_term_memories, config2.max_short_term_memories);
+        assert_eq!(config1.max_long_term_memories, config2.max_long_term_memories);
+        assert_eq!(config1.similarity_threshold, config2.similarity_threshold);
+    }
+
+    #[test]
+    fn test_memory_config_custom_values() {
+        let session_id = Uuid::new_v4();
+        let mut config = MemoryConfig::default();
+        config.session_id = Some(session_id);
+        config.checkpoint_interval = 50;
+        config.max_short_term_memories = 500;
+        config.max_long_term_memories = 5000;
+        config.similarity_threshold = 0.8;
+        config.enable_knowledge_graph = false;
+
+        assert_eq!(config.session_id, Some(session_id));
+        assert_eq!(config.checkpoint_interval, 50);
+        assert_eq!(config.max_short_term_memories, 500);
+        assert_eq!(config.max_long_term_memories, 5000);
+        assert_eq!(config.similarity_threshold, 0.8);
+        assert!(!config.enable_knowledge_graph);
+    }
+
+    #[test]
+    fn test_storage_backend_memory() {
+        let backend = StorageBackend::Memory;
+        assert!(matches!(backend, StorageBackend::Memory));
+    }
+
+    #[test]
+    fn test_storage_backend_file() {
+        let backend = StorageBackend::File {
+            path: "/tmp/test.db".to_string(),
+        };
+
+        match backend {
+            StorageBackend::File { path } => {
+                assert_eq!(path, "/tmp/test.db");
+            }
+            _ => panic!("Expected File backend"),
+        }
+    }
+
+    #[test]
+    fn test_storage_backend_clone() {
+        let backend1 = StorageBackend::File {
+            path: "/tmp/test.db".to_string(),
+        };
+        let backend2 = backend1.clone();
+
+        match (backend1, backend2) {
+            (StorageBackend::File { path: p1 }, StorageBackend::File { path: p2 }) => {
+                assert_eq!(p1, p2);
+            }
+            _ => panic!("Clone failed"),
+        }
+    }
+
+    #[cfg(feature = "sql-storage")]
+    #[test]
+    fn test_storage_backend_sql() {
+        let backend = StorageBackend::Sql {
+            connection_string: "postgres://localhost/test".to_string(),
+        };
+
+        match backend {
+            StorageBackend::Sql { connection_string } => {
+                assert_eq!(connection_string, "postgres://localhost/test");
+            }
+            _ => panic!("Expected Sql backend"),
+        }
+    }
+
+    #[test]
+    fn test_memory_config_with_session_id() {
+        let session_id = Uuid::new_v4();
+        let mut config = MemoryConfig::default();
+        config.session_id = Some(session_id);
+
+        assert_eq!(config.session_id, Some(session_id));
+    }
+
+    #[test]
+    fn test_memory_config_knowledge_graph_disabled() {
+        let mut config = MemoryConfig::default();
+        config.enable_knowledge_graph = false;
+        config.enable_temporal_tracking = false;
+        config.enable_advanced_management = false;
+
+        assert!(!config.enable_knowledge_graph);
+        assert!(!config.enable_temporal_tracking);
+        assert!(!config.enable_advanced_management);
+    }
+
+    #[test]
+    fn test_memory_config_similarity_threshold() {
+        let mut config = MemoryConfig::default();
+
+        // Test default
+        assert_eq!(config.similarity_threshold, 0.7);
+
+        // Test custom values
+        config.similarity_threshold = 0.9;
+        assert_eq!(config.similarity_threshold, 0.9);
+
+        config.similarity_threshold = 0.5;
+        assert_eq!(config.similarity_threshold, 0.5);
+    }
+
+    #[test]
+    fn test_memory_config_checkpoint_interval() {
+        let mut config = MemoryConfig::default();
+
+        // Test default
+        assert_eq!(config.checkpoint_interval, 100);
+
+        // Test custom values
+        config.checkpoint_interval = 10;
+        assert_eq!(config.checkpoint_interval, 10);
+
+        config.checkpoint_interval = 1000;
+        assert_eq!(config.checkpoint_interval, 1000);
+    }
+
+    #[test]
+    fn test_memory_config_memory_limits() {
+        let mut config = MemoryConfig::default();
+
+        // Test defaults
+        assert_eq!(config.max_short_term_memories, 1000);
+        assert_eq!(config.max_long_term_memories, 10000);
+
+        // Test custom values
+        config.max_short_term_memories = 100;
+        config.max_long_term_memories = 1000;
+
+        assert_eq!(config.max_short_term_memories, 100);
+        assert_eq!(config.max_long_term_memories, 1000);
+    }
+
+    #[test]
+    fn test_memory_config_file_storage_backend() {
+        let mut config = MemoryConfig::default();
+        config.storage_backend = StorageBackend::File {
+            path: "/tmp/memory.db".to_string(),
+        };
+
+        match config.storage_backend {
+            StorageBackend::File { path } => {
+                assert_eq!(path, "/tmp/memory.db");
+            }
+            _ => panic!("Expected File backend"),
+        }
+    }
+
+    #[test]
+    fn test_memory_config_integrations_disabled() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_integrations);
+        assert!(config.integrations_config.is_none());
+    }
+
+    #[test]
+    fn test_memory_config_logging_enabled_by_default() {
+        let config = MemoryConfig::default();
+        assert!(config.logging_config.is_some());
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn test_memory_config_embeddings_feature() {
+        let config = MemoryConfig::default();
+        assert!(config.enable_embeddings);
+    }
+
+    #[cfg(feature = "distributed")]
+    #[test]
+    fn test_memory_config_distributed_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_distributed);
+        assert!(config.distributed_config.is_none());
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn test_memory_config_analytics_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_analytics);
+        assert!(config.analytics_config.is_none());
+    }
+
+    #[cfg(feature = "security")]
+    #[test]
+    fn test_memory_config_security_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_security);
+        assert!(config.security_config.is_none());
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn test_memory_config_multimodal_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_multimodal);
+        assert!(config.multimodal_config.is_none());
+    }
+
+    #[cfg(feature = "cross-platform")]
+    #[test]
+    fn test_memory_config_cross_platform_feature() {
+        let config = MemoryConfig::default();
+        assert!(!config.enable_cross_platform);
+        assert!(config.cross_platform_config.is_none());
+    }
 }

@@ -315,6 +315,7 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Update an existing node with new memory data
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key, node_id = %node_id))]
     async fn update_existing_node(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<Uuid> {
         if let Some(mut node) = self.graph.get_node(node_id).await? {
             // Track changes for differential analysis
@@ -352,13 +353,18 @@ impl MemoryKnowledgeGraph {
             // Update relationships based on content changes
             self.update_relationships_for_changed_node(node_id, &old_content, &new_content).await?;
 
-            println!("Updated existing node {} for memory '{}'", node_id, memory.key);
+            tracing::debug!(
+                node_id = %node_id,
+                memory_key = %memory.key,
+                "Updated existing node for memory"
+            );
         }
 
         Ok(node_id)
     }
 
     /// Find a similar existing node that could be merged
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key))]
     async fn find_similar_node(&self, memory: &MemoryEntry) -> Result<Option<Uuid>> {
         let similarity_threshold = self.config.semantic_similarity_threshold;
         let mut best_match: Option<(Uuid, f64)> = None;
@@ -391,9 +397,14 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Merge memory with an existing similar node
+    #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key, node_id = %node_id))]
     async fn merge_with_existing_node(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<Uuid> {
         if let Some(mut node) = self.graph.get_node(node_id).await? {
-            println!("Merging memory '{}' with existing node {}", memory.key, node_id);
+            tracing::info!(
+                memory_key = %memory.key,
+                node_id = %node_id,
+                "Merging memory with existing node"
+            );
 
             // Combine content intelligently
             let combined_content = self.merge_content(
@@ -450,7 +461,11 @@ impl MemoryKnowledgeGraph {
         // Auto-detect relationships with existing nodes
         self.auto_detect_relationships(node_id, memory).await?;
 
-        println!("Created new node {} for memory '{}'", node_id, memory.key);
+        tracing::info!(
+            node_id = %node_id,
+            memory_key = %memory.key,
+            "Created new node for memory"
+        );
         Ok(node_id)
     }
 
@@ -823,5 +838,285 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
         0.0
     } else {
         (dot_product / (norm_a * norm_b)) as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cosine_similarity_identical_vectors() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![1.0, 2.0, 3.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert!((similarity - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal_vectors() {
+        let vec1 = vec![1.0, 0.0, 0.0];
+        let vec2 = vec![0.0, 1.0, 0.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert!(similarity.abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite_vectors() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![-1.0, -2.0, -3.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert!((similarity - (-1.0)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![1.0, 2.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vector() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![0.0, 0.0, 0.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_empty_vectors() {
+        let vec1: Vec<f32> = vec![];
+        let vec2: Vec<f32> = vec![];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        // Empty vectors should have zero similarity
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_partial_match() {
+        let vec1 = vec![1.0, 2.0, 0.0];
+        let vec2 = vec![1.0, 0.0, 2.0];
+        let similarity = cosine_similarity(&vec1, &vec2);
+        // Should have some similarity but not identical
+        assert!(similarity > 0.0 && similarity < 1.0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_new() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        // Graph should be initialized correctly
+        assert_eq!(graph.memory_to_node.len(), 0);
+        assert_eq!(graph.node_to_memory.len(), 0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_text_similarity_identical() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let text1 = "The quick brown fox";
+        let text2 = "The quick brown fox";
+        let similarity = graph.calculate_text_similarity(text1, text2);
+
+        assert_eq!(similarity, 1.0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_text_similarity_empty() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let similarity = graph.calculate_text_similarity("", "test");
+        assert_eq!(similarity, 0.0);
+
+        let similarity = graph.calculate_text_similarity("test", "");
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_text_similarity_partial() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let text1 = "The quick brown fox";
+        let text2 = "The quick red fox";
+        let similarity = graph.calculate_text_similarity(text1, text2);
+
+        // Should have high similarity due to shared words
+        assert!(similarity > 0.5);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_text_similarity_case_insensitive() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let text1 = "THE QUICK BROWN FOX";
+        let text2 = "the quick brown fox";
+        let similarity = graph.calculate_text_similarity(text1, text2);
+
+        assert_eq!(similarity, 1.0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_text_similarity_no_overlap() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let text1 = "apple orange banana";
+        let text2 = "car truck bus";
+        let similarity = graph.calculate_text_similarity(text1, text2);
+
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_calculate_relationship_strength_empty_path() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let empty_path = GraphPath {
+            nodes: vec![],
+            edges: vec![],
+            total_weight: 0.0,
+        };
+
+        let strength = graph.calculate_relationship_strength(&empty_path);
+        assert_eq!(strength, 0.0);
+    }
+
+    #[test]
+    fn test_related_memory_clone() {
+        let related_memory = RelatedMemory {
+            memory_key: "test_key".to_string(),
+            node_id: Uuid::new_v4(),
+            path: GraphPath {
+                nodes: vec![],
+                edges: vec![],
+                total_weight: 0.0,
+            },
+            relationship_strength: 0.8,
+        };
+
+        let cloned = related_memory.clone();
+        assert_eq!(related_memory.memory_key, cloned.memory_key);
+        assert_eq!(related_memory.node_id, cloned.node_id);
+        assert_eq!(related_memory.relationship_strength, cloned.relationship_strength);
+    }
+
+    #[test]
+    fn test_inferred_relationship_clone() {
+        let inferred = InferredRelationship {
+            from_node: Uuid::new_v4(),
+            to_node: Uuid::new_v4(),
+            relationship_type: RelationshipType::RelatedTo,
+            confidence: 0.75,
+            reasoning: "Similar content".to_string(),
+        };
+
+        let cloned = inferred.clone();
+        assert_eq!(inferred.from_node, cloned.from_node);
+        assert_eq!(inferred.to_node, cloned.to_node);
+        assert_eq!(inferred.confidence, cloned.confidence);
+        assert_eq!(inferred.reasoning, cloned.reasoning);
+    }
+
+    #[tokio::test]
+    async fn test_memory_knowledge_graph_get_node_for_memory_empty() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let result = graph.get_node_for_memory("nonexistent").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_memory_knowledge_graph_get_memory_for_node_empty() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let result = graph.get_memory_for_node(Uuid::new_v4()).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_memory_knowledge_graph_get_stats() {
+        let config = GraphConfig::default();
+        let graph = MemoryKnowledgeGraph::new(config);
+
+        let stats = graph.get_stats();
+        assert_eq!(stats.node_count, 0);
+        assert_eq!(stats.edge_count, 0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_normalized_vectors() {
+        // Unit vectors should have similarity equal to their dot product
+        let vec1 = vec![0.6, 0.8];
+        let vec2 = vec![0.8, 0.6];
+        let similarity = cosine_similarity(&vec1, &vec2);
+
+        // Expected: (0.6*0.8 + 0.8*0.6) / (sqrt(0.36+0.64) * sqrt(0.64+0.36))
+        // = (0.48 + 0.48) / (1.0 * 1.0) = 0.96
+        assert!((similarity - 0.96).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_symmetry() {
+        let vec1 = vec![1.0, 2.0, 3.0];
+        let vec2 = vec![4.0, 5.0, 6.0];
+
+        let sim1 = cosine_similarity(&vec1, &vec2);
+        let sim2 = cosine_similarity(&vec2, &vec1);
+
+        // Cosine similarity should be symmetric
+        assert!((sim1 - sim2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_related_memory_serialization() {
+        let related_memory = RelatedMemory {
+            memory_key: "test_key".to_string(),
+            node_id: Uuid::new_v4(),
+            path: GraphPath {
+                nodes: vec![],
+                edges: vec![],
+                total_weight: 0.0,
+            },
+            relationship_strength: 0.8,
+        };
+
+        // Test that it can be serialized and deserialized
+        let serialized = serde_json::to_string(&related_memory).unwrap();
+        let deserialized: RelatedMemory = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(related_memory.memory_key, deserialized.memory_key);
+        assert_eq!(related_memory.node_id, deserialized.node_id);
+        assert_eq!(related_memory.relationship_strength, deserialized.relationship_strength);
+    }
+
+    #[test]
+    fn test_inferred_relationship_serialization() {
+        let inferred = InferredRelationship {
+            from_node: Uuid::new_v4(),
+            to_node: Uuid::new_v4(),
+            relationship_type: RelationshipType::SemanticallyRelated,
+            confidence: 0.85,
+            reasoning: "High semantic overlap".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&inferred).unwrap();
+        let deserialized: InferredRelationship = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(inferred.from_node, deserialized.from_node);
+        assert_eq!(inferred.to_node, deserialized.to_node);
+        assert_eq!(inferred.confidence, deserialized.confidence);
+        assert_eq!(inferred.reasoning, deserialized.reasoning);
     }
 }
