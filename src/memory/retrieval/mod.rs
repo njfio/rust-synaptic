@@ -7,6 +7,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub mod indexed;
+pub mod pipeline;
+pub mod strategies;
+
+// Re-export pipeline types
+pub use pipeline::{
+    RetrievalPipeline, RetrievalSignal, ScoredMemory, PipelineConfig,
+    FusionStrategy, HybridRetriever, CacheStats,
+};
+
+// Re-export concrete strategies
+pub use strategies::{
+    KeywordRetriever, TemporalRetriever, GraphRetriever,
+};
 
 /// Configuration for memory retrieval operations
 #[derive(Debug, Clone)]
