@@ -76,14 +76,26 @@ issue in `restore_legacy_format()` line 522-524 with proper error propagation. A
 **Tests**: Add backup corruption tests
 **Estimated**: 1 day
 
-### 4.4 State/Storage Cache Synchronization (P1)
+### 4.4 State/Storage Cache Synchronization (P1) ✅ **COMPLETED**
+**Completed**: 2025-10-22
+**Commit**: 7664c89
+
+**Solution Summary**:
+Fixed critical bug where cache misses were not rehydrating state, causing every
+access to hit storage. Updated `AgentMemory::retrieve()` (src/lib.rs:368-403) to
+inject cache misses back into state with `entry.mark_accessed()` and
+`state.add_memory()`. Added knowledge graph refresh for cache misses. Created 12
+comprehensive tests in `tests/cache_synchronization.rs`. **Performance**: 90%
+reduction in storage hits for repeated access patterns (10 accesses = 1 storage
+hit + 9 state hits).
+
 **Issue**: Cache misses don't rehydrate AgentState
 
 **Tasks**:
-- [ ] Update `AgentMemory::retrieve()` to inject cache misses back into state
-- [ ] Update access patterns when loading from cold storage
-- [ ] Refresh knowledge graph nodes on cache miss
-- [ ] Add metrics for cache hit/miss rates
+- [x] Update `AgentMemory::retrieve()` to inject cache misses back into state
+- [x] Update access patterns when loading from cold storage
+- [x] Refresh knowledge graph nodes on cache miss
+- [ ] Add metrics for cache hit/miss rates (deferred to Phase 6)
 
 **Files**: `src/lib.rs`, `src/memory/state.rs`
 **Tests**: Add cache synchronization tests
