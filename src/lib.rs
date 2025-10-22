@@ -156,7 +156,10 @@ impl AgentMemory {
         // Initialize advanced memory manager if enabled
         let advanced_manager = if config.enable_advanced_management {
             let mgmt_config = memory::management::MemoryManagementConfig::default();
-            Some(memory::management::AdvancedMemoryManager::new(mgmt_config))
+            Some(memory::management::AdvancedMemoryManager::new(
+                Arc::clone(&storage),
+                mgmt_config
+            ))
         } else {
             None
         };
@@ -315,7 +318,7 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am.add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut()).await;
+            let _ = am.add_memory(entry.clone(), self.knowledge_graph.as_mut()).await;
         }
 
         // Generate embeddings if enabled

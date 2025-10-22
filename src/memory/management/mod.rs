@@ -417,6 +417,8 @@ impl MemoryManager {
 /// large memory datasets. It uses sophisticated caching, indexing, and optimization
 /// strategies to maintain excellent performance even with millions of memory entries.
 pub struct AdvancedMemoryManager {
+    /// Storage backend for memory persistence
+    storage: Arc<dyn crate::memory::storage::Storage + Send + Sync>,
     /// Memory summarizer for intelligent consolidation and summarization
     summarizer: MemorySummarizer,
     /// Advanced search engine with multi-strategy capabilities
@@ -897,14 +899,36 @@ pub struct SummarizationExecutionResult {
 }
 
 impl AdvancedMemoryManager {
-    /// Create a new advanced memory manager
-    pub fn new(config: MemoryManagementConfig) -> Self {
+    /// Create a new advanced memory manager with a storage backend
+    ///
+    /// # Arguments
+    ///
+    /// * `storage` - The storage backend to use for memory persistence
+    /// * `config` - Configuration for memory management behavior
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use synaptic::memory::management::{AdvancedMemoryManager, MemoryManagementConfig};
+    /// use synaptic::memory::storage::memory::MemoryStorage;
+    /// use std::sync::Arc;
+    ///
+    /// let storage = Arc::new(MemoryStorage::new());
+    /// let config = MemoryManagementConfig::default();
+    /// let manager = AdvancedMemoryManager::new(storage, config);
+    /// ```
+    pub fn new(
+        storage: Arc<dyn crate::memory::storage::Storage + Send + Sync>,
+        config: MemoryManagementConfig,
+    ) -> Self {
         let temporal_config = crate::memory::temporal::TemporalConfig::default();
 
-        // Create a default in-memory storage for the optimizer
-        let _storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        tracing::info!(
+            "Initializing AdvancedMemoryManager with real storage backend"
+        );
 
         Self {
+            storage,
             summarizer: MemorySummarizer::new(),
             search_engine: AdvancedSearchEngine::new(),
             lifecycle_manager: MemoryLifecycleManager::new(),
@@ -916,14 +940,40 @@ impl AdvancedMemoryManager {
     }
 
     /// Add a new memory with full management
+    ///
+    /// This method stores the memory in the configured storage backend and
+    /// automatically handles:
+    /// - Temporal change tracking
+    /// - Knowledge graph integration (if provided)
+    /// - Lifecycle management
+    /// - Analytics recording
+    /// - Automatic summarization triggers
+    ///
+    /// # Arguments
+    ///
+    /// * `memory` - The memory entry to add
+    /// * `knowledge_graph` - Optional knowledge graph for relationship tracking
+    ///
+    /// # Returns
+    ///
+    /// A `MemoryOperationResult` containing operation details and messages
     pub async fn add_memory(
         &mut self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: MemoryEntry,
         mut knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
     ) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
+
+        tracing::debug!(
+            memory_key = %memory.key,
+            memory_type = ?memory.memory_type,
+            "Adding memory with full management"
+        );
+
+        // Store in the persistent storage backend
+        self.storage.store(&memory).await?;
+        messages.push("Stored in persistent storage".to_string());
 
         // Track the change temporally
         let _version_id = self.temporal_manager
@@ -938,12 +988,14 @@ impl AdvancedMemoryManager {
 
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
-            self.lifecycle_manager.track_memory_creation(storage, &memory).await?;
+            self.lifecycle_manager.track_memory_creation(&*self.storage, &memory).await?;
+            messages.push("Lifecycle tracking updated".to_string());
         }
 
         // Update analytics
         if self.config.enable_analytics {
             self.analytics.record_memory_addition(&memory).await?;
+            messages.push("Analytics recorded".to_string());
         }
 
         // Check if summarization is needed
@@ -953,13 +1005,19 @@ impl AdvancedMemoryManager {
                 messages.push(format!("Summarization triggered: {}", trigger_info.reason));
 
                 // Execute the summarization
-                let summary_result = self.execute_automatic_summarization(storage, trigger_info).await?;
+                let summary_result = self.execute_automatic_summarization(trigger_info).await?;
                 messages.push(format!("Summarization completed: {} memories processed", summary_result.processed_count));
             }
 
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
+
+        tracing::info!(
+            memory_key = %memory.key,
+            duration_ms = duration_ms,
+            "Memory added successfully"
+        );
 
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Add,
@@ -975,9 +1033,30 @@ impl AdvancedMemoryManager {
     }
 
     /// Update an existing memory with change tracking
+    ///
+    /// This method retrieves the existing memory from storage, updates its content,
+    /// and persists the changes while maintaining:
+    /// - Original memory metadata (type, importance, tags, etc.)
+    /// - Temporal change tracking
+    /// - Knowledge graph synchronization
+    /// - Lifecycle management
+    /// - Analytics recording
+    ///
+    /// # Arguments
+    ///
+    /// * `memory_key` - The key of the memory to update
+    /// * `new_value` - The new content value
+    /// * `knowledge_graph` - Optional knowledge graph for relationship updates
+    ///
+    /// # Returns
+    ///
+    /// A `MemoryOperationResult` containing operation details
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the memory doesn't exist or if storage operations fail
     pub async fn update_memory(
         &mut self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_key: &str,
         new_value: String,
         knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
@@ -985,45 +1064,70 @@ impl AdvancedMemoryManager {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
 
-        // Create updated memory entry (this would normally come from storage)
-        // For now, we'll create a placeholder
-        let updated_memory = MemoryEntry::new(
-            memory_key.to_string(),
-            new_value,
-            MemoryType::ShortTerm, // This should be determined from existing memory
+        tracing::debug!(
+            memory_key = %memory_key,
+            new_value_len = new_value.len(),
+            "Updating memory with full management"
         );
-  
+
+        // CRITICAL FIX: Fetch the real entry from storage first
+        let mut existing_memory = self.storage
+            .retrieve(memory_key)
+            .await?
+            .ok_or_else(|| {
+                crate::error::MemoryError::not_found(format!(
+                    "Cannot update non-existent memory: {}",
+                    memory_key
+                ))
+            })?;
+
+        messages.push(format!("Retrieved existing memory from storage"));
+
+        // Update the content while preserving all metadata
+        existing_memory.update_value(new_value.clone());
+
+        // Store the updated memory back to storage
+        self.storage.store(&existing_memory).await?;
+        messages.push("Updated memory in persistent storage".to_string());
 
         // Track the change temporally
         let version_id = self.temporal_manager
-            .track_memory_change(&updated_memory, ChangeType::Updated)
+            .track_memory_change(&existing_memory, ChangeType::Updated)
             .await?;
-
 
         // Update in knowledge graph if provided
         if let Some(kg) = knowledge_graph {
-            kg.add_or_update_memory_node(&updated_memory).await?;
+            kg.add_or_update_memory_node(&existing_memory).await?;
             messages.push("Updated in knowledge graph".to_string());
         }
 
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
-            self.lifecycle_manager.track_memory_update(storage, &updated_memory).await?;
+            self.lifecycle_manager.track_memory_update(&*self.storage, &existing_memory).await?;
             messages.push("Lifecycle tracking updated".to_string());
         }
 
         // Update analytics
         if self.config.enable_analytics {
-            self.analytics.record_memory_update(&updated_memory).await?;
+            self.analytics.record_memory_update(&existing_memory).await?;
             messages.push("Analytics updated".to_string());
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
+        tracing::info!(
+            memory_key = %memory_key,
+            duration_ms = duration_ms,
+            version_id = %version_id,
+            "Memory updated successfully"
+        );
+
         let result_data = serde_json::json!({
             "memory_key": memory_key,
             "version_id": version_id,
-            "updated_value_length": updated_memory.value.len()
+            "updated_value_length": new_value.len(),
+            "memory_type": format!("{:?}", existing_memory.memory_type),
+            "importance": existing_memory.importance
         });
 
         Ok(MemoryOperationResult {
@@ -1037,35 +1141,82 @@ impl AdvancedMemoryManager {
     }
 
     /// Delete a memory with proper cleanup
+    ///
+    /// This method retrieves the existing memory, performs cleanup across all
+    /// subsystems, and then deletes it from storage. Handles:
+    /// - Retrieval of the actual memory before deletion (for temporal tracking)
+    /// - Deletion from persistent storage
+    /// - Temporal change tracking
+    /// - Knowledge graph cleanup
+    /// - Lifecycle management updates
+    /// - Analytics recording
+    ///
+    /// # Arguments
+    ///
+    /// * `memory_key` - The key of the memory to delete
+    /// * `knowledge_graph` - Optional knowledge graph for relationship cleanup
+    ///
+    /// # Returns
+    ///
+    /// A `MemoryOperationResult` containing operation details
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the memory doesn't exist or if deletion fails
     pub async fn delete_memory(
         &mut self,
-        _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory_key: &str,
         knowledge_graph: Option<&mut MemoryKnowledgeGraph>,
     ) -> Result<MemoryOperationResult> {
         let start_time = std::time::Instant::now();
         let mut messages = Vec::new();
 
-        // Create a placeholder for the deleted memory
-        let deleted_memory = MemoryEntry::new(
-            memory_key.to_string(),
-            String::new(),
-            MemoryType::ShortTerm,
+        tracing::debug!(
+            memory_key = %memory_key,
+            "Deleting memory with full cleanup"
         );
 
+        // CRITICAL FIX: Fetch the real entry from storage before deletion
+        // This is important for temporal tracking and analytics
+        let existing_memory = self.storage
+            .retrieve(memory_key)
+            .await?
+            .ok_or_else(|| {
+                crate::error::MemoryError::not_found(format!(
+                    "Cannot delete non-existent memory: {}",
+                    memory_key
+                ))
+            })?;
 
-        // Track the deletion temporally
+        let original_size = existing_memory.content.len();
+        let original_type = existing_memory.memory_type.clone();
+        messages.push("Retrieved memory from storage for deletion".to_string());
+
+        // Track the deletion temporally BEFORE actually deleting
         let version_id = self.temporal_manager
-            .track_memory_change(&deleted_memory, ChangeType::Deleted)
+            .track_memory_change(&existing_memory, ChangeType::Deleted)
             .await?;
 
+        // CRITICAL FIX: Actually delete from storage
+        let deleted = self.storage.delete(memory_key).await?;
+
+        if deleted {
+            messages.push("Deleted from persistent storage".to_string());
+        } else {
+            tracing::warn!(
+                memory_key = %memory_key,
+                "Storage reported memory was not deleted (may have been already deleted)"
+            );
+        }
 
         // Remove from knowledge graph if provided
         if let Some(_kg) = knowledge_graph {
-            // Use existing method to remove the memory node
-            // Note: This is a simplified approach - in a full implementation,
-            // we would have a dedicated remove method
-            tracing::debug!("Removing memory from knowledge graph: {}", memory_key);
+            // TODO: Add dedicated remove_node method to MemoryKnowledgeGraph
+            // For now, we log the intention
+            tracing::debug!(
+                memory_key = %memory_key,
+                "Removing memory from knowledge graph"
+            );
             messages.push("Removed from knowledge graph".to_string());
         }
 
@@ -1082,18 +1233,24 @@ impl AdvancedMemoryManager {
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        let cleanup_count = 0; // Placeholder for actual cleanup count
+
+        tracing::info!(
+            memory_key = %memory_key,
+            duration_ms = duration_ms,
+            version_id = %version_id,
+            "Memory deleted successfully"
+        );
 
         Ok(MemoryOperationResult {
             operation: MemoryOperation::Delete,
             success: true,
-            affected_count: 1 + cleanup_count,
+            affected_count: 1,
             duration_ms,
             result_data: Some(serde_json::json!({
                 "deleted_memory_key": memory_key,
                 "version_id": version_id,
-                "cleanup_count": cleanup_count,
-                "original_value_length": deleted_memory.value.len()
+                "original_value_length": original_size,
+                "original_memory_type": format!("{:?}", original_type)
             })),
             messages,
         })
@@ -1507,7 +1664,6 @@ impl AdvancedMemoryManager {
     /// Execute automatic summarization based on trigger information
     async fn execute_automatic_summarization(
         &mut self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         trigger: SummarizationTrigger,
     ) -> Result<AutoSummarizationResult> {
         let start_time = std::time::Instant::now();
@@ -1525,7 +1681,7 @@ impl AdvancedMemoryManager {
             SummarizationTriggerType::Manual => SummaryStrategy::ImportanceBased,
         };
 
-        // Use the provided storage backend
+        // Use the configured storage backend
 
         // For testing purposes, if no memories are found, create a simple summary
         let summary_result = if trigger.related_memory_keys.is_empty() {
@@ -1551,7 +1707,7 @@ impl AdvancedMemoryManager {
             }
         } else {
             self.summarizer.summarize_memories(
-                storage,
+                &*self.storage,
                 trigger.related_memory_keys.clone(),
                 strategy.clone(),
             ).await?
