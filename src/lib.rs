@@ -365,14 +365,27 @@ impl AgentMemory {
         tracing::debug!("Memory not found in short-term, checking storage");
         let result = self.storage.retrieve(key).await?;
 
-        if result.is_some() {
-            tracing::debug!("Memory found in storage");
-        } else {
-            tracing::debug!("Memory not found");
-        }
-        #[cfg(feature = "analytics")]
-        if let Some(ref mut analytics) = self.analytics_engine {
-            if result.is_some() {
+        if let Some(mut entry) = result {
+            tracing::debug!("Memory found in storage (cache miss), rehydrating state");
+
+            // CRITICAL: Inject cache miss back into state for future fast access
+            // This fixes the cache synchronization issue where repeated access
+            // to the same memory would hit storage every time.
+
+            // Update access patterns
+            entry.mark_accessed();
+
+            // Add to state for future fast access
+            self.state.add_memory(entry.clone());
+
+            // Refresh knowledge graph if enabled
+            if let Some(ref mut kg) = self.knowledge_graph {
+                tracing::debug!("Refreshing knowledge graph node for cache miss");
+                let _ = kg.add_or_update_memory_node(&entry).await;
+            }
+
+            #[cfg(feature = "analytics")]
+            if let Some(ref mut analytics) = self.analytics_engine {
                 use crate::analytics::{AnalyticsEvent, AccessType};
                 let event = AnalyticsEvent::MemoryAccess {
                     memory_key: key.to_string(),
@@ -382,8 +395,12 @@ impl AgentMemory {
                 };
                 let _ = analytics.record_event(event).await;
             }
+
+            Ok(Some(entry))
+        } else {
+            tracing::debug!("Memory not found in storage");
+            Ok(None)
         }
-        Ok(result)
     }
 
     /// Search memories by content similarity
