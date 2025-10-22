@@ -92,6 +92,9 @@ similar = "2.4"
 # Advanced Similarity and Search Algorithms
 strsim = "0.11"
 
+# Approximate Nearest Neighbor Search
+hnsw_rs = "0.3"
+
 # Advanced Theme Extraction and Topic Modeling
 linfa = "0.7"
 linfa-clustering = "0.7"

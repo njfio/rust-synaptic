@@ -19,6 +19,8 @@ pub mod consolidation;
 pub mod meta_learning;
 pub mod operations;
 pub mod promotion;
+pub mod indexing;
+pub mod context;
 
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
