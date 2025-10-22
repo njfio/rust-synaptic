@@ -90,8 +90,8 @@ impl Default for RestoreOptions {
 
 /// In-memory storage implementation using DashMap for thread-safe concurrent access
 pub struct MemoryStorage {
-    /// Main storage for memory entries
-    entries: DashMap<String, MemoryEntry>,
+    /// Main storage for memory entries (wrapped in Arc for transaction support)
+    entries: Arc<DashMap<String, MemoryEntry>>,
     /// Statistics tracking
     stats: RwLock<StorageStats>,
     /// Creation timestamp
@@ -102,7 +102,7 @@ impl MemoryStorage {
     /// Create a new in-memory storage instance
     pub fn new() -> Self {
         Self {
-            entries: DashMap::new(),
+            entries: Arc::new(DashMap::new()),
             stats: RwLock::new(StorageStats::new("memory".to_string())),
             created_at: Utc::now(),
         }
@@ -612,16 +612,61 @@ impl BatchStorage for MemoryStorage {
 }
 
 /// In-memory transaction handle
+///
+/// # Transaction Semantics
+///
+/// This handle provides ACID-like transaction semantics for in-memory storage:
+///
+/// - **Atomicity**: All operations in a transaction are applied together on commit,
+///   or none are applied if the transaction is rolled back or dropped.
+/// - **Consistency**: The transaction maintains a consistent view of operations.
+/// - **Isolation**: Uncommitted changes are not visible to other readers until commit.
+/// - **Durability**: N/A for in-memory storage (see file/SQL storage for persistence).
+///
+/// ## Usage
+///
+/// ```rust,no_run
+/// # use synaptic::memory::storage::{Storage, TransactionalStorage};
+/// # use synaptic::memory::storage::memory::MemoryStorage;
+/// # use synaptic::memory::types::{MemoryEntry, MemoryType};
+/// # use std::sync::Arc;
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let storage = Arc::new(MemoryStorage::new());
+///
+/// // Begin a transaction
+/// let mut transaction = storage.begin_transaction().await?;
+///
+/// // Perform operations
+/// let entry = MemoryEntry::new("key".to_string(), "value".to_string(), MemoryType::ShortTerm);
+/// transaction.store("key", &entry).await?;
+/// transaction.update("other_key", &entry).await?;
+/// transaction.delete("old_key").await?;
+///
+/// // Commit all operations atomically
+/// transaction.commit().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Important Notes
+///
+/// - The transaction holds a reference to the live storage's entry map.
+/// - Changes are buffered in-memory until commit.
+/// - Dropping a transaction without calling commit() or rollback() discards all changes.
+/// - Concurrent transactions are supported via DashMap's thread-safe operations.
 pub struct MemoryTransactionHandle {
-    storage: Arc<MemoryStorage>,
+    /// Reference to the live storage's entry map (not a copy)
+    entries: Arc<DashMap<String, MemoryEntry>>,
+    /// Buffered operations to apply on commit
     operations: Vec<(String, Option<MemoryEntry>)>, // (key, entry) - None means delete
+    /// Whether the transaction has been committed or rolled back
     committed: bool,
 }
 
 impl MemoryTransactionHandle {
-    fn new(storage: Arc<MemoryStorage>) -> Self {
+    fn new(entries: Arc<DashMap<String, MemoryEntry>>) -> Self {
         Self {
-            storage,
+            entries,
             operations: Vec::new(),
             committed: false,
         }
@@ -650,14 +695,13 @@ impl TransactionHandle for MemoryTransactionHandle {
         for (key, entry_opt) in &self.operations {
             match entry_opt {
                 Some(entry) => {
-                    self.storage.entries.insert(key.clone(), entry.clone());
+                    self.entries.insert(key.clone(), entry.clone());
                 }
                 None => {
-                    self.storage.entries.remove(key);
+                    self.entries.remove(key);
                 }
             }
         }
-        self.storage.update_stats();
         self.committed = true;
         Ok(())
     }
@@ -692,8 +736,6 @@ impl TransactionalStorage for MemoryStorage {
     }
 
     async fn begin_transaction(&self) -> Result<Box<dyn TransactionHandle>> {
-        Ok(Box::new(MemoryTransactionHandle::new(Arc::new(
-            MemoryStorage::new()
-        ))))
+        Ok(Box::new(MemoryTransactionHandle::new(Arc::clone(&self.entries))))
     }
 }
