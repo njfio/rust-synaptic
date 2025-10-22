@@ -18,6 +18,7 @@ pub mod management;
 pub mod consolidation;
 pub mod meta_learning;
 pub mod operations;
+pub mod promotion;
 
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
