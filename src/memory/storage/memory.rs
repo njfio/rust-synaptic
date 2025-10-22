@@ -519,7 +519,9 @@ impl MemoryStorage {
 
         // Convert to new format
         let total_size = legacy_backup.entries.iter().map(|e| e.estimated_size()).sum();
-        let checksum = self.calculate_checksum(&serde_json::to_string(&legacy_backup.entries).unwrap_or_default());
+        let entries_json = serde_json::to_string(&legacy_backup.entries)
+            .map_err(|e| MemoryError::storage(format!("Failed to serialize legacy entries for checksum: {}", e)))?;
+        let checksum = self.calculate_checksum(&entries_json);
 
         Ok(MemoryStorageBackup {
             entries: legacy_backup.entries,
@@ -561,7 +563,7 @@ impl MemoryStorage {
             backup_timestamp: backup_data.backup_timestamp,
             creation_method: backup_data.metadata.creation_method,
             compression: backup_data.metadata.compression,
-            is_compressed: self.is_compressed_data(&tokio::fs::read(path).await.unwrap_or_default()),
+            is_compressed: self.is_compressed_data(&file_data),
         })
     }
 }
