@@ -14,6 +14,8 @@ pub mod simple_embeddings;
 pub mod similarity;
 pub mod provider;
 pub mod providers;
+pub mod multi_provider;
+pub mod config;
 
 // Re-export provider types
 pub use provider::{
@@ -23,6 +25,12 @@ pub use provider::{
 
 // Re-export concrete providers
 pub use providers::{TfIdfProvider, TfIdfConfig};
+
+// Re-export multi-provider system
+pub use multi_provider::{MultiProvider, MultiProviderBuilder, MultiProviderConfig};
+
+// Re-export configuration
+pub use config::{EmbeddingProviderConfig, ProviderType, ProviderConfig, GlobalConfig};
 
 /// Configuration for embedding system
 #[derive(Debug, Clone, Serialize, Deserialize)]
