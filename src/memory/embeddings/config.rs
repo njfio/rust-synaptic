@@ -11,9 +11,7 @@ use std::path::PathBuf;
 
 #[cfg(feature = "llm-integration")]
 use super::providers::{
-    OpenAIConfig, OpenAIModel,
-    OllamaConfig,
-    CohereConfig, CohereModel, CohereInputType,
+    CohereConfig, CohereInputType, CohereModel, OllamaConfig, OpenAIConfig, OpenAIModel,
 };
 
 /// Unified configuration for all embedding providers
@@ -156,12 +154,9 @@ impl EmbeddingProviderConfig {
     }
 
     /// Add a provider configuration
-    pub fn with_provider_config(
-        mut self,
-        provider: ProviderType,
-        config: ProviderConfig,
-    ) -> Self {
-        self.provider_configs.insert(provider.name().to_lowercase(), config);
+    pub fn with_provider_config(mut self, provider: ProviderType, config: ProviderConfig) -> Self {
+        self.provider_configs
+            .insert(provider.name().to_lowercase(), config);
         self
     }
 
@@ -179,8 +174,9 @@ impl EmbeddingProviderConfig {
 
     /// Load configuration from TOML file
     pub fn from_toml_file(path: PathBuf) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| MemoryError::configuration(format!("Failed to read config file: {}", e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            MemoryError::configuration(format!("Failed to read config file: {}", e))
+        })?;
 
         toml::from_str(&content)
             .map_err(|e| MemoryError::configuration(format!("Failed to parse TOML config: {}", e)))
@@ -188,11 +184,13 @@ impl EmbeddingProviderConfig {
 
     /// Save configuration to TOML file
     pub fn to_toml_file(&self, path: PathBuf) -> Result<()> {
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| MemoryError::configuration(format!("Failed to serialize config: {}", e)))?;
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            MemoryError::configuration(format!("Failed to serialize config: {}", e))
+        })?;
 
-        std::fs::write(path, content)
-            .map_err(|e| MemoryError::configuration(format!("Failed to write config file: {}", e)))?;
+        std::fs::write(path, content).map_err(|e| {
+            MemoryError::configuration(format!("Failed to write config file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -237,8 +235,8 @@ impl EmbeddingProviderConfig {
 
         // Load Ollama config
         if let Ok(endpoint) = std::env::var("OLLAMA_ENDPOINT") {
-            let model = std::env::var("OLLAMA_MODEL")
-                .unwrap_or_else(|_| "nomic-embed-text".to_string());
+            let model =
+                std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
             let embedding_dim = std::env::var("OLLAMA_EMBEDDING_DIM")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -295,14 +293,24 @@ impl EmbeddingProviderConfig {
             if let Some(config) = self.provider_configs.get(&provider_key) {
                 match config {
                     ProviderConfig::OpenAI { api_key, .. } => {
-                        if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
+                        if api_key.is_none()
+                            || api_key
+                                .as_ref()
+                                .expect("as_ref() should succeed")
+                                .is_empty()
+                        {
                             return Err(MemoryError::configuration(
                                 "OpenAI API key is required".to_string(),
                             ));
                         }
                     }
                     ProviderConfig::Cohere { api_key, .. } => {
-                        if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
+                        if api_key.is_none()
+                            || api_key
+                                .as_ref()
+                                .expect("as_ref() should succeed")
+                                .is_empty()
+                        {
                             return Err(MemoryError::configuration(
                                 "Cohere API key is required".to_string(),
                             ));
@@ -335,13 +343,13 @@ impl EmbeddingProviderConfig {
     /// Get API key for a specific provider
     pub fn get_api_key(&self, provider: ProviderType) -> Option<String> {
         let provider_key = provider.name().to_lowercase();
-        self.provider_configs.get(&provider_key).and_then(|config| {
-            match config {
+        self.provider_configs
+            .get(&provider_key)
+            .and_then(|config| match config {
                 ProviderConfig::OpenAI { api_key, .. } => api_key.clone(),
                 ProviderConfig::Cohere { api_key, .. } => api_key.clone(),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// Create a default OpenAI configuration
@@ -460,11 +468,12 @@ mod tests {
     fn test_serialization() {
         let config = EmbeddingProviderConfig::openai_default("test-key".to_string());
 
-        let toml_str = toml::to_string(&config).unwrap();
+        let toml_str = toml::to_string(&config).expect("value should be available");
         assert!(toml_str.contains("openai"));
         assert!(toml_str.contains("test-key"));
 
-        let deserialized: EmbeddingProviderConfig = toml::from_str(&toml_str).unwrap();
+        let deserialized: EmbeddingProviderConfig =
+            toml::from_str(&toml_str).expect("value should be available");
         assert_eq!(deserialized.provider, ProviderType::OpenAI);
     }
 }

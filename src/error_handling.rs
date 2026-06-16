@@ -1,19 +1,21 @@
 //! Error handling utilities and best practices for the Synaptic memory system.
-//! 
+//!
 //! This module provides common error handling patterns and utilities to prevent
 //! the use of unwrap() calls in production code.
 
 use crate::error::{MemoryError, Result};
-use std::sync::{PoisonError, RwLockReadGuard, RwLockWriteGuard, MutexGuard};
 use std::fmt::Debug;
+use std::sync::{MutexGuard, PoisonError, RwLockReadGuard, RwLockWriteGuard};
 
 /// Trait for safe unwrapping with context
 pub trait SafeUnwrap<T> {
     /// Safely unwrap with a custom error message
     fn safe_unwrap(self, context: &str) -> Result<T>;
-    
+
     /// Safely unwrap with a default value
-    fn unwrap_or_default_safe(self) -> T where T: Default;
+    fn unwrap_or_default_safe(self) -> T
+    where
+        T: Default;
 }
 
 impl<T> SafeUnwrap<T> for Option<T> {
@@ -21,17 +23,25 @@ impl<T> SafeUnwrap<T> for Option<T> {
         self.ok_or_else(|| MemoryError::validation(format!("Failed to unwrap Option: {}", context)))
     }
 
-    fn unwrap_or_default_safe(self) -> T where T: Default {
+    fn unwrap_or_default_safe(self) -> T
+    where
+        T: Default,
+    {
         self.unwrap_or_default()
     }
 }
 
 impl<T, E: Debug> SafeUnwrap<T> for std::result::Result<T, E> {
     fn safe_unwrap(self, context: &str) -> Result<T> {
-        self.map_err(|e| MemoryError::validation(format!("Failed to unwrap Result in {}: {:?}", context, e)))
+        self.map_err(|e| {
+            MemoryError::validation(format!("Failed to unwrap Result in {}: {:?}", context, e))
+        })
     }
 
-    fn unwrap_or_default_safe(self) -> T where T: Default {
+    fn unwrap_or_default_safe(self) -> T
+    where
+        T: Default,
+    {
         self.unwrap_or_default()
     }
 }
@@ -39,22 +49,25 @@ impl<T, E: Debug> SafeUnwrap<T> for std::result::Result<T, E> {
 /// Safe lock operations that handle poison errors gracefully
 pub trait SafeLock<T> {
     /// Safely acquire a read lock
-    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<T>>;
-    
+    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<'_, T>>;
+
     /// Safely acquire a write lock
-    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<T>>;
+    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<'_, T>>;
 }
 
 impl<T> SafeLock<T> for std::sync::RwLock<T> {
-    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<T>> {
+    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<'_, T>> {
         self.read().map_err(|e| {
             MemoryError::concurrency(format!("Failed to acquire read lock in {}: {}", context, e))
         })
     }
 
-    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<T>> {
+    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<'_, T>> {
         self.write().map_err(|e| {
-            MemoryError::concurrency(format!("Failed to acquire write lock in {}: {}", context, e))
+            MemoryError::concurrency(format!(
+                "Failed to acquire write lock in {}: {}",
+                context, e
+            ))
         })
     }
 }
@@ -62,13 +75,16 @@ impl<T> SafeLock<T> for std::sync::RwLock<T> {
 /// Safe mutex operations
 pub trait SafeMutex<T> {
     /// Safely acquire a mutex lock
-    fn safe_lock(&self, context: &str) -> Result<MutexGuard<T>>;
+    fn safe_lock(&self, context: &str) -> Result<MutexGuard<'_, T>>;
 }
 
 impl<T> SafeMutex<T> for std::sync::Mutex<T> {
-    fn safe_lock(&self, context: &str) -> Result<MutexGuard<T>> {
+    fn safe_lock(&self, context: &str) -> Result<MutexGuard<'_, T>> {
         self.lock().map_err(|e| {
-            MemoryError::concurrency(format!("Failed to acquire mutex lock in {}: {}", context, e))
+            MemoryError::concurrency(format!(
+                "Failed to acquire mutex lock in {}: {}",
+                context, e
+            ))
         })
     }
 }
@@ -95,25 +111,23 @@ impl SafeCompare for f32 {
 pub trait SafeCollection<T> {
     /// Safely get the first element
     fn safe_first(&self, context: &str) -> Result<&T>;
-    
+
     /// Safely get the last element
     fn safe_last(&self, context: &str) -> Result<&T>;
-    
+
     /// Safely get an element by index
     fn safe_get(&self, index: usize, context: &str) -> Result<&T>;
 }
 
 impl<T> SafeCollection<T> for Vec<T> {
     fn safe_first(&self, context: &str) -> Result<&T> {
-        self.first().ok_or_else(|| {
-            MemoryError::validation(format!("Empty vector in {}", context))
-        })
+        self.first()
+            .ok_or_else(|| MemoryError::validation(format!("Empty vector in {}", context)))
     }
 
     fn safe_last(&self, context: &str) -> Result<&T> {
-        self.last().ok_or_else(|| {
-            MemoryError::validation(format!("Empty vector in {}", context))
-        })
+        self.last()
+            .ok_or_else(|| MemoryError::validation(format!("Empty vector in {}", context)))
     }
 
     fn safe_get(&self, index: usize, context: &str) -> Result<&T> {
@@ -125,15 +139,13 @@ impl<T> SafeCollection<T> for Vec<T> {
 
 impl<T> SafeCollection<T> for [T] {
     fn safe_first(&self, context: &str) -> Result<&T> {
-        self.first().ok_or_else(|| {
-            MemoryError::validation(format!("Empty slice in {}", context))
-        })
+        self.first()
+            .ok_or_else(|| MemoryError::validation(format!("Empty slice in {}", context)))
     }
 
     fn safe_last(&self, context: &str) -> Result<&T> {
-        self.last().ok_or_else(|| {
-            MemoryError::validation(format!("Empty slice in {}", context))
-        })
+        self.last()
+            .ok_or_else(|| MemoryError::validation(format!("Empty slice in {}", context)))
     }
 
     fn safe_get(&self, index: usize, context: &str) -> Result<&T> {
@@ -147,33 +159,31 @@ impl<T> SafeCollection<T> for [T] {
 pub trait SafeIterator<T> {
     /// Safely find the minimum value
     fn safe_min(&mut self, context: &str) -> Result<T>;
-    
+
     /// Safely find the maximum value
     fn safe_max(&mut self, context: &str) -> Result<T>;
 }
 
-impl<I, T> SafeIterator<T> for I 
-where 
+impl<I, T> SafeIterator<T> for I
+where
     I: Iterator<Item = T>,
     T: Ord,
 {
     fn safe_min(&mut self, context: &str) -> Result<T> {
-        self.min().ok_or_else(|| {
-            MemoryError::validation(format!("Empty iterator in {}", context))
-        })
+        self.min()
+            .ok_or_else(|| MemoryError::validation(format!("Empty iterator in {}", context)))
     }
 
     fn safe_max(&mut self, context: &str) -> Result<T> {
-        self.max().ok_or_else(|| {
-            MemoryError::validation(format!("Empty iterator in {}", context))
-        })
+        self.max()
+            .ok_or_else(|| MemoryError::validation(format!("Empty iterator in {}", context)))
     }
 }
 
 /// Utility functions for common error scenarios
 pub mod utils {
     use super::*;
-    
+
     /// Handle poison errors by recovering the data
     pub fn handle_poison_error<T>(result: std::result::Result<T, PoisonError<T>>) -> T {
         match result {
@@ -184,7 +194,7 @@ pub mod utils {
             }
         }
     }
-    
+
     /// Safely parse a string to a number
     pub fn safe_parse<T: std::str::FromStr>(s: &str, context: &str) -> Result<T>
     where
@@ -198,7 +208,10 @@ pub mod utils {
     /// Safely divide two numbers, handling division by zero
     pub fn safe_divide(numerator: f64, denominator: f64, context: &str) -> Result<f64> {
         if denominator == 0.0 {
-            Err(MemoryError::validation(format!("Division by zero in {}", context)))
+            Err(MemoryError::validation(format!(
+                "Division by zero in {}",
+                context
+            )))
         } else {
             Ok(numerator / denominator)
         }
@@ -210,7 +223,10 @@ pub mod utils {
             if part == 0.0 {
                 Ok(0.0) // 0/0 = 0% by convention
             } else {
-                Err(MemoryError::validation(format!("Cannot calculate percentage of {} from total 0 in {}", part, context)))
+                Err(MemoryError::validation(format!(
+                    "Cannot calculate percentage of {} from total 0 in {}",
+                    part, context
+                )))
             }
         } else {
             Ok((part / total) * 100.0)
@@ -235,15 +251,24 @@ pub mod utils {
             match operation().await {
                 Ok(result) => {
                     if attempt > 0 {
-                        tracing::info!("Operation succeeded after {} retries in {}", attempt, context);
+                        tracing::info!(
+                            "Operation succeeded after {} retries in {}",
+                            attempt,
+                            context
+                        );
                     }
                     return Ok(result);
                 }
                 Err(e) => {
                     last_error = Some(e);
                     if attempt < max_retries {
-                        tracing::warn!("Operation failed (attempt {}/{}), retrying in {}ms: {}",
-                                     attempt + 1, max_retries + 1, delay, context);
+                        tracing::warn!(
+                            "Operation failed (attempt {}/{}), retrying in {}ms: {}",
+                            attempt + 1,
+                            max_retries + 1,
+                            delay,
+                            context
+                        );
                         tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                         delay *= 2; // Exponential backoff
                     }
@@ -285,12 +310,15 @@ pub mod utils {
 
             // Check if circuit is open
             if current_state == 1 {
-                let last_failure = self.last_failure_time.safe_lock("circuit breaker last failure time")?;
+                let last_failure = self
+                    .last_failure_time
+                    .safe_lock("circuit breaker last failure time")?;
                 if let Some(last_time) = *last_failure {
                     if last_time.elapsed() < self.recovery_timeout {
-                        return Err(MemoryError::resource_exhausted(
-                            format!("Circuit breaker is open for {}", context)
-                        ));
+                        return Err(MemoryError::resource_exhausted(format!(
+                            "Circuit breaker is open for {}",
+                            context
+                        )));
                     } else {
                         // Try to transition to half-open
                         self.state.store(2, Ordering::Relaxed);
@@ -310,8 +338,15 @@ pub mod utils {
 
                     if failures >= self.failure_threshold {
                         self.state.store(1, Ordering::Relaxed); // Open
-                        *self.last_failure_time.safe_lock("circuit breaker failure time update")? = Some(std::time::Instant::now());
-                        tracing::error!("Circuit breaker opened for {} after {} failures", context, failures);
+                        *self
+                            .last_failure_time
+                            .safe_lock("circuit breaker failure time update")? =
+                            Some(std::time::Instant::now());
+                        tracing::error!(
+                            "Circuit breaker opened for {} after {} failures",
+                            context,
+                            failures
+                        );
                     }
 
                     Err(e)
@@ -332,14 +367,20 @@ pub mod utils {
     {
         match tokio::time::timeout(timeout, operation()).await {
             Ok(result) => result,
-            Err(_) => Err(MemoryError::timeout(format!("Operation timed out after {:?} in {}", timeout, context))),
+            Err(_) => Err(MemoryError::timeout(format!(
+                "Operation timed out after {:?} in {}",
+                timeout, context
+            ))),
         }
     }
 
     /// Validate input parameters
     pub fn validate_non_empty_string(value: &str, field_name: &str) -> Result<()> {
         if value.trim().is_empty() {
-            Err(MemoryError::validation(format!("{} cannot be empty", field_name)))
+            Err(MemoryError::validation(format!(
+                "{} cannot be empty",
+                field_name
+            )))
         } else {
             Ok(())
         }
@@ -372,7 +413,9 @@ pub mod utils {
         if collection.len() < min_size {
             return Err(MemoryError::validation(format!(
                 "{} must contain at least {} items, got {}",
-                collection_name, min_size, collection.len()
+                collection_name,
+                min_size,
+                collection.len()
             )));
         }
 
@@ -380,7 +423,9 @@ pub mod utils {
             if collection.len() > max {
                 return Err(MemoryError::validation(format!(
                     "{} must contain at most {} items, got {}",
-                    collection_name, max, collection.len()
+                    collection_name,
+                    max,
+                    collection.len()
                 )));
             }
         }
@@ -510,9 +555,19 @@ pub mod recovery {
 
             if let Some(strategy) = self.strategies.get(&error_type) {
                 match strategy {
-                    RecoveryStrategy::Retry { max_attempts, delay_ms } => {
+                    RecoveryStrategy::Retry {
+                        max_attempts,
+                        delay_ms,
+                    } => {
                         tracing::info!("Attempting recovery with retry strategy for {}", context);
-                        match utils::retry_with_backoff(recovery_operation, *max_attempts, *delay_ms, context).await {
+                        match utils::retry_with_backoff(
+                            recovery_operation,
+                            *max_attempts,
+                            *delay_ms,
+                            context,
+                        )
+                        .await
+                        {
                             Ok(result) => Ok(Some(result)),
                             Err(e) => {
                                 tracing::error!("Recovery failed after retries: {}", e);
@@ -530,12 +585,18 @@ pub mod recovery {
                     }
                     RecoveryStrategy::Fail => {
                         tracing::error!("Failing immediately for error in {}", context);
-                        Err(MemoryError::unexpected(format!("Recovery strategy failed for {}", context)))
+                        Err(MemoryError::unexpected(format!(
+                            "Recovery strategy failed for {}",
+                            context
+                        )))
                     }
                 }
             } else {
                 tracing::warn!("No recovery strategy found for error type: {}", error_type);
-                Err(MemoryError::unexpected(format!("No recovery strategy for {}", context)))
+                Err(MemoryError::unexpected(format!(
+                    "No recovery strategy for {}",
+                    context
+                )))
             }
         }
 
@@ -559,20 +620,23 @@ pub mod recovery {
             // Register default strategies
             manager.register_strategy(
                 "timeout".to_string(),
-                RecoveryStrategy::Retry { max_attempts: 3, delay_ms: 1000 }
+                RecoveryStrategy::Retry {
+                    max_attempts: 3,
+                    delay_ms: 1000,
+                },
             );
             manager.register_strategy(
                 "concurrency".to_string(),
-                RecoveryStrategy::Retry { max_attempts: 5, delay_ms: 100 }
+                RecoveryStrategy::Retry {
+                    max_attempts: 5,
+                    delay_ms: 100,
+                },
             );
             manager.register_strategy(
                 "not_found".to_string(),
-                RecoveryStrategy::Fallback("Using default value".to_string())
+                RecoveryStrategy::Fallback("Using default value".to_string()),
             );
-            manager.register_strategy(
-                "validation".to_string(),
-                RecoveryStrategy::Fail
-            );
+            manager.register_strategy("validation".to_string(), RecoveryStrategy::Fail);
 
             manager
         }
@@ -583,46 +647,65 @@ pub mod recovery {
 mod tests {
     use super::*;
 
-    
     #[test]
     fn test_safe_unwrap_option() {
         let some_value: Option<i32> = Some(42);
         let none_value: Option<i32> = None;
-        
-        assert_eq!(some_value.safe_unwrap("test").unwrap(), 42);
+
+        assert_eq!(
+            some_value
+                .safe_unwrap("test")
+                .expect("value should be available"),
+            42
+        );
         assert!(none_value.safe_unwrap("test").is_err());
     }
-    
+
     #[test]
     fn test_safe_compare() {
         let a = 1.0f64;
         let b = 2.0f64;
         let nan = f64::NAN;
-        
+
         assert_eq!(a.safe_partial_cmp(&b), std::cmp::Ordering::Less);
         assert_eq!(nan.safe_partial_cmp(&a), std::cmp::Ordering::Equal);
     }
-    
+
     #[test]
     fn test_safe_collection() {
         let vec = vec![1, 2, 3];
         let empty_vec: Vec<i32> = vec![];
-        
-        assert_eq!(*vec.safe_first("test").unwrap(), 1);
-        assert_eq!(*vec.safe_last("test").unwrap(), 3);
+
+        assert_eq!(
+            *vec.safe_first("test").expect("value should be available"),
+            1
+        );
+        assert_eq!(
+            *vec.safe_last("test").expect("value should be available"),
+            3
+        );
         assert!(empty_vec.safe_first("test").is_err());
     }
-    
+
     #[test]
     fn test_safe_divide() {
-        assert_eq!(utils::safe_divide(10.0, 2.0, "test").unwrap(), 5.0);
+        assert_eq!(
+            utils::safe_divide(10.0, 2.0, "test").expect("value should be available"),
+            5.0
+        );
         assert!(utils::safe_divide(10.0, 0.0, "test").is_err());
     }
-    
+
     #[test]
     fn test_safe_percentage() {
-        assert_eq!(utils::safe_percentage(25.0, 100.0, "test").unwrap(), 25.0);
-        assert_eq!(utils::safe_percentage(0.0, 0.0, "test").unwrap(), 0.0);
+        assert_eq!(
+            utils::safe_percentage(25.0, 100.0, "test").expect("value should be available"),
+            25.0
+        );
+        assert_eq!(
+            utils::safe_percentage(0.0, 0.0, "test").expect("value should be available"),
+            0.0
+        );
         assert!(utils::safe_percentage(25.0, 0.0, "test").is_err());
     }
 
@@ -647,7 +730,7 @@ mod tests {
 
         let result = utils::retry_with_backoff(operation, 5, 10, "test").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("result should be valid"), 42);
     }
 
     #[tokio::test]
@@ -655,23 +738,30 @@ mod tests {
         let circuit_breaker = utils::CircuitBreaker::new(2, std::time::Duration::from_millis(100));
 
         // First failure
-        let result1 = circuit_breaker.call(|| async {
-            Err::<i32, _>(MemoryError::timeout("test"))
-        }, "test").await;
+        let result1 = circuit_breaker
+            .call(
+                || async { Err::<i32, _>(MemoryError::timeout("test")) },
+                "test",
+            )
+            .await;
         assert!(result1.is_err());
 
         // Second failure - should open circuit
-        let result2 = circuit_breaker.call(|| async {
-            Err::<i32, _>(MemoryError::timeout("test"))
-        }, "test").await;
+        let result2 = circuit_breaker
+            .call(
+                || async { Err::<i32, _>(MemoryError::timeout("test")) },
+                "test",
+            )
+            .await;
         assert!(result2.is_err());
 
         // Third call - should be rejected due to open circuit
-        let result3 = circuit_breaker.call(|| async {
-            Ok(42)
-        }, "test").await;
+        let result3 = circuit_breaker.call(|| async { Ok(42) }, "test").await;
         assert!(result3.is_err());
-        assert!(result3.unwrap_err().to_string().contains("Circuit breaker is open"));
+        assert!(result3
+            .unwrap_err()
+            .to_string()
+            .contains("Circuit breaker is open"));
     }
 
     #[tokio::test]
@@ -683,8 +773,9 @@ mod tests {
                 Ok(42)
             },
             std::time::Duration::from_millis(100),
-            "test"
-        ).await;
+            "test",
+        )
+        .await;
         assert!(result1.is_ok());
 
         // Slow operation should timeout
@@ -694,8 +785,9 @@ mod tests {
                 Ok(42)
             },
             std::time::Duration::from_millis(50),
-            "test"
-        ).await;
+            "test",
+        )
+        .await;
         assert!(result2.is_err());
         assert!(result2.unwrap_err().to_string().contains("timed out"));
     }
@@ -728,7 +820,10 @@ mod tests {
         let mut manager = ErrorRecoveryManager::new();
         manager.register_strategy(
             "timeout".to_string(),
-            RecoveryStrategy::Retry { max_attempts: 2, delay_ms: 10 }
+            RecoveryStrategy::Retry {
+                max_attempts: 2,
+                delay_ms: 10,
+            },
         );
 
         let attempt_count = Arc::new(AtomicUsize::new(0));

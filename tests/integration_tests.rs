@@ -1,9 +1,9 @@
 //! Integration tests for the AI Agent Memory system
 
 use synaptic::{
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
-    memory::types::MemoryMetadata,
     error::{MemoryError, Result},
+    memory::types::MemoryMetadata,
+    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
 };
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -32,9 +32,15 @@ async fn test_memory_search() -> Result<()> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Store test data
-    memory.store("coffee_preference", "I love coffee in the morning").await?;
-    memory.store("tea_preference", "Tea is great for afternoon").await?;
-    memory.store("water_intake", "Drink 8 glasses of water daily").await?;
+    memory
+        .store("coffee_preference", "I love coffee in the morning")
+        .await?;
+    memory
+        .store("tea_preference", "Tea is great for afternoon")
+        .await?;
+    memory
+        .store("water_intake", "Drink 8 glasses of water daily")
+        .await?;
 
     // Search for coffee
     let results = memory.search("coffee", 10).await?;
@@ -68,7 +74,7 @@ async fn test_checkpointing() -> Result<()> {
     // Verify modified state
     let modified = memory.retrieve("shared_key").await?;
     assert_eq!(modified.unwrap().value, "modified_value");
-    
+
     let new_entry = memory.retrieve("new_key").await?;
     assert!(new_entry.is_some());
 
@@ -78,7 +84,7 @@ async fn test_checkpointing() -> Result<()> {
     // Verify restored state
     let restored = memory.retrieve("shared_key").await?;
     assert_eq!(restored.unwrap().value, "original_value");
-    
+
     let missing_entry = memory.retrieve("new_key").await?;
     assert!(missing_entry.is_none());
 
@@ -179,7 +185,8 @@ async fn test_memory_entry_metadata() -> Result<()> {
     );
 
     // Test metadata operations
-    entry.metadata = entry.metadata
+    entry.metadata = entry
+        .metadata
         .with_tags(vec!["tag1".to_string(), "tag2".to_string()])
         .with_importance(0.8);
 
@@ -189,8 +196,13 @@ async fn test_memory_entry_metadata() -> Result<()> {
     assert_eq!(entry.metadata.importance, 0.8);
 
     // Test custom fields
-    entry.metadata.set_custom_field("category".to_string(), "test".to_string());
-    assert_eq!(entry.metadata.get_custom_field("category"), Some(&"test".to_string()));
+    entry
+        .metadata
+        .set_custom_field("category".to_string(), "test".to_string());
+    assert_eq!(
+        entry.metadata.get_custom_field("category"),
+        Some(&"test".to_string())
+    );
     assert_eq!(entry.metadata.get_custom_field("missing"), None);
 
     Ok(())
@@ -205,9 +217,9 @@ async fn test_error_handling() -> Result<()> {
     let fake_id = Uuid::new_v4();
     let result = memory.restore_checkpoint(fake_id).await;
     assert!(result.is_err());
-    
+
     match result.unwrap_err() {
-        MemoryError::NotFound { .. } => {}, // Expected
+        MemoryError::NotFound { .. } => {} // Expected
         other => assert!(false, "Expected NotFound error, got: {:?}", other),
     }
 
@@ -260,10 +272,10 @@ async fn test_memory_types() -> Result<()> {
 
     // Store different types of memories
     memory.store("short_term_key", "short_term_value").await?; // Default is short-term
-    
+
     // For now, we'll test with the basic store method
     // In a full implementation, we'd have methods to specify memory type
-    
+
     let stats = memory.stats();
     assert!(stats.short_term_count > 0);
 
@@ -333,9 +345,7 @@ async fn test_analytics_metrics_access() -> Result<()> {
 
     memory.store("a_key", "a_val").await?;
 
-    let metrics = memory
-        .get_analytics_metrics()
-        .expect("analytics metrics");
+    let metrics = memory.get_analytics_metrics().expect("analytics metrics");
     assert!(metrics.events_processed >= 1);
     Ok(())
 }

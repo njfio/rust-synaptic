@@ -6,10 +6,10 @@
 //! 3. Concurrent transactions work correctly
 //! 4. Transaction isolation is maintained
 
-use synaptic::memory::storage::{Storage, TransactionalStorage};
-use synaptic::memory::storage::memory::MemoryStorage;
-use synaptic::memory::types::{MemoryEntry, MemoryType};
 use std::sync::Arc;
+use synaptic::memory::storage::memory::MemoryStorage;
+use synaptic::memory::storage::{Storage, TransactionalStorage};
+use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tokio;
 
 #[tokio::test]
@@ -43,10 +43,17 @@ async fn test_transaction_commit_writes_to_live_storage() {
     transaction.commit().await.unwrap();
 
     // CRITICAL: The transactional entry should now be in the live storage
-    assert_eq!(storage.count().await.unwrap(), 2, "Transaction did not commit to live storage");
+    assert_eq!(
+        storage.count().await.unwrap(),
+        2,
+        "Transaction did not commit to live storage"
+    );
 
     let retrieved = storage.retrieve("transaction_key").await.unwrap();
-    assert!(retrieved.is_some(), "Transaction entry not found in live storage");
+    assert!(
+        retrieved.is_some(),
+        "Transaction entry not found in live storage"
+    );
     assert_eq!(retrieved.unwrap().value, "transaction_value");
 }
 
@@ -84,7 +91,11 @@ async fn test_transaction_rollback_discards_changes() {
     transaction.rollback().await.unwrap();
 
     // Verify changes were discarded
-    assert_eq!(storage.count().await.unwrap(), 1, "Rollback did not discard changes");
+    assert_eq!(
+        storage.count().await.unwrap(),
+        1,
+        "Rollback did not discard changes"
+    );
     assert!(storage.retrieve("temp_key1").await.unwrap().is_none());
     assert!(storage.retrieve("temp_key2").await.unwrap().is_none());
 
@@ -113,7 +124,10 @@ async fn test_transaction_update_existing_entry() {
         MemoryType::LongTerm,
     );
 
-    transaction.update("update_key", &updated_entry).await.unwrap();
+    transaction
+        .update("update_key", &updated_entry)
+        .await
+        .unwrap();
     transaction.commit().await.unwrap();
 
     // Verify update was applied
@@ -182,7 +196,10 @@ async fn test_transaction_multiple_operations() {
         "updated".to_string(),
         MemoryType::LongTerm,
     );
-    transaction.update("existing", &updated_entry).await.unwrap();
+    transaction
+        .update("existing", &updated_entry)
+        .await
+        .unwrap();
 
     // Store and delete another entry
     let temp_entry = MemoryEntry::new(
@@ -225,7 +242,10 @@ async fn test_concurrent_transactions() {
                 MemoryType::ShortTerm,
             );
 
-            transaction.store(&format!("concurrent_key_{}", i), &entry).await.unwrap();
+            transaction
+                .store(&format!("concurrent_key_{}", i), &entry)
+                .await
+                .unwrap();
             transaction.commit().await.unwrap();
         });
         handles.push(handle);
@@ -312,7 +332,10 @@ async fn test_transaction_preserves_existing_data() {
             format!("value_{}", i),
             MemoryType::ShortTerm,
         );
-        transaction.store(&format!("key_{}", i), &entry).await.unwrap();
+        transaction
+            .store(&format!("key_{}", i), &entry)
+            .await
+            .unwrap();
     }
 
     transaction.commit().await.unwrap();
@@ -322,7 +345,11 @@ async fn test_transaction_preserves_existing_data() {
 
     // Verify original entries are still intact
     for i in 0..5 {
-        let entry = storage.retrieve(&format!("key_{}", i)).await.unwrap().unwrap();
+        let entry = storage
+            .retrieve(&format!("key_{}", i))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.value, format!("value_{}", i));
     }
 }

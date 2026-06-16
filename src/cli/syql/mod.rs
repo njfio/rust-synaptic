@@ -4,17 +4,17 @@
 //! SyQL provides a SQL-like syntax for querying memory graphs with advanced features including
 //! pattern matching, path queries, aggregations, and temporal queries.
 
-pub mod parser;
 pub mod ast;
-pub mod optimizer;
 pub mod executor;
-pub mod planner;
 pub mod formatter;
+pub mod optimizer;
+pub mod parser;
+pub mod planner;
 
 use crate::error::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// SyQL query execution result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,16 +199,16 @@ impl SyQLEngine {
     pub async fn execute_query(&mut self, query: &str) -> Result<QueryResult> {
         // Parse the query
         let ast = self.parser.parse(query)?;
-        
+
         // Optimize the query
         let optimized_ast = self.optimizer.optimize(ast).await?;
-        
+
         // Create execution plan
         let plan = self.planner.create_plan(optimized_ast).await?;
-        
+
         // Execute the plan
         let result = self.executor.execute(plan).await?;
-        
+
         Ok(result)
     }
 
@@ -239,7 +239,11 @@ impl SyQLEngine {
     }
 
     /// Get query completion suggestions
-    pub fn get_completions(&self, partial_query: &str, cursor_position: usize) -> Result<Vec<CompletionItem>> {
+    pub fn get_completions(
+        &self,
+        partial_query: &str,
+        cursor_position: usize,
+    ) -> Result<Vec<CompletionItem>> {
         self.parser.get_completions(partial_query, cursor_position)
     }
 

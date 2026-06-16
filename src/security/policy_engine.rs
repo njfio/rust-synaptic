@@ -273,12 +273,12 @@ impl PolicyEngine {
     /// Add a security policy
     pub fn add_policy(&mut self, policy: SecurityPolicy) -> Result<()> {
         debug!("Adding security policy: {}", policy.name);
-        
+
         // Validate policy
         self.validate_policy(&policy)?;
-        
+
         self.policies.insert(policy.id.clone(), policy);
-        
+
         info!("Security policy added successfully");
         Ok(())
     }
@@ -286,12 +286,12 @@ impl PolicyEngine {
     /// Add a user role
     pub fn add_role(&mut self, role: Role) -> Result<()> {
         debug!("Adding role: {}", role.name);
-        
+
         // Validate role
         self.validate_role(&role)?;
-        
+
         self.roles.insert(role.id.clone(), role);
-        
+
         info!("Role added successfully");
         Ok(())
     }
@@ -299,12 +299,12 @@ impl PolicyEngine {
     /// Add a user
     pub fn add_user(&mut self, user: User) -> Result<()> {
         debug!("Adding user: {}", user.username);
-        
+
         // Validate user
         self.validate_user(&user)?;
-        
+
         self.users.insert(user.id.clone(), user);
-        
+
         info!("User added successfully");
         Ok(())
     }
@@ -312,13 +312,13 @@ impl PolicyEngine {
     /// Evaluate access request against policies
     pub fn evaluate_access(&self, request: &AccessRequest) -> Result<AccessDecision> {
         debug!("Evaluating access request for user: {}", request.user_id);
-        
+
         let decision_id = Uuid::new_v4().to_string();
-        
+
         // Get user
         let user = self.users.get(&request.user_id)
             .ok_or_else(|| SynapticError::SecurityError("User not found".to_string()))?;
-        
+
         if !user.active {
             return Ok(AccessDecision {
                 allowed: false,
@@ -329,7 +329,7 @@ impl PolicyEngine {
                 decision_id,
             });
         }
-        
+
         if user.account_locked {
             return Ok(AccessDecision {
                 allowed: false,
@@ -340,29 +340,29 @@ impl PolicyEngine {
                 decision_id,
             });
         }
-        
+
         // Evaluate policies
         let mut allowed = true;
         let mut required_actions = Vec::new();
         let mut reasons = Vec::new();
         let mut compliance_notes = Vec::new();
-        
+
         for policy in self.policies.values() {
             if !policy.active {
                 continue;
             }
-            
+
             let policy_result = self.evaluate_policy(policy, request, user)?;
-            
+
             if !policy_result.allowed {
                 allowed = false;
                 reasons.push(policy_result.reason);
             }
-            
+
             required_actions.extend(policy_result.required_actions);
             compliance_notes.extend(policy_result.compliance_notes);
         }
-        
+
         // Check compliance requirements
         let compliance_result = self.compliance_checker.check_compliance(request, user)?;
         if !compliance_result.compliant {
@@ -370,7 +370,7 @@ impl PolicyEngine {
             reasons.push(compliance_result.reason);
             compliance_notes.extend(compliance_result.notes);
         }
-        
+
         let decision = AccessDecision {
             allowed,
             reason: if reasons.is_empty() {
@@ -383,10 +383,10 @@ impl PolicyEngine {
             compliance_notes,
             decision_id,
         };
-        
+
         // Log the decision
         self.log_access_decision(request, &decision)?;
-        
+
         Ok(decision)
     }
 
@@ -395,16 +395,16 @@ impl PolicyEngine {
         if policy.name.is_empty() {
             return Err(SynapticError::ValidationError("Policy name cannot be empty".to_string()));
         }
-        
+
         if policy.rules.is_empty() {
             return Err(SynapticError::ValidationError("Policy must have at least one rule".to_string()));
         }
-        
+
         // Validate each rule
         for rule in &policy.rules {
             self.validate_policy_rule(rule)?;
         }
-        
+
         Ok(())
     }
 
@@ -413,7 +413,7 @@ impl PolicyEngine {
         if rule.name.is_empty() {
             return Err(SynapticError::ValidationError("Rule name cannot be empty".to_string()));
         }
-        
+
         // Additional rule validation logic would go here
         Ok(())
     }
@@ -423,10 +423,10 @@ impl PolicyEngine {
         if role.name.is_empty() {
             return Err(SynapticError::ValidationError("Role name cannot be empty".to_string()));
         }
-        
+
         // Check for circular inheritance
         self.check_role_inheritance_cycles(role)?;
-        
+
         Ok(())
     }
 
@@ -434,19 +434,19 @@ impl PolicyEngine {
     fn check_role_inheritance_cycles(&self, role: &Role) -> Result<()> {
         let mut visited = HashSet::new();
         let mut stack = vec![role.id.clone()];
-        
+
         while let Some(current_role_id) = stack.pop() {
             if visited.contains(&current_role_id) {
                 return Err(SynapticError::ValidationError("Circular role inheritance detected".to_string()));
             }
-            
+
             visited.insert(current_role_id.clone());
-            
+
             if let Some(current_role) = self.roles.get(&current_role_id) {
                 stack.extend(current_role.inherits_from.iter().cloned());
             }
         }
-        
+
         Ok(())
     }
 
@@ -455,18 +455,18 @@ impl PolicyEngine {
         if user.username.is_empty() {
             return Err(SynapticError::ValidationError("Username cannot be empty".to_string()));
         }
-        
+
         if user.email.is_empty() {
             return Err(SynapticError::ValidationError("Email cannot be empty".to_string()));
         }
-        
+
         // Validate user roles exist
         for role_id in &user.roles {
             if !self.roles.contains_key(role_id) {
                 return Err(SynapticError::ValidationError(format!("Role {} does not exist", role_id)));
             }
         }
-        
+
         Ok(())
     }
 
@@ -475,16 +475,16 @@ impl PolicyEngine {
         let mut allowed = true;
         let mut required_actions = Vec::new();
         let mut reasons = Vec::new();
-        
+
         // Evaluate each rule in priority order
         let mut sorted_rules = policy.rules.clone();
         sorted_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
-        
+
         for rule in &sorted_rules {
             if !rule.enabled {
                 continue;
             }
-            
+
             if self.evaluate_condition(&rule.condition, request, user)? {
                 match rule.action {
                     PolicyAction::Allow => {
@@ -500,7 +500,7 @@ impl PolicyEngine {
                 }
             }
         }
-        
+
         Ok(AccessDecision {
             allowed,
             reason: if reasons.is_empty() {
@@ -581,7 +581,7 @@ impl PolicyEngine {
                 data
             },
         };
-        
+
         self.audit_logger.log_event(audit_event)?;
         Ok(())
     }
@@ -591,7 +591,7 @@ impl ComplianceChecker {
     /// Create a new compliance checker
     pub fn new() -> Self {
         let mut frameworks = HashMap::new();
-        
+
         // Initialize GDPR compliance rules
         frameworks.insert(ComplianceFramework::GDPR, ComplianceRules {
             data_retention_limits: {
@@ -617,7 +617,7 @@ impl ComplianceChecker {
             data_residency_requirements: vec!["EU".to_string()],
             breach_notification_timeframes: chrono::Duration::hours(72),
         });
-        
+
         Self { frameworks }
     }
 
@@ -667,7 +667,7 @@ impl Ord for DataClassificationLevel {
             DataClassificationLevel::Restricted => 3,
             DataClassificationLevel::TopSecret => 4,
         };
-        
+
         let other_level = match other {
             DataClassificationLevel::Public => 0,
             DataClassificationLevel::Internal => 1,
@@ -675,7 +675,7 @@ impl Ord for DataClassificationLevel {
             DataClassificationLevel::Restricted => 3,
             DataClassificationLevel::TopSecret => 4,
         };
-        
+
         self_level.cmp(&other_level)
     }
 }

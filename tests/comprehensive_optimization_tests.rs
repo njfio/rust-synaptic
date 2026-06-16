@@ -1,12 +1,11 @@
 //! Comprehensive tests for memory optimization system
 
-use synaptic::{AgentMemory, MemoryConfig};
-use synaptic::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
 use synaptic::memory::management::optimization::{
-    MemoryOptimizer, OptimizationType,
-    PerformanceProfiler, MetricsCollector, OperationCounters
+    MemoryOptimizer, MetricsCollector, OperationCounters, OptimizationType, PerformanceProfiler,
 };
 use synaptic::memory::storage::{memory::MemoryStorage, Storage};
+use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
+use synaptic::{AgentMemory, MemoryConfig};
 
 #[tokio::test]
 async fn test_memory_optimizer_creation() {
@@ -80,16 +79,45 @@ async fn test_operation_counters() {
     let counters = OperationCounters::new();
 
     // Test that counters start at zero
-    assert_eq!(counters.total_operations.load(std::sync::atomic::Ordering::Relaxed), 0);
-    assert_eq!(counters.successful_operations.load(std::sync::atomic::Ordering::Relaxed), 0);
-    assert_eq!(counters.failed_operations.load(std::sync::atomic::Ordering::Relaxed), 0);
+    assert_eq!(
+        counters
+            .total_operations
+            .load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+    assert_eq!(
+        counters
+            .successful_operations
+            .load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+    assert_eq!(
+        counters
+            .failed_operations
+            .load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
 
     // Test incrementing counters
-    counters.total_operations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    counters.successful_operations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    counters
+        .total_operations
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    counters
+        .successful_operations
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    assert_eq!(counters.total_operations.load(std::sync::atomic::Ordering::Relaxed), 1);
-    assert_eq!(counters.successful_operations.load(std::sync::atomic::Ordering::Relaxed), 1);
+    assert_eq!(
+        counters
+            .total_operations
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
+    assert_eq!(
+        counters
+            .successful_operations
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
 }
 
 #[tokio::test]

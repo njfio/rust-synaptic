@@ -14,7 +14,7 @@ pub enum BasicContentType {
     /// Text content with optional language specification
     Text {
         /// Programming or natural language
-        language: Option<String>
+        language: Option<String>,
     },
     /// Image content with format and dimensions
     Image {
@@ -23,26 +23,26 @@ pub enum BasicContentType {
         /// Image width in pixels
         width: u32,
         /// Image height in pixels
-        height: u32
+        height: u32,
     },
     /// Audio content with format and duration
     Audio {
         /// Audio format (MP3, WAV, etc.)
         format: String,
         /// Duration in milliseconds
-        duration_ms: u64
+        duration_ms: u64,
     },
     /// Code content with language and line count
     Code {
         /// Programming language
         language: String,
         /// Number of lines
-        lines: u32
+        lines: u32,
     },
     /// Binary content with MIME type
     Binary {
         /// MIME type of the binary content
-        mime_type: String
+        mime_type: String,
     },
 }
 
@@ -160,8 +160,10 @@ impl BasicMultiModalManager {
         self.memories.insert(id.clone(), memory.clone());
 
         // Store in cross-platform adapter
-        let serialized = bincode::serialize(&memory)
-            .map_err(|e| MemoryError::SerializationError { message: e.to_string() })?;
+        let serialized =
+            bincode::serialize(&memory).map_err(|e| MemoryError::SerializationError {
+                message: e.to_string(),
+            })?;
         self.adapter.store(key, &serialized)?;
 
         Ok(id)
@@ -176,8 +178,10 @@ impl BasicMultiModalManager {
 
         // Try adapter
         if let Some(data) = self.adapter.retrieve(key)? {
-            let memory: BasicMultiModalMemory = bincode::deserialize(&data)
-                .map_err(|e| MemoryError::SerializationError { message: e.to_string() })?;
+            let memory: BasicMultiModalMemory =
+                bincode::deserialize(&data).map_err(|e| MemoryError::SerializationError {
+                    message: e.to_string(),
+                })?;
             Ok(Some(memory))
         } else {
             Ok(None)
@@ -189,7 +193,8 @@ impl BasicMultiModalManager {
         let mut results = Vec::new();
 
         for (id, memory) in &self.memories {
-            let similarity = self.calculate_similarity(query_features, &memory.metadata.extracted_features);
+            let similarity =
+                self.calculate_similarity(query_features, &memory.metadata.extracted_features);
             if similarity >= threshold {
                 results.push((id.clone(), similarity));
             }
@@ -207,7 +212,11 @@ impl BasicMultiModalManager {
         }
 
         // Calculate cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -288,7 +297,10 @@ impl BasicMultiModalManager {
                 BasicContentType::Binary { .. } => "binary",
             };
 
-            *stats.memories_by_type.entry(content_type.to_string()).or_insert(0) += 1;
+            *stats
+                .memories_by_type
+                .entry(content_type.to_string())
+                .or_insert(0) += 1;
         }
 
         stats
@@ -340,23 +352,35 @@ impl BasicMemoryAdapter {
 
 impl BasicCrossPlatformAdapter for BasicMemoryAdapter {
     fn store(&self, key: &str, data: &[u8]) -> Result<()> {
-        let mut map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        let mut map = self
+            .storage
+            .lock()
+            .map_err(|_| MemoryError::concurrency("lock poisoned"))?;
         map.insert(key.to_string(), data.to_vec());
         Ok(())
     }
 
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        let map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        let map = self
+            .storage
+            .lock()
+            .map_err(|_| MemoryError::concurrency("lock poisoned"))?;
         Ok(map.get(key).cloned())
     }
 
     fn delete(&self, key: &str) -> Result<bool> {
-        let mut map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        let mut map = self
+            .storage
+            .lock()
+            .map_err(|_| MemoryError::concurrency("lock poisoned"))?;
         Ok(map.remove(key).is_some())
     }
 
     fn list_keys(&self) -> Result<Vec<String>> {
-        let map = self.storage.lock().map_err(|_| MemoryError::concurrency("lock poisoned"))?;
+        let map = self
+            .storage
+            .lock()
+            .map_err(|_| MemoryError::concurrency("lock poisoned"))?;
         Ok(map.keys().cloned().collect())
     }
 
@@ -444,7 +468,9 @@ impl BasicContentDetector {
             BasicContentType::Code { lines, .. } => {
                 // Basic code features: lines, size, complexity estimate
                 let text = String::from_utf8_lossy(data);
-                let complexity = text.matches('{').count() + text.matches("if ").count() + text.matches("for ").count();
+                let complexity = text.matches('{').count()
+                    + text.matches("if ").count()
+                    + text.matches("for ").count();
                 vec![*lines as f32, data.len() as f32, complexity as f32]
             }
             BasicContentType::Binary { .. } => {
@@ -477,7 +503,9 @@ mod tests {
             extracted_features: vec![1.0, 2.0, 3.0],
         };
 
-        let id = manager.store_multimodal("test_key", content, content_type, metadata).unwrap();
+        let id = manager
+            .store_multimodal("test_key", content, content_type, metadata)
+            .expect("value should be available");
         assert!(!id.is_empty());
 
         let stats = manager.get_statistics();
@@ -495,7 +523,7 @@ mod tests {
         let content_type = BasicContentDetector::detect_content_type(text_data);
         assert!(matches!(content_type, BasicContentType::Text { .. }));
 
-        let rust_code = b"fn main() { println!(\"Hello\"); }";
+        let rust_code = b"fn main() { let greeting = \"Hello\"; }";
         let content_type = BasicContentDetector::detect_content_type(rust_code);
         assert!(matches!(content_type, BasicContentType::Code { .. }));
     }

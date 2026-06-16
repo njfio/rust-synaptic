@@ -1,7 +1,7 @@
 //! Storage backends for the memory system
 
-pub mod memory;
 pub mod file;
+pub mod memory;
 
 use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryFragment};
@@ -96,15 +96,18 @@ pub async fn create_storage(backend: &StorageBackend) -> Result<Arc<dyn Storage 
         #[cfg(feature = "sql-storage")]
         StorageBackend::Sql { connection_string } => {
             tracing::debug!("Initializing SQL storage with connection string");
-            Ok(Arc::new(crate::integrations::database::DatabaseClient::new(
-                crate::integrations::database::DatabaseConfig {
-                    database_url: connection_string.to_string(),
-                    max_connections: 10,
-                    connect_timeout_secs: 30,
-                    schema: "public".to_string(),
-                    ssl_mode: "prefer".to_string(),
-                }
-            ).await?))
+            Ok(Arc::new(
+                crate::integrations::database::DatabaseClient::new(
+                    crate::integrations::database::DatabaseConfig {
+                        database_url: connection_string.to_string(),
+                        max_connections: 10,
+                        connect_timeout_secs: 30,
+                        schema: "public".to_string(),
+                        ssl_mode: "prefer".to_string(),
+                    },
+                )
+                .await?,
+            ))
         }
     }
 }
@@ -170,7 +173,8 @@ impl StorageTransaction {
     }
 
     pub fn update(&mut self, key: String, entry: MemoryEntry) {
-        self.operations.push(StorageOperation::Update { key, entry });
+        self.operations
+            .push(StorageOperation::Update { key, entry });
     }
 
     pub fn delete(&mut self, key: String) {
@@ -233,7 +237,10 @@ pub struct StorageMiddleware {
 
 impl StorageMiddleware {
     pub fn new(inner: Arc<dyn Storage + Send + Sync>, config: StorageConfig) -> Self {
-        Self { inner, _config: config }
+        Self {
+            inner,
+            _config: config,
+        }
     }
 }
 
@@ -450,7 +457,10 @@ mod tests {
         let op_clone = op.clone();
 
         match (op, op_clone) {
-            (StorageOperation::Update { key: k1, .. }, StorageOperation::Update { key: k2, .. }) => {
+            (
+                StorageOperation::Update { key: k1, .. },
+                StorageOperation::Update { key: k2, .. },
+            ) => {
                 assert_eq!(k1, k2);
             }
             _ => panic!("Clone failed"),
@@ -520,7 +530,7 @@ mod tests {
         // Verify count through middleware
         let count_result = middleware.count().await;
         assert!(count_result.is_ok());
-        assert_eq!(count_result.unwrap(), 1);
+        assert_eq!(count_result.expect("count_result should be valid"), 1);
     }
 
     #[test]

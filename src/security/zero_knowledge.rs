@@ -1,23 +1,23 @@
 //! Zero-Knowledge Architecture Module
-//! 
+//!
 //! Implements zero-knowledge proofs and privacy-preserving protocols
 //! for secure computation and verification without revealing sensitive data.
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use crate::security::{SecurityConfig, SecurityContext};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 #[cfg(feature = "zero-knowledge-proofs")]
 use bellman::{
-    Circuit, ConstraintSystem, SynthesisError,
     groth16::{
         create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof,
         Parameters, PreparedVerifyingKey, Proof,
     },
+    Circuit, ConstraintSystem, SynthesisError,
 };
 
 #[cfg(feature = "zero-knowledge-proofs")]
@@ -83,7 +83,7 @@ impl ZeroKnowledgeManager {
     /// Create a new zero-knowledge manager
     pub async fn new(config: &SecurityConfig) -> Result<Self> {
         let proof_system = ProofSystem::new(config).await?;
-        
+
         Ok(Self {
             config: config.clone(),
             proof_system,
@@ -113,10 +113,15 @@ impl ZeroKnowledgeManager {
         };
 
         // Generate witness (private information)
-        let witness = self.generate_access_witness(&statement, user_context).await?;
+        let witness = self
+            .generate_access_witness(&statement, user_context)
+            .await?;
 
         // Generate the proof
-        let proof = self.proof_system.generate_proof(&statement, &witness).await?;
+        let proof = self
+            .proof_system
+            .generate_proof(&statement, &witness)
+            .await?;
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -139,7 +144,7 @@ impl ZeroKnowledgeManager {
         // Update metrics
         self.metrics.total_proofs_verified += 1;
         self.metrics.total_verification_time_ms += start_time.elapsed().as_millis() as u64;
-        
+
         if is_valid {
             self.metrics.successful_verifications += 1;
         }
@@ -167,7 +172,10 @@ impl ZeroKnowledgeManager {
         let witness = self.generate_content_witness(entry, &statement).await?;
 
         // Generate the proof
-        let proof = self.proof_system.generate_proof(&statement, &witness).await?;
+        let proof = self
+            .proof_system
+            .generate_proof(&statement, &witness)
+            .await?;
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -217,7 +225,10 @@ impl ZeroKnowledgeManager {
         let witness = self.generate_aggregate_witness(entries, &statement).await?;
 
         // Generate the proof
-        let proof = self.proof_system.generate_proof(&statement, &witness).await?;
+        let proof = self
+            .proof_system
+            .generate_proof(&statement, &witness)
+            .await?;
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -287,10 +298,8 @@ impl ZeroKnowledgeManager {
             AggregateType::Count => entries.len() as f64,
             AggregateType::AverageLength => {
                 entries.iter().map(|e| e.value.len()).sum::<usize>() as f64 / entries.len() as f64
-            },
-            AggregateType::TotalSize => {
-                entries.iter().map(|e| e.value.len()).sum::<usize>() as f64
-            },
+            }
+            AggregateType::TotalSize => entries.iter().map(|e| e.value.len()).sum::<usize>() as f64,
         };
 
         let witness_data = WitnessData {
@@ -385,7 +394,10 @@ impl Circuit<Scalar> for AccessRightCircuit {
 
         let user_access_level = cs.alloc(
             || "user_access_level",
-            || self.user_access_level.ok_or(SynthesisError::AssignmentMissing),
+            || {
+                self.user_access_level
+                    .ok_or(SynthesisError::AssignmentMissing)
+            },
         )?;
 
         // Allocate public inputs
@@ -396,7 +408,10 @@ impl Circuit<Scalar> for AccessRightCircuit {
 
         let required_access_level = cs.alloc_input(
             || "required_access_level",
-            || self.required_access_level.ok_or(SynthesisError::AssignmentMissing),
+            || {
+                self.required_access_level
+                    .ok_or(SynthesisError::AssignmentMissing)
+            },
         )?;
 
         // Constraint 1: Verify that the user knows the secret
@@ -432,8 +447,12 @@ impl Circuit<Scalar> for AccessRightCircuit {
         let access_diff = cs.alloc(
             || "access_diff",
             || {
-                let user_level = self.user_access_level.ok_or(SynthesisError::AssignmentMissing)?;
-                let required_level = self.required_access_level.ok_or(SynthesisError::AssignmentMissing)?;
+                let user_level = self
+                    .user_access_level
+                    .ok_or(SynthesisError::AssignmentMissing)?;
+                let required_level = self
+                    .required_access_level
+                    .ok_or(SynthesisError::AssignmentMissing)?;
                 Ok(user_level - required_level)
             },
         )?;
@@ -457,7 +476,10 @@ impl ProofSystem {
     async fn new(config: &SecurityConfig) -> Result<Self> {
         #[cfg(feature = "zero-knowledge-proofs")]
         {
-            tracing::info!("Initializing real Bellman zk-SNARKs proof system with key size: {}", config.encryption_key_size);
+            tracing::info!(
+                "Initializing real Bellman zk-SNARKs proof system with key size: {}",
+                config.encryption_key_size
+            );
 
             // Create a dummy circuit for parameter generation
             let circuit = AccessRightCircuit {
@@ -469,8 +491,13 @@ impl ProofSystem {
 
             // Generate trusted setup parameters
             let mut rng = OsRng;
-            let parameters = generate_random_parameters::<Bls12, _, _>(circuit, &mut rng)
-                .map_err(|e| MemoryError::encryption(format!("Failed to generate zk-SNARK parameters: {:?}", e)))?;
+            let parameters =
+                generate_random_parameters::<Bls12, _, _>(circuit, &mut rng).map_err(|e| {
+                    MemoryError::encryption(format!(
+                        "Failed to generate zk-SNARK parameters: {:?}",
+                        e
+                    ))
+                })?;
 
             // Prepare verification key for efficient verification
             let prepared_vk = prepare_verifying_key(&parameters.vk);
@@ -485,7 +512,9 @@ impl ProofSystem {
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]
         {
-            tracing::warn!("Zero-knowledge proofs feature not enabled, using fallback implementation");
+            tracing::warn!(
+                "Zero-knowledge proofs feature not enabled, using fallback implementation"
+            );
             let (proving_key, verification_key) = Self::generate_keys(config).await?;
 
             Ok(Self {
@@ -537,8 +566,9 @@ impl ProofSystem {
 
             // Generate proof
             let mut rng = OsRng;
-            let proof = create_random_proof(circuit, &self.parameters, &mut rng)
-                .map_err(|e| MemoryError::encryption(format!("Failed to generate zk-SNARK proof: {:?}", e)))?;
+            let proof = create_random_proof(circuit, &self.parameters, &mut rng).map_err(|e| {
+                MemoryError::encryption(format!("Failed to generate zk-SNARK proof: {:?}", e))
+            })?;
 
             // Serialize proof manually (Bellman proofs don't implement Serialize)
             let proof_data = Self::serialize_proof(&proof)?;
@@ -558,7 +588,9 @@ impl ProofSystem {
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]
         {
-            tracing::warn!("Using fallback proof generation - zero-knowledge-proofs feature not enabled");
+            tracing::warn!(
+                "Using fallback proof generation - zero-knowledge-proofs feature not enabled"
+            );
             let statement_hash = self.hash_statement(statement)?;
             let witness_commitment = self.commit_witness(witness)?;
 
@@ -590,12 +622,16 @@ impl ProofSystem {
 
             // For demonstration, we'll verify the proof format instead of actual cryptographic verification
             // In a real implementation, you would deserialize and verify the actual proof
-            let is_valid = proof.proof_data.len() > 10 &&
-                          proof.proving_key_id == "bellman_groth16" &&
-                          String::from_utf8_lossy(&proof.proof_data).contains("bellman_proof");
+            let is_valid = proof.proof_data.len() > 10
+                && proof.proving_key_id == "bellman_groth16"
+                && String::from_utf8_lossy(&proof.proof_data).contains("bellman_proof");
 
             let duration = start_time.elapsed();
-            tracing::debug!("zk-SNARK proof verification completed in {:?}, result: {}", duration, is_valid);
+            tracing::debug!(
+                "zk-SNARK proof verification completed in {:?}, result: {}",
+                duration,
+                is_valid
+            );
 
             Ok(is_valid)
         }
@@ -622,8 +658,8 @@ impl ProofSystem {
             }
 
             // Verify proof data (simplified verification)
-            let is_valid = proof.proof_data.len() > 0 &&
-                          proof.proving_key_id == self.proving_key.id;
+            let is_valid =
+                proof.proof_data.len() > 0 && proof.proving_key_id == self.proving_key.id;
 
             tracing::info!(
                 proof_id = %proof.id,
@@ -665,7 +701,9 @@ impl ProofSystem {
         // Manual deserialization - this is a simplified approach
         // In a real implementation, you would properly deserialize the proof
         // For now, we'll return an error since we can't reconstruct the actual proof
-        Err(MemoryError::encryption("Proof deserialization not implemented for demo".to_string()))
+        Err(MemoryError::encryption(
+            "Proof deserialization not implemented for demo".to_string(),
+        ))
     }
 }
 
@@ -809,15 +847,15 @@ pub struct ZeroKnowledgeMetrics {
 impl ZeroKnowledgeMetrics {
     pub fn calculate_averages(&mut self) {
         if self.total_proofs_generated > 0 {
-            self.average_proof_generation_time_ms = 
+            self.average_proof_generation_time_ms =
                 self.total_proof_generation_time_ms as f64 / self.total_proofs_generated as f64;
         }
-        
+
         if self.total_proofs_verified > 0 {
-            self.average_verification_time_ms = 
+            self.average_verification_time_ms =
                 self.total_verification_time_ms as f64 / self.total_proofs_verified as f64;
-            
-            self.verification_success_rate = 
+
+            self.verification_success_rate =
                 (self.successful_verifications as f64 / self.total_proofs_verified as f64) * 100.0;
         }
     }

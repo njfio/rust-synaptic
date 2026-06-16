@@ -4,7 +4,7 @@
 //! supporting various embedding models optimized for different tasks.
 
 use super::super::provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities, compute_content_hash,
+    compute_content_hash, EmbedOptions, Embedding, EmbeddingProvider, ProviderCapabilities,
 };
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
@@ -225,9 +225,8 @@ impl CohereProvider {
         for attempt in 0..=self.config.max_retries {
             if attempt > 0 {
                 // Exponential backoff
-                let delay = Duration::from_millis(
-                    self.config.retry_base_delay_ms * 2_u64.pow(attempt - 1),
-                );
+                let delay =
+                    Duration::from_millis(self.config.retry_base_delay_ms * 2_u64.pow(attempt - 1));
                 tokio::time::sleep(delay).await;
                 tracing::debug!("Retrying Cohere request (attempt {})", attempt + 1);
             }
@@ -265,7 +264,10 @@ impl CohereProvider {
                         }
                     } else {
                         let status = resp.status();
-                        let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                        let error_text = resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unknown error".to_string());
 
                         // Don't retry 4xx errors (except 429 rate limit)
                         if status.is_client_error() && status.as_u16() != 429 {
@@ -471,7 +473,7 @@ mod tests {
         let provider = CohereProvider::new(config);
         assert!(provider.is_ok());
 
-        let provider = provider.unwrap();
+        let provider = provider.expect("provider should be valid");
         assert_eq!(provider.name(), "CohereProvider");
         assert_eq!(provider.embedding_dimension(), 384);
     }
@@ -488,20 +490,20 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_embedding_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
         let config = CohereConfig::new(api_key)
             .with_model(CohereModel::EmbedEnglishLightV3)
             .with_input_type(CohereInputType::SearchDocument);
-        let provider = CohereProvider::new(config).unwrap();
+        let provider = CohereProvider::new(config).expect("value should be available");
 
         let text = "This is a test of Cohere embeddings";
         let embedding = provider.embed(text, None).await;
 
         assert!(embedding.is_ok());
-        let embedding = embedding.unwrap();
+        let embedding = embedding.expect("embedding should be valid");
         assert_eq!(embedding.dimension(), 384);
         assert_eq!(embedding.model, "embed-english-light-v3.0");
         assert!(!embedding.content_hash.is_empty());
@@ -511,13 +513,12 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_batch_embedding_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
-        let config = CohereConfig::new(api_key)
-            .with_model(CohereModel::EmbedEnglishLightV3);
-        let provider = CohereProvider::new(config).unwrap();
+        let config = CohereConfig::new(api_key).with_model(CohereModel::EmbedEnglishLightV3);
+        let provider = CohereProvider::new(config).expect("value should be available");
 
         let texts = vec![
             "First test text".to_string(),
@@ -528,7 +529,7 @@ mod tests {
         let embeddings = provider.embed_batch(&texts, None).await;
 
         assert!(embeddings.is_ok());
-        let embeddings = embeddings.unwrap();
+        let embeddings = embeddings.expect("embeddings should be valid");
         assert_eq!(embeddings.len(), 3);
 
         for embedding in embeddings {
@@ -541,24 +542,37 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_similarity_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
         let config = CohereConfig::new(api_key)
             .with_model(CohereModel::EmbedEnglishLightV3)
             .with_input_type(CohereInputType::SearchDocument);
-        let provider = CohereProvider::new(config).unwrap();
+        let provider = CohereProvider::new(config).expect("value should be available");
 
-        let emb1 = provider.embed("machine learning and artificial intelligence", None).await.unwrap();
-        let emb2 = provider.embed("deep learning and neural networks", None).await.unwrap();
-        let emb3 = provider.embed("cooking Italian pasta recipes", None).await.unwrap();
+        let emb1 = provider
+            .embed("machine learning and artificial intelligence", None)
+            .await
+            .expect("await should be present");
+        let emb2 = provider
+            .embed("deep learning and neural networks", None)
+            .await
+            .expect("await should be present");
+        let emb3 = provider
+            .embed("cooking Italian pasta recipes", None)
+            .await
+            .expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        println!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!(
+            "Related similarity: {}, Unrelated similarity: {}",
+            sim_related,
+            sim_unrelated
+        );
     }
 }

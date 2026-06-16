@@ -1,383 +1,400 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use synaptic::security::encryption::{EncryptionManager, EncryptionConfig};
-use synaptic::security::access_control::{AccessControlManager, Permission, Role};
-use synaptic::security::audit::{AuditLogger, AuditEvent};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use synaptic::memory::types::{MemoryEntry, MemoryType};
+use synaptic::security::access_control::{
+    AccessControlManager, AuthenticationCredentials, AuthenticationType,
+};
+use synaptic::security::audit::AuditLogger;
+use synaptic::security::encryption::EncryptionManager;
+use synaptic::security::key_management::KeyManager;
+use synaptic::security::{AuditConfig, Permission, SecurityConfig, SecurityContext};
 use tokio::runtime::Runtime;
 
-/// Create test data for security benchmarks
-fn create_security_test_data(count: usize) -> Vec<Vec<u8>> {
-    (0..count)
-        .map(|i| {
-            format!("Sensitive data entry {} with confidential information", i)
-                .into_bytes()
-        })
-        .collect()
+/// Build a SecurityConfig that does not require MFA, so benchmark contexts
+/// validate without an interactive challenge.
+fn bench_security_config() -> SecurityConfig {
+    let mut config = SecurityConfig::default();
+    config.access_control_policy.require_mfa = false;
+    config
 }
 
-/// Benchmark encryption operations
+/// Construct an encryption manager for benchmarking.
+async fn new_encryption_manager() -> EncryptionManager {
+    let config = bench_security_config();
+    let key_manager = KeyManager::new(&config).await.unwrap();
+    EncryptionManager::new(&config, key_manager).await.unwrap()
+}
+
+/// Construct a valid (MFA-satisfied, valid-session) security context.
+fn bench_context(user_id: &str) -> SecurityContext {
+    let mut ctx = SecurityContext::new(user_id.to_string(), vec!["user".to_string()]);
+    ctx.mfa_verified = true;
+    ctx
+}
+
+/// Build a memory entry of a given content size.
+fn sized_entry(key: &str, size: usize) -> MemoryEntry {
+    MemoryEntry::new(key.to_string(), "x".repeat(size), MemoryType::LongTerm)
+}
+
+/// Benchmark encryption operations.
 fn bench_encryption_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("encryption_operations");
-    
+
     // Test different data sizes
     let data_sizes = [1024, 10240, 102400]; // 1KB, 10KB, 100KB
-    
+
     for &size in data_sizes.iter() {
-        let test_data = vec![42u8; size];
-        
         group.throughput(Throughput::Bytes(size as u64));
-        
-        // Benchmark AES-256-GCM encryption
+
+        // Benchmark AES-256-GCM encryption (standard_encrypt).
         group.bench_with_input(
             BenchmarkId::new("aes_256_gcm_encrypt", size),
             &size,
-            |b, _| {
+            |b, &size| {
+                let ctx = bench_context("bench_user");
+                let entry = sized_entry("enc_key", size);
                 b.iter(|| {
                     rt.block_on(async {
-                        let config = EncryptionConfig::default();
-                        let encryption_manager = EncryptionManager::new(config).await.unwrap();
-                        
-                        encryption_manager.encrypt(black_box(&test_data)).await.unwrap()
+                        let mut manager = new_encryption_manager().await;
+                        manager
+                            .standard_encrypt(black_box(&entry), &ctx)
+                            .await
+                            .unwrap()
                     })
                 })
             },
         );
-        
-        // Benchmark AES-256-GCM decryption
+
+        // Benchmark AES-256-GCM decryption (standard_decrypt).
         group.bench_with_input(
             BenchmarkId::new("aes_256_gcm_decrypt", size),
             &size,
-            |b, _| {
-                let encrypted_data = rt.block_on(async {
-                    let config = EncryptionConfig::default();
-                    let encryption_manager = EncryptionManager::new(config).await.unwrap();
-                    encryption_manager.encrypt(&test_data).await.unwrap()
-                });
-                
-                b.iter(|| {
-                    rt.block_on(async {
-                        let config = EncryptionConfig::default();
-                        let encryption_manager = EncryptionManager::new(config).await.unwrap();
-                        
-                        encryption_manager.decrypt(black_box(&encrypted_data)).await.unwrap()
-                    })
-                })
-            },
-        );
-        
-        // Benchmark ChaCha20-Poly1305 encryption
-        group.bench_with_input(
-            BenchmarkId::new("chacha20_poly1305_encrypt", size),
-            &size,
-            |b, _| {
-                b.iter(|| {
-                    rt.block_on(async {
-                        let mut config = EncryptionConfig::default();
-                        config.algorithm = synaptic::security::encryption::EncryptionAlgorithm::ChaCha20Poly1305;
-                        let encryption_manager = EncryptionManager::new(config).await.unwrap();
-                        
-                        encryption_manager.encrypt(black_box(&test_data)).await.unwrap()
-                    })
-                })
+            |b, &size| {
+                let ctx = bench_context("bench_user");
+                let entry = sized_entry("enc_key", size);
+                // Encrypt once with a manager we keep, then decrypt with the
+                // same manager (the key lives in the manager's key store).
+                b.iter_batched(
+                    || {
+                        rt.block_on(async {
+                            let mut manager = new_encryption_manager().await;
+                            let encrypted = manager.standard_encrypt(&entry, &ctx).await.unwrap();
+                            (manager, encrypted)
+                        })
+                    },
+                    |(mut manager, encrypted)| {
+                        rt.block_on(async {
+                            manager
+                                .standard_decrypt(black_box(&encrypted), &ctx)
+                                .await
+                                .unwrap()
+                        })
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
             },
         );
     }
-    
+
     group.finish();
 }
 
-/// Benchmark access control operations
+/// Benchmark access control operations.
 fn bench_access_control(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("access_control");
-    
-    // Test different numbers of users and permissions
+
     for user_count in [100, 1000, 5000].iter() {
-        group.throughput(Throughput::Elements(*user_count as u64));
-        
-        // Benchmark permission checking
+        let user_count = *user_count;
+        group.throughput(Throughput::Elements(user_count as u64));
+
+        // Benchmark authentication + permission checking.
         group.bench_with_input(
             BenchmarkId::new("permission_check", user_count),
-            user_count,
+            &user_count,
             |b, &count| {
                 b.iter(|| {
                     rt.block_on(async {
-                        let access_control = AccessControlManager::new().await.unwrap();
-                        
-                        // Create users and roles
+                        let config = bench_security_config();
+                        let mut access_control = AccessControlManager::new(&config).await.unwrap();
+                        access_control
+                            .add_role(
+                                "user".to_string(),
+                                vec![Permission::ReadMemory, Permission::WriteMemory],
+                            )
+                            .await
+                            .unwrap();
+
                         for i in 0..count {
                             let user_id = format!("user_{}", i);
-                            let role = if i % 3 == 0 { Role::Admin } else { Role::User };
-                            
-                            access_control.create_user(&user_id, role).await.unwrap();
-                        }
-                        
-                        // Check permissions for all users
-                        for i in 0..count {
-                            let user_id = format!("user_{}", i);
-                            access_control.check_permission(
-                                black_box(&user_id),
-                                black_box(&Permission::Read),
-                                black_box("memory_resource"),
-                            ).await.unwrap();
+                            let creds = AuthenticationCredentials {
+                                auth_type: AuthenticationType::Password,
+                                password: Some("password123".to_string()),
+                                api_key: None,
+                                certificate: None,
+                                mfa_token: None,
+                                ip_address: None,
+                                user_agent: None,
+                            };
+                            let ctx = access_control.authenticate(user_id, creds).await.unwrap();
+
+                            let _ = access_control
+                                .check_permission(
+                                    black_box(&ctx),
+                                    black_box(Permission::ReadMemory),
+                                )
+                                .await;
                         }
                     })
                 })
             },
         );
-        
-        // Benchmark role assignment
+
+        // Benchmark role registration.
         group.bench_with_input(
             BenchmarkId::new("role_assignment", user_count),
-            user_count,
+            &user_count,
             |b, &count| {
                 b.iter(|| {
                     rt.block_on(async {
-                        let access_control = AccessControlManager::new().await.unwrap();
-                        
-                        // Create and assign roles to users
+                        let config = bench_security_config();
+                        let mut access_control = AccessControlManager::new(&config).await.unwrap();
+
                         for i in 0..count {
-                            let user_id = format!("user_{}", i);
-                            let role = match i % 4 {
-                                0 => Role::Admin,
-                                1 => Role::User,
-                                2 => Role::ReadOnly,
-                                _ => Role::Guest,
+                            let role_name = format!("role_{}", i);
+                            let perms = match i % 4 {
+                                0 => vec![Permission::ReadMemory, Permission::WriteMemory],
+                                1 => vec![Permission::ReadMemory],
+                                2 => vec![Permission::ReadAnalytics],
+                                _ => vec![Permission::ExecuteQueries],
                             };
-                            
-                            access_control.create_user(&user_id, Role::Guest).await.unwrap();
-                            access_control.assign_role(black_box(&user_id), black_box(role)).await.unwrap();
+                            access_control
+                                .add_role(black_box(role_name), black_box(perms))
+                                .await
+                                .unwrap();
                         }
                     })
                 })
             },
         );
     }
-    
+
     group.finish();
 }
 
-/// Benchmark audit logging
+/// Benchmark audit logging.
 fn bench_audit_logging(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("audit_logging");
-    
-    // Test different numbers of audit events
+
     for event_count in [1000, 10000, 50000].iter() {
-        group.throughput(Throughput::Elements(*event_count as u64));
-        
+        let event_count = *event_count;
+        group.throughput(Throughput::Elements(event_count as u64));
+
         group.bench_with_input(
             BenchmarkId::new("audit_event_logging", event_count),
-            event_count,
+            &event_count,
             |b, &count| {
                 b.iter(|| {
                     rt.block_on(async {
-                        let audit_logger = AuditLogger::new().await.unwrap();
-                        
-                        // Log various types of audit events
+                        let mut audit_logger =
+                            AuditLogger::new(&AuditConfig::default()).await.unwrap();
+
                         for i in 0..count {
-                            let event = match i % 5 {
-                                0 => AuditEvent::MemoryAccess {
-                                    user_id: format!("user_{}", i % 100),
-                                    memory_id: format!("memory_{}", i),
-                                    action: "read".to_string(),
-                                    timestamp: chrono::Utc::now(),
-                                },
-                                1 => AuditEvent::MemoryModification {
-                                    user_id: format!("user_{}", i % 100),
-                                    memory_id: format!("memory_{}", i),
-                                    action: "update".to_string(),
-                                    timestamp: chrono::Utc::now(),
-                                },
-                                2 => AuditEvent::SecurityViolation {
-                                    user_id: format!("user_{}", i % 100),
-                                    violation_type: "unauthorized_access".to_string(),
-                                    resource: format!("resource_{}", i),
-                                    timestamp: chrono::Utc::now(),
-                                },
-                                3 => AuditEvent::SystemEvent {
-                                    event_type: "backup_created".to_string(),
-                                    details: format!("Backup {} created", i),
-                                    timestamp: chrono::Utc::now(),
-                                },
-                                _ => AuditEvent::ConfigurationChange {
-                                    user_id: format!("admin_{}", i % 10),
-                                    setting: format!("setting_{}", i),
-                                    old_value: "old".to_string(),
-                                    new_value: "new".to_string(),
-                                    timestamp: chrono::Utc::now(),
-                                },
-                            };
-                            
-                            audit_logger.log_event(black_box(event)).await.unwrap();
+                            let ctx = bench_context(&format!("user_{}", i % 100));
+                            match i % 4 {
+                                0 => audit_logger
+                                    .log_memory_operation(black_box(&ctx), "read", true)
+                                    .await
+                                    .unwrap(),
+                                1 => audit_logger
+                                    .log_access_decision(black_box(&ctx), "ReadMemory", true)
+                                    .await
+                                    .unwrap(),
+                                2 => audit_logger
+                                    .log_system_event(
+                                        "backup_created",
+                                        &format!("Backup {} created", i),
+                                        synaptic::security::audit::RiskLevel::Low,
+                                    )
+                                    .await
+                                    .unwrap(),
+                                _ => audit_logger
+                                    .log_authentication_event(
+                                        &format!("user_{}", i % 100),
+                                        "password",
+                                        true,
+                                        None,
+                                    )
+                                    .await
+                                    .unwrap(),
+                            }
                         }
                     })
                 })
             },
         );
-        
-        // Benchmark audit query performance
+
+        // Benchmark audit query performance.
         group.bench_with_input(
             BenchmarkId::new("audit_query", event_count),
-            event_count,
+            &event_count,
             |b, &count| {
                 let audit_logger = rt.block_on(async {
-                    let audit_logger = AuditLogger::new().await.unwrap();
-                    
-                    // Pre-populate with audit events
+                    let mut audit_logger = AuditLogger::new(&AuditConfig::default()).await.unwrap();
+
                     for i in 0..count {
-                        let event = AuditEvent::MemoryAccess {
-                            user_id: format!("user_{}", i % 100),
-                            memory_id: format!("memory_{}", i),
-                            action: "read".to_string(),
-                            timestamp: chrono::Utc::now(),
-                        };
-                        audit_logger.log_event(event).await.unwrap();
+                        let ctx = bench_context(&format!("user_{}", i % 100));
+                        audit_logger
+                            .log_memory_operation(&ctx, "read", true)
+                            .await
+                            .unwrap();
                     }
-                    
+
                     audit_logger
                 });
-                
+
                 b.iter(|| {
                     rt.block_on(async {
-                        // Query audit events by user
+                        // Query audit events by user.
                         let user_id = format!("user_{}", black_box(50));
-                        audit_logger.query_events_by_user(&user_id, 100).await.unwrap();
-                        
-                        // Query audit events by time range
+                        audit_logger
+                            .get_user_audit_events(&user_id, Some(100))
+                            .await
+                            .unwrap();
+
+                        // Query audit events by time range.
                         let start_time = chrono::Utc::now() - chrono::Duration::hours(1);
-                        let end_time = chrono::Utc::now();
-                        audit_logger.query_events_by_time_range(start_time, end_time, 100).await.unwrap();
+                        let end_time = chrono::Utc::now() + chrono::Duration::hours(1);
+                        audit_logger
+                            .get_audit_events(start_time, end_time)
+                            .await
+                            .unwrap();
                     })
                 })
             },
         );
     }
-    
+
     group.finish();
 }
 
-/// Benchmark secure memory operations
+/// Benchmark secure memory operations (encrypt then decrypt entries).
 fn bench_secure_memory_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("secure_memory_operations");
-    
-    // Test different numbers of encrypted memory entries
+
     for entry_count in [100, 500, 1000].iter() {
-        group.throughput(Throughput::Elements(*entry_count as u64));
-        
+        let entry_count = *entry_count;
+        group.throughput(Throughput::Elements(entry_count as u64));
+
         group.bench_with_input(
             BenchmarkId::new("encrypted_memory_store", entry_count),
-            entry_count,
+            &entry_count,
             |b, &count| {
+                let ctx = bench_context("bench_user");
                 b.iter(|| {
                     rt.block_on(async {
-                        let encryption_config = EncryptionConfig::default();
-                        let encryption_manager = EncryptionManager::new(encryption_config).await.unwrap();
-                        
-                        // Store encrypted memory entries
+                        let mut manager = new_encryption_manager().await;
+
                         for i in 0..count {
-                            let content = format!("Sensitive memory content {}", i);
-                            let encrypted_content = encryption_manager.encrypt(content.as_bytes()).await.unwrap();
-                            
                             let entry = MemoryEntry::new(
                                 format!("secure_key_{}", i),
-                                String::from_utf8(encrypted_content).unwrap(),
+                                format!("Sensitive memory content {}", i),
                                 MemoryType::LongTerm,
                             );
-                            
-                            // Simulate secure storage operation
-                            black_box(entry);
+                            let encrypted = manager
+                                .standard_encrypt(black_box(&entry), &ctx)
+                                .await
+                                .unwrap();
+                            black_box(encrypted);
                         }
                     })
                 })
             },
         );
-        
+
         group.bench_with_input(
             BenchmarkId::new("encrypted_memory_retrieve", entry_count),
-            entry_count,
+            &entry_count,
             |b, &count| {
-                let encrypted_entries = rt.block_on(async {
-                    let encryption_config = EncryptionConfig::default();
-                    let encryption_manager = EncryptionManager::new(encryption_config).await.unwrap();
-                    
-                    let mut entries = Vec::new();
-                    for i in 0..count {
-                        let content = format!("Sensitive memory content {}", i);
-                        let encrypted_content = encryption_manager.encrypt(content.as_bytes()).await.unwrap();
-                        entries.push(encrypted_content);
-                    }
-                    entries
-                });
-                
-                b.iter(|| {
-                    rt.block_on(async {
-                        let encryption_config = EncryptionConfig::default();
-                        let encryption_manager = EncryptionManager::new(encryption_config).await.unwrap();
-                        
-                        // Decrypt and retrieve memory entries
-                        for encrypted_content in &encrypted_entries {
-                            let decrypted_content = encryption_manager.decrypt(black_box(encrypted_content)).await.unwrap();
-                            black_box(decrypted_content);
-                        }
-                    })
-                })
+                let ctx = bench_context("bench_user");
+                b.iter_batched(
+                    || {
+                        rt.block_on(async {
+                            let mut manager = new_encryption_manager().await;
+                            let mut encrypted = Vec::new();
+                            for i in 0..count {
+                                let entry = MemoryEntry::new(
+                                    format!("secure_key_{}", i),
+                                    format!("Sensitive memory content {}", i),
+                                    MemoryType::LongTerm,
+                                );
+                                encrypted
+                                    .push(manager.standard_encrypt(&entry, &ctx).await.unwrap());
+                            }
+                            (manager, encrypted)
+                        })
+                    },
+                    |(mut manager, encrypted)| {
+                        rt.block_on(async {
+                            for enc in &encrypted {
+                                let decrypted = manager
+                                    .standard_decrypt(black_box(enc), &ctx)
+                                    .await
+                                    .unwrap();
+                                black_box(decrypted);
+                            }
+                        })
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
             },
         );
     }
-    
+
     group.finish();
 }
 
-/// Benchmark key management operations
+/// Benchmark key management operations.
 fn bench_key_management(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("key_management");
-    
-    // Benchmark key generation
-    group.bench_function("key_generation", |b| {
+
+    // Benchmark key manager creation (key store initialization).
+    group.bench_function("key_manager_init", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let encryption_config = EncryptionConfig::default();
-                let encryption_manager = EncryptionManager::new(encryption_config).await.unwrap();
-                
-                // Generate multiple keys
-                for _ in 0..10 {
-                    encryption_manager.generate_key().await.unwrap();
-                }
+                let config = bench_security_config();
+                let key_manager = KeyManager::new(black_box(&config)).await.unwrap();
+                black_box(key_manager);
             })
         })
     });
-    
-    // Benchmark key rotation
-    group.bench_function("key_rotation", |b| {
+
+    // Benchmark encrypt/decrypt round-trip (exercises key generation/lookup).
+    group.bench_function("encrypt_decrypt_roundtrip", |b| {
+        let ctx = bench_context("bench_user");
+        let entry = sized_entry("rotation_key", 256);
         b.iter(|| {
             rt.block_on(async {
-                let encryption_config = EncryptionConfig::default();
-                let encryption_manager = EncryptionManager::new(encryption_config).await.unwrap();
-                
-                // Simulate key rotation process
-                let old_key = encryption_manager.get_current_key().await.unwrap();
-                let new_key = encryption_manager.generate_key().await.unwrap();
-                
-                // Re-encrypt data with new key
-                let test_data = b"Sensitive data for key rotation test";
-                let encrypted_old = encryption_manager.encrypt_with_key(test_data, &old_key).await.unwrap();
-                let decrypted = encryption_manager.decrypt_with_key(&encrypted_old, &old_key).await.unwrap();
-                let encrypted_new = encryption_manager.encrypt_with_key(&decrypted, black_box(&new_key)).await.unwrap();
-                
-                black_box(encrypted_new);
+                let mut manager = new_encryption_manager().await;
+                let encrypted = manager.standard_encrypt(&entry, &ctx).await.unwrap();
+                let decrypted = manager
+                    .standard_decrypt(black_box(&encrypted), &ctx)
+                    .await
+                    .unwrap();
+                black_box(decrypted);
             })
         })
     });
-    
+
     group.finish();
 }
 

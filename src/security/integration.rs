@@ -270,7 +270,7 @@ impl SecurityManager {
     /// Create a new security manager
     pub async fn new(config: SecurityConfig) -> Result<Self> {
         info!("Initializing security manager with level: {:?}", config.security_level);
-        
+
         // Initialize components based on configuration
         let policy_engine = if config.enable_audit_logging {
             // Create audit storage implementation
@@ -280,7 +280,7 @@ impl SecurityManager {
             let audit_storage = Box::new(InMemoryAuditStorage::new());
             Arc::new(RwLock::new(PolicyEngine::new(audit_storage)))
         };
-        
+
         let encryption_manager = if config.enable_encryption {
             let encryption_config = crate::security::encryption::EncryptionConfig::default();
             Arc::new(RwLock::new(EncryptionManager::new(encryption_config)?))
@@ -288,7 +288,7 @@ impl SecurityManager {
             let encryption_config = crate::security::encryption::EncryptionConfig::default();
             Arc::new(RwLock::new(EncryptionManager::new(encryption_config)?))
         };
-        
+
         let audit_logger = if config.enable_audit_logging {
             let audit_config = crate::security::AuditConfig::default();
             Arc::new(RwLock::new(AuditLogger::new(&audit_config).await?))
@@ -296,19 +296,19 @@ impl SecurityManager {
             let audit_config = crate::security::AuditConfig::default();
             Arc::new(RwLock::new(AuditLogger::new(&audit_config).await?))
         };
-        
+
         let threat_detector = if config.enable_threat_detection {
             Arc::new(ThreatDetector::new(config.threat_detection_sensitivity.clone()))
         } else {
             Arc::new(ThreatDetector::new(ThreatSensitivity::Low))
         };
-        
+
         let compliance_monitor = if config.enable_compliance_monitoring {
             Arc::new(ComplianceMonitor::new(config.compliance_frameworks.clone()))
         } else {
             Arc::new(ComplianceMonitor::new(vec![]))
         };
-        
+
         Ok(Self {
             policy_engine,
             encryption_manager,
@@ -323,22 +323,22 @@ impl SecurityManager {
     /// Evaluate access request with comprehensive security checks
     pub async fn evaluate_access(&mut self, request: AccessRequest) -> Result<AccessDecision> {
         debug!("Evaluating access request for user: {}", request.user_id);
-        
+
         self.metrics.total_access_requests += 1;
-        
+
         // Step 1: Policy evaluation
         let policy_decision = {
             let policy_engine = self.policy_engine.read().await;
             policy_engine.evaluate_access(&request)?
         };
-        
+
         // Step 2: Threat detection
         if self.security_config.enable_threat_detection {
             let threat_indicators = self.threat_detector.analyze_request(&request).await?;
             if !threat_indicators.is_empty() {
                 warn!("Threats detected for request: {:?}", threat_indicators);
                 self.metrics.threats_detected += threat_indicators.len() as u64;
-                
+
                 // Override decision if high-severity threats detected
                 if threat_indicators.iter().any(|t| matches!(t.severity, ThreatSeverity::High | ThreatSeverity::Critical)) {
                     return Ok(AccessDecision {
@@ -352,27 +352,27 @@ impl SecurityManager {
                 }
             }
         }
-        
+
         // Step 3: Compliance check
         if self.security_config.enable_compliance_monitoring {
             let compliance_violations = self.compliance_monitor.check_request(&request).await?;
             if !compliance_violations.is_empty() {
                 self.metrics.compliance_violations += compliance_violations.len() as u64;
-                
+
                 // Log compliance violations
                 for violation in compliance_violations {
                     error!("Compliance violation: {}", violation.description);
                 }
             }
         }
-        
+
         // Step 4: Update metrics and audit
         if policy_decision.allowed {
             self.metrics.access_granted += 1;
         } else {
             self.metrics.access_denied += 1;
         }
-        
+
         if self.security_config.enable_audit_logging {
             let mut audit_logger = self.audit_logger.write().await;
             let security_context = crate::security::SecurityContext {
@@ -385,36 +385,36 @@ impl SecurityManager {
                 user_agent: Some(request.user_agent.clone()),
                 timestamp: chrono::Utc::now(),
             };
-            
+
             audit_logger.log_access_decision(
                 &security_context,
                 &request.action,
                 policy_decision.allowed,
             ).await?;
         }
-        
+
         Ok(policy_decision)
     }
 
     /// Encrypt data with security context
     pub async fn encrypt_data(&mut self, data: &[u8], classification: crate::security::policy_engine::DataClassificationLevel) -> Result<crate::security::encryption::EncryptedData> {
         debug!("Encrypting data with classification: {:?}", classification);
-        
+
         let mut encryption_manager = self.encryption_manager.write().await;
         let encrypted_data = encryption_manager.encrypt_data(data, classification)?;
-        
+
         self.metrics.encryption_operations += 1;
-        
+
         Ok(encrypted_data)
     }
 
     /// Decrypt data with security validation
     pub async fn decrypt_data(&self, encrypted_data: &crate::security::encryption::EncryptedData) -> Result<Vec<u8>> {
         debug!("Decrypting data");
-        
+
         let encryption_manager = self.encryption_manager.read().await;
         let decrypted_data = encryption_manager.decrypt_data(encrypted_data)?;
-        
+
         Ok(decrypted_data)
     }
 
@@ -426,7 +426,7 @@ impl SecurityManager {
     /// Generate security report
     pub async fn generate_security_report(&self) -> Result<SecurityReport> {
         info!("Generating security report");
-        
+
         let report = SecurityReport {
             report_id: uuid::Uuid::new_v4().to_string(),
             generated_at: chrono::Utc::now(),
@@ -437,14 +437,14 @@ impl SecurityManager {
             compliance_summary: self.compliance_monitor.get_compliance_summary().await?,
             recommendations: self.generate_security_recommendations().await?,
         };
-        
+
         Ok(report)
     }
 
     /// Generate security recommendations
     async fn generate_security_recommendations(&self) -> Result<Vec<SecurityRecommendation>> {
         let mut recommendations = Vec::new();
-        
+
         // Analyze metrics and generate recommendations
         if self.metrics.access_denied > self.metrics.access_granted / 10 {
             recommendations.push(SecurityRecommendation {
@@ -458,7 +458,7 @@ impl SecurityManager {
                 ],
             });
         }
-        
+
         if self.metrics.threats_detected > 0 {
             recommendations.push(SecurityRecommendation {
                 category: "Threat Detection".to_string(),
@@ -471,7 +471,7 @@ impl SecurityManager {
                 ],
             });
         }
-        
+
         Ok(recommendations)
     }
 }

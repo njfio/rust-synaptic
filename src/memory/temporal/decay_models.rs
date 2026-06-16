@@ -1,10 +1,10 @@
 //! Temporal Decay Models
-//! 
+//!
 //! Comprehensive implementation of various temporal decay models for memory systems,
 //! including Ebbinghaus forgetting curves, power law decay, logarithmic decay,
 //! and adaptive decay parameters based on psychological and neuroscience research.
 
-use crate::error::{Result, MemoryError};
+use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -28,9 +28,9 @@ pub enum DecayModelType {
     /// Hybrid model combining multiple decay functions
     Hybrid(Vec<DecayModelType>),
     /// Custom decay with user-defined parameters
-    Custom { 
+    Custom {
         name: String,
-        parameters: HashMap<String, f64> 
+        parameters: HashMap<String, f64>,
     },
 }
 
@@ -147,30 +147,45 @@ impl TemporalDecayModels {
     /// Create new temporal decay models manager
     pub fn new(config: DecayConfig) -> Result<Self> {
         let mut model_parameters = HashMap::new();
-        
+
         // Initialize default parameters for each model type
         model_parameters.insert("ebbinghaus".to_string(), DecayParameters::default());
-        model_parameters.insert("power_law".to_string(), DecayParameters {
-            shape_parameter: 0.5, // Typical power law exponent
-            ..DecayParameters::default()
-        });
-        model_parameters.insert("logarithmic".to_string(), DecayParameters {
-            scale_parameter: 24.0, // Scale to hours
-            ..DecayParameters::default()
-        });
-        model_parameters.insert("gaussian".to_string(), DecayParameters {
-            scale_parameter: 48.0, // Standard deviation in hours
-            ..DecayParameters::default()
-        });
-        model_parameters.insert("hyperbolic".to_string(), DecayParameters {
-            shape_parameter: 2.0, // Hyperbolic exponent
-            ..DecayParameters::default()
-        });
-        model_parameters.insert("weibull".to_string(), DecayParameters {
-            shape_parameter: 1.5, // Weibull shape parameter
-            scale_parameter: 72.0, // Weibull scale parameter
-            ..DecayParameters::default()
-        });
+        model_parameters.insert(
+            "power_law".to_string(),
+            DecayParameters {
+                shape_parameter: 0.5, // Typical power law exponent
+                ..DecayParameters::default()
+            },
+        );
+        model_parameters.insert(
+            "logarithmic".to_string(),
+            DecayParameters {
+                scale_parameter: 24.0, // Scale to hours
+                ..DecayParameters::default()
+            },
+        );
+        model_parameters.insert(
+            "gaussian".to_string(),
+            DecayParameters {
+                scale_parameter: 48.0, // Standard deviation in hours
+                ..DecayParameters::default()
+            },
+        );
+        model_parameters.insert(
+            "hyperbolic".to_string(),
+            DecayParameters {
+                shape_parameter: 2.0, // Hyperbolic exponent
+                ..DecayParameters::default()
+            },
+        );
+        model_parameters.insert(
+            "weibull".to_string(),
+            DecayParameters {
+                shape_parameter: 1.5,  // Weibull shape parameter
+                scale_parameter: 72.0, // Weibull scale parameter
+                ..DecayParameters::default()
+            },
+        );
 
         Ok(Self {
             config,
@@ -188,47 +203,57 @@ impl TemporalDecayModels {
         context: &'a DecayContext,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<DecayResult>> + 'a>> {
         Box::pin(async move {
-        let base_result = match model_type {
-            DecayModelType::Ebbinghaus => {
-                self.calculate_ebbinghaus_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::PowerLaw => {
-                self.calculate_power_law_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::Logarithmic => {
-                self.calculate_logarithmic_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::Gaussian => {
-                self.calculate_gaussian_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::Hyperbolic => {
-                self.calculate_hyperbolic_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::Weibull => {
-                self.calculate_weibull_decay(time_elapsed_hours, context).await?
-            },
-            DecayModelType::Hybrid(models) => {
-                self.calculate_hybrid_decay(models, time_elapsed_hours, context).await?
-            },
-            DecayModelType::Custom { name, parameters } => {
-                self.calculate_custom_decay(name, parameters, time_elapsed_hours, context).await?
-            },
-        };
+            let base_result = match model_type {
+                DecayModelType::Ebbinghaus => {
+                    self.calculate_ebbinghaus_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::PowerLaw => {
+                    self.calculate_power_law_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Logarithmic => {
+                    self.calculate_logarithmic_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Gaussian => {
+                    self.calculate_gaussian_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Hyperbolic => {
+                    self.calculate_hyperbolic_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Weibull => {
+                    self.calculate_weibull_decay(time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Hybrid(models) => {
+                    self.calculate_hybrid_decay(models, time_elapsed_hours, context)
+                        .await?
+                }
+                DecayModelType::Custom { name, parameters } => {
+                    self.calculate_custom_decay(name, parameters, time_elapsed_hours, context)
+                        .await?
+                }
+            };
 
-        // Apply adaptive adjustments if enabled
-        let final_result = if self.config.adaptive_enabled {
-            self.apply_adaptive_adjustments(base_result, context).await?
-        } else {
-            base_result
-        };
+            // Apply adaptive adjustments if enabled
+            let final_result = if self.config.adaptive_enabled {
+                self.apply_adaptive_adjustments(base_result, context)
+                    .await?
+            } else {
+                base_result
+            };
 
-        // Store context and result for learning
-        if self.context_history.len() >= 1000 {
-            self.context_history.remove(0); // Keep history bounded
-        }
-        self.context_history.push((context.clone(), final_result.clone()));
+            // Store context and result for learning
+            if self.context_history.len() >= 1000 {
+                self.context_history.remove(0); // Keep history bounded
+            }
+            self.context_history
+                .push((context.clone(), final_result.clone()));
 
-        Ok(final_result)
+            Ok(final_result)
         })
     }
 
@@ -239,7 +264,7 @@ impl TemporalDecayModels {
         model_type: Option<&DecayModelType>,
     ) -> Result<DecayResult> {
         let hours_since_access = (Utc::now() - memory.last_accessed()).num_hours().max(0) as f64;
-        
+
         let context = DecayContext {
             importance: memory.metadata.importance,
             access_frequency: self.calculate_access_frequency(memory),
@@ -250,8 +275,11 @@ impl TemporalDecayModels {
             engagement_level: self.estimate_engagement_level(memory),
         };
 
-        let model = model_type.cloned().unwrap_or_else(|| self.config.default_model.clone());
-        self.calculate_decay(&model, hours_since_access, &context).await
+        let model = model_type
+            .cloned()
+            .unwrap_or_else(|| self.config.default_model.clone());
+        self.calculate_decay(&model, hours_since_access, &context)
+            .await
     }
 
     /// Get optimal decay model for given context
@@ -288,8 +316,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let _params = self.model_parameters.get("ebbinghaus")
-            .ok_or_else(|| MemoryError::validation("Ebbinghaus model parameters not found".to_string()))?;
+        let _params = self.model_parameters.get("ebbinghaus").ok_or_else(|| {
+            MemoryError::validation("Ebbinghaus model parameters not found".to_string())
+        })?;
 
         // Adaptive half-life based on context
         let base_half_life = self.config.base_half_life_hours;
@@ -308,7 +337,10 @@ impl TemporalDecayModels {
             .min(1.0 - self.config.min_decay_rate);
 
         let mut adaptive_adjustments = HashMap::new();
-        adaptive_adjustments.insert("half_life_adjustment".to_string(), adaptive_half_life / base_half_life);
+        adaptive_adjustments.insert(
+            "half_life_adjustment".to_string(),
+            adaptive_half_life / base_half_life,
+        );
         adaptive_adjustments.insert("importance_factor".to_string(), context.importance);
 
         Ok(DecayResult {
@@ -327,8 +359,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("power_law")
-            .ok_or_else(|| MemoryError::validation("Power law model parameters not found".to_string()))?;
+        let params = self.model_parameters.get("power_law").ok_or_else(|| {
+            MemoryError::validation("Power law model parameters not found".to_string())
+        })?;
 
         // Power law formula: R(t) = (1 + t/τ)^(-β)
         let time_scale = self.config.base_half_life_hours;
@@ -360,8 +393,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("logarithmic")
-            .ok_or_else(|| MemoryError::validation("Logarithmic model parameters not found".to_string()))?;
+        let params = self.model_parameters.get("logarithmic").ok_or_else(|| {
+            MemoryError::validation("Logarithmic model parameters not found".to_string())
+        })?;
 
         // Logarithmic formula: R(t) = 1 - log(1 + t/τ) / log(1 + T_max/τ)
         let time_scale = params.scale_parameter * (1.0 + context.complexity * 0.5);
@@ -378,7 +412,10 @@ impl TemporalDecayModels {
             .min(1.0 - self.config.min_decay_rate);
 
         let mut adaptive_adjustments = HashMap::new();
-        adaptive_adjustments.insert("time_scale_adjustment".to_string(), time_scale / params.scale_parameter);
+        adaptive_adjustments.insert(
+            "time_scale_adjustment".to_string(),
+            time_scale / params.scale_parameter,
+        );
         adaptive_adjustments.insert("complexity_factor".to_string(), context.complexity);
 
         Ok(DecayResult {
@@ -397,8 +434,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("gaussian")
-            .ok_or_else(|| MemoryError::validation("Gaussian model parameters not found".to_string()))?;
+        let params = self.model_parameters.get("gaussian").ok_or_else(|| {
+            MemoryError::validation("Gaussian model parameters not found".to_string())
+        })?;
 
         // Gaussian formula: R(t) = e^(-(t/σ)²/2)
         let sigma = params.scale_parameter * (1.0 + context.engagement_level * 0.8);
@@ -410,7 +448,10 @@ impl TemporalDecayModels {
             .min(1.0 - self.config.min_decay_rate);
 
         let mut adaptive_adjustments = HashMap::new();
-        adaptive_adjustments.insert("sigma_adjustment".to_string(), sigma / params.scale_parameter);
+        adaptive_adjustments.insert(
+            "sigma_adjustment".to_string(),
+            sigma / params.scale_parameter,
+        );
         adaptive_adjustments.insert("engagement_factor".to_string(), context.engagement_level);
 
         Ok(DecayResult {
@@ -429,8 +470,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("hyperbolic")
-            .ok_or_else(|| MemoryError::validation("Hyperbolic model parameters not found".to_string()))?;
+        let params = self.model_parameters.get("hyperbolic").ok_or_else(|| {
+            MemoryError::validation("Hyperbolic model parameters not found".to_string())
+        })?;
 
         // Hyperbolic formula: R(t) = 1 / (1 + (t/τ)^α)
         let time_scale = self.config.base_half_life_hours * (1.0 + context.contextual_relevance);
@@ -443,7 +485,10 @@ impl TemporalDecayModels {
             .min(1.0 - self.config.min_decay_rate);
 
         let mut adaptive_adjustments = HashMap::new();
-        adaptive_adjustments.insert("time_scale_adjustment".to_string(), time_scale / self.config.base_half_life_hours);
+        adaptive_adjustments.insert(
+            "time_scale_adjustment".to_string(),
+            time_scale / self.config.base_half_life_hours,
+        );
         adaptive_adjustments.insert("relevance_factor".to_string(), context.contextual_relevance);
 
         Ok(DecayResult {
@@ -462,8 +507,9 @@ impl TemporalDecayModels {
         time_elapsed_hours: f64,
         context: &DecayContext,
     ) -> Result<DecayResult> {
-        let params = self.model_parameters.get("weibull")
-            .ok_or_else(|| MemoryError::validation("Weibull model parameters not found".to_string()))?;
+        let params = self.model_parameters.get("weibull").ok_or_else(|| {
+            MemoryError::validation("Weibull model parameters not found".to_string())
+        })?;
 
         // Weibull formula: R(t) = e^(-(t/λ)^k)
         let lambda = params.scale_parameter * (1.0 + context.importance * 2.0);
@@ -476,7 +522,10 @@ impl TemporalDecayModels {
             .min(1.0 - self.config.min_decay_rate);
 
         let mut adaptive_adjustments = HashMap::new();
-        adaptive_adjustments.insert("lambda_adjustment".to_string(), lambda / params.scale_parameter);
+        adaptive_adjustments.insert(
+            "lambda_adjustment".to_string(),
+            lambda / params.scale_parameter,
+        );
         adaptive_adjustments.insert("k_adjustment".to_string(), k / params.shape_parameter);
 
         Ok(DecayResult {
@@ -497,7 +546,9 @@ impl TemporalDecayModels {
         context: &DecayContext,
     ) -> Result<DecayResult> {
         if models.is_empty() {
-            return self.calculate_ebbinghaus_decay(time_elapsed_hours, context).await;
+            return self
+                .calculate_ebbinghaus_decay(time_elapsed_hours, context)
+                .await;
         }
 
         let mut results = Vec::new();
@@ -511,26 +562,33 @@ impl TemporalDecayModels {
 
             let result = match model {
                 DecayModelType::Ebbinghaus => {
-                    self.calculate_ebbinghaus_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_ebbinghaus_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::PowerLaw => {
-                    self.calculate_power_law_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_power_law_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Logarithmic => {
-                    self.calculate_logarithmic_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_logarithmic_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Gaussian => {
-                    self.calculate_gaussian_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_gaussian_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Hyperbolic => {
-                    self.calculate_hyperbolic_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_hyperbolic_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Weibull => {
-                    self.calculate_weibull_decay(time_elapsed_hours, context).await?
-                },
+                    self.calculate_weibull_decay(time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Custom { name, parameters } => {
-                    self.calculate_custom_decay(name, parameters, time_elapsed_hours, context).await?
-                },
+                    self.calculate_custom_decay(name, parameters, time_elapsed_hours, context)
+                        .await?
+                }
                 DecayModelType::Hybrid(_) => continue, // Already handled above
             };
             total_confidence += result.confidence;
@@ -538,7 +596,9 @@ impl TemporalDecayModels {
         }
 
         if results.is_empty() {
-            return self.calculate_ebbinghaus_decay(time_elapsed_hours, context).await;
+            return self
+                .calculate_ebbinghaus_decay(time_elapsed_hours, context)
+                .await;
         }
 
         // Weighted combination based on confidence
@@ -600,7 +660,7 @@ impl TemporalDecayModels {
             forgetting_probability: 1.0 - bounded_retention,
             model_used: DecayModelType::Custom {
                 name: name.to_string(),
-                parameters: parameters.clone()
+                parameters: parameters.clone(),
             },
             effective_half_life: scale * ((2.0_f64).ln() / decay_rate).powf(1.0 / shape),
             confidence: 0.6, // Lower confidence for custom models
@@ -623,21 +683,27 @@ impl TemporalDecayModels {
             // High engagement reduces forgetting
             if context.engagement_level > 0.7 {
                 result.retention_probability *= 1.0 + (context.engagement_level - 0.7) * 0.5;
-                result.adaptive_adjustments.insert("engagement_boost".to_string(), context.engagement_level);
+                result
+                    .adaptive_adjustments
+                    .insert("engagement_boost".to_string(), context.engagement_level);
             }
 
             // High access frequency reduces forgetting
             if context.access_frequency > 1.0 {
                 let frequency_factor = 1.0 + (context.access_frequency - 1.0).ln() * 0.2;
                 result.retention_probability *= frequency_factor;
-                result.adaptive_adjustments.insert("frequency_boost".to_string(), frequency_factor);
+                result
+                    .adaptive_adjustments
+                    .insert("frequency_boost".to_string(), frequency_factor);
             }
 
             // Recent access provides protection
             if context.hours_since_access < 6.0 {
                 let recency_factor = 1.0 + (6.0 - context.hours_since_access) / 6.0 * 0.3;
                 result.retention_probability *= recency_factor;
-                result.adaptive_adjustments.insert("recency_protection".to_string(), recency_factor);
+                result
+                    .adaptive_adjustments
+                    .insert("recency_protection".to_string(), recency_factor);
             }
         }
 
@@ -645,18 +711,23 @@ impl TemporalDecayModels {
         if self.config.importance_modulation && context.importance > 0.5 {
             let importance_factor = 1.0 + (context.importance - 0.5) * 1.0;
             result.retention_probability *= importance_factor;
-            result.adaptive_adjustments.insert("importance_protection".to_string(), importance_factor);
+            result
+                .adaptive_adjustments
+                .insert("importance_protection".to_string(), importance_factor);
         }
 
         // Emotional weight protection
         if context.emotional_weight > 0.6 {
             let emotional_factor = 1.0 + (context.emotional_weight - 0.6) * 0.8;
             result.retention_probability *= emotional_factor;
-            result.adaptive_adjustments.insert("emotional_protection".to_string(), emotional_factor);
+            result
+                .adaptive_adjustments
+                .insert("emotional_protection".to_string(), emotional_factor);
         }
 
         // Apply bounds after adjustments
-        result.retention_probability = result.retention_probability
+        result.retention_probability = result
+            .retention_probability
             .max(self.config.min_decay_rate)
             .min(1.0 - self.config.min_decay_rate);
 
@@ -675,7 +746,8 @@ impl TemporalDecayModels {
     fn estimate_content_complexity(&self, memory: &MemoryEntry) -> f64 {
         let content = &memory.value;
         let word_count = content.split_whitespace().count();
-        let unique_words = content.split_whitespace()
+        let unique_words = content
+            .split_whitespace()
             .collect::<std::collections::HashSet<_>>()
             .len();
 
@@ -698,12 +770,30 @@ impl TemporalDecayModels {
 
         // Simple emotional keyword detection
         let emotional_keywords = [
-            "love", "hate", "fear", "joy", "anger", "sad", "happy", "excited",
-            "worried", "anxious", "proud", "disappointed", "grateful", "frustrated",
-            "amazing", "terrible", "wonderful", "awful", "brilliant", "disaster"
+            "love",
+            "hate",
+            "fear",
+            "joy",
+            "anger",
+            "sad",
+            "happy",
+            "excited",
+            "worried",
+            "anxious",
+            "proud",
+            "disappointed",
+            "grateful",
+            "frustrated",
+            "amazing",
+            "terrible",
+            "wonderful",
+            "awful",
+            "brilliant",
+            "disaster",
         ];
 
-        let emotional_count = emotional_keywords.iter()
+        let emotional_count = emotional_keywords
+            .iter()
             .filter(|&&keyword| content.contains(keyword))
             .count();
 
@@ -752,7 +842,10 @@ impl TemporalDecayModels {
     ) -> Result<()> {
         let model_key = self.get_model_key(model_type);
 
-        let performances = self.model_performance.entry(model_key).or_insert_with(Vec::new);
+        let performances = self
+            .model_performance
+            .entry(model_key)
+            .or_insert_with(Vec::new);
         performances.push(performance_score);
 
         // Keep only recent performance data
@@ -774,10 +867,10 @@ impl TemporalDecayModels {
             DecayModelType::Weibull => "weibull".to_string(),
             DecayModelType::Hybrid(models) => {
                 format!("hybrid_{}", models.len())
-            },
+            }
             DecayModelType::Custom { name, .. } => {
                 format!("custom_{}", name)
-            },
+            }
         }
     }
 
@@ -788,9 +881,8 @@ impl TemporalDecayModels {
         if let Some(performances) = self.model_performance.get(&model_key) {
             if !performances.is_empty() {
                 let mean = performances.iter().sum::<f64>() / performances.len() as f64;
-                let variance = performances.iter()
-                    .map(|p| (p - mean).powi(2))
-                    .sum::<f64>() / performances.len() as f64;
+                let variance = performances.iter().map(|p| (p - mean).powi(2)).sum::<f64>()
+                    / performances.len() as f64;
                 let std_dev = variance.sqrt();
 
                 Some((mean, std_dev))
@@ -834,10 +926,13 @@ mod tests {
     #[tokio::test]
     async fn test_ebbinghaus_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_ebbinghaus_decay(24.0, &context).await.unwrap();
+        let result = models
+            .calculate_ebbinghaus_decay(24.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -852,10 +947,13 @@ mod tests {
     #[tokio::test]
     async fn test_power_law_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_power_law_decay(48.0, &context).await.unwrap();
+        let result = models
+            .calculate_power_law_decay(48.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -866,10 +964,13 @@ mod tests {
     #[tokio::test]
     async fn test_logarithmic_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_logarithmic_decay(72.0, &context).await.unwrap();
+        let result = models
+            .calculate_logarithmic_decay(72.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -879,10 +980,13 @@ mod tests {
     #[tokio::test]
     async fn test_gaussian_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_gaussian_decay(36.0, &context).await.unwrap();
+        let result = models
+            .calculate_gaussian_decay(36.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -892,10 +996,13 @@ mod tests {
     #[tokio::test]
     async fn test_hyperbolic_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_hyperbolic_decay(60.0, &context).await.unwrap();
+        let result = models
+            .calculate_hyperbolic_decay(60.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -905,10 +1012,13 @@ mod tests {
     #[tokio::test]
     async fn test_weibull_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_weibull_decay(84.0, &context).await.unwrap();
+        let result = models
+            .calculate_weibull_decay(84.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -918,11 +1028,14 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         let hybrid_models = vec![DecayModelType::Ebbinghaus, DecayModelType::PowerLaw];
-        let result = models.calculate_hybrid_decay(&hybrid_models, 48.0, &context).await.unwrap();
+        let result = models
+            .calculate_hybrid_decay(&hybrid_models, 48.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -937,7 +1050,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         let mut parameters = HashMap::new();
@@ -945,7 +1058,10 @@ mod tests {
         parameters.insert("shape".to_string(), 1.2);
         parameters.insert("scale".to_string(), 48.0);
 
-        let result = models.calculate_custom_decay("test_custom", &parameters, 24.0, &context).await.unwrap();
+        let result = models
+            .calculate_custom_decay("test_custom", &parameters, 24.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -960,10 +1076,13 @@ mod tests {
     #[tokio::test]
     async fn test_memory_decay_calculation() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
         let memory = create_test_memory();
 
-        let result = models.calculate_memory_decay(&memory, None).await.unwrap();
+        let result = models
+            .calculate_memory_decay(&memory, None)
+            .await
+            .expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -974,7 +1093,7 @@ mod tests {
     #[tokio::test]
     async fn test_optimal_model_selection() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         // High importance, frequent access should suggest PowerLaw
         let high_importance_context = DecayContext {
@@ -987,7 +1106,10 @@ mod tests {
             engagement_level: 0.7,
         };
 
-        let optimal_model = models.get_optimal_model(&high_importance_context).await.unwrap();
+        let optimal_model = models
+            .get_optimal_model(&high_importance_context)
+            .await
+            .expect("await should be present");
         assert_eq!(optimal_model, DecayModelType::PowerLaw);
 
         // Recent access should suggest Ebbinghaus
@@ -1001,7 +1123,10 @@ mod tests {
             engagement_level: 0.5,
         };
 
-        let optimal_model = models.get_optimal_model(&recent_context).await.unwrap();
+        let optimal_model = models
+            .get_optimal_model(&recent_context)
+            .await
+            .expect("await should be present");
         assert_eq!(optimal_model, DecayModelType::Ebbinghaus);
     }
 
@@ -1012,7 +1137,7 @@ mod tests {
         config.context_aware = true;
         config.importance_modulation = true;
 
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
 
         let high_engagement_context = DecayContext {
             importance: 0.8,
@@ -1033,7 +1158,10 @@ mod tests {
             adaptive_adjustments: HashMap::new(),
         };
 
-        let adjusted_result = models.apply_adaptive_adjustments(base_result, &high_engagement_context).await.unwrap();
+        let adjusted_result = models
+            .apply_adaptive_adjustments(base_result, &high_engagement_context)
+            .await
+            .expect("await should be present");
 
         // Should have higher retention due to adjustments
         assert!(adjusted_result.retention_probability > 0.5);
@@ -1043,7 +1171,7 @@ mod tests {
     #[tokio::test]
     async fn test_content_complexity_estimation() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         let simple_memory = MemoryEntry::new(
             "simple".to_string(),
@@ -1068,7 +1196,7 @@ mod tests {
     #[tokio::test]
     async fn test_emotional_weight_estimation() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         let neutral_memory = MemoryEntry::new(
             "neutral".to_string(),
@@ -1093,16 +1221,27 @@ mod tests {
     #[tokio::test]
     async fn test_model_performance_tracking() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
 
         let model_type = DecayModelType::Ebbinghaus;
 
         // Add some performance scores
-        models.update_model_performance(&model_type, 0.8).await.unwrap();
-        models.update_model_performance(&model_type, 0.7).await.unwrap();
-        models.update_model_performance(&model_type, 0.9).await.unwrap();
+        models
+            .update_model_performance(&model_type, 0.8)
+            .await
+            .expect("await should be present");
+        models
+            .update_model_performance(&model_type, 0.7)
+            .await
+            .expect("await should be present");
+        models
+            .update_model_performance(&model_type, 0.9)
+            .await
+            .expect("await should be present");
 
-        let (mean, std_dev) = models.get_model_performance(&model_type).unwrap();
+        let (mean, std_dev) = models
+            .get_model_performance(&model_type)
+            .expect("value should be available");
 
         assert!((mean - 0.8).abs() < 0.1); // Should be around 0.8
         assert!(std_dev >= 0.0);
@@ -1114,28 +1253,43 @@ mod tests {
         config.min_decay_rate = 0.01;
         config.max_decay_rate = 0.99;
 
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         // Test very long time (should hit minimum retention)
-        let result = models.calculate_ebbinghaus_decay(10000.0, &context).await.unwrap();
+        let result = models
+            .calculate_ebbinghaus_decay(10000.0, &context)
+            .await
+            .expect("await should be present");
         assert!(result.retention_probability >= 0.01);
 
         // Test zero time (should be close to maximum retention)
-        let result = models.calculate_ebbinghaus_decay(0.0, &context).await.unwrap();
+        let result = models
+            .calculate_ebbinghaus_decay(0.0, &context)
+            .await
+            .expect("await should be present");
         assert!(result.retention_probability <= 0.99);
     }
 
     #[tokio::test]
     async fn test_time_progression_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         // Test that retention decreases over time
-        let result_1h = models.calculate_ebbinghaus_decay(1.0, &context).await.unwrap();
-        let result_24h = models.calculate_ebbinghaus_decay(24.0, &context).await.unwrap();
-        let result_168h = models.calculate_ebbinghaus_decay(168.0, &context).await.unwrap();
+        let result_1h = models
+            .calculate_ebbinghaus_decay(1.0, &context)
+            .await
+            .expect("await should be present");
+        let result_24h = models
+            .calculate_ebbinghaus_decay(24.0, &context)
+            .await
+            .expect("await should be present");
+        let result_168h = models
+            .calculate_ebbinghaus_decay(168.0, &context)
+            .await
+            .expect("await should be present");
 
         assert!(result_1h.retention_probability > result_24h.retention_probability);
         assert!(result_24h.retention_probability > result_168h.retention_probability);

@@ -4,7 +4,8 @@
 //! Term Frequency-Inverse Document Frequency (TF-IDF) vectors.
 
 use super::super::provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities, compute_content_hash, normalize_vector,
+    compute_content_hash, normalize_vector, EmbedOptions, Embedding, EmbeddingProvider,
+    ProviderCapabilities,
 };
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
@@ -142,12 +143,12 @@ impl TfIdfProvider {
     fn embed_text_sync(&self, text: &str) -> Result<Vec<f32>> {
         // Update vocabulary (this modifies state)
         {
-            let mut state = self.state.write().unwrap();
+            let mut state = self.state.write().expect("write() should succeed");
             state.update_vocabulary(text, self.config.min_word_length);
         }
 
         // Generate embedding (read-only)
-        let state = self.state.read().unwrap();
+        let state = self.state.read().expect("read() should succeed");
         let tokens = TfIdfState::tokenize(text, self.config.min_word_length);
         let tf_scores = TfIdfState::calculate_tf(&tokens);
 
@@ -262,7 +263,10 @@ mod tests {
         let provider = TfIdfProvider::default();
         let text = "This is a test document for TF-IDF embeddings";
 
-        let embedding = provider.embed(text, None).await.unwrap();
+        let embedding = provider
+            .embed(text, None)
+            .await
+            .expect("await should be present");
 
         assert_eq!(embedding.dimension(), 384);
         assert_eq!(embedding.model, "tfidf-384");
@@ -273,9 +277,18 @@ mod tests {
     async fn test_tfidf_similarity() {
         let provider = TfIdfProvider::default();
 
-        let emb1 = provider.embed("machine learning artificial intelligence", None).await.unwrap();
-        let emb2 = provider.embed("machine learning deep neural networks", None).await.unwrap();
-        let emb3 = provider.embed("cooking recipes Italian pasta", None).await.unwrap();
+        let emb1 = provider
+            .embed("machine learning artificial intelligence", None)
+            .await
+            .expect("await should be present");
+        let emb2 = provider
+            .embed("machine learning deep neural networks", None)
+            .await
+            .expect("await should be present");
+        let emb3 = provider
+            .embed("cooking recipes Italian pasta", None)
+            .await
+            .expect("await should be present");
 
         // Similar documents should have higher similarity
         let sim_related = emb1.cosine_similarity(&emb2);
@@ -294,7 +307,10 @@ mod tests {
             "third document".to_string(),
         ];
 
-        let embeddings = provider.embed_batch(&texts, None).await.unwrap();
+        let embeddings = provider
+            .embed_batch(&texts, None)
+            .await
+            .expect("await should be present");
 
         assert_eq!(embeddings.len(), 3);
         for embedding in embeddings {
@@ -315,7 +331,10 @@ mod tests {
             metadata,
         };
 
-        let embedding = provider.embed("test text", Some(&options)).await.unwrap();
+        let embedding = provider
+            .embed("test text", Some(&options))
+            .await
+            .expect("await should be present");
 
         assert_eq!(embedding.metadata.get("source"), Some(&"test".to_string()));
 
@@ -336,11 +355,7 @@ mod tests {
 
     #[test]
     fn test_tf_calculation() {
-        let tokens = vec![
-            "test".to_string(),
-            "test".to_string(),
-            "word".to_string(),
-        ];
+        let tokens = vec!["test".to_string(), "test".to_string(), "word".to_string()];
 
         let tf = TfIdfState::calculate_tf(&tokens);
 

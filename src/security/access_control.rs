@@ -1,14 +1,13 @@
 //! Advanced Access Control Module
-//! 
+//!
 //! Implements role-based access control (RBAC), attribute-based access control (ABAC),
 //! multi-factor authentication, and advanced authorization mechanisms.
 
 use crate::error::{MemoryError, Result};
-use crate::security::{SecurityConfig, SecurityContext, Permission, AbacRule, AccessControlPolicy};
+use crate::security::{AbacRule, AccessControlPolicy, Permission, SecurityConfig, SecurityContext};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
-
 
 /// Access control manager
 #[derive(Debug)]
@@ -33,25 +32,30 @@ impl AccessControlManager {
     }
 
     /// Authenticate a user and create a security context
-    pub async fn authenticate(&mut self, 
-        user_id: String, 
-        credentials: AuthenticationCredentials
+    pub async fn authenticate(
+        &mut self,
+        user_id: String,
+        credentials: AuthenticationCredentials,
     ) -> Result<SecurityContext> {
         let start_time = std::time::Instant::now();
 
         // Check for too many failed attempts
         if self.is_user_locked(&user_id) {
             self.metrics.total_blocked_attempts += 1;
-            return Err(MemoryError::access_denied("User account is temporarily locked".to_string()));
+            return Err(MemoryError::access_denied(
+                "User account is temporarily locked".to_string(),
+            ));
         }
 
         // Verify credentials
         let auth_result = self.verify_credentials(&user_id, &credentials).await?;
-        
+
         if !auth_result.success {
             self.record_failed_attempt(&user_id);
             self.metrics.total_failed_authentications += 1;
-            return Err(MemoryError::access_denied("Invalid credentials".to_string()));
+            return Err(MemoryError::access_denied(
+                "Invalid credentials".to_string(),
+            ));
         }
 
         // Create security context
@@ -78,8 +82,9 @@ impl AccessControlManager {
             mfa_verified: context.mfa_verified,
         };
 
-        self.active_sessions.insert(context.session_id.clone(), session_info);
-        
+        self.active_sessions
+            .insert(context.session_id.clone(), session_info);
+
         // Clear failed attempts on successful authentication
         self.failed_attempts.remove(&user_id);
 
@@ -91,9 +96,10 @@ impl AccessControlManager {
     }
 
     /// Check if a user has a specific permission
-    pub async fn check_permission(&mut self, 
-        context: &SecurityContext, 
-        permission: Permission
+    pub async fn check_permission(
+        &mut self,
+        context: &SecurityContext,
+        permission: Permission,
     ) -> Result<()> {
         let start_time = std::time::Instant::now();
 
@@ -102,7 +108,7 @@ impl AccessControlManager {
 
         // Check RBAC permissions
         let has_rbac_permission = self.check_rbac_permission(context, &permission).await?;
-        
+
         // Check ABAC rules
         let has_abac_permission = self.check_abac_permission(context, &permission).await?;
 
@@ -124,7 +130,7 @@ impl AccessControlManager {
         } else {
             self.metrics.total_denied_permissions += 1;
             Err(MemoryError::access_denied(format!(
-                "Permission denied: {:?} for user {}", 
+                "Permission denied: {:?} for user {}",
                 permission, context.user_id
             )))
         }
@@ -132,7 +138,9 @@ impl AccessControlManager {
 
     /// Validate and refresh a session
     pub async fn validate_session(&mut self, context: &SecurityContext) -> Result<()> {
-        let session = self.active_sessions.get(&context.session_id)
+        let session = self
+            .active_sessions
+            .get(&context.session_id)
             .ok_or_else(|| MemoryError::access_denied("Invalid session".to_string()))?;
 
         // Check if session is expired
@@ -142,7 +150,8 @@ impl AccessControlManager {
         }
 
         // Check session timeout
-        let timeout_duration = chrono::Duration::minutes(self.policy.session_timeout_minutes as i64);
+        let timeout_duration =
+            chrono::Duration::minutes(self.policy.session_timeout_minutes as i64);
         if Utc::now() > session.last_activity + timeout_duration {
             self.active_sessions.remove(&context.session_id);
             return Err(MemoryError::access_denied("Session timed out".to_string()));
@@ -150,7 +159,9 @@ impl AccessControlManager {
 
         // Check MFA requirement
         if self.policy.require_mfa && !session.mfa_verified {
-            return Err(MemoryError::access_denied("MFA verification required".to_string()));
+            return Err(MemoryError::access_denied(
+                "MFA verification required".to_string(),
+            ));
         }
 
         Ok(())
@@ -164,7 +175,11 @@ impl AccessControlManager {
     }
 
     /// Add a new role with permissions
-    pub async fn add_role(&mut self, role_name: String, permissions: Vec<Permission>) -> Result<()> {
+    pub async fn add_role(
+        &mut self,
+        role_name: String,
+        permissions: Vec<Permission>,
+    ) -> Result<()> {
         self.policy.rbac_rules.insert(role_name, permissions);
         Ok(())
     }
@@ -173,7 +188,9 @@ impl AccessControlManager {
     pub async fn add_abac_rule(&mut self, rule: AbacRule) -> Result<()> {
         self.policy.abac_rules.push(rule);
         // Sort by priority (higher priority first)
-        self.policy.abac_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.policy
+            .abac_rules
+            .sort_by(|a, b| b.priority.cmp(&a.priority));
         Ok(())
     }
 
@@ -189,32 +206,43 @@ impl AccessControlManager {
 
     // Private helper methods
 
-    async fn verify_credentials(&self, user_id: &str, credentials: &AuthenticationCredentials) -> Result<AuthenticationResult> {
+    async fn verify_credentials(
+        &self,
+        user_id: &str,
+        credentials: &AuthenticationCredentials,
+    ) -> Result<AuthenticationResult> {
         // In production, this would verify against a secure user database
         // For demo purposes, we'll use simple logic
-        
+
         let is_valid = match credentials.auth_type {
             AuthenticationType::Password => {
                 // Simulate password verification
-                credentials.password.as_ref().map_or(false, |p| p.len() >= 8)
-            },
+                credentials
+                    .password
+                    .as_ref()
+                    .map_or(false, |p| p.len() >= 8)
+            }
             AuthenticationType::ApiKey => {
                 // Simulate API key verification
-                credentials.api_key.as_ref().map_or(false, |k| k.starts_with("sk-"))
-            },
+                credentials
+                    .api_key
+                    .as_ref()
+                    .map_or(false, |k| k.starts_with("sk-"))
+            }
             AuthenticationType::Certificate => {
                 // Simulate certificate verification
                 credentials.certificate.is_some()
-            },
+            }
         };
 
         if is_valid {
             // Assign roles based on user (simplified)
-            let roles = if user_id == "admin" || user_id == "workflow_user" || user_id == "metrics_user" {
-                vec!["admin".to_string(), "user".to_string()]
-            } else {
-                vec!["user".to_string()]
-            };
+            let roles =
+                if user_id == "admin" || user_id == "workflow_user" || user_id == "metrics_user" {
+                    vec!["admin".to_string(), "user".to_string()]
+                } else {
+                    vec!["user".to_string()]
+                };
 
             // Set user attributes
             let mut attributes = HashMap::new();
@@ -241,7 +269,11 @@ impl AccessControlManager {
         Ok(token.len() == 6 && token.chars().all(|c| c.is_ascii_digit()))
     }
 
-    async fn check_rbac_permission(&self, context: &SecurityContext, permission: &Permission) -> Result<bool> {
+    async fn check_rbac_permission(
+        &self,
+        context: &SecurityContext,
+        permission: &Permission,
+    ) -> Result<bool> {
         for role in &context.roles {
             if let Some(role_permissions) = self.policy.rbac_rules.get(role) {
                 if role_permissions.contains(permission) {
@@ -252,7 +284,11 @@ impl AccessControlManager {
         Ok(false)
     }
 
-    async fn check_abac_permission(&self, context: &SecurityContext, permission: &Permission) -> Result<bool> {
+    async fn check_abac_permission(
+        &self,
+        context: &SecurityContext,
+        permission: &Permission,
+    ) -> Result<bool> {
         for rule in &self.policy.abac_rules {
             if !rule.enabled {
                 continue;
@@ -260,7 +296,10 @@ impl AccessControlManager {
 
             if rule.permissions.contains(permission) {
                 // Evaluate rule condition (simplified JSON-based evaluation)
-                if self.evaluate_abac_condition(&rule.condition, context).await? {
+                if self
+                    .evaluate_abac_condition(&rule.condition, context)
+                    .await?
+                {
                     return Ok(true);
                 }
             }
@@ -268,17 +307,24 @@ impl AccessControlManager {
         Ok(false)
     }
 
-    async fn evaluate_abac_condition(&self, condition: &str, context: &SecurityContext) -> Result<bool> {
+    async fn evaluate_abac_condition(
+        &self,
+        condition: &str,
+        context: &SecurityContext,
+    ) -> Result<bool> {
         // Simplified ABAC condition evaluation
         // In production, use a proper policy evaluation engine
-        
+
         if condition.contains("department") && condition.contains("engineering") {
             return Ok(context.attributes.get("department") == Some(&"engineering".to_string()));
         }
-        
+
         if condition.contains("clearance_level") && condition.contains("confidential") {
             let default_clearance = "public".to_string();
-            let user_clearance = context.attributes.get("clearance_level").unwrap_or(&default_clearance);
+            let user_clearance = context
+                .attributes
+                .get("clearance_level")
+                .unwrap_or(&default_clearance);
             return Ok(user_clearance == "confidential" || user_clearance == "secret");
         }
 
@@ -288,15 +334,16 @@ impl AccessControlManager {
 
     fn is_user_locked(&self, user_id: &str) -> bool {
         if let Some(tracker) = self.failed_attempts.get(user_id) {
-            tracker.count >= self.policy.max_failed_attempts && 
-            Utc::now() < tracker.locked_until
+            tracker.count >= self.policy.max_failed_attempts && Utc::now() < tracker.locked_until
         } else {
             false
         }
     }
 
     fn record_failed_attempt(&mut self, user_id: &str) {
-        let tracker = self.failed_attempts.entry(user_id.to_string())
+        let tracker = self
+            .failed_attempts
+            .entry(user_id.to_string())
             .or_insert_with(|| FailedAttemptTracker {
                 count: 0,
                 first_attempt: Utc::now(),
@@ -304,7 +351,7 @@ impl AccessControlManager {
             });
 
         tracker.count += 1;
-        
+
         if tracker.count >= self.policy.max_failed_attempts {
             // Lock for 15 minutes
             tracker.locked_until = Utc::now() + chrono::Duration::minutes(15);
@@ -381,16 +428,21 @@ pub struct AccessMetrics {
 
 impl AccessMetrics {
     pub fn calculate_rates(&mut self) {
-        let total_auth_attempts = self.total_successful_authentications + self.total_failed_authentications;
+        let total_auth_attempts =
+            self.total_successful_authentications + self.total_failed_authentications;
         if total_auth_attempts > 0 {
-            self.authentication_success_rate = (self.total_successful_authentications as f64 / total_auth_attempts as f64) * 100.0;
+            self.authentication_success_rate =
+                (self.total_successful_authentications as f64 / total_auth_attempts as f64) * 100.0;
             self.average_auth_time_ms = self.total_auth_time_ms as f64 / total_auth_attempts as f64;
         }
 
-        let total_permission_checks = self.total_granted_permissions + self.total_denied_permissions;
+        let total_permission_checks =
+            self.total_granted_permissions + self.total_denied_permissions;
         if total_permission_checks > 0 {
-            self.permission_grant_rate = (self.total_granted_permissions as f64 / total_permission_checks as f64) * 100.0;
-            self.average_access_time_ms = self.total_access_time_ms as f64 / total_permission_checks as f64;
+            self.permission_grant_rate =
+                (self.total_granted_permissions as f64 / total_permission_checks as f64) * 100.0;
+            self.average_access_time_ms =
+                self.total_access_time_ms as f64 / total_permission_checks as f64;
         }
     }
 }

@@ -1,44 +1,44 @@
 //! Comprehensive tests for external integrations
-//! 
+//!
 //! Tests PostgreSQL database, BERT ML models, LLM integration,
 //! Redis caching, and visualization engine functionality.
 
 #[cfg(feature = "external-integrations")]
 mod external_integration_tests {
-    use synaptic::{
-        AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
-        integrations::{IntegrationConfig, IntegrationManager},
-        analytics::AccessType,
-        memory::management::analytics::AnalyticsEvent,
-    };
-    use std::error::Error;
     use std::collections::HashMap;
+    use std::error::Error;
+    use synaptic::{
+        analytics::AccessType,
+        integrations::{IntegrationConfig, IntegrationManager},
+        memory::management::analytics::AnalyticsEvent,
+        AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
+    };
 
     #[cfg(feature = "sql-storage")]
-    use synaptic::integrations::database::{DatabaseConfig, DatabaseClient};
+    use synaptic::integrations::database::{DatabaseClient, DatabaseConfig};
 
     #[cfg(feature = "ml-models")]
     use synaptic::integrations::ml_models::{MLConfig, MLModelManager};
 
     #[cfg(feature = "llm-integration")]
-    use synaptic::integrations::llm::{LLMConfig, LLMClient, LLMProvider};
+    use synaptic::integrations::llm::{LLMClient, LLMConfig, LLMProvider};
 
     #[cfg(feature = "visualization")]
     use synaptic::integrations::visualization::{
-        VisualizationConfig, RealVisualizationEngine, ImageFormat, ColorScheme
+        ColorScheme, ImageFormat, RealVisualizationEngine, VisualizationConfig,
     };
 
-    use synaptic::integrations::redis_cache::{RedisConfig, RedisClient};
+    use synaptic::integrations::redis_cache::{RedisClient, RedisConfig};
 
     #[tokio::test]
     async fn test_integration_manager_initialization() -> Result<(), Box<dyn Error>> {
         let config = IntegrationConfig::default();
         let manager = IntegrationManager::new(config).await?;
-        
+
         // Test basic functionality
         let health = manager.health_check().await?;
         assert!(!health.is_empty());
-        
+
         Ok(())
     }
 
@@ -46,7 +46,8 @@ mod external_integration_tests {
     #[tokio::test]
     async fn test_database_integration() -> Result<(), Box<dyn Error>> {
         let config = DatabaseConfig {
-            database_url: "postgresql://synaptic:synaptic_password@localhost:11110/synaptic_test".to_string(),
+            database_url: "postgresql://synaptic:synaptic_password@localhost:11110/synaptic_test"
+                .to_string(),
             max_connections: 10,
             connect_timeout_secs: 30,
             ssl_mode: "prefer".to_string(),
@@ -68,13 +69,13 @@ mod external_integration_tests {
                 let _ = client.store_memory(&test_entry).await;
                 let _ = client.get_memory("test_key").await;
                 let _ = client.health_check().await;
-            },
+            }
             Err(_) => {
                 // Database not available, skip test
                 println!("Database not available, skipping database integration test");
             }
         }
-        
+
         Ok(())
     }
 
@@ -98,18 +99,18 @@ mod external_integration_tests {
                     "This is a test sentence about artificial intelligence".to_string(),
                     "Machine learning is a subset of AI".to_string(),
                 ];
-                
+
                 // Test embedding generation (may fail if models not available)
                 let _ = manager.generate_embedding(&test_texts[0]).await;
 
                 // Test model functionality (no stats or health_check methods available)
                 println!("ML Model manager created successfully");
-            },
+            }
             Err(_) => {
                 println!("ML models not available, skipping ML integration test");
             }
         }
-        
+
         Ok(())
     }
 
@@ -134,12 +135,12 @@ mod external_integration_tests {
             Ok(_) => {
                 println!("LLM client created successfully");
                 // Test functionality would require valid API key
-            },
+            }
             Err(_) => {
                 println!("LLM client creation failed (expected without valid config)");
             }
         }
-        
+
         Ok(())
     }
 
@@ -171,12 +172,12 @@ mod external_integration_tests {
                 }
 
                 let _ = client.delete_cached("test_key").await;
-            },
+            }
             Err(_) => {
                 println!("Redis not available, skipping Redis integration test");
             }
         }
-        
+
         Ok(())
     }
 
@@ -209,36 +210,38 @@ mod external_integration_tests {
             ),
         ];
 
-        let test_relationships = vec![
-            ("Node1".to_string(), "Node2".to_string(), 0.8),
-        ];
+        let test_relationships = vec![("Node1".to_string(), "Node2".to_string(), 0.8)];
 
         // Test network visualization
-        let result = engine.generate_memory_network(&test_memories, &test_relationships).await;
+        let result = engine
+            .generate_memory_network(&test_memories, &test_relationships)
+            .await;
         match result {
             Ok(path) => {
                 println!("Visualization saved to: {}", path);
                 // Clean up test file
                 let _ = std::fs::remove_file(&path);
-            },
+            }
             Err(e) => {
-                println!("Visualization test failed (expected if output dir doesn't exist): {}", e);
+                println!(
+                    "Visualization test failed (expected if output dir doesn't exist): {}",
+                    e
+                );
             }
         }
-        
+
         // Test analytics timeline
-        let analytics_events = vec![
-            AnalyticsEvent {
-                id: "test_event".to_string(),
-                event_type: "memory_access".to_string(),
-                timestamp: chrono::Utc::now(),
-                data: std::collections::HashMap::from([
-                    ("memory_key".to_string(), serde_json::Value::String("test_memory".to_string())),
-                ]),
-            },
-        ];
+        let analytics_events = vec![AnalyticsEvent {
+            id: "test_event".to_string(),
+            event_type: "memory_access".to_string(),
+            timestamp: chrono::Utc::now(),
+            data: std::collections::HashMap::from([(
+                "memory_key".to_string(),
+                serde_json::Value::String("test_memory".to_string()),
+            )]),
+        }];
         let _ = engine.generate_analytics_timeline(&analytics_events).await;
-        
+
         Ok(())
     }
 
@@ -246,19 +249,19 @@ mod external_integration_tests {
     async fn test_integration_health_checks() -> Result<(), Box<dyn Error>> {
         let config = IntegrationConfig::default();
         let manager = IntegrationManager::new(config).await?;
-        
+
         // Test comprehensive health check
         let health_results = manager.health_check().await?;
-        
+
         // Should have entries for all integration types
         assert!(!health_results.is_empty());
-        
+
         // Each service should report a boolean health status
         for (service_name, is_healthy) in &health_results {
             println!("Service: {} - Healthy: {}", service_name, is_healthy);
             assert!(service_name.len() > 0); // Service name should not be empty
         }
-        
+
         Ok(())
     }
 
@@ -272,22 +275,30 @@ mod external_integration_tests {
         };
 
         let mut memory = AgentMemory::new(memory_config).await?;
-        
+
         // Test basic memory operations work with integrations enabled
-        memory.store("integration_test", "Testing memory with all integrations enabled").await?;
-        
+        memory
+            .store(
+                "integration_test",
+                "Testing memory with all integrations enabled",
+            )
+            .await?;
+
         let retrieved = memory.retrieve("integration_test").await?;
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().value, "Testing memory with all integrations enabled");
-        
+        assert_eq!(
+            retrieved.unwrap().value,
+            "Testing memory with all integrations enabled"
+        );
+
         // Test search functionality
         let search_results = memory.search("integration", 5).await?;
         assert!(!search_results.is_empty());
-        
+
         // Test stats
         let stats = memory.stats();
         assert!(stats.short_term_count > 0);
-        
+
         Ok(())
     }
 }
@@ -299,11 +310,11 @@ async fn test_memory_without_external_integrations() -> Result<(), Box<dyn std::
 
     let config = MemoryConfig::default();
     let mut memory = AgentMemory::new(config).await?;
-    
+
     // Basic functionality should work without external integrations
     memory.store("test_key", "test content").await?;
     let retrieved = memory.retrieve("test_key").await?;
     assert!(retrieved.is_some());
-    
+
     Ok(())
 }

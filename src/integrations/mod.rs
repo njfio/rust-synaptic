@@ -26,19 +26,19 @@ pub struct IntegrationConfig {
     /// Database configuration
     #[cfg(feature = "sql-storage")]
     pub database: Option<database::DatabaseConfig>,
-    
+
     /// ML models configuration
     #[cfg(feature = "ml-models")]
     pub ml_models: Option<ml_models::MLConfig>,
-    
+
     /// LLM integration configuration
     #[cfg(feature = "llm-integration")]
     pub llm: Option<llm::LLMConfig>,
-    
+
     /// Visualization configuration
     #[cfg(feature = "visualization")]
     pub visualization: Option<visualization::VisualizationConfig>,
-    
+
     /// Redis cache configuration
     pub redis: Option<redis_cache::RedisConfig>,
 }
@@ -48,16 +48,16 @@ impl Default for IntegrationConfig {
         Self {
             #[cfg(feature = "sql-storage")]
             database: Some(database::DatabaseConfig::default()),
-            
+
             #[cfg(feature = "ml-models")]
             ml_models: Some(ml_models::MLConfig::default()),
-            
+
             #[cfg(feature = "llm-integration")]
             llm: Some(llm::LLMConfig::default()),
-            
+
             #[cfg(feature = "visualization")]
             visualization: Some(visualization::VisualizationConfig::default()),
-            
+
             redis: Some(redis_cache::RedisConfig::default()),
         }
     }
@@ -66,19 +66,19 @@ impl Default for IntegrationConfig {
 /// Integration manager for coordinating external services
 pub struct IntegrationManager {
     _config: IntegrationConfig,
-    
+
     #[cfg(feature = "sql-storage")]
     database: Option<database::DatabaseClient>,
-    
+
     #[cfg(feature = "ml-models")]
     ml_models: Option<ml_models::MLModelManager>,
-    
+
     #[cfg(feature = "llm-integration")]
     llm_client: Option<llm::LLMClient>,
-    
+
     #[cfg(feature = "visualization")]
     viz_engine: Option<visualization::RealVisualizationEngine>,
-    
+
     redis_client: Option<redis_cache::RedisClient>,
 }
 
@@ -87,19 +87,19 @@ impl IntegrationManager {
     pub async fn new(config: IntegrationConfig) -> Result<Self> {
         let mut manager = Self {
             _config: config.clone(),
-            
+
             #[cfg(feature = "sql-storage")]
             database: None,
-            
+
             #[cfg(feature = "ml-models")]
             ml_models: None,
-            
+
             #[cfg(feature = "llm-integration")]
             llm_client: None,
-            
+
             #[cfg(feature = "visualization")]
             viz_engine: None,
-            
+
             redis_client: None,
         };
 
@@ -124,7 +124,8 @@ impl IntegrationManager {
         // Initialize visualization engine
         #[cfg(feature = "visualization")]
         if let Some(viz_config) = &config.visualization {
-            manager.viz_engine = Some(visualization::RealVisualizationEngine::new(viz_config.clone()).await?);
+            manager.viz_engine =
+                Some(visualization::RealVisualizationEngine::new(viz_config.clone()).await?);
         }
 
         // Initialize Redis client
@@ -189,7 +190,10 @@ impl IntegrationManager {
         // Check visualization
         #[cfg(feature = "visualization")]
         if let Some(viz) = &self.viz_engine {
-            health.insert("visualization".to_string(), viz.health_check().await.is_ok());
+            health.insert(
+                "visualization".to_string(),
+                viz.health_check().await.is_ok(),
+            );
         }
 
         // Check Redis
@@ -203,7 +207,7 @@ impl IntegrationManager {
     /// Shutdown all integrations gracefully
     pub async fn shutdown(&mut self) -> Result<()> {
         // Shutdown in reverse order of initialization
-        
+
         if let Some(mut redis) = self.redis_client.take() {
             redis.shutdown().await?;
         }

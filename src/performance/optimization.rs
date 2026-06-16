@@ -542,17 +542,17 @@ impl OptimizationEngine {
         current_metrics: &PerformanceMetrics,
     ) -> Result<OptimizationResult> {
         info!("Executing performance optimization");
-        
+
         let strategy = if let Some(id) = strategy_id {
             self.strategies.iter().find(|s| s.id == id)
                 .ok_or_else(|| SynapticError::PerformanceError(format!("Strategy not found: {}", id)))?
         } else {
             self.select_best_strategy(current_metrics).await?
         };
-        
+
         let optimization_id = uuid::Uuid::new_v4().to_string();
         let start_time = std::time::Instant::now();
-        
+
         // Execute the optimization
         let result = match &strategy.optimization_type {
             crate::performance::monitoring::OptimizationType::CacheOptimization => {
@@ -586,7 +586,7 @@ impl OptimizationEngine {
                 })
             }
         };
-        
+
         // Record optimization action
         let action = OptimizationAction {
             id: optimization_id.clone(),
@@ -596,9 +596,9 @@ impl OptimizationEngine {
             success: result.as_ref().map(|r| r.success).unwrap_or(false),
             impact_measurement: None,
         };
-        
+
         self.optimization_history.push(action);
-        
+
         result
     }
 
@@ -606,12 +606,12 @@ impl OptimizationEngine {
     async fn select_best_strategy(&self, metrics: &PerformanceMetrics) -> Result<&OptimizationStrategy> {
         // Analyze metrics to determine the best optimization strategy
         let mut strategy_scores = HashMap::new();
-        
+
         for strategy in &self.strategies {
             let score = self.calculate_strategy_score(strategy, metrics).await?;
             strategy_scores.insert(&strategy.id, score);
         }
-        
+
         // Select strategy with highest score
         use crate::error_handling::SafeCompare;
         let best_strategy_id = strategy_scores
@@ -619,7 +619,7 @@ impl OptimizationEngine {
             .max_by(|a, b| a.1.safe_partial_cmp(b.1))
             .map(|(id, _)| *id)
             .ok_or_else(|| SynapticError::PerformanceError("No optimization strategies available".to_string()))?;
-        
+
         self.strategies.iter()
             .find(|s| s.id == *best_strategy_id)
             .ok_or_else(|| SynapticError::PerformanceError("Strategy not found".to_string()))
@@ -628,7 +628,7 @@ impl OptimizationEngine {
     /// Calculate optimization strategy score
     async fn calculate_strategy_score(&self, strategy: &OptimizationStrategy, metrics: &PerformanceMetrics) -> Result<f64> {
         let mut score = 0.0;
-        
+
         // Score based on target metrics and current performance
         for target_metric in &strategy.target_metrics {
             match target_metric.as_str() {
@@ -655,10 +655,10 @@ impl OptimizationEngine {
                 _ => {}
             }
         }
-        
+
         // Factor in expected improvement
         score *= strategy.expected_improvement;
-        
+
         Ok(score)
     }
 }

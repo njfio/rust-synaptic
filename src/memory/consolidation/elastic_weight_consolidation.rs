@@ -1,11 +1,11 @@
 //! Elastic Weight Consolidation (EWC) Implementation
-//! 
+//!
 //! Implements the EWC algorithm for preventing catastrophic forgetting by
 //! protecting important parameters using Fisher Information Matrix.
 
+use super::{ConsolidationConfig, MemoryImportance};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -105,30 +105,44 @@ impl ElasticWeightConsolidation {
     }
 
     /// Update Fisher Information Matrix based on memory importance scores
-    pub async fn update_fisher_information(&mut self, importance_scores: &[MemoryImportance]) -> Result<()> {
-        tracing::info!("Updating Fisher Information Matrix for {} memories", importance_scores.len());
+    pub async fn update_fisher_information(
+        &mut self,
+        importance_scores: &[MemoryImportance],
+    ) -> Result<()> {
+        tracing::info!(
+            "Updating Fisher Information Matrix for {} memories",
+            importance_scores.len()
+        );
 
         for importance in importance_scores {
             if let Some(fisher_info) = &importance.fisher_information {
-                self.process_fisher_information(&importance.memory_key, fisher_info).await?;
+                self.process_fisher_information(&importance.memory_key, fisher_info)
+                    .await?;
             }
         }
 
         // Update metrics
         self.update_metrics().await?;
 
-        tracing::debug!("Fisher Information Matrix updated with {} entries", self.fisher_matrix.len());
+        tracing::debug!(
+            "Fisher Information Matrix updated with {} entries",
+            self.fisher_matrix.len()
+        );
         Ok(())
     }
 
     /// Process Fisher information for a specific memory
-    async fn process_fisher_information(&mut self, memory_key: &str, fisher_info: &[f64]) -> Result<()> {
+    async fn process_fisher_information(
+        &mut self,
+        memory_key: &str,
+        fisher_info: &[f64],
+    ) -> Result<()> {
         for (i, &fisher_value) in fisher_info.iter().enumerate() {
             let parameter_id = format!("{}_{}", memory_key, i);
-            
+
             // Calculate importance weight based on Fisher information
             let importance_weight = self.calculate_importance_weight(fisher_value).await?;
-            
+
             // Update or create Fisher information entry
             let fisher_entry = FisherInformation {
                 parameter_id: parameter_id.clone(),
@@ -137,11 +151,13 @@ impl ElasticWeightConsolidation {
                 last_updated: Utc::now(),
             };
 
-            self.fisher_matrix.insert(parameter_id.clone(), fisher_entry);
+            self.fisher_matrix
+                .insert(parameter_id.clone(), fisher_entry);
 
             // Create parameter protection if Fisher information is significant
             if fisher_value > 0.1 {
-                self.create_parameter_protection(memory_key, &parameter_id, fisher_value).await?;
+                self.create_parameter_protection(memory_key, &parameter_id, fisher_value)
+                    .await?;
             }
         }
 
@@ -152,10 +168,10 @@ impl ElasticWeightConsolidation {
     async fn calculate_importance_weight(&self, fisher_value: f64) -> Result<f64> {
         // Normalize Fisher information using sigmoid function
         let normalized_fisher = 1.0 / (1.0 + (-fisher_value * 2.0).exp());
-        
+
         // Apply EWC lambda parameter
         let importance_weight = normalized_fisher * self.config.ewc_lambda;
-        
+
         Ok(importance_weight.min(1.0).max(0.0))
     }
 
@@ -168,7 +184,7 @@ impl ElasticWeightConsolidation {
     ) -> Result<()> {
         // Simulate parameter value (in real implementation, this would be actual neural network weights)
         let consolidated_value = self.get_current_parameter_value(parameter_id).await?;
-        
+
         let protection_strength = self.calculate_protection_strength(fisher_value).await?;
 
         let protection = ParameterProtection {
@@ -179,7 +195,8 @@ impl ElasticWeightConsolidation {
             consolidated_at: Utc::now(),
         };
 
-        self.protected_parameters.insert(parameter_id.to_string(), protection);
+        self.protected_parameters
+            .insert(parameter_id.to_string(), protection);
         Ok(())
     }
 
@@ -189,7 +206,7 @@ impl ElasticWeightConsolidation {
         let base_strength = 0.5;
         let fisher_contribution = fisher_value.min(1.0) * 0.5;
         let protection_strength = base_strength + fisher_contribution;
-        
+
         Ok(protection_strength.min(1.0).max(0.0))
     }
 
@@ -213,8 +230,9 @@ impl ElasticWeightConsolidation {
             if let Some(protection) = self.protected_parameters.get(parameter_id) {
                 // Calculate penalty: λ/2 * F_i * (θ_i - θ*_i)^2
                 let deviation = new_value - protection.consolidated_value;
-                let penalty = 0.5 * self.config.ewc_lambda * protection.fisher_info * deviation.powi(2);
-                
+                let penalty =
+                    0.5 * self.config.ewc_lambda * protection.fisher_info * deviation.powi(2);
+
                 total_penalty += penalty;
 
                 // Record regularization term
@@ -242,7 +260,7 @@ impl ElasticWeightConsolidation {
                 // Constrain update based on protection strength
                 let max_deviation = 0.1 * (1.0 - protection.protection_strength);
                 let current_deviation = *update_value - protection.consolidated_value;
-                
+
                 if current_deviation.abs() > max_deviation {
                     // Clamp the update to stay within allowed deviation
                     let sign = if current_deviation > 0.0 { 1.0 } else { -1.0 };
@@ -255,7 +273,11 @@ impl ElasticWeightConsolidation {
     }
 
     /// Consolidate parameters for a new task
-    pub async fn consolidate_task(&mut self, task_id: &str, memories: &[MemoryEntry]) -> Result<()> {
+    pub async fn consolidate_task(
+        &mut self,
+        task_id: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<()> {
         tracing::info!("Consolidating EWC parameters for task: {}", task_id);
 
         let mut task_fisher = HashMap::new();
@@ -264,21 +286,27 @@ impl ElasticWeightConsolidation {
         // Calculate Fisher information for this task
         for memory in memories {
             let parameter_id = format!("task_{}_{}", task_id, memory.key);
-            
+
             // Simulate Fisher information calculation
             let fisher_value = self.simulate_fisher_calculation(memory).await?;
             task_fisher.insert(parameter_id.clone(), fisher_value);
-            
+
             // Store consolidated parameter value
             let param_value = self.get_current_parameter_value(&parameter_id).await?;
             task_params.insert(parameter_id, param_value);
         }
 
         // Store task-specific information
-        self.task_fisher_info.insert(task_id.to_string(), task_fisher);
-        self.task_parameters.insert(task_id.to_string(), task_params);
+        self.task_fisher_info
+            .insert(task_id.to_string(), task_fisher);
+        self.task_parameters
+            .insert(task_id.to_string(), task_params);
 
-        tracing::debug!("Task {} consolidated with {} parameters", task_id, memories.len());
+        tracing::debug!(
+            "Task {} consolidated with {} parameters",
+            task_id,
+            memories.len()
+        );
         Ok(())
     }
 
@@ -288,11 +316,12 @@ impl ElasticWeightConsolidation {
         let content_complexity = memory.value.len() as f64 / 1000.0; // Normalize by content length
         let access_importance = memory.access_count() as f64 / 100.0; // Normalize by access count
         let metadata_importance = memory.metadata.importance;
-        
-        let fisher_value = (content_complexity * 0.3 + access_importance * 0.4 + metadata_importance * 0.3)
-            .min(1.0)
-            .max(0.01);
-        
+
+        let fisher_value =
+            (content_complexity * 0.3 + access_importance * 0.4 + metadata_importance * 0.3)
+                .min(1.0)
+                .max(0.01);
+
         Ok(fisher_value)
     }
 
@@ -319,11 +348,14 @@ impl ElasticWeightConsolidation {
     /// Update EWC performance metrics
     async fn update_metrics(&mut self) -> Result<()> {
         self.metrics.protected_parameters = self.protected_parameters.len();
-        
+
         if !self.fisher_matrix.is_empty() {
-            self.metrics.avg_fisher_info = self.fisher_matrix.values()
+            self.metrics.avg_fisher_info = self
+                .fisher_matrix
+                .values()
                 .map(|f| f.fisher_value)
-                .sum::<f64>() / self.fisher_matrix.len() as f64;
+                .sum::<f64>()
+                / self.fisher_matrix.len() as f64;
         }
 
         // Calculate prevention rate based on protected parameters vs total parameters
@@ -341,14 +373,14 @@ impl ElasticWeightConsolidation {
     /// Reset EWC state for new learning phase
     pub async fn reset_for_new_task(&mut self) -> Result<()> {
         tracing::info!("Resetting EWC for new task");
-        
+
         // Keep Fisher information but reset regularization terms
         self.regularization_terms.clear();
-        
+
         // Reset metrics
         self.metrics.total_penalty = 0.0;
         self.metrics.last_updated = Utc::now();
-        
+
         Ok(())
     }
 
@@ -367,22 +399,29 @@ impl ElasticWeightConsolidation {
         let mut retention_factors = Vec::new();
 
         // Check if memory has protected parameters
-        let protected_count = self.protected_parameters.values()
+        let protected_count = self
+            .protected_parameters
+            .values()
             .filter(|p| p.memory_key == memory_key)
             .count();
 
         if protected_count > 0 {
             // Calculate average protection strength for this memory
-            let avg_protection = self.protected_parameters.values()
+            let avg_protection = self
+                .protected_parameters
+                .values()
                 .filter(|p| p.memory_key == memory_key)
                 .map(|p| p.protection_strength)
-                .sum::<f64>() / protected_count as f64;
-            
+                .sum::<f64>()
+                / protected_count as f64;
+
             retention_factors.push(avg_protection);
         }
 
         // Check Fisher information strength
-        let fisher_strength = self.fisher_matrix.values()
+        let fisher_strength = self
+            .fisher_matrix
+            .values()
             .filter(|f| f.parameter_id.starts_with(memory_key))
             .map(|f| f.fisher_value)
             .sum::<f64>();
@@ -417,21 +456,19 @@ mod tests {
     #[tokio::test]
     async fn test_fisher_information_update() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
-        let importance_scores = vec![
-            MemoryImportance {
-                memory_key: "test_key".to_string(),
-                importance_score: 0.8,
-                access_frequency: 0.7,
-                recency_score: 0.6,
-                centrality_score: 0.5,
-                uniqueness_score: 0.4,
-                temporal_consistency: 0.3,
-                calculated_at: Utc::now(),
-                fisher_information: Some(vec![0.5, 0.7, 0.3]),
-            },
-        ];
+        let importance_scores = vec![MemoryImportance {
+            memory_key: "test_key".to_string(),
+            importance_score: 0.8,
+            access_frequency: 0.7,
+            recency_score: 0.6,
+            centrality_score: 0.5,
+            uniqueness_score: 0.4,
+            temporal_consistency: 0.3,
+            calculated_at: Utc::now(),
+            fisher_information: Some(vec![0.5, 0.7, 0.3]),
+        }];
 
         let result = ewc.update_fisher_information(&importance_scores).await;
         assert!(result.is_ok());
@@ -441,32 +478,46 @@ mod tests {
     #[tokio::test]
     async fn test_regularization_penalty() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
         // Add some protected parameters
-        ewc.protected_parameters.insert("param1".to_string(), ParameterProtection {
-            memory_key: "test_key".to_string(),
-            consolidated_value: 0.5,
-            fisher_info: 0.8,
-            protection_strength: 0.7,
-            consolidated_at: Utc::now(),
-        });
+        ewc.protected_parameters.insert(
+            "param1".to_string(),
+            ParameterProtection {
+                memory_key: "test_key".to_string(),
+                consolidated_value: 0.5,
+                fisher_info: 0.8,
+                protection_strength: 0.7,
+                consolidated_at: Utc::now(),
+            },
+        );
 
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.7); // Deviation of 0.2
 
-        let penalty = ewc.calculate_regularization_penalty(&parameter_updates).await.unwrap();
+        let penalty = ewc
+            .calculate_regularization_penalty(&parameter_updates)
+            .await
+            .expect("await should be present");
         assert!(penalty > 0.0);
     }
 
     #[tokio::test]
     async fn test_task_consolidation() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "Content 2".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "Content 1".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "Content 2".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
         let result = ewc.consolidate_task("task1", &memories).await;

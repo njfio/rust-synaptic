@@ -4,10 +4,10 @@
 //! persistent storage, search capabilities, and intelligent deduplication.
 
 use crate::error::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Utc};
 
 /// Command history manager
 pub struct HistoryManager {
@@ -69,12 +69,12 @@ impl HistoryManager {
             if path.exists() {
                 let content = tokio::fs::read_to_string(path).await?;
                 let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
-                
+
                 self.entries.clear();
                 for entry in entries {
                     self.entries.push_back(entry);
                 }
-                
+
                 // Ensure we don't exceed max size
                 while self.entries.len() > self.max_size {
                     self.entries.pop_front();
@@ -173,7 +173,8 @@ impl HistoryManager {
     /// Search history with regex
     pub fn search_regex(&self, pattern: &str) -> Result<Vec<&HistoryEntry>> {
         let regex = regex::Regex::new(pattern)?;
-        Ok(self.entries
+        Ok(self
+            .entries
             .iter()
             .filter(|entry| regex.is_match(&entry.command))
             .collect())
@@ -201,15 +202,24 @@ impl HistoryManager {
         let successful_commands = self.entries.iter().filter(|e| e.success).count();
         let failed_commands = total_commands - successful_commands;
 
-        let syql_commands = self.entries.iter().filter(|e| e.command_type == CommandType::SyqlQuery).count();
-        let shell_commands = self.entries.iter().filter(|e| e.command_type == CommandType::ShellCommand).count();
-        let system_commands = self.entries.iter().filter(|e| e.command_type == CommandType::SystemCommand).count();
+        let syql_commands = self
+            .entries
+            .iter()
+            .filter(|e| e.command_type == CommandType::SyqlQuery)
+            .count();
+        let shell_commands = self
+            .entries
+            .iter()
+            .filter(|e| e.command_type == CommandType::ShellCommand)
+            .count();
+        let system_commands = self
+            .entries
+            .iter()
+            .filter(|e| e.command_type == CommandType::SystemCommand)
+            .count();
 
         let avg_duration = if total_commands > 0 {
-            let total_duration: u64 = self.entries
-                .iter()
-                .filter_map(|e| e.duration_ms)
-                .sum();
+            let total_duration: u64 = self.entries.iter().filter_map(|e| e.duration_ms).sum();
             Some(total_duration / total_commands as u64)
         } else {
             None
@@ -232,7 +242,7 @@ impl HistoryManager {
     /// Get most frequently used commands
     pub fn get_most_used_commands(&self, limit: usize) -> Vec<(String, usize)> {
         let mut command_counts = std::collections::HashMap::new();
-        
+
         for entry in &self.entries {
             *command_counts.entry(entry.command.clone()).or_insert(0) += 1;
         }
@@ -240,7 +250,7 @@ impl HistoryManager {
         let mut sorted_commands: Vec<(String, usize)> = command_counts.into_iter().collect();
         sorted_commands.sort_by(|a, b| b.1.cmp(&a.1));
         sorted_commands.truncate(limit);
-        
+
         sorted_commands
     }
 
@@ -258,13 +268,11 @@ impl HistoryManager {
     /// Export history to different formats
     pub async fn export(&self, path: &Path, format: ExportFormat) -> Result<()> {
         let content = match format {
-            ExportFormat::Json => {
-                serde_json::to_string_pretty(&self.entries)?
-            },
+            ExportFormat::Json => serde_json::to_string_pretty(&self.entries)?,
             ExportFormat::Csv => {
                 let mut csv = String::new();
                 csv.push_str("timestamp,command,duration_ms,success,command_type,session_id\n");
-                
+
                 for entry in &self.entries {
                     csv.push_str(&format!(
                         "{},{},{},{},{:?},{}\n",
@@ -277,7 +285,7 @@ impl HistoryManager {
                     ));
                 }
                 csv
-            },
+            }
             ExportFormat::Text => {
                 let mut text = String::new();
                 for entry in &self.entries {
@@ -290,7 +298,7 @@ impl HistoryManager {
                     ));
                 }
                 text
-            },
+            }
         };
 
         tokio::fs::write(path, content).await?;
@@ -309,7 +317,7 @@ impl HistoryManager {
                     self.entries.push_back(entry);
                     imported_count += 1;
                 }
-            },
+            }
             ImportFormat::Text => {
                 // Simple text format: one command per line
                 for line in content.lines() {
@@ -326,7 +334,7 @@ impl HistoryManager {
                         imported_count += 1;
                     }
                 }
-            },
+            }
         }
 
         // Maintain max size

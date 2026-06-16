@@ -1,36 +1,38 @@
 //! Meta-Learning Module for Adaptive Memory Management
-//! 
+//!
 //! This module implements Model-Agnostic Meta-Learning (MAML) and other meta-learning
 //! algorithms for rapid adaptation to new tasks and domains in memory management.
 
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use async_trait::async_trait;
 
-pub mod maml;
-pub mod reptile;
-pub mod prototypical;
 pub mod adaptation;
-pub mod task_distribution;
 pub mod domain_adaptation;
 pub mod few_shot;
+pub mod maml;
+pub mod prototypical;
+pub mod reptile;
+pub mod task_distribution;
 
 // Re-export key types for convenience
-pub use maml::MAMLLearner;
-pub use reptile::ReptileLearner;
-pub use prototypical::PrototypicalLearner;
-pub use domain_adaptation::{DomainAdaptationEngine, DomainAdaptationConfig, DomainAdaptationStrategy, Domain, DomainAdaptationResult};
-pub use few_shot::{
-    FewShotLearningEngine, FewShotConfig, FewShotAlgorithm, FewShotEpisode,
-    FewShotResult, FewShotPrediction, SupportExample, QueryExample,
-    DistanceMetric, AttentionType, ActivationFunction, MemoryBank, FewShotMetrics,
-    PrototypeUpdateStrategy
+pub use domain_adaptation::{
+    Domain, DomainAdaptationConfig, DomainAdaptationEngine, DomainAdaptationResult,
+    DomainAdaptationStrategy,
 };
+pub use few_shot::{
+    ActivationFunction, AttentionType, DistanceMetric, FewShotAlgorithm, FewShotConfig,
+    FewShotEpisode, FewShotLearningEngine, FewShotMetrics, FewShotPrediction, FewShotResult,
+    MemoryBank, PrototypeUpdateStrategy, QueryExample, SupportExample,
+};
+pub use maml::MAMLLearner;
+pub use prototypical::PrototypicalLearner;
+pub use reptile::ReptileLearner;
 
 /// Meta-learning configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,19 +172,19 @@ pub struct MetaLearningMetrics {
 pub trait MetaLearner: Send + Sync {
     /// Train the meta-learner on a distribution of tasks
     async fn meta_train(&mut self, tasks: &[MetaTask]) -> Result<MetaLearningMetrics>;
-    
+
     /// Adapt to a new task using few-shot learning
     async fn adapt_to_task(&mut self, task: &MetaTask) -> Result<AdaptationResult>;
-    
+
     /// Evaluate performance on a set of tasks
     async fn evaluate(&self, tasks: &[MetaTask]) -> Result<MetaLearningMetrics>;
-    
+
     /// Get the current meta-parameters
     fn get_meta_parameters(&self) -> HashMap<String, Vec<f64>>;
-    
+
     /// Set meta-parameters (for loading pre-trained models)
     fn set_meta_parameters(&mut self, parameters: HashMap<String, Vec<f64>>) -> Result<()>;
-    
+
     /// Get algorithm-specific configuration
     fn get_config(&self) -> &MetaLearningConfig;
 }
@@ -209,10 +211,14 @@ impl MetaLearningSystem {
         let learner: Box<dyn MetaLearner> = match algorithm {
             MetaAlgorithm::MAML => Box::new(maml::MAMLLearner::new(config.clone())?),
             MetaAlgorithm::Reptile => Box::new(reptile::ReptileLearner::new(config.clone())?),
-            MetaAlgorithm::Prototypical => Box::new(prototypical::PrototypicalLearner::new(config.clone())?),
-            _ => return Err(crate::error::MemoryError::InvalidConfiguration {
-                message: format!("Unsupported meta-learning algorithm: {:?}", algorithm)
-            }),
+            MetaAlgorithm::Prototypical => {
+                Box::new(prototypical::PrototypicalLearner::new(config.clone())?)
+            }
+            _ => {
+                return Err(crate::error::MemoryError::InvalidConfiguration {
+                    message: format!("Unsupported meta-learning algorithm: {:?}", algorithm),
+                })
+            }
         };
 
         Ok(Self {
@@ -228,7 +234,7 @@ impl MetaLearningSystem {
     /// Train the meta-learning system on a distribution of tasks
     pub async fn train(&mut self, tasks: &[MetaTask]) -> Result<MetaLearningMetrics> {
         tracing::info!("Starting meta-learning training with {} tasks", tasks.len());
-        
+
         // Update task distribution
         {
             let mut task_dist = self.task_distribution.write().await;
@@ -237,7 +243,7 @@ impl MetaLearningSystem {
 
         // Perform meta-training
         let metrics = self.learner.meta_train(tasks).await?;
-        
+
         // Update stored metrics
         {
             let mut stored_metrics = self.metrics.write().await;
@@ -250,16 +256,18 @@ impl MetaLearningSystem {
             *meta_params = self.learner.get_meta_parameters();
         }
 
-        tracing::info!("Meta-learning training completed with convergence rate: {:.4}", 
-                      metrics.convergence_rate);
-        
+        tracing::info!(
+            "Meta-learning training completed with convergence rate: {:.4}",
+            metrics.convergence_rate
+        );
+
         Ok(metrics)
     }
 
     /// Adapt to a new task using the trained meta-learner
     pub async fn adapt_to_new_task(&mut self, task: &MetaTask) -> Result<AdaptationResult> {
         tracing::debug!("Adapting to new task: {}", task.id);
-        
+
         let start_time = std::time::Instant::now();
         let result = self.learner.adapt_to_task(task).await?;
         let adaptation_time = start_time.elapsed().as_millis() as u64;
@@ -272,21 +280,27 @@ impl MetaLearningSystem {
             history.push(stored_result);
         }
 
-        tracing::info!("Task adaptation completed for {} in {}ms with loss: {:.4}", 
-                      task.id, adaptation_time, result.final_loss);
-        
+        tracing::info!(
+            "Task adaptation completed for {} in {}ms with loss: {:.4}",
+            task.id,
+            adaptation_time,
+            result.final_loss
+        );
+
         Ok(result)
     }
 
     /// Evaluate the meta-learner on a set of test tasks
     pub async fn evaluate(&self, test_tasks: &[MetaTask]) -> Result<MetaLearningMetrics> {
         tracing::info!("Evaluating meta-learner on {} test tasks", test_tasks.len());
-        
+
         let metrics = self.learner.evaluate(test_tasks).await?;
-        
-        tracing::info!("Evaluation completed with adaptation success rate: {:.2}%", 
-                      metrics.adaptation_success_rate * 100.0);
-        
+
+        tracing::info!(
+            "Evaluation completed with adaptation success rate: {:.2}%",
+            metrics.adaptation_success_rate * 100.0
+        );
+
         Ok(metrics)
     }
 
@@ -307,14 +321,17 @@ impl MetaLearningSystem {
     }
 
     /// Load meta-parameters from storage
-    pub async fn load_meta_parameters(&mut self, parameters: HashMap<String, Vec<f64>>) -> Result<()> {
+    pub async fn load_meta_parameters(
+        &mut self,
+        parameters: HashMap<String, Vec<f64>>,
+    ) -> Result<()> {
         self.learner.set_meta_parameters(parameters.clone())?;
-        
+
         {
             let mut meta_params = self.meta_parameters.write().await;
             *meta_params = parameters;
         }
-        
+
         Ok(())
     }
 }

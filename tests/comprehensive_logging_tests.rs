@@ -1,11 +1,11 @@
 //! Comprehensive tests for the logging and tracing infrastructure
 
-use synaptic::logging::{
-    LoggingManager, LoggingConfig, LogLevel, LogFormat, RiskLevel,
-    PerformanceMetrics, AuditLogEntry,
-};
-use synaptic::error::Result;
 use std::collections::HashMap;
+use synaptic::error::Result;
+use synaptic::logging::{
+    AuditLogEntry, LogFormat, LogLevel, LoggingConfig, LoggingManager, PerformanceMetrics,
+    RiskLevel,
+};
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
@@ -36,7 +36,7 @@ async fn test_logging_configuration() -> Result<()> {
     assert_eq!(manager.config().max_files, 5);
     assert!(!manager.config().compress_logs);
     assert!(matches!(manager.config().log_format, LogFormat::Json));
-    
+
     Ok(())
 }
 
@@ -57,10 +57,14 @@ async fn test_logging_initialization_formats() -> Result<()> {
         };
 
         let manager = LoggingManager::new(config);
-        
+
         // Test initialization doesn't panic
         let result = manager.initialize();
-        assert!(result.is_ok(), "Failed to initialize logging with format: {:?}", manager.config().log_format);
+        assert!(
+            result.is_ok(),
+            "Failed to initialize logging with format: {:?}",
+            manager.config().log_format
+        );
     }
 
     Ok(())
@@ -120,12 +124,14 @@ async fn test_performance_tracing() -> Result<()> {
     sleep(Duration::from_millis(50)).await;
 
     // End the performance trace
-    manager.end_performance_trace(&operation_id, true, None).await?;
+    manager
+        .end_performance_trace(&operation_id, true, None)
+        .await?;
 
     // Verify metrics were recorded
     let metrics = manager.get_performance_metrics().await;
     assert_eq!(metrics.len(), 1, "Should have one performance metric");
-    
+
     let metric = &metrics[0];
     assert_eq!(metric.operation_id, operation_id);
     assert_eq!(metric.operation_name, "test_operation");
@@ -155,12 +161,14 @@ async fn test_performance_tracing_with_error() -> Result<()> {
 
     // End the performance trace with error
     let error_message = "Operation failed due to test condition".to_string();
-    manager.end_performance_trace(&operation_id, false, Some(error_message.clone())).await?;
+    manager
+        .end_performance_trace(&operation_id, false, Some(error_message.clone()))
+        .await?;
 
     // Verify metrics were recorded with error
     let metrics = manager.get_performance_metrics().await;
     assert_eq!(metrics.len(), 1);
-    
+
     let metric = &metrics[0];
     assert!(!metric.success);
     assert_eq!(metric.error_message, Some(error_message));
@@ -184,38 +192,44 @@ async fn test_audit_logging() -> Result<()> {
     details.insert("ip_address".to_string(), "192.168.1.100".to_string());
     details.insert("user_agent".to_string(), "TestAgent/1.0".to_string());
 
-    manager.log_audit_event(
-        "user_login",
-        Some("user123".to_string()),
-        Some("session456".to_string()),
-        "authentication_system",
-        "login",
-        true,
-        details.clone(),
-        RiskLevel::Low,
-    ).await?;
+    manager
+        .log_audit_event(
+            "user_login",
+            Some("user123".to_string()),
+            Some("session456".to_string()),
+            "authentication_system",
+            "login",
+            true,
+            details.clone(),
+            RiskLevel::Low,
+        )
+        .await?;
 
-    manager.log_audit_event(
-        "data_access",
-        Some("user123".to_string()),
-        Some("session456".to_string()),
-        "sensitive_data",
-        "read",
-        true,
-        details.clone(),
-        RiskLevel::Medium,
-    ).await?;
+    manager
+        .log_audit_event(
+            "data_access",
+            Some("user123".to_string()),
+            Some("session456".to_string()),
+            "sensitive_data",
+            "read",
+            true,
+            details.clone(),
+            RiskLevel::Medium,
+        )
+        .await?;
 
-    manager.log_audit_event(
-        "admin_action",
-        Some("admin789".to_string()),
-        Some("session789".to_string()),
-        "user_management",
-        "delete_user",
-        true,
-        details,
-        RiskLevel::High,
-    ).await?;
+    manager
+        .log_audit_event(
+            "admin_action",
+            Some("admin789".to_string()),
+            Some("session789".to_string()),
+            "user_management",
+            "delete_user",
+            true,
+            details,
+            RiskLevel::High,
+        )
+        .await?;
 
     // Verify audit logs were recorded
     let audit_logs = manager.get_audit_logs().await;
@@ -256,16 +270,18 @@ async fn test_audit_risk_levels() -> Result<()> {
     ];
 
     for (i, risk_level) in risk_levels.into_iter().enumerate() {
-        manager.log_audit_event(
-            &format!("operation_{}", i),
-            Some("user123".to_string()),
-            None,
-            "test_resource",
-            "test_action",
-            true,
-            HashMap::new(),
-            risk_level,
-        ).await?;
+        manager
+            .log_audit_event(
+                &format!("operation_{}", i),
+                Some("user123".to_string()),
+                None,
+                "test_resource",
+                "test_action",
+                true,
+                HashMap::new(),
+                risk_level,
+            )
+            .await?;
     }
 
     let audit_logs = manager.get_audit_logs().await;
@@ -295,18 +311,22 @@ async fn test_data_cleanup() -> Result<()> {
 
     // Generate some old data
     let operation_id = manager.start_performance_trace("old_operation").await?;
-    manager.end_performance_trace(&operation_id, true, None).await?;
+    manager
+        .end_performance_trace(&operation_id, true, None)
+        .await?;
 
-    manager.log_audit_event(
-        "old_operation",
-        Some("user123".to_string()),
-        None,
-        "test_resource",
-        "test_action",
-        true,
-        HashMap::new(),
-        RiskLevel::Low,
-    ).await?;
+    manager
+        .log_audit_event(
+            "old_operation",
+            Some("user123".to_string()),
+            None,
+            "test_resource",
+            "test_action",
+            true,
+            HashMap::new(),
+            RiskLevel::Low,
+        )
+        .await?;
 
     // Verify data exists
     assert_eq!(manager.get_performance_metrics().await.len(), 1);
@@ -336,20 +356,27 @@ async fn test_disabled_features() -> Result<()> {
 
     // Try to use disabled features
     let operation_id = manager.start_performance_trace("test_operation").await?;
-    assert!(operation_id.is_empty(), "Should return empty string when disabled");
+    assert!(
+        operation_id.is_empty(),
+        "Should return empty string when disabled"
+    );
 
-    manager.end_performance_trace(&operation_id, true, None).await?;
+    manager
+        .end_performance_trace(&operation_id, true, None)
+        .await?;
 
-    manager.log_audit_event(
-        "test_operation",
-        None,
-        None,
-        "test_resource",
-        "test_action",
-        true,
-        HashMap::new(),
-        RiskLevel::Low,
-    ).await?;
+    manager
+        .log_audit_event(
+            "test_operation",
+            None,
+            None,
+            "test_resource",
+            "test_action",
+            true,
+            HashMap::new(),
+            RiskLevel::Low,
+        )
+        .await?;
 
     // Verify no data was recorded
     assert_eq!(manager.get_performance_metrics().await.len(), 0);
@@ -372,26 +399,35 @@ async fn test_concurrent_logging() -> Result<()> {
 
     // Spawn multiple concurrent tasks
     let mut handles = Vec::new();
-    
+
     for i in 0..10 {
         let manager_clone = manager.clone();
         let handle = tokio::spawn(async move {
             // Performance tracing
-            let operation_id = manager_clone.start_performance_trace(&format!("operation_{}", i)).await.unwrap();
+            let operation_id = manager_clone
+                .start_performance_trace(&format!("operation_{}", i))
+                .await
+                .unwrap();
             sleep(Duration::from_millis(10)).await;
-            manager_clone.end_performance_trace(&operation_id, true, None).await.unwrap();
+            manager_clone
+                .end_performance_trace(&operation_id, true, None)
+                .await
+                .unwrap();
 
             // Audit logging
-            manager_clone.log_audit_event(
-                &format!("concurrent_operation_{}", i),
-                Some(format!("user_{}", i)),
-                None,
-                "test_resource",
-                "test_action",
-                true,
-                HashMap::new(),
-                RiskLevel::Low,
-            ).await.unwrap();
+            manager_clone
+                .log_audit_event(
+                    &format!("concurrent_operation_{}", i),
+                    Some(format!("user_{}", i)),
+                    None,
+                    "test_resource",
+                    "test_action",
+                    true,
+                    HashMap::new(),
+                    RiskLevel::Low,
+                )
+                .await
+                .unwrap();
         });
         handles.push(handle);
     }

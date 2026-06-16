@@ -3,19 +3,19 @@
 //! This module provides a graph-based representation of memories and their relationships,
 //! enabling sophisticated querying and reasoning capabilities.
 
-pub mod types;
 pub mod graph;
 pub mod query;
 pub mod reasoning;
+pub mod types;
 
 // Re-export commonly used types
-pub use types::{
-    Node, Edge, Relationship, RelationshipType, NodeType, GraphEntity,
-    KnowledgeGraphMetadata, GraphPath, GraphPattern,
-};
-pub use graph::{KnowledgeGraph, GraphConfig, GraphStats};
+pub use graph::{GraphConfig, GraphStats, KnowledgeGraph};
 pub use query::{GraphQuery, GraphQueryBuilder, QueryResult, TraversalOptions};
-pub use reasoning::{GraphReasoner, InferenceRule, InferenceEngine};
+pub use reasoning::{GraphReasoner, InferenceEngine, InferenceRule};
+pub use types::{
+    Edge, GraphEntity, GraphPath, GraphPattern, KnowledgeGraphMetadata, Node, NodeType,
+    Relationship, RelationshipType,
+};
 
 // Distributed graph types
 pub type MemoryNode = Node;
@@ -23,9 +23,9 @@ pub type MemoryEdge = Edge;
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 /// Main knowledge graph interface for the memory system
 pub struct MemoryKnowledgeGraph {
@@ -46,7 +46,7 @@ impl MemoryKnowledgeGraph {
     pub fn new(config: GraphConfig) -> Self {
         let graph = KnowledgeGraph::new(config.clone());
         let reasoner = GraphReasoner::new();
-        
+
         Self {
             graph,
             memory_to_node: HashMap::new(),
@@ -99,11 +99,19 @@ impl MemoryKnowledgeGraph {
     ) -> Result<Uuid> {
         tracing::debug!("Creating relationship between memories");
 
-        let from_node_id = self.memory_to_node.get(from_memory_key)
-            .ok_or_else(|| MemoryError::NotFound { key: from_memory_key.to_string() })?;
+        let from_node_id =
+            self.memory_to_node
+                .get(from_memory_key)
+                .ok_or_else(|| MemoryError::NotFound {
+                    key: from_memory_key.to_string(),
+                })?;
 
-        let to_node_id = self.memory_to_node.get(to_memory_key)
-            .ok_or_else(|| MemoryError::NotFound { key: to_memory_key.to_string() })?;
+        let to_node_id =
+            self.memory_to_node
+                .get(to_memory_key)
+                .ok_or_else(|| MemoryError::NotFound {
+                    key: to_memory_key.to_string(),
+                })?;
 
         tracing::debug!("Found nodes: {} -> {}", from_node_id, to_node_id);
 
@@ -121,8 +129,12 @@ impl MemoryKnowledgeGraph {
         max_depth: usize,
         relationship_types: Option<Vec<RelationshipType>>,
     ) -> Result<Vec<RelatedMemory>> {
-        let node_id = self.memory_to_node.get(memory_key)
-            .ok_or_else(|| MemoryError::NotFound { key: memory_key.to_string() })?;
+        let node_id = self
+            .memory_to_node
+            .get(memory_key)
+            .ok_or_else(|| MemoryError::NotFound {
+                key: memory_key.to_string(),
+            })?;
 
         let traversal_options = TraversalOptions {
             max_depth,
@@ -131,8 +143,11 @@ impl MemoryKnowledgeGraph {
             ..Default::default()
         };
 
-        let related_nodes = self.graph.traverse_from_node(*node_id, traversal_options).await?;
-        
+        let related_nodes = self
+            .graph
+            .traverse_from_node(*node_id, traversal_options)
+            .await?;
+
         let mut related_memories = Vec::new();
         for (node_id, path) in related_nodes {
             if let Some(memory_key) = self.node_to_memory.get(&node_id) {
@@ -148,8 +163,12 @@ impl MemoryKnowledgeGraph {
         }
 
         // Sort by relationship strength
-        related_memories.sort_by(|a, b| b.relationship_strength.partial_cmp(&a.relationship_strength).unwrap_or(std::cmp::Ordering::Equal));
-        
+        related_memories.sort_by(|a, b| {
+            b.relationship_strength
+                .partial_cmp(&a.relationship_strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         Ok(related_memories)
     }
 
@@ -165,13 +184,23 @@ impl MemoryKnowledgeGraph {
         to_memory: &str,
         max_depth: Option<usize>,
     ) -> Result<Option<GraphPath>> {
-        let from_node = self.memory_to_node.get(from_memory)
-            .ok_or_else(|| MemoryError::NotFound { key: from_memory.to_string() })?;
-        
-        let to_node = self.memory_to_node.get(to_memory)
-            .ok_or_else(|| MemoryError::NotFound { key: to_memory.to_string() })?;
+        let from_node =
+            self.memory_to_node
+                .get(from_memory)
+                .ok_or_else(|| MemoryError::NotFound {
+                    key: from_memory.to_string(),
+                })?;
 
-        self.graph.find_shortest_path(*from_node, *to_node, max_depth).await
+        let to_node = self
+            .memory_to_node
+            .get(to_memory)
+            .ok_or_else(|| MemoryError::NotFound {
+                key: to_memory.to_string(),
+            })?;
+
+        self.graph
+            .find_shortest_path(*from_node, *to_node, max_depth)
+            .await
     }
 
     /// Get graph statistics
@@ -215,12 +244,19 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Get all connected nodes with their relationship types and strengths
-    pub async fn get_connected_nodes(&self, node_id: Uuid) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
+    pub async fn get_connected_nodes(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
         self.graph.get_connected_nodes(node_id).await
     }
 
     /// Auto-detect relationships based on content similarity and metadata
-    async fn auto_detect_relationships(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<()> {
+    async fn auto_detect_relationships(
+        &mut self,
+        node_id: Uuid,
+        memory: &MemoryEntry,
+    ) -> Result<()> {
         // Find similar memories based on tags
         for tag in &memory.metadata.tags {
             let similar_memories = self.get_memories_by_concept(tag).await?;
@@ -245,7 +281,7 @@ impl MemoryKnowledgeGraph {
 
         // Detect temporal relationships
         self.detect_temporal_relationships(node_id, memory).await?;
-        
+
         // Detect semantic relationships (if embeddings are available)
         if memory.embedding.is_some() {
             self.detect_semantic_relationships(node_id, memory).await?;
@@ -255,11 +291,15 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Detect temporal relationships between memories
-    async fn detect_temporal_relationships(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<()> {
+    async fn detect_temporal_relationships(
+        &mut self,
+        node_id: Uuid,
+        memory: &MemoryEntry,
+    ) -> Result<()> {
         // Find memories created around the same time
         let time_window = chrono::Duration::hours(1);
         let memory_time = memory.created_at();
-        
+
         for (other_memory_key, other_node_id) in &self.memory_to_node {
             if other_memory_key != &memory.key {
                 if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
@@ -270,9 +310,10 @@ impl MemoryKnowledgeGraph {
                                 node_id,
                                 *other_node_id,
                                 RelationshipType::TemporallyRelated,
-                                Some(HashMap::from([
-                                    ("time_diff_minutes".to_string(), time_diff.num_minutes().to_string()),
-                                ])),
+                                Some(HashMap::from([(
+                                    "time_diff_minutes".to_string(),
+                                    time_diff.num_minutes().to_string(),
+                                )])),
                             );
                             let _ = self.graph.add_edge(edge).await;
                         }
@@ -285,10 +326,14 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Detect semantic relationships using embeddings
-    async fn detect_semantic_relationships(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<()> {
+    async fn detect_semantic_relationships(
+        &mut self,
+        node_id: Uuid,
+        memory: &MemoryEntry,
+    ) -> Result<()> {
         if let Some(embedding) = &memory.embedding {
             let similarity_threshold = self.config.semantic_similarity_threshold;
-            
+
             for (other_memory_key, other_node_id) in &self.memory_to_node {
                 if other_memory_key != &memory.key {
                     if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
@@ -299,9 +344,10 @@ impl MemoryKnowledgeGraph {
                                     node_id,
                                     *other_node_id,
                                     RelationshipType::SemanticallyRelated,
-                                    Some(HashMap::from([
-                                        ("similarity_score".to_string(), similarity.to_string()),
-                                    ])),
+                                    Some(HashMap::from([(
+                                        "similarity_score".to_string(),
+                                        similarity.to_string(),
+                                    )])),
                                 );
                                 let _ = self.graph.add_edge(edge).await;
                             }
@@ -351,7 +397,8 @@ impl MemoryKnowledgeGraph {
             self.graph.nodes.insert(node_id, node);
 
             // Update relationships based on content changes
-            self.update_relationships_for_changed_node(node_id, &old_content, &new_content).await?;
+            self.update_relationships_for_changed_node(node_id, &old_content, &new_content)
+                .await?;
 
             tracing::debug!(
                 node_id = %node_id,
@@ -398,7 +445,11 @@ impl MemoryKnowledgeGraph {
 
     /// Merge memory with an existing similar node
     #[tracing::instrument(skip(self, memory), fields(memory_key = %memory.key, node_id = %node_id))]
-    async fn merge_with_existing_node(&mut self, node_id: Uuid, memory: &MemoryEntry) -> Result<Uuid> {
+    async fn merge_with_existing_node(
+        &mut self,
+        node_id: Uuid,
+        memory: &MemoryEntry,
+    ) -> Result<Uuid> {
         if let Some(mut node) = self.graph.get_node(node_id).await? {
             tracing::info!(
                 memory_key = %memory.key,
@@ -407,10 +458,9 @@ impl MemoryKnowledgeGraph {
             );
 
             // Combine content intelligently
-            let combined_content = self.merge_content(
-                &node.description.unwrap_or_default(),
-                &memory.value
-            ).await?;
+            let combined_content = self
+                .merge_content(&node.description.unwrap_or_default(), &memory.value)
+                .await?;
 
             node.description = Some(combined_content);
             node.last_modified = Some(chrono::Utc::now());
@@ -418,8 +468,10 @@ impl MemoryKnowledgeGraph {
             // Update importance and confidence (weighted average)
             let old_weight = 0.7; // Give more weight to existing data
             let new_weight = 0.3;
-            node.importance = node.importance * old_weight + memory.metadata.importance * new_weight;
-            node.confidence = node.confidence * old_weight + memory.metadata.confidence * new_weight;
+            node.importance =
+                node.importance * old_weight + memory.metadata.importance * new_weight;
+            node.confidence =
+                node.confidence * old_weight + memory.metadata.confidence * new_weight;
 
             // Merge tags
             for tag in &memory.metadata.tags {
@@ -476,8 +528,12 @@ impl MemoryKnowledgeGraph {
         max_distance: usize,
     ) -> Result<Vec<(String, usize)>> {
         // Get the node ID for the reference memory
-        let reference_node_id = self.memory_to_node.get(reference_memory_key)
-            .ok_or_else(|| MemoryError::NotFound { key: reference_memory_key.to_string() })?;
+        let reference_node_id = self
+            .memory_to_node
+            .get(reference_memory_key)
+            .ok_or_else(|| MemoryError::NotFound {
+                key: reference_memory_key.to_string(),
+            })?;
 
         // Use graph traversal to find all reachable nodes within max_distance
         let traversal_options = crate::memory::knowledge_graph::query::TraversalOptions {
@@ -491,7 +547,10 @@ impl MemoryKnowledgeGraph {
             min_confidence: None,
         };
 
-        let reachable_nodes = self.graph.traverse_from_node(*reference_node_id, traversal_options).await?;
+        let reachable_nodes = self
+            .graph
+            .traverse_from_node(*reference_node_id, traversal_options)
+            .await?;
 
         // Convert node IDs back to memory keys with distances
         let mut result = Vec::new();
@@ -544,7 +603,11 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Calculate similarity between a node and a memory entry
-    async fn calculate_node_memory_similarity(&self, node: &Node, memory: &MemoryEntry) -> Result<f64> {
+    async fn calculate_node_memory_similarity(
+        &self,
+        node: &Node,
+        memory: &MemoryEntry,
+    ) -> Result<f64> {
         let mut similarity_score = 0.0;
         let mut factor_count = 0;
 
@@ -562,13 +625,18 @@ impl MemoryKnowledgeGraph {
         if !node_tags.is_empty() || !memory_tags.is_empty() {
             let intersection = node_tags.intersection(&memory_tags).count();
             let union = node_tags.union(&memory_tags).count();
-            let tag_similarity = if union > 0 { intersection as f64 / union as f64 } else { 0.0 };
+            let tag_similarity = if union > 0 {
+                intersection as f64 / union as f64
+            } else {
+                0.0
+            };
             similarity_score += tag_similarity;
             factor_count += 1;
         }
 
         // Embedding similarity (if both have embeddings)
-        if let (Some(node_embedding), Some(memory_embedding)) = (&node.embedding, &memory.embedding) {
+        if let (Some(node_embedding), Some(memory_embedding)) = (&node.embedding, &memory.embedding)
+        {
             let embedding_similarity = cosine_similarity(node_embedding, memory_embedding);
             similarity_score += embedding_similarity;
             factor_count += 1;
@@ -583,7 +651,11 @@ impl MemoryKnowledgeGraph {
             }
         }
 
-        Ok(if factor_count > 0 { similarity_score / factor_count as f64 } else { 0.0 })
+        Ok(if factor_count > 0 {
+            similarity_score / factor_count as f64
+        } else {
+            0.0
+        })
     }
 
     /// Calculate text similarity between two strings
@@ -605,7 +677,11 @@ impl MemoryKnowledgeGraph {
         let intersection = words1.intersection(&words2).count();
         let union = words1.union(&words2).count();
 
-        if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
     }
 
     /// Intelligently merge two pieces of content
@@ -636,10 +712,14 @@ impl MemoryKnowledgeGraph {
 
         if similarity > 0.7 {
             // High similarity: merge by combining unique information
-            self.merge_similar_content(existing_content, new_content).await
+            self.merge_similar_content(existing_content, new_content)
+                .await
         } else {
             // Low similarity: create a structured combination
-            Ok(format!("{}\n\n--- Updated Information ---\n{}", existing_content, new_content))
+            Ok(format!(
+                "{}\n\n--- Updated Information ---\n{}",
+                existing_content, new_content
+            ))
         }
     }
 
@@ -659,14 +739,15 @@ impl MemoryKnowledgeGraph {
             .collect();
 
         // Pre-allocate with estimated capacity to reduce reallocations
-        let mut merged_sentences = Vec::with_capacity(existing_sentences.len() + new_sentences.len());
+        let mut merged_sentences =
+            Vec::with_capacity(existing_sentences.len() + new_sentences.len());
         merged_sentences.extend_from_slice(&existing_sentences);
 
         // Use iterator approach to avoid nested loops where possible
         for new_sentence in new_sentences {
-            let is_duplicate = existing_sentences
-                .iter()
-                .any(|&existing_sentence| self.calculate_text_similarity(existing_sentence, new_sentence) > 0.8);
+            let is_duplicate = existing_sentences.iter().any(|&existing_sentence| {
+                self.calculate_text_similarity(existing_sentence, new_sentence) > 0.8
+            });
 
             if !is_duplicate {
                 merged_sentences.push(new_sentence);
@@ -699,7 +780,8 @@ impl MemoryKnowledgeGraph {
                     new_content.to_string(),
                     crate::memory::types::MemoryType::LongTerm,
                 );
-                self.auto_detect_relationships(node_id, &temp_memory).await?;
+                self.auto_detect_relationships(node_id, &temp_memory)
+                    .await?;
             }
         } else {
             // Content is similar, just update relationship strengths
@@ -717,8 +799,9 @@ impl MemoryKnowledgeGraph {
         // Find edges connected to this node with low strength
         for edge_ref in self.graph.edges.iter() {
             let edge = edge_ref.value();
-            if (edge.from_node == node_id || edge.to_node == node_id) &&
-               edge.relationship.strength < weak_threshold {
+            if (edge.from_node == node_id || edge.to_node == node_id)
+                && edge.relationship.strength < weak_threshold
+            {
                 edges_to_remove.push(edge.id);
             }
         }
@@ -734,7 +817,10 @@ impl MemoryKnowledgeGraph {
     /// Update relationship strengths based on current node state
     async fn update_relationship_strengths(&mut self, node_id: Uuid) -> Result<()> {
         // Get all edges connected to this node
-        let connected_edges: Vec<_> = self.graph.edges.iter()
+        let connected_edges: Vec<_> = self
+            .graph
+            .edges
+            .iter()
             .filter(|edge_ref| {
                 let edge = edge_ref.value();
                 edge.from_node == node_id || edge.to_node == node_id
@@ -768,7 +854,9 @@ impl MemoryKnowledgeGraph {
             let mut strength = 0.5; // Base strength
 
             // Content similarity factor
-            if let (Some(from_content), Some(to_content)) = (&from_node.description, &to_node.description) {
+            if let (Some(from_content), Some(to_content)) =
+                (&from_node.description, &to_node.description)
+            {
                 let content_similarity = self.calculate_text_similarity(from_content, to_content);
                 strength += content_similarity * 0.3;
             }
@@ -777,7 +865,8 @@ impl MemoryKnowledgeGraph {
             let from_tags: std::collections::HashSet<_> = from_node.tags.iter().collect();
             let to_tags: std::collections::HashSet<_> = to_node.tags.iter().collect();
             let tag_overlap = if !from_tags.is_empty() && !to_tags.is_empty() {
-                from_tags.intersection(&to_tags).count() as f64 / from_tags.union(&to_tags).count() as f64
+                from_tags.intersection(&to_tags).count() as f64
+                    / from_tags.union(&to_tags).count() as f64
             } else {
                 0.0
             };
@@ -817,12 +906,6 @@ pub struct InferredRelationship {
     pub confidence: f64,
     pub reasoning: String,
 }
-
-
-
-
-
-
 
 /// Calculate cosine similarity between two vectors
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
@@ -1007,7 +1090,10 @@ mod tests {
         let cloned = related_memory.clone();
         assert_eq!(related_memory.memory_key, cloned.memory_key);
         assert_eq!(related_memory.node_id, cloned.node_id);
-        assert_eq!(related_memory.relationship_strength, cloned.relationship_strength);
+        assert_eq!(
+            related_memory.relationship_strength,
+            cloned.relationship_strength
+        );
     }
 
     #[test]
@@ -1034,7 +1120,7 @@ mod tests {
 
         let result = graph.get_node_for_memory("nonexistent").await;
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        assert!(result.expect("result should be valid").is_none());
     }
 
     #[tokio::test]
@@ -1044,7 +1130,7 @@ mod tests {
 
         let result = graph.get_memory_for_node(Uuid::new_v4()).await;
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        assert!(result.expect("result should be valid").is_none());
     }
 
     #[test]
@@ -1096,12 +1182,16 @@ mod tests {
         };
 
         // Test that it can be serialized and deserialized
-        let serialized = serde_json::to_string(&related_memory).unwrap();
-        let deserialized: RelatedMemory = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&related_memory).expect("value should be available");
+        let deserialized: RelatedMemory =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(related_memory.memory_key, deserialized.memory_key);
         assert_eq!(related_memory.node_id, deserialized.node_id);
-        assert_eq!(related_memory.relationship_strength, deserialized.relationship_strength);
+        assert_eq!(
+            related_memory.relationship_strength,
+            deserialized.relationship_strength
+        );
     }
 
     #[test]
@@ -1114,8 +1204,9 @@ mod tests {
             reasoning: "High semantic overlap".to_string(),
         };
 
-        let serialized = serde_json::to_string(&inferred).unwrap();
-        let deserialized: InferredRelationship = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&inferred).expect("value should be available");
+        let deserialized: InferredRelationship =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(inferred.from_node, deserialized.from_node);
         assert_eq!(inferred.to_node, deserialized.to_node);

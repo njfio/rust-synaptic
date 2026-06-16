@@ -41,10 +41,10 @@ pub struct AudioMemoryProcessor {
     /// Speech-to-text engine
     #[cfg(feature = "whisper-rs")]
     whisper_context: Option<WhisperContext>,
-    
+
     /// Audio processing configuration
     config: AudioProcessorConfig,
-    
+
     /// Audio host for real-time processing
     #[cfg(feature = "audio-memory")]
     audio_host: Host,
@@ -55,25 +55,25 @@ pub struct AudioMemoryProcessor {
 pub struct AudioProcessorConfig {
     /// Enable speech-to-text transcription
     pub enable_transcription: bool,
-    
+
     /// Enable speaker identification
     pub enable_speaker_detection: bool,
-    
+
     /// Enable audio event detection
     pub enable_event_detection: bool,
-    
+
     /// Enable audio fingerprinting
     pub enable_fingerprinting: bool,
-    
+
     /// Sample rate for processing
     pub processing_sample_rate: u32,
-    
+
     /// Transcription confidence threshold
     pub transcription_confidence_threshold: f32,
-    
+
     /// Maximum audio duration for processing (seconds)
     pub max_duration_seconds: u32,
-    
+
     /// Supported audio formats
     pub supported_formats: Vec<AudioFormat>,
 }
@@ -122,15 +122,20 @@ impl AudioMemoryProcessor {
 
     /// Load and validate audio from bytes
     #[cfg(feature = "audio-memory")]
-    pub fn load_audio(&self, data: &[u8], format: &AudioFormat) -> MultiModalResult<(Vec<f32>, WavSpec)> {
+    pub fn load_audio(
+        &self,
+        data: &[u8],
+        format: &AudioFormat,
+    ) -> MultiModalResult<(Vec<f32>, WavSpec)> {
         match format {
             AudioFormat::Wav => {
                 let cursor = Cursor::new(data);
-                let mut reader = WavReader::new(cursor)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to read WAV: {}", e)))?;
-                
+                let mut reader = WavReader::new(cursor).map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to read WAV: {}", e))
+                })?;
+
                 let spec = reader.spec();
-                
+
                 // Check duration limits
                 let duration_seconds = reader.len() as f32 / spec.sample_rate as f32;
                 if duration_seconds > self.config.max_duration_seconds as f32 {
@@ -149,8 +154,9 @@ impl AudioMemoryProcessor {
                         .collect(),
                 };
 
-                let samples = samples
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to read samples: {}", e)))?;
+                let samples = samples.map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to read samples: {}", e))
+                })?;
 
                 Ok((samples, spec))
             }
@@ -163,7 +169,11 @@ impl AudioMemoryProcessor {
 
     /// Transcribe audio to text using speech recognition
     #[cfg(all(feature = "audio-memory", feature = "whisper-rs"))]
-    pub async fn transcribe_audio(&self, samples: &[f32], sample_rate: u32) -> MultiModalResult<Option<String>> {
+    pub async fn transcribe_audio(
+        &self,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> MultiModalResult<Option<String>> {
         if !self.config.enable_transcription {
             return Ok(None);
         }
@@ -176,8 +186,9 @@ impl AudioMemoryProcessor {
         };
 
         // Determine model path
-        let model_path = std::env::var("WHISPER_MODEL_PATH")
-            .map_err(|_| SynapticError::ProcessingError("WHISPER_MODEL_PATH not set".to_string()))?;
+        let model_path = std::env::var("WHISPER_MODEL_PATH").map_err(|_| {
+            SynapticError::ProcessingError("WHISPER_MODEL_PATH not set".to_string())
+        })?;
 
         // Load Whisper context and state
         let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
@@ -194,9 +205,9 @@ impl AudioMemoryProcessor {
         params.set_print_timestamps(false);
 
         // Run inference
-        state
-            .full(params, &resampled_samples)
-            .map_err(|e| SynapticError::ProcessingError(format!("Whisper inference failed: {e}")))?;
+        state.full(params, &resampled_samples).map_err(|e| {
+            SynapticError::ProcessingError(format!("Whisper inference failed: {e}"))
+        })?;
 
         let num_segments = state
             .full_n_segments()
@@ -205,19 +216,19 @@ impl AudioMemoryProcessor {
         let mut transcript = String::new();
         let mut probs = Vec::new();
         for i in 0..num_segments {
-            let seg = state
-                .full_get_segment_text(i)
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to get segment: {e}")))?;
+            let seg = state.full_get_segment_text(i).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get segment: {e}"))
+            })?;
             transcript.push_str(&seg);
             transcript.push(' ');
 
-            let n_tokens = state
-                .full_n_tokens(i)
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to get tokens: {e}")))?;
+            let n_tokens = state.full_n_tokens(i).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get tokens: {e}"))
+            })?;
             for t in 0..n_tokens {
-                let p = state
-                    .full_get_token_prob(i, t)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to get token prob: {e}")))?;
+                let p = state.full_get_token_prob(i, t).map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to get token prob: {e}"))
+                })?;
                 probs.push(p);
             }
         }
@@ -233,7 +244,12 @@ impl AudioMemoryProcessor {
 
     /// Resample audio to target sample rate
     #[cfg(feature = "audio-memory")]
-    pub fn resample_audio(&self, samples: &[f32], from_rate: u32, to_rate: u32) -> MultiModalResult<Vec<f32>> {
+    pub fn resample_audio(
+        &self,
+        samples: &[f32],
+        from_rate: u32,
+        to_rate: u32,
+    ) -> MultiModalResult<Vec<f32>> {
         if from_rate == to_rate {
             return Ok(samples.to_vec());
         }
@@ -261,7 +277,11 @@ impl AudioMemoryProcessor {
 
     /// Extract audio features for similarity comparison
     #[cfg(feature = "audio-memory")]
-    pub async fn extract_audio_features(&self, samples: &[f32], sample_rate: u32) -> MultiModalResult<Vec<f32>> {
+    pub async fn extract_audio_features(
+        &self,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> MultiModalResult<Vec<f32>> {
         if !self.config.enable_fingerprinting {
             return Ok(vec![]);
         }
@@ -314,13 +334,17 @@ impl AudioMemoryProcessor {
 
         // Limit feature vector size
         features.truncate(512);
-        
+
         Ok(features)
     }
 
     /// Detect audio events (speech, music, silence, etc.)
     #[cfg(feature = "audio-memory")]
-    pub async fn detect_audio_events(&self, samples: &[f32], sample_rate: u32) -> MultiModalResult<Vec<AudioEvent>> {
+    pub async fn detect_audio_events(
+        &self,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> MultiModalResult<Vec<AudioEvent>> {
         if !self.config.enable_event_detection {
             return Ok(vec![]);
         }
@@ -335,7 +359,7 @@ impl AudioMemoryProcessor {
 
             // Calculate energy
             let energy = window.iter().map(|&x| x * x).sum::<f32>() / window.len() as f32;
-            
+
             // Simple event detection based on energy thresholds
             let event_type = if energy < 0.001 {
                 "silence"
@@ -361,42 +385,47 @@ impl AudioMemoryProcessor {
 
     /// Analyze speaker characteristics
     #[cfg(feature = "audio-memory")]
-    pub async fn analyze_speaker(&self, samples: &[f32], sample_rate: u32) -> MultiModalResult<Option<SpeakerInfo>> {
+    pub async fn analyze_speaker(
+        &self,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> MultiModalResult<Option<SpeakerInfo>> {
         if !self.config.enable_speaker_detection {
             return Ok(None);
         }
 
         // Simplified speaker analysis
         // In a real implementation, you'd use speaker recognition models
-        
+
         // Calculate fundamental frequency (F0) for pitch analysis
         let mut pitch_estimates = Vec::new();
         let window_size = 1024;
-        
+
         for i in (0..samples.len()).step_by(window_size / 2) {
             let end = (i + window_size).min(samples.len());
             let window = &samples[i..end];
-            
+
             // Simple autocorrelation-based pitch detection
             let mut max_correlation = 0.0;
             let mut best_lag = 0;
-            
-            for lag in 50..400 { // Typical pitch range
+
+            for lag in 50..400 {
+                // Typical pitch range
                 if lag >= window.len() {
                     break;
                 }
-                
+
                 let mut correlation = 0.0;
                 for j in 0..(window.len() - lag) {
                     correlation += window[j] * window[j + lag];
                 }
-                
+
                 if correlation > max_correlation {
                     max_correlation = correlation;
                     best_lag = lag;
                 }
             }
-            
+
             if max_correlation > 0.3 {
                 let pitch = sample_rate as f32 / best_lag as f32;
                 pitch_estimates.push(pitch);
@@ -409,17 +438,13 @@ impl AudioMemoryProcessor {
 
         // Estimate gender based on average pitch
         let avg_pitch = pitch_estimates.iter().sum::<f32>() / pitch_estimates.len() as f32;
-        let estimated_gender = if avg_pitch < 165.0 {
-            "male"
-        } else {
-            "female"
-        };
+        let estimated_gender = if avg_pitch < 165.0 { "male" } else { "female" };
 
         Ok(Some(SpeakerInfo {
             speaker_id: None,
             gender: Some(estimated_gender.to_string()),
             age_estimate: None, // Would require more sophisticated analysis
-            emotion: None, // Would require emotion recognition models
+            emotion: None,      // Would require emotion recognition models
             confidence: 0.7,
         }))
     }
@@ -427,7 +452,9 @@ impl AudioMemoryProcessor {
     /// Determine audio format from content
     pub fn detect_format(&self, data: &[u8]) -> MultiModalResult<AudioFormat> {
         if data.len() < 12 {
-            return Err(SynapticError::ProcessingError("Audio data too short".to_string()));
+            return Err(SynapticError::ProcessingError(
+                "Audio data too short".to_string(),
+            ));
         }
 
         // WAV: RIFF ... WAVE
@@ -436,7 +463,9 @@ impl AudioMemoryProcessor {
         }
 
         // MP3: ID3 or sync frame
-        if data.starts_with(b"ID3") || (data.len() >= 2 && data[0] == 0xFF && (data[1] & 0xE0) == 0xE0) {
+        if data.starts_with(b"ID3")
+            || (data.len() >= 2 && data[0] == 0xFF && (data[1] & 0xE0) == 0xE0)
+        {
             return Ok(AudioFormat::Mp3);
         }
 
@@ -450,44 +479,57 @@ impl AudioMemoryProcessor {
             return Ok(AudioFormat::Ogg);
         }
 
-        Err(SynapticError::ProcessingError("Unknown audio format".to_string()))
+        Err(SynapticError::ProcessingError(
+            "Unknown audio format".to_string(),
+        ))
     }
 }
 
 #[cfg(feature = "audio-memory")]
 #[async_trait::async_trait]
 impl MultiModalProcessor for AudioMemoryProcessor {
-    async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+    async fn process(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory> {
         let start_time = std::time::Instant::now();
-        
+
         // Validate content type
         let (format, duration_ms, sample_rate, channels) = match content_type {
-            ContentType::Audio { format, duration_ms, sample_rate, channels } => {
-                (format.clone(), *duration_ms, *sample_rate, *channels)
+            ContentType::Audio {
+                format,
+                duration_ms,
+                sample_rate,
+                channels,
+            } => (format.clone(), *duration_ms, *sample_rate, *channels),
+            _ => {
+                return Err(SynapticError::ProcessingError(
+                    "Invalid content type for audio processor".to_string(),
+                ))
             }
-            _ => return Err(SynapticError::ProcessingError("Invalid content type for audio processor".to_string())),
         };
 
         // Load audio
         let (samples, _spec) = self.load_audio(content, &format)?;
-        
+
         // Transcribe audio
         #[cfg(feature = "whisper-rs")]
         let transcript = self.transcribe_audio(&samples, sample_rate).await?;
         #[cfg(not(feature = "whisper-rs"))]
         let transcript = None;
-        
+
         // Analyze speaker
         let speaker_info = self.analyze_speaker(&samples, sample_rate).await?;
-        
+
         // Extract audio features
         let audio_features = self.extract_audio_features(&samples, sample_rate).await?;
-        
+
         // Detect audio events
         let detected_events = self.detect_audio_events(&samples, sample_rate).await?;
-        
+
         let processing_time = start_time.elapsed().as_millis() as u64;
-        
+
         let memory = MultiModalMemory {
             id: Uuid::new_v4().to_string(),
             content_type: content_type.clone(),
@@ -520,23 +562,45 @@ impl MultiModalProcessor for AudioMemoryProcessor {
         Ok(memory)
     }
 
-    async fn extract_features(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<Vec<f32>> {
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>> {
         let (format, _, sample_rate, _) = match content_type {
-            ContentType::Audio { format, sample_rate, .. } => (format, 0, *sample_rate, 0),
-            _ => return Err(SynapticError::ProcessingError("Invalid content type".to_string())),
+            ContentType::Audio {
+                format,
+                sample_rate,
+                ..
+            } => (format, 0, *sample_rate, 0),
+            _ => {
+                return Err(SynapticError::ProcessingError(
+                    "Invalid content type".to_string(),
+                ))
+            }
         };
 
         let (samples, _) = self.load_audio(content, format)?;
         self.extract_audio_features(&samples, sample_rate).await
     }
 
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32> {
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32> {
         if features1.len() != features2.len() {
-            return Err(SynapticError::ProcessingError("Feature vectors must have same length".to_string()));
+            return Err(SynapticError::ProcessingError(
+                "Feature vectors must have same length".to_string(),
+            ));
         }
 
         // Calculate cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -547,12 +611,20 @@ impl MultiModalProcessor for AudioMemoryProcessor {
         Ok(dot_product / (norm1 * norm2))
     }
 
-    async fn search_similar(&self, query_features: &[f32], candidates: &[MultiModalMemory]) -> MultiModalResult<Vec<(MemoryId, f32)>> {
+    async fn search_similar(
+        &self,
+        query_features: &[f32],
+        candidates: &[MultiModalMemory],
+    ) -> MultiModalResult<Vec<(MemoryId, f32)>> {
         let mut similarities = Vec::new();
 
         for candidate in candidates {
-            if let ContentSpecificMetadata::Audio { audio_features, .. } = &candidate.metadata.content_specific {
-                let similarity = self.calculate_similarity(query_features, audio_features).await?;
+            if let ContentSpecificMetadata::Audio { audio_features, .. } =
+                &candidate.metadata.content_specific
+            {
+                let similarity = self
+                    .calculate_similarity(query_features, audio_features)
+                    .await?;
                 similarities.push((candidate.id.clone(), similarity));
             }
         }

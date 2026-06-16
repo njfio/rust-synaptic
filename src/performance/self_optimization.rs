@@ -281,19 +281,19 @@ impl SelfOptimizationEngine {
     pub async fn new(config: OptimizationConfig) -> Result<Self> {
         let performance_config = crate::performance::PerformanceConfig::default();
         let metrics_collector = MetricsCollector::new(performance_config.clone()).await?;
-        
+
         let parameter_optimizer = ParameterOptimizer::new(
             crate::performance::parameter_optimization::OptimizerConfig::default()
         ).await?;
-        
+
         let algorithm_selector = AdaptiveAlgorithmSelector::new();
-        
+
         let monitoring_config = RealTimeMonitoringConfig::default();
         let performance_monitor = RealTimePerformanceMonitor::new(monitoring_config).await?;
-        
+
         let state = Arc::new(RwLock::new(OptimizationState::default()));
         let history = Arc::new(RwLock::new(Vec::new()));
-        
+
         Ok(Self {
             parameter_optimizer,
             algorithm_selector,
@@ -315,7 +315,7 @@ impl SelfOptimizationEngine {
 
         // Initialize performance monitoring
         self.performance_monitor.start_monitoring().await?;
-        
+
         // Set initial state
         {
             let mut state = self.state.write().await;
@@ -325,27 +325,27 @@ impl SelfOptimizationEngine {
 
         // Start optimization loop
         self.run_optimization_loop().await?;
-        
+
         Ok(())
     }
 
     /// Stop the self-optimization engine
     pub async fn stop(&mut self) -> Result<()> {
         self.performance_monitor.stop_monitoring().await?;
-        
+
         let mut state = self.state.write().await;
         state.status = OptimizationStatus::Idle;
-        
+
         Ok(())
     }
 
     /// Run the main optimization loop
     async fn run_optimization_loop(&mut self) -> Result<()> {
         let mut interval = tokio::time::interval(Duration::from_secs(self.config.optimization_interval_secs));
-        
+
         loop {
             interval.tick().await;
-            
+
             // Check if optimization is enabled
             {
                 let state = self.state.read().await;
@@ -353,7 +353,7 @@ impl SelfOptimizationEngine {
                     break;
                 }
             }
-            
+
             // Perform optimization cycle
             if let Err(e) = self.perform_optimization_cycle().await {
                 tracing::error!(
@@ -362,17 +362,17 @@ impl SelfOptimizationEngine {
                     error = %e,
                     "Optimization cycle failed"
                 );
-                
+
                 let mut state = self.state.write().await;
                 state.consecutive_failures += 1;
-                
+
                 if state.consecutive_failures >= 3 {
                     state.status = OptimizationStatus::Failed(e.to_string());
                     break;
                 }
             }
         }
-        
+
         Ok(())
     }
 

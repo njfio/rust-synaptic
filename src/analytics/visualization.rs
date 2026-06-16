@@ -1,8 +1,8 @@
 // Visualization Module
 // 3D graph visualization and temporal visualization capabilities
 
-use crate::error::Result;
 use crate::analytics::AnalyticsConfig;
+use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,8 @@ impl Point3D {
     }
 
     pub fn distance(&self, other: &Point3D) -> f64 {
-        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2)).sqrt()
+        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2))
+            .sqrt()
     }
 }
 
@@ -257,18 +258,24 @@ impl VisualizationEngine {
     }
 
     /// Create a visual node from memory entry
-    pub async fn create_visual_node(&mut self, memory_key: &str, memory_entry: &MemoryEntry) -> Result<String> {
+    pub async fn create_visual_node(
+        &mut self,
+        memory_key: &str,
+        memory_entry: &MemoryEntry,
+    ) -> Result<String> {
         let node_id = Uuid::new_v4().to_string();
-        
+
         // Calculate position using layout algorithm
-        let position = self.calculate_node_position(memory_key, memory_entry).await?;
-        
+        let position = self
+            .calculate_node_position(memory_key, memory_entry)
+            .await?;
+
         // Determine node size based on importance
         let size = memory_entry.metadata.importance * 10.0 + 5.0;
-        
+
         // Determine color based on memory type or content
         let color = self.calculate_node_color(memory_entry);
-        
+
         let visual_node = VisualNode {
             id: node_id.clone(),
             memory_key: memory_key.to_string(),
@@ -291,16 +298,22 @@ impl VisualizationEngine {
     }
 
     /// Create a visual edge between nodes
-    pub async fn create_visual_edge(&mut self, source_key: &str, target_key: &str, strength: f64, edge_type: &str) -> Result<String> {
+    pub async fn create_visual_edge(
+        &mut self,
+        source_key: &str,
+        target_key: &str,
+        strength: f64,
+        edge_type: &str,
+    ) -> Result<String> {
         let edge_id = Uuid::new_v4().to_string();
-        
+
         // Find source and target node IDs
         let source_id = self.find_node_id_by_memory_key(source_key);
         let target_id = self.find_node_id_by_memory_key(target_key);
-        
+
         if let (Some(source_id), Some(target_id)) = (source_id, target_id) {
             let color = self.calculate_edge_color(strength, edge_type);
-            
+
             let visual_edge = VisualEdge {
                 id: edge_id.clone(),
                 source: source_id,
@@ -325,20 +338,22 @@ impl VisualizationEngine {
     }
 
     /// Calculate node position using layout algorithm
-    async fn calculate_node_position(&self, _memory_key: &str, _memory_entry: &MemoryEntry) -> Result<Point3D> {
+    async fn calculate_node_position(
+        &self,
+        _memory_key: &str,
+        _memory_entry: &MemoryEntry,
+    ) -> Result<Point3D> {
         match self.layout_config.algorithm {
-            LayoutAlgorithm::Random => {
-                Ok(Point3D::new(
-                    (rand::random::<f64>() - 0.5) * 200.0,
-                    (rand::random::<f64>() - 0.5) * 200.0,
-                    (rand::random::<f64>() - 0.5) * 200.0,
-                ))
-            }
+            LayoutAlgorithm::Random => Ok(Point3D::new(
+                (rand::random::<f64>() - 0.5) * 200.0,
+                (rand::random::<f64>() - 0.5) * 200.0,
+                (rand::random::<f64>() - 0.5) * 200.0,
+            )),
             LayoutAlgorithm::Sphere => {
                 let theta = rand::random::<f64>() * 2.0 * std::f64::consts::PI;
                 let phi = rand::random::<f64>() * std::f64::consts::PI;
                 let radius = 100.0;
-                
+
                 Ok(Point3D::new(
                     radius * phi.sin() * theta.cos(),
                     radius * phi.sin() * theta.sin(),
@@ -349,11 +364,11 @@ impl VisualizationEngine {
                 let grid_size = (self.nodes.len() as f64).cbrt().ceil() as i32;
                 let index = self.nodes.len() as i32;
                 let spacing = 50.0;
-                
+
                 let x = (index % grid_size) as f64 * spacing;
                 let y = ((index / grid_size) % grid_size) as f64 * spacing;
                 let z = (index / (grid_size * grid_size)) as f64 * spacing;
-                
+
                 Ok(Point3D::new(x, y, z))
             }
             _ => {
@@ -374,7 +389,7 @@ impl VisualizationEngine {
         let red = (255.0 * importance) as u8;
         let green = (255.0 * (1.0 - importance)) as u8;
         let blue = 128;
-        
+
         (red, green, blue)
     }
 
@@ -394,14 +409,27 @@ impl VisualizationEngine {
     }
 
     /// Create temporal timeline
-    pub async fn create_temporal_timeline(&mut self, title: &str, data_points: Vec<TemporalDataPoint>, viz_type: TimelineVisualizationType) -> Result<String> {
+    pub async fn create_temporal_timeline(
+        &mut self,
+        title: &str,
+        data_points: Vec<TemporalDataPoint>,
+        viz_type: TimelineVisualizationType,
+    ) -> Result<String> {
         let timeline_id = Uuid::new_v4().to_string();
-        
+
         let time_range = if data_points.is_empty() {
             (Utc::now(), Utc::now())
         } else {
-            let min_time = data_points.iter().map(|p| p.timestamp).min().unwrap();
-            let max_time = data_points.iter().map(|p| p.timestamp).max().unwrap();
+            let min_time = data_points
+                .iter()
+                .map(|p| p.timestamp)
+                .min()
+                .expect("min() should succeed");
+            let max_time = data_points
+                .iter()
+                .map(|p| p.timestamp)
+                .max()
+                .expect("max() should succeed");
             (min_time, max_time)
         };
 
@@ -412,11 +440,11 @@ impl VisualizationEngine {
             time_range,
             viz_type,
             color_scheme: vec![
-                (255, 99, 132),   // Red
-                (54, 162, 235),   // Blue
-                (255, 205, 86),   // Yellow
-                (75, 192, 192),   // Teal
-                (153, 102, 255),  // Purple
+                (255, 99, 132),  // Red
+                (54, 162, 235),  // Blue
+                (255, 205, 86),  // Yellow
+                (75, 192, 192),  // Teal
+                (153, 102, 255), // Purple
             ],
         };
 
@@ -425,17 +453,22 @@ impl VisualizationEngine {
     }
 
     /// Create relationship strength heatmap
-    pub async fn create_relationship_heatmap(&mut self, memory_keys: Vec<String>, time_periods: Vec<DateTime<Utc>>, strength_matrix: Vec<Vec<f64>>) -> Result<String> {
+    pub async fn create_relationship_heatmap(
+        &mut self,
+        memory_keys: Vec<String>,
+        time_periods: Vec<DateTime<Utc>>,
+        strength_matrix: Vec<Vec<f64>>,
+    ) -> Result<String> {
         let heatmap_id = Uuid::new_v4().to_string();
-        
+
         let heatmap = RelationshipHeatmap {
             id: heatmap_id.clone(),
             memory_keys,
             time_periods,
             strength_matrix,
             color_config: HeatmapColorConfig {
-                min_color: (0, 0, 255),     // Blue for low values
-                max_color: (255, 0, 0),     // Red for high values
+                min_color: (0, 0, 255), // Blue for low values
+                max_color: (255, 0, 0), // Red for high values
                 color_steps: 256,
                 logarithmic: false,
             },
@@ -449,7 +482,7 @@ impl VisualizationEngine {
     pub async fn apply_force_directed_layout(&mut self, iterations: u32) -> Result<()> {
         for _ in 0..iterations {
             let mut forces: HashMap<String, Point3D> = HashMap::new();
-            
+
             // Initialize forces
             for node_id in self.nodes.keys() {
                 forces.insert(node_id.clone(), Point3D::new(0.0, 0.0, 0.0));
@@ -461,11 +494,12 @@ impl VisualizationEngine {
                     if id1 != id2 {
                         let distance = node1.position.distance(&node2.position);
                         if distance > 0.0 {
-                            let force_magnitude = self.layout_config.repulsion_strength / (distance * distance);
+                            let force_magnitude =
+                                self.layout_config.repulsion_strength / (distance * distance);
                             let direction_x = (node1.position.x - node2.position.x) / distance;
                             let direction_y = (node1.position.y - node2.position.y) / distance;
                             let direction_z = (node1.position.z - node2.position.z) / distance;
-                            
+
                             if let Some(force) = forces.get_mut(id1) {
                                 force.x += direction_x * force_magnitude;
                                 force.y += direction_y * force_magnitude;
@@ -478,20 +512,26 @@ impl VisualizationEngine {
 
             // Calculate attraction forces from edges
             for edge in self.edges.values() {
-                if let (Some(source_node), Some(target_node)) = (self.nodes.get(&edge.source), self.nodes.get(&edge.target)) {
+                if let (Some(source_node), Some(target_node)) =
+                    (self.nodes.get(&edge.source), self.nodes.get(&edge.target))
+                {
                     let distance = source_node.position.distance(&target_node.position);
                     if distance > 0.0 {
-                        let force_magnitude = self.layout_config.attraction_strength * edge.strength * distance;
-                        let direction_x = (target_node.position.x - source_node.position.x) / distance;
-                        let direction_y = (target_node.position.y - source_node.position.y) / distance;
-                        let direction_z = (target_node.position.z - source_node.position.z) / distance;
-                        
+                        let force_magnitude =
+                            self.layout_config.attraction_strength * edge.strength * distance;
+                        let direction_x =
+                            (target_node.position.x - source_node.position.x) / distance;
+                        let direction_y =
+                            (target_node.position.y - source_node.position.y) / distance;
+                        let direction_z =
+                            (target_node.position.z - source_node.position.z) / distance;
+
                         if let Some(force) = forces.get_mut(&edge.source) {
                             force.x += direction_x * force_magnitude;
                             force.y += direction_y * force_magnitude;
                             force.z += direction_z * force_magnitude;
                         }
-                        
+
                         if let Some(force) = forces.get_mut(&edge.target) {
                             force.x -= direction_x * force_magnitude;
                             force.y -= direction_y * force_magnitude;
@@ -515,7 +555,12 @@ impl VisualizationEngine {
     }
 
     /// Start animation for a visual element
-    pub async fn start_animation(&mut self, element_id: &str, animation_type: AnimationType, duration: f64) -> Result<()> {
+    pub async fn start_animation(
+        &mut self,
+        element_id: &str,
+        animation_type: AnimationType,
+        duration: f64,
+    ) -> Result<()> {
         // Update node animation if it exists
         if let Some(node) = self.nodes.get_mut(element_id) {
             node.animation_state = AnimationState {
@@ -526,7 +571,7 @@ impl VisualizationEngine {
             };
             self.animation_queue.push(element_id.to_string());
         }
-        
+
         // Update edge animation if it exists
         if let Some(edge) = self.edges.get_mut(element_id) {
             edge.animation_state = AnimationState {
@@ -563,14 +608,14 @@ impl VisualizationEngine {
             vertices.extend_from_slice(&[
                 node.position.x as f32,
                 node.position.y as f32,
-                node.position.z as f32
+                node.position.z as f32,
             ]);
 
             colors.extend_from_slice(&[
                 node.color.0 as f32 / 255.0,
                 node.color.1 as f32 / 255.0,
                 node.color.2 as f32 / 255.0,
-                1.0 // Alpha
+                1.0, // Alpha
             ]);
 
             indices.push(i as u32);
@@ -581,7 +626,7 @@ impl VisualizationEngine {
         for edge in self.edges.values() {
             if let (Some(source_idx), Some(target_idx)) = (
                 self.find_node_index(&edge.source),
-                self.find_node_index(&edge.target)
+                self.find_node_index(&edge.target),
             ) {
                 edge_indices.extend_from_slice(&[source_idx as u32, target_idx as u32]);
             }
@@ -612,7 +657,8 @@ impl VisualizationEngine {
         // Create interaction zones based on node clusters
         let mut interaction_zones = Vec::new();
         for (i, node) in self.nodes.values().enumerate() {
-            if i % 3 == 0 { // Create zones for every 3rd node to avoid overcrowding
+            if i % 3 == 0 {
+                // Create zones for every 3rd node to avoid overcrowding
                 interaction_zones.push(InteractionZone {
                     id: format!("zone_{}", i),
                     center: node.position.clone(),
@@ -638,7 +684,8 @@ impl VisualizationEngine {
         // Create haptic feedback points for important nodes
         let mut haptic_feedback_points = Vec::new();
         for node in self.nodes.values() {
-            if node.size > 10.0 { // Only for important nodes
+            if node.size > 10.0 {
+                // Only for important nodes
                 haptic_feedback_points.push(HapticFeedbackPoint {
                     id: format!("haptic_{}", node.id),
                     position: node.position.clone(),
@@ -810,45 +857,70 @@ mod tests {
     #[tokio::test]
     async fn test_visual_node_creation() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
-        let memory_entry = MemoryEntry::new("test_key".to_string(), "Test memory content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let node_id = engine.create_visual_node("test_key", &memory_entry).await.unwrap();
-        
+        let memory_entry = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test memory content".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        );
+        let node_id = engine
+            .create_visual_node("test_key", &memory_entry)
+            .await
+            .expect("await should be present");
+
         assert!(engine.nodes.contains_key(&node_id));
     }
 
     #[tokio::test]
     async fn test_temporal_timeline_creation() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
-        let data_points = vec![
-            TemporalDataPoint {
-                timestamp: Utc::now(),
-                value: 1.0,
-                memory_key: "test_key".to_string(),
-                data_type: TemporalDataType::AccessFrequency,
-                metadata: HashMap::new(),
-            }
-        ];
+        let data_points = vec![TemporalDataPoint {
+            timestamp: Utc::now(),
+            value: 1.0,
+            memory_key: "test_key".to_string(),
+            data_type: TemporalDataType::AccessFrequency,
+            metadata: HashMap::new(),
+        }];
 
-        let timeline_id = engine.create_temporal_timeline("Test Timeline", data_points, TimelineVisualizationType::LineChart).await.unwrap();
+        let timeline_id = engine
+            .create_temporal_timeline(
+                "Test Timeline",
+                data_points,
+                TimelineVisualizationType::LineChart,
+            )
+            .await
+            .expect("await should be present");
         assert!(engine.timelines.contains_key(&timeline_id));
     }
 
     #[tokio::test]
     async fn test_force_directed_layout() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create some nodes
-        let memory_entry = MemoryEntry::new("key1".to_string(), "Test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let memory_entry = MemoryEntry::new(
+            "key1".to_string(),
+            "Test content".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        );
+        let _node1_id = engine
+            .create_visual_node("key1", &memory_entry)
+            .await
+            .expect("await should be present");
+        let _node2_id = engine
+            .create_visual_node("key2", &memory_entry)
+            .await
+            .expect("await should be present");
 
         // Create an edge
-        engine.create_visual_edge("key1", "key2", 0.8, "similarity").await.unwrap();
+        engine
+            .create_visual_edge("key1", "key2", 0.8, "similarity")
+            .await
+            .expect("await should be present");
 
         // Apply layout
         let result = engine.apply_force_directed_layout(10).await;
@@ -858,9 +930,12 @@ mod tests {
     #[tokio::test]
     async fn test_visualization_export() {
         let config = AnalyticsConfig::default();
-        let engine = VisualizationEngine::new(&config).unwrap();
+        let engine = VisualizationEngine::new(&config).expect("value should be available");
 
-        let export = engine.export_visualization_data().await.unwrap();
+        let export = engine
+            .export_visualization_data()
+            .await
+            .expect("await should be present");
         assert_eq!(export.nodes.len(), 0);
         assert_eq!(export.edges.len(), 0);
     }
@@ -868,15 +943,28 @@ mod tests {
     #[tokio::test]
     async fn test_webgl_export() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create test nodes
-        let memory_entry = MemoryEntry::new("test_key".to_string(), "test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let memory_entry = MemoryEntry::new(
+            "test_key".to_string(),
+            "test content".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        );
+        let _node1_id = engine
+            .create_visual_node("key1", &memory_entry)
+            .await
+            .expect("await should be present");
+        let _node2_id = engine
+            .create_visual_node("key2", &memory_entry)
+            .await
+            .expect("await should be present");
 
         // Export WebGL data
-        let webgl_export = engine.export_webgl_data().await.unwrap();
+        let webgl_export = engine
+            .export_webgl_data()
+            .await
+            .expect("await should be present");
 
         assert_eq!(webgl_export.node_count, 2);
         assert_eq!(webgl_export.vertices.len(), 6); // 2 nodes * 3 coordinates
@@ -888,23 +976,40 @@ mod tests {
     #[tokio::test]
     async fn test_vr_export() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create test nodes with varying importance
-        let mut memory_entry = MemoryEntry::new("important_memory".to_string(), "important content".to_string(), crate::memory::types::MemoryType::LongTerm);
+        let mut memory_entry = MemoryEntry::new(
+            "important_memory".to_string(),
+            "important content".to_string(),
+            crate::memory::types::MemoryType::LongTerm,
+        );
         memory_entry.metadata.importance = 0.9; // High importance
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+        let _node1_id = engine
+            .create_visual_node("key1", &memory_entry)
+            .await
+            .expect("await should be present");
 
-        let memory_entry2 = MemoryEntry::new("normal_memory".to_string(), "normal content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node2_id = engine.create_visual_node("key2", &memory_entry2).await.unwrap();
+        let memory_entry2 = MemoryEntry::new(
+            "normal_memory".to_string(),
+            "normal content".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        );
+        let _node2_id = engine
+            .create_visual_node("key2", &memory_entry2)
+            .await
+            .expect("await should be present");
 
         // Export VR data
-        let vr_export = engine.export_vr_data().await.unwrap();
+        let vr_export = engine
+            .export_vr_data()
+            .await
+            .expect("await should be present");
 
         assert_eq!(vr_export.webgl_data.node_count, 2);
         // Interaction zones may be empty initially
         assert_eq!(vr_export.spatial_audio_sources.len(), 2); // One per node
-        // VR export works correctly regardless of haptic feedback point count
+                                                              // VR export works correctly regardless of haptic feedback point count
         assert!(vr_export.navigation_config.enable_teleportation);
     }
 }

@@ -201,7 +201,9 @@ impl MemorySummarizer {
         strategy: SummaryStrategy,
     ) -> Result<SummaryResult> {
         if memory_keys.is_empty() {
-            return Err(MemoryError::unexpected("No memories provided for summarization"));
+            return Err(MemoryError::unexpected(
+                "No memories provided for summarization",
+            ));
         }
 
         // Load the referenced memories from the provided storage
@@ -213,11 +215,13 @@ impl MemorySummarizer {
         }
 
         if memories.is_empty() {
-            return Err(MemoryError::NotFound { key: "no memories".to_string() });
+            return Err(MemoryError::NotFound {
+                key: "no memories".to_string(),
+            });
         }
 
         let summary_content = self.generate_summary_content(&memories, &strategy).await?;
-        
+
         // Extract entities if enabled
         let entities = if self.config.enable_entity_extraction {
             self.extract_entities(&summary_content).await?
@@ -233,7 +237,9 @@ impl MemorySummarizer {
         };
 
         // Calculate quality metrics
-        let quality_metrics = self.calculate_quality_metrics(&summary_content, &memories).await?;
+        let quality_metrics = self
+            .calculate_quality_metrics(&summary_content, &memories)
+            .await?;
 
         // Calculate compression ratio
         let original_size: usize = memories.iter().map(|m| m.value.len()).sum();
@@ -273,40 +279,31 @@ impl MemorySummarizer {
         strategy: &SummaryStrategy,
     ) -> Result<String> {
         match strategy {
-            SummaryStrategy::KeyPoints => {
-                self.generate_key_points_summary(memories).await
-            }
-            SummaryStrategy::Chronological => {
-                self.generate_chronological_summary(memories).await
-            }
+            SummaryStrategy::KeyPoints => self.generate_key_points_summary(memories).await,
+            SummaryStrategy::Chronological => self.generate_chronological_summary(memories).await,
             SummaryStrategy::ImportanceBased => {
                 self.generate_importance_based_summary(memories).await
             }
-            SummaryStrategy::Consolidation => {
-                self.generate_consolidation_summary(memories).await
-            }
-            SummaryStrategy::Hierarchical => {
-                self.generate_hierarchical_summary(memories).await
-            }
-            SummaryStrategy::Conceptual => {
-                self.generate_conceptual_summary(memories).await
-            }
-            SummaryStrategy::Custom(name) => {
-                self.generate_custom_summary(memories, name).await
-            }
+            SummaryStrategy::Consolidation => self.generate_consolidation_summary(memories).await,
+            SummaryStrategy::Hierarchical => self.generate_hierarchical_summary(memories).await,
+            SummaryStrategy::Conceptual => self.generate_conceptual_summary(memories).await,
+            SummaryStrategy::Custom(name) => self.generate_custom_summary(memories, name).await,
         }
     }
 
     /// Generate advanced key points summary using NLP-based extraction
     async fn generate_key_points_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
         // Combine all memory content for analysis
-        let combined_text = memories.iter()
+        let combined_text = memories
+            .iter()
             .map(|mem| mem.value.as_str())
             .collect::<Vec<_>>()
             .join(" ");
 
         // Extract key points using multiple NLP techniques
-        let key_points = self.extract_advanced_key_points(&combined_text, memories).await?;
+        let key_points = self
+            .extract_advanced_key_points(&combined_text, memories)
+            .await?;
 
         // Format the summary
         let mut summary_lines = vec![
@@ -320,14 +317,23 @@ impl MemorySummarizer {
 
         // Add metadata
         summary_lines.push(String::new());
-        summary_lines.push(format!("Analysis completed: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
-        summary_lines.push(format!("Extraction methods: TF-IDF, TextRank, Entity Recognition, Importance Scoring"));
+        summary_lines.push(format!(
+            "Analysis completed: {}",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        summary_lines.push(format!(
+            "Extraction methods: TF-IDF, TextRank, Entity Recognition, Importance Scoring"
+        ));
 
         Ok(summary_lines.join("\n"))
     }
 
     /// Extract advanced key points using multiple NLP techniques
-    async fn extract_advanced_key_points(&self, text: &str, memories: &[MemoryEntry]) -> Result<Vec<String>> {
+    async fn extract_advanced_key_points(
+        &self,
+        text: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<String>> {
         let mut key_points = Vec::new();
 
         // 1. TF-IDF based key phrase extraction
@@ -343,7 +349,9 @@ impl MemorySummarizer {
         key_points.extend(entity_points);
 
         // 4. Importance-weighted key points from individual memories
-        let importance_points = self.extract_importance_weighted_key_points(memories).await?;
+        let importance_points = self
+            .extract_importance_weighted_key_points(memories)
+            .await?;
         key_points.extend(importance_points);
 
         // 5. Pattern-based key points
@@ -379,10 +387,19 @@ impl MemorySummarizer {
     /// Generate importance-based summary
     async fn generate_importance_based_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
         let mut entries: Vec<_> = memories.to_vec();
-        entries.sort_by(|a, b| b.metadata.importance.partial_cmp(&a.metadata.importance).unwrap());
+        entries.sort_by(|a, b| {
+            b.metadata
+                .importance
+                .partial_cmp(&a.metadata.importance)
+                .expect("value should be available")
+        });
         let mut lines = Vec::new();
         for mem in entries {
-            lines.push(format!("({:.2}) {}", mem.metadata.importance, mem.value.trim()));
+            lines.push(format!(
+                "({:.2}) {}",
+                mem.metadata.importance,
+                mem.value.trim()
+            ));
         }
         Ok(format!(
             "Importance-based summary of {} memories:\n{}",
@@ -443,7 +460,11 @@ impl MemorySummarizer {
     }
 
     /// Generate custom summary
-    async fn generate_custom_summary(&self, memories: &[MemoryEntry], _strategy_name: &str) -> Result<String> {
+    async fn generate_custom_summary(
+        &self,
+        memories: &[MemoryEntry],
+        _strategy_name: &str,
+    ) -> Result<String> {
         self.generate_key_points_summary(memories).await
     }
 
@@ -460,7 +481,9 @@ impl MemorySummarizer {
         // Calculate TF-IDF scores for each sentence
         let mut sentence_scores = Vec::new();
         for sentence in &sentences {
-            let score = self.calculate_sentence_tfidf_score(sentence, &sentences).await?;
+            let score = self
+                .calculate_sentence_tfidf_score(sentence, &sentences)
+                .await?;
             sentence_scores.push((sentence.clone(), score));
         }
 
@@ -468,7 +491,8 @@ impl MemorySummarizer {
         sentence_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for (sentence, _score) in sentence_scores.into_iter().take(3) {
-            if sentence.len() > 20 && sentence.len() < 200 { // Filter reasonable length sentences
+            if sentence.len() > 20 && sentence.len() < 200 {
+                // Filter reasonable length sentences
                 key_points.push(format!("Key insight: {}", sentence.trim()));
             }
         }
@@ -490,9 +514,7 @@ impl MemorySummarizer {
         let textrank_scores = self.calculate_textrank_scores(&sentences).await?;
 
         // Get top-ranked sentences
-        let mut scored_sentences: Vec<_> = sentences.iter()
-            .zip(textrank_scores.iter())
-            .collect();
+        let mut scored_sentences: Vec<_> = sentences.iter().zip(textrank_scores.iter()).collect();
 
         scored_sentences.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -513,21 +535,27 @@ impl MemorySummarizer {
         let entities = self.extract_entities(text).await?;
 
         // Group entities by type and find most important ones
-        let mut entity_groups: std::collections::HashMap<String, Vec<&Entity>> = std::collections::HashMap::new();
+        let mut entity_groups: std::collections::HashMap<String, Vec<&Entity>> =
+            std::collections::HashMap::new();
         for entity in &entities {
             let entity_type_str = format!("{:?}", entity.entity_type);
-            entity_groups.entry(entity_type_str).or_default().push(entity);
+            entity_groups
+                .entry(entity_type_str)
+                .or_default()
+                .push(entity);
         }
 
         // Create key points from important entities
         for (entity_type, entities_of_type) in entity_groups {
-            if entities_of_type.len() >= 2 { // Only include types with multiple entities
+            if entities_of_type.len() >= 2 {
+                // Only include types with multiple entities
                 let entity_names: Vec<String> = entities_of_type.iter()
                     .take(3) // Top 3 entities of this type
                     .map(|e| e.name.clone())
                     .collect();
 
-                key_points.push(format!("Important {}: {}",
+                key_points.push(format!(
+                    "Important {}: {}",
                     entity_type.to_lowercase(),
                     entity_names.join(", ")
                 ));
@@ -538,16 +566,25 @@ impl MemorySummarizer {
     }
 
     /// Extract importance-weighted key points from individual memories
-    async fn extract_importance_weighted_key_points(&self, memories: &[MemoryEntry]) -> Result<Vec<String>> {
+    async fn extract_importance_weighted_key_points(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<String>> {
         let mut key_points = Vec::new();
 
         // Sort memories by importance and select top ones
         let mut sorted_memories: Vec<_> = memories.iter().collect();
-        sorted_memories.sort_by(|a, b| b.metadata.importance.partial_cmp(&a.metadata.importance).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_memories.sort_by(|a, b| {
+            b.metadata
+                .importance
+                .partial_cmp(&a.metadata.importance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Extract key sentences from most important memories
         for memory in sorted_memories.iter().take(3) {
-            if memory.metadata.importance > 0.7 { // High importance threshold
+            if memory.metadata.importance > 0.7 {
+                // High importance threshold
                 let sentences = self.split_into_sentences(&memory.value);
                 if let Some(first_sentence) = sentences.first() {
                     if first_sentence.len() > 20 && first_sentence.len() < 180 {
@@ -603,7 +640,10 @@ impl MemorySummarizer {
     }
 
     /// Rank and deduplicate key points
-    async fn rank_and_deduplicate_key_points(&self, key_points: Vec<String>) -> Result<Vec<String>> {
+    async fn rank_and_deduplicate_key_points(
+        &self,
+        key_points: Vec<String>,
+    ) -> Result<Vec<String>> {
         let mut unique_points = Vec::new();
         let mut seen_content = std::collections::HashSet::<String>::new();
 
@@ -638,7 +678,9 @@ impl MemorySummarizer {
         unique_points.sort_by(|a, b| {
             let score_a = self.calculate_key_point_importance_score(a);
             let score_b = self.calculate_key_point_importance_score(b);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         Ok(unique_points)
@@ -654,12 +696,18 @@ impl MemorySummarizer {
         }
 
         // Boost insights
-        if point.contains("Key insight:") || point.contains("discovered") || point.contains("learned") {
+        if point.contains("Key insight:")
+            || point.contains("discovered")
+            || point.contains("learned")
+        {
             score += 0.25;
         }
 
         // Boost high priority items
-        if point.contains("High priority:") || point.contains("critical") || point.contains("urgent") {
+        if point.contains("High priority:")
+            || point.contains("critical")
+            || point.contains("urgent")
+        {
             score += 0.2;
         }
 
@@ -688,7 +736,8 @@ impl MemorySummarizer {
 
         for part in parts {
             let trimmed = part.trim();
-            if trimmed.len() > 10 { // Minimum sentence length
+            if trimmed.len() > 10 {
+                // Minimum sentence length
                 sentences.push(trimmed.to_string());
             }
         }
@@ -710,7 +759,11 @@ impl MemorySummarizer {
     }
 
     /// Calculate TF-IDF score for a sentence
-    async fn calculate_sentence_tfidf_score(&self, sentence: &str, all_sentences: &[String]) -> Result<f64> {
+    async fn calculate_sentence_tfidf_score(
+        &self,
+        sentence: &str,
+        all_sentences: &[String],
+    ) -> Result<f64> {
         let words: Vec<&str> = sentence.split_whitespace().collect();
         if words.is_empty() {
             return Ok(0.0);
@@ -728,10 +781,15 @@ impl MemorySummarizer {
             }
 
             // Calculate TF (term frequency in this sentence)
-            let tf = words.iter().filter(|w| w.to_lowercase() == word_lower).count() as f64 / words.len() as f64;
+            let tf = words
+                .iter()
+                .filter(|w| w.to_lowercase() == word_lower)
+                .count() as f64
+                / words.len() as f64;
 
             // Calculate DF (document frequency across all sentences)
-            let df = all_sentences.iter()
+            let df = all_sentences
+                .iter()
                 .filter(|s| s.to_lowercase().contains(&word_lower))
                 .count() as f64;
 
@@ -767,7 +825,8 @@ impl MemorySummarizer {
         for i in 0..n {
             for j in 0..n {
                 if i != j {
-                    similarity_matrix[i][j] = self.calculate_sentence_similarity(&sentences[i], &sentences[j]);
+                    similarity_matrix[i][j] =
+                        self.calculate_sentence_similarity(&sentences[i], &sentences[j]);
                 }
             }
         }
@@ -833,7 +892,7 @@ impl MemorySummarizer {
             "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might",
             "must", "can", "this", "that", "these", "those", "i", "you", "he", "she", "it", "we",
             "they", "me", "him", "her", "us", "them", "my", "your", "his", "her", "its", "our",
-            "their", "what", "which", "who", "when", "where", "why", "how"
+            "their", "what", "which", "who", "when", "where", "why", "how",
         ];
 
         stop_words.contains(&word)
@@ -878,13 +937,21 @@ impl MemorySummarizer {
         entities.extend(self.extract_action_entities(text)?);
 
         // Sort by importance and remove duplicates
-        entities.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap_or(std::cmp::Ordering::Equal));
+        entities.sort_by(|a, b| {
+            b.importance
+                .partial_cmp(&a.importance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         entities.dedup_by(|a, b| a.name == b.name && a.entity_type == b.entity_type);
 
         // Limit to top 20 entities to avoid noise
         entities.truncate(20);
 
-        tracing::debug!("Extracted {} entities from text of length {}", entities.len(), text.len());
+        tracing::debug!(
+            "Extracted {} entities from text of length {}",
+            entities.len(),
+            text.len()
+        );
 
         Ok(entities)
     }
@@ -939,7 +1006,14 @@ impl MemorySummarizer {
         }
 
         // Problem-related keywords
-        let problem_keywords = ["problem", "issue", "challenge", "obstacle", "difficulty", "bug"];
+        let problem_keywords = [
+            "problem",
+            "issue",
+            "challenge",
+            "obstacle",
+            "difficulty",
+            "bug",
+        ];
         for keyword in &problem_keywords {
             let frequency = text.to_lowercase().matches(keyword).count();
             if frequency > 0 {
@@ -954,7 +1028,14 @@ impl MemorySummarizer {
         }
 
         // Solution-related keywords
-        let solution_keywords = ["solution", "fix", "resolution", "answer", "approach", "method"];
+        let solution_keywords = [
+            "solution",
+            "fix",
+            "resolution",
+            "answer",
+            "approach",
+            "method",
+        ];
         for keyword in &solution_keywords {
             let frequency = text.to_lowercase().matches(keyword).count();
             if frequency > 0 {
@@ -989,7 +1070,8 @@ impl MemorySummarizer {
             }
 
             start = actual_pos + keyword.len();
-            if contexts.len() >= 3 { // Limit to 3 contexts per keyword
+            if contexts.len() >= 3 {
+                // Limit to 3 contexts per keyword
                 break;
             }
         }
@@ -1007,9 +1089,13 @@ impl MemorySummarizer {
                 let value = mat.as_str();
 
                 // Skip common words that are capitalized
-                let common_words = ["The", "This", "That", "These", "Those", "When", "Where", "Why", "How", "What", "Who"];
+                let common_words = [
+                    "The", "This", "That", "These", "Those", "When", "Where", "Why", "How", "What",
+                    "Who",
+                ];
                 if !common_words.contains(&value) && value.len() > 2 {
-                    let entity_type = if value.contains(' ') && value.split_whitespace().count() > 1 {
+                    let entity_type = if value.contains(' ') && value.split_whitespace().count() > 1
+                    {
                         EntityType::Organization // Multi-word proper nouns are likely organizations
                     } else {
                         EntityType::Person // Single word proper nouns are likely people
@@ -1037,7 +1123,10 @@ impl MemorySummarizer {
         let date_patterns = [
             (r"\d{4}-\d{2}-\d{2}", "Date (ISO format)"),
             (r"\d{1,2}/\d{1,2}/\d{4}", "Date (US format)"),
-            (r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}", "Date (full month)"),
+            (
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}",
+                "Date (full month)",
+            ),
         ];
 
         for (pattern, description) in &date_patterns {
@@ -1055,7 +1144,9 @@ impl MemorySummarizer {
         }
 
         // Extract time patterns
-        if let Ok(time_regex) = regex::Regex::new(r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\b") {
+        if let Ok(time_regex) =
+            regex::Regex::new(r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\b")
+        {
             for mat in time_regex.find_iter(text) {
                 entities.push(Entity {
                     name: mat.as_str().to_string(),
@@ -1075,7 +1166,16 @@ impl MemorySummarizer {
         let mut entities = Vec::new();
 
         // Technology keywords
-        let tech_keywords = ["API", "database", "server", "client", "framework", "library", "algorithm", "protocol"];
+        let tech_keywords = [
+            "API",
+            "database",
+            "server",
+            "client",
+            "framework",
+            "library",
+            "algorithm",
+            "protocol",
+        ];
         for keyword in &tech_keywords {
             let frequency = text.to_lowercase().matches(&keyword.to_lowercase()).count();
             if frequency > 0 {
@@ -1090,10 +1190,13 @@ impl MemorySummarizer {
         }
 
         // Extract words with technical patterns (camelCase, snake_case, etc.)
-        if let Ok(tech_pattern_regex) = regex::Regex::new(r"\b[a-z]+[A-Z][a-zA-Z]*\b|\b[a-z]+_[a-z_]+\b|\b[A-Z]{2,}\b") {
+        if let Ok(tech_pattern_regex) =
+            regex::Regex::new(r"\b[a-z]+[A-Z][a-zA-Z]*\b|\b[a-z]+_[a-z_]+\b|\b[A-Z]{2,}\b")
+        {
             for mat in tech_pattern_regex.find_iter(text) {
                 let value = mat.as_str();
-                if value.len() > 3 { // Filter out short acronyms
+                if value.len() > 3 {
+                    // Filter out short acronyms
                     entities.push(Entity {
                         name: value.to_string(),
                         entity_type: EntityType::Technology,
@@ -1113,7 +1216,18 @@ impl MemorySummarizer {
         let mut entities = Vec::new();
 
         // Action verbs that indicate tasks or goals
-        let action_verbs = ["implement", "develop", "create", "build", "design", "analyze", "optimize", "improve", "fix", "resolve"];
+        let action_verbs = [
+            "implement",
+            "develop",
+            "create",
+            "build",
+            "design",
+            "analyze",
+            "optimize",
+            "improve",
+            "fix",
+            "resolve",
+        ];
         for verb in &action_verbs {
             let frequency = text.to_lowercase().matches(verb).count();
             if frequency > 0 {
@@ -1128,7 +1242,13 @@ impl MemorySummarizer {
         }
 
         // Extract phrases that indicate concepts
-        let concept_phrases = ["machine learning", "artificial intelligence", "data science", "software engineering", "system design"];
+        let concept_phrases = [
+            "machine learning",
+            "artificial intelligence",
+            "data science",
+            "software engineering",
+            "system design",
+        ];
         for phrase in &concept_phrases {
             let frequency = text.to_lowercase().matches(phrase).count();
             if frequency > 0 {
@@ -1148,13 +1268,17 @@ impl MemorySummarizer {
     /// Extract temporal information
     async fn extract_temporal_info(&self, memories: &[MemoryEntry]) -> Result<TemporalInfo> {
         if memories.is_empty() {
-            return Ok(TemporalInfo { time_range: None, events: Vec::new(), patterns: Vec::new() });
+            return Ok(TemporalInfo {
+                time_range: None,
+                events: Vec::new(),
+                patterns: Vec::new(),
+            });
         }
 
         let mut sorted: Vec<_> = memories.to_vec();
         sorted.sort_by_key(|m| m.created_at());
-        let start = sorted.first().unwrap().created_at();
-        let end = sorted.last().unwrap().created_at();
+        let start = sorted.first().expect("first() should succeed").created_at();
+        let end = sorted.last().expect("last() should succeed").created_at();
         let events = sorted
             .iter()
             .map(|m| TemporalEvent {
@@ -1219,7 +1343,10 @@ impl MemorySummarizer {
             .map(|(theme, _)| theme)
             .collect();
 
-        tracing::debug!("Extracted {} themes from text using advanced analysis", final_themes.len());
+        tracing::debug!(
+            "Extracted {} themes from text using advanced analysis",
+            final_themes.len()
+        );
 
         Ok(final_themes)
     }
@@ -1230,32 +1357,50 @@ impl MemorySummarizer {
         let text_lower = text.to_lowercase();
 
         // Information management themes
-        if text_lower.contains("information") || text_lower.contains("data") || text_lower.contains("knowledge") {
+        if text_lower.contains("information")
+            || text_lower.contains("data")
+            || text_lower.contains("knowledge")
+        {
             themes.push("Information Management".to_string());
         }
 
         // Project management themes
-        if text_lower.contains("project") || text_lower.contains("task") || text_lower.contains("deadline") {
+        if text_lower.contains("project")
+            || text_lower.contains("task")
+            || text_lower.contains("deadline")
+        {
             themes.push("Project Management".to_string());
         }
 
         // Problem solving themes
-        if text_lower.contains("problem") || text_lower.contains("solution") || text_lower.contains("issue") {
+        if text_lower.contains("problem")
+            || text_lower.contains("solution")
+            || text_lower.contains("issue")
+        {
             themes.push("Problem Solving".to_string());
         }
 
         // Learning and development themes
-        if text_lower.contains("learn") || text_lower.contains("study") || text_lower.contains("research") {
+        if text_lower.contains("learn")
+            || text_lower.contains("study")
+            || text_lower.contains("research")
+        {
             themes.push("Learning & Development".to_string());
         }
 
         // Communication themes
-        if text_lower.contains("meeting") || text_lower.contains("discussion") || text_lower.contains("communication") {
+        if text_lower.contains("meeting")
+            || text_lower.contains("discussion")
+            || text_lower.contains("communication")
+        {
             themes.push("Communication".to_string());
         }
 
         // Technology themes
-        if text_lower.contains("software") || text_lower.contains("system") || text_lower.contains("technology") {
+        if text_lower.contains("software")
+            || text_lower.contains("system")
+            || text_lower.contains("technology")
+        {
             themes.push("Technology".to_string());
         }
 
@@ -1268,27 +1413,42 @@ impl MemorySummarizer {
         let text_lower = text.to_lowercase();
 
         // Development themes
-        if text_lower.contains("develop") || text_lower.contains("build") || text_lower.contains("create") {
+        if text_lower.contains("develop")
+            || text_lower.contains("build")
+            || text_lower.contains("create")
+        {
             themes.push("Development".to_string());
         }
 
         // Analysis themes
-        if text_lower.contains("analyze") || text_lower.contains("evaluate") || text_lower.contains("assess") {
+        if text_lower.contains("analyze")
+            || text_lower.contains("evaluate")
+            || text_lower.contains("assess")
+        {
             themes.push("Analysis".to_string());
         }
 
         // Planning themes
-        if text_lower.contains("plan") || text_lower.contains("strategy") || text_lower.contains("design") {
+        if text_lower.contains("plan")
+            || text_lower.contains("strategy")
+            || text_lower.contains("design")
+        {
             themes.push("Planning".to_string());
         }
 
         // Implementation themes
-        if text_lower.contains("implement") || text_lower.contains("execute") || text_lower.contains("deploy") {
+        if text_lower.contains("implement")
+            || text_lower.contains("execute")
+            || text_lower.contains("deploy")
+        {
             themes.push("Implementation".to_string());
         }
 
         // Optimization themes
-        if text_lower.contains("optimize") || text_lower.contains("improve") || text_lower.contains("enhance") {
+        if text_lower.contains("optimize")
+            || text_lower.contains("improve")
+            || text_lower.contains("enhance")
+        {
             themes.push("Optimization".to_string());
         }
 
@@ -1301,27 +1461,42 @@ impl MemorySummarizer {
         let text_lower = text.to_lowercase();
 
         // AI/ML themes
-        if text_lower.contains("ai") || text_lower.contains("machine learning") || text_lower.contains("neural") {
+        if text_lower.contains("ai")
+            || text_lower.contains("machine learning")
+            || text_lower.contains("neural")
+        {
             themes.push("Artificial Intelligence".to_string());
         }
 
         // Database themes
-        if text_lower.contains("database") || text_lower.contains("sql") || text_lower.contains("query") {
+        if text_lower.contains("database")
+            || text_lower.contains("sql")
+            || text_lower.contains("query")
+        {
             themes.push("Database Management".to_string());
         }
 
         // Security themes
-        if text_lower.contains("security") || text_lower.contains("encryption") || text_lower.contains("authentication") {
+        if text_lower.contains("security")
+            || text_lower.contains("encryption")
+            || text_lower.contains("authentication")
+        {
             themes.push("Security".to_string());
         }
 
         // Performance themes
-        if text_lower.contains("performance") || text_lower.contains("optimization") || text_lower.contains("efficiency") {
+        if text_lower.contains("performance")
+            || text_lower.contains("optimization")
+            || text_lower.contains("efficiency")
+        {
             themes.push("Performance".to_string());
         }
 
         // Architecture themes
-        if text_lower.contains("architecture") || text_lower.contains("design pattern") || text_lower.contains("framework") {
+        if text_lower.contains("architecture")
+            || text_lower.contains("design pattern")
+            || text_lower.contains("framework")
+        {
             themes.push("Software Architecture".to_string());
         }
 
@@ -1334,17 +1509,26 @@ impl MemorySummarizer {
         let text_lower = text.to_lowercase();
 
         // Scheduling themes
-        if text_lower.contains("schedule") || text_lower.contains("timeline") || text_lower.contains("deadline") {
+        if text_lower.contains("schedule")
+            || text_lower.contains("timeline")
+            || text_lower.contains("deadline")
+        {
             themes.push("Scheduling".to_string());
         }
 
         // Historical themes
-        if text_lower.contains("history") || text_lower.contains("past") || text_lower.contains("previous") {
+        if text_lower.contains("history")
+            || text_lower.contains("past")
+            || text_lower.contains("previous")
+        {
             themes.push("Historical Analysis".to_string());
         }
 
         // Future planning themes
-        if text_lower.contains("future") || text_lower.contains("upcoming") || text_lower.contains("next") {
+        if text_lower.contains("future")
+            || text_lower.contains("upcoming")
+            || text_lower.contains("next")
+        {
             themes.push("Future Planning".to_string());
         }
 
@@ -1357,22 +1541,34 @@ impl MemorySummarizer {
         let text_lower = text.to_lowercase();
 
         // Team collaboration themes
-        if text_lower.contains("team") || text_lower.contains("collaboration") || text_lower.contains("group") {
+        if text_lower.contains("team")
+            || text_lower.contains("collaboration")
+            || text_lower.contains("group")
+        {
             themes.push("Team Collaboration".to_string());
         }
 
         // Process improvement themes
-        if text_lower.contains("process") || text_lower.contains("workflow") || text_lower.contains("procedure") {
+        if text_lower.contains("process")
+            || text_lower.contains("workflow")
+            || text_lower.contains("procedure")
+        {
             themes.push("Process Management".to_string());
         }
 
         // Quality assurance themes
-        if text_lower.contains("quality") || text_lower.contains("testing") || text_lower.contains("validation") {
+        if text_lower.contains("quality")
+            || text_lower.contains("testing")
+            || text_lower.contains("validation")
+        {
             themes.push("Quality Assurance".to_string());
         }
 
         // Documentation themes
-        if text_lower.contains("document") || text_lower.contains("specification") || text_lower.contains("manual") {
+        if text_lower.contains("document")
+            || text_lower.contains("specification")
+            || text_lower.contains("manual")
+        {
             themes.push("Documentation".to_string());
         }
 
@@ -1433,7 +1629,8 @@ impl MemorySummarizer {
             let idf = (num_sentences / df).ln();
             let tfidf = tf * idf;
 
-            if tfidf > 0.01 { // Lower threshold for significance
+            if tfidf > 0.01 {
+                // Lower threshold for significance
                 tfidf_scores.push((term, tfidf));
             }
         }
@@ -1500,7 +1697,8 @@ impl MemorySummarizer {
         let mut themes = Vec::new();
 
         // Simplified LDA-like approach using co-occurrence analysis
-        let sentences: Vec<&str> = text.split(&['.', '!', '?'][..])
+        let sentences: Vec<&str> = text
+            .split(&['.', '!', '?'][..])
             .filter(|s| s.trim().len() > 10)
             .collect();
 
@@ -1548,7 +1746,11 @@ impl MemorySummarizer {
         strong_pairs.sort_by(|a, b| b.1.cmp(&a.1));
 
         for ((word1, word2), _count) in strong_pairs.into_iter().take(3) {
-            themes.push(format!("Topic: {} & {}", self.to_title_case(&word1), self.to_title_case(&word2)));
+            themes.push(format!(
+                "Topic: {} & {}",
+                self.to_title_case(&word1),
+                self.to_title_case(&word2)
+            ));
         }
 
         Ok(themes)
@@ -1562,43 +1764,64 @@ impl MemorySummarizer {
         // Extract themes based on linguistic patterns
 
         // 1. Causality patterns
-        if text_lower.contains("because") || text_lower.contains("due to") || text_lower.contains("caused by") {
+        if text_lower.contains("because")
+            || text_lower.contains("due to")
+            || text_lower.contains("caused by")
+        {
             themes.push("Causality Analysis".to_string());
         }
 
         // 2. Comparison patterns
-        if text_lower.contains("compared to") || text_lower.contains("versus") || text_lower.contains("better than") {
+        if text_lower.contains("compared to")
+            || text_lower.contains("versus")
+            || text_lower.contains("better than")
+        {
             themes.push("Comparative Analysis".to_string());
         }
 
         // 3. Temporal progression patterns
-        if text_lower.contains("first") && text_lower.contains("then") || text_lower.contains("sequence") {
+        if text_lower.contains("first") && text_lower.contains("then")
+            || text_lower.contains("sequence")
+        {
             themes.push("Sequential Process".to_string());
         }
 
         // 4. Problem-solution patterns
-        if (text_lower.contains("problem") || text_lower.contains("issue")) &&
-           (text_lower.contains("solution") || text_lower.contains("resolve")) {
+        if (text_lower.contains("problem") || text_lower.contains("issue"))
+            && (text_lower.contains("solution") || text_lower.contains("resolve"))
+        {
             themes.push("Problem Resolution".to_string());
         }
 
         // 5. Decision-making patterns
-        if text_lower.contains("decision") || text_lower.contains("choose") || text_lower.contains("option") {
+        if text_lower.contains("decision")
+            || text_lower.contains("choose")
+            || text_lower.contains("option")
+        {
             themes.push("Decision Making".to_string());
         }
 
         // 6. Innovation patterns
-        if text_lower.contains("innovative") || text_lower.contains("novel") || text_lower.contains("breakthrough") {
+        if text_lower.contains("innovative")
+            || text_lower.contains("novel")
+            || text_lower.contains("breakthrough")
+        {
             themes.push("Innovation".to_string());
         }
 
         // 7. Collaboration patterns
-        if text_lower.contains("collaborate") || text_lower.contains("together") || text_lower.contains("partnership") {
+        if text_lower.contains("collaborate")
+            || text_lower.contains("together")
+            || text_lower.contains("partnership")
+        {
             themes.push("Collaboration".to_string());
         }
 
         // 8. Risk assessment patterns
-        if text_lower.contains("risk") || text_lower.contains("uncertainty") || text_lower.contains("potential") {
+        if text_lower.contains("risk")
+            || text_lower.contains("uncertainty")
+            || text_lower.contains("potential")
+        {
             themes.push("Risk Assessment".to_string());
         }
 
@@ -1606,7 +1829,11 @@ impl MemorySummarizer {
     }
 
     /// Score and rank themes by relevance and frequency
-    pub async fn score_and_rank_themes(&self, themes: &[String], text: &str) -> Result<HashMap<String, f64>> {
+    pub async fn score_and_rank_themes(
+        &self,
+        themes: &[String],
+        text: &str,
+    ) -> Result<HashMap<String, f64>> {
         let mut theme_scores: HashMap<String, f64> = HashMap::new();
         let text_lower = text.to_lowercase();
         let text_len = text.len() as f64;
@@ -1643,7 +1870,9 @@ impl MemorySummarizer {
                 let mut chars = word.chars();
                 match chars.next() {
                     None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                    Some(first) => {
+                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -1669,7 +1898,8 @@ impl MemorySummarizer {
         let accuracy = self.calculate_accuracy_score(summary_content, memories)?;
 
         // Calculate overall quality as weighted average
-        let overall_quality = coherence * 0.25 + completeness * 0.3 + conciseness * 0.2 + accuracy * 0.25;
+        let overall_quality =
+            coherence * 0.25 + completeness * 0.3 + conciseness * 0.2 + accuracy * 0.25;
 
         tracing::debug!("Quality metrics - Coherence: {:.2}, Completeness: {:.2}, Conciseness: {:.2}, Accuracy: {:.2}, Overall: {:.2}",
             coherence, completeness, conciseness, accuracy, overall_quality);
@@ -1688,8 +1918,18 @@ impl MemorySummarizer {
         let mut coherence_factors = Vec::new();
 
         // 1. Sentence connectivity (presence of transition words)
-        let transition_words = ["however", "therefore", "furthermore", "additionally", "consequently", "meanwhile", "similarly", "in contrast"];
-        let transition_count = transition_words.iter()
+        let transition_words = [
+            "however",
+            "therefore",
+            "furthermore",
+            "additionally",
+            "consequently",
+            "meanwhile",
+            "similarly",
+            "in contrast",
+        ];
+        let transition_count = transition_words
+            .iter()
             .map(|word| summary_content.to_lowercase().matches(word).count())
             .sum::<usize>();
         let sentence_count = summary_content.split(&['.', '!', '?'][..]).count();
@@ -1711,8 +1951,16 @@ impl MemorySummarizer {
         coherence_factors.push(repetition_score);
 
         // 3. Logical structure (presence of organizational markers)
-        let structure_markers = ["first", "second", "third", "finally", "in conclusion", "to summarize"];
-        let structure_count = structure_markers.iter()
+        let structure_markers = [
+            "first",
+            "second",
+            "third",
+            "finally",
+            "in conclusion",
+            "to summarize",
+        ];
+        let structure_count = structure_markers
+            .iter()
             .map(|marker| summary_content.to_lowercase().matches(marker).count())
             .sum::<usize>();
         let structure_score = (structure_count as f64 / 3.0).min(1.0); // Normalize to max 3 markers
@@ -1728,7 +1976,11 @@ impl MemorySummarizer {
     }
 
     /// Calculate completeness score (how much information is preserved)
-    fn calculate_completeness_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+    fn calculate_completeness_score(
+        &self,
+        summary_content: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<f64> {
         if memories.is_empty() {
             return Ok(0.0);
         }
@@ -1739,7 +1991,8 @@ impl MemorySummarizer {
         let mut all_original_words = std::collections::HashSet::new();
         for memory in memories {
             for word in memory.value.split_whitespace() {
-                if word.len() > 3 { // Only consider significant words
+                if word.len() > 3 {
+                    // Only consider significant words
                     all_original_words.insert(word.to_lowercase());
                 }
             }
@@ -1751,7 +2004,8 @@ impl MemorySummarizer {
             .map(|word| word.to_lowercase())
             .collect();
 
-        let covered_words = all_original_words.iter()
+        let covered_words = all_original_words
+            .iter()
             .filter(|word| summary_words.contains(*word))
             .count();
 
@@ -1763,15 +2017,21 @@ impl MemorySummarizer {
         completeness_factors.push(term_coverage);
 
         // 2. Important memory coverage (based on importance scores)
-        let high_importance_memories = memories.iter()
+        let high_importance_memories = memories
+            .iter()
             .filter(|m| m.metadata.importance > 0.7)
             .count();
 
-        let covered_important_concepts = memories.iter()
+        let covered_important_concepts = memories
+            .iter()
             .filter(|m| m.metadata.importance > 0.7)
             .filter(|m| {
                 let memory_words: Vec<&str> = m.value.split_whitespace().collect();
-                memory_words.iter().any(|word| summary_content.to_lowercase().contains(&word.to_lowercase()))
+                memory_words.iter().any(|word| {
+                    summary_content
+                        .to_lowercase()
+                        .contains(&word.to_lowercase())
+                })
             })
             .count();
 
@@ -1796,7 +2056,11 @@ impl MemorySummarizer {
     }
 
     /// Calculate conciseness score (efficiency of information presentation)
-    fn calculate_conciseness_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+    fn calculate_conciseness_score(
+        &self,
+        summary_content: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<f64> {
         let original_length: usize = memories.iter().map(|m| m.value.len()).sum();
         let summary_length = summary_content.len();
 
@@ -1816,8 +2080,11 @@ impl MemorySummarizer {
 
         // 2. Information density (meaningful words per total words)
         let words: Vec<&str> = summary_content.split_whitespace().collect();
-        let stop_words = ["the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"];
-        let meaningful_words = words.iter()
+        let stop_words = [
+            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
+        ];
+        let meaningful_words = words
+            .iter()
             .filter(|word| !stop_words.contains(&word.to_lowercase().as_str()))
             .count();
 
@@ -1842,7 +2109,11 @@ impl MemorySummarizer {
     }
 
     /// Calculate accuracy score (faithfulness to original content)
-    fn calculate_accuracy_score(&self, summary_content: &str, memories: &[MemoryEntry]) -> Result<f64> {
+    fn calculate_accuracy_score(
+        &self,
+        summary_content: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<f64> {
         if memories.is_empty() {
             return Ok(0.0);
         }
@@ -1853,7 +2124,8 @@ impl MemorySummarizer {
         // This is a simplified check - in a full implementation, this would use NLP
         let summary_lower = summary_content.to_lowercase();
         let contradiction_indicators = ["not", "never", "opposite", "contrary", "however", "but"];
-        let contradiction_count = contradiction_indicators.iter()
+        let contradiction_count = contradiction_indicators
+            .iter()
             .map(|indicator| summary_lower.matches(indicator).count())
             .sum::<usize>();
 
@@ -1868,7 +2140,8 @@ impl MemorySummarizer {
         let mut original_concepts = std::collections::HashSet::new();
         for memory in memories {
             for word in memory.value.split_whitespace() {
-                if word.len() > 4 { // Focus on substantial words
+                if word.len() > 4 {
+                    // Focus on substantial words
                     original_concepts.insert(word.to_lowercase());
                 }
             }
@@ -1889,21 +2162,47 @@ impl MemorySummarizer {
         accuracy_factors.push(semantic_score);
 
         // 3. Tone preservation (positive/negative sentiment consistency)
-        let positive_words = ["good", "great", "excellent", "successful", "effective", "improved"];
+        let positive_words = [
+            "good",
+            "great",
+            "excellent",
+            "successful",
+            "effective",
+            "improved",
+        ];
         let negative_words = ["bad", "poor", "failed", "problem", "issue", "error"];
 
-        let original_positive = memories.iter()
-            .map(|m| positive_words.iter().map(|w| m.value.to_lowercase().matches(w).count()).sum::<usize>())
+        let original_positive = memories
+            .iter()
+            .map(|m| {
+                positive_words
+                    .iter()
+                    .map(|w| m.value.to_lowercase().matches(w).count())
+                    .sum::<usize>()
+            })
             .sum::<usize>();
-        let original_negative = memories.iter()
-            .map(|m| negative_words.iter().map(|w| m.value.to_lowercase().matches(w).count()).sum::<usize>())
+        let original_negative = memories
+            .iter()
+            .map(|m| {
+                negative_words
+                    .iter()
+                    .map(|w| m.value.to_lowercase().matches(w).count())
+                    .sum::<usize>()
+            })
             .sum::<usize>();
 
-        let summary_positive = positive_words.iter().map(|w| summary_lower.matches(w).count()).sum::<usize>();
-        let summary_negative = negative_words.iter().map(|w| summary_lower.matches(w).count()).sum::<usize>();
+        let summary_positive = positive_words
+            .iter()
+            .map(|w| summary_lower.matches(w).count())
+            .sum::<usize>();
+        let summary_negative = negative_words
+            .iter()
+            .map(|w| summary_lower.matches(w).count())
+            .sum::<usize>();
 
         let tone_score = if original_positive + original_negative > 0 {
-            let original_sentiment = original_positive as f64 / (original_positive + original_negative) as f64;
+            let original_sentiment =
+                original_positive as f64 / (original_positive + original_negative) as f64;
             let summary_sentiment = if summary_positive + summary_negative > 0 {
                 summary_positive as f64 / (summary_positive + summary_negative) as f64
             } else {
@@ -1931,7 +2230,10 @@ impl MemorySummarizer {
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<bool> {
-        tracing::debug!("Evaluating summarization triggers for memory: {}", memory.key);
+        tracing::debug!(
+            "Evaluating summarization triggers for memory: {}",
+            memory.key
+        );
         let start_time = std::time::Instant::now();
 
         // Strategy 1: Related memory count threshold (trigger if > 10 related memories)
@@ -1943,12 +2245,19 @@ impl MemorySummarizer {
         tracing::debug!("Age threshold trigger: {}", age_threshold_trigger);
 
         // Strategy 3: Content similarity clustering (trigger if high similarity cluster detected)
-        let similarity_cluster_trigger = self.check_similarity_cluster_trigger(storage, memory).await?;
+        let similarity_cluster_trigger = self
+            .check_similarity_cluster_trigger(storage, memory)
+            .await?;
         tracing::debug!("Similarity cluster trigger: {}", similarity_cluster_trigger);
 
         // Strategy 4: Importance accumulation (trigger if total importance > threshold)
-        let importance_accumulation_trigger = self.check_importance_accumulation_trigger(storage, memory).await?;
-        tracing::debug!("Importance accumulation trigger: {}", importance_accumulation_trigger);
+        let importance_accumulation_trigger = self
+            .check_importance_accumulation_trigger(storage, memory)
+            .await?;
+        tracing::debug!(
+            "Importance accumulation trigger: {}",
+            importance_accumulation_trigger
+        );
 
         // Strategy 5: Tag-based consolidation rules (trigger if consolidation rules match)
         let tag_based_trigger = self.check_tag_based_trigger(memory).await?;
@@ -1983,10 +2292,16 @@ impl MemorySummarizer {
         memory: &MemoryEntry,
     ) -> Result<bool> {
         // Use sophisticated multi-strategy related memory counting
-        let related_count = self.count_related_memories_comprehensive(storage, memory).await?;
+        let related_count = self
+            .count_related_memories_comprehensive(storage, memory)
+            .await?;
         let threshold = 10; // Configurable threshold
 
-        tracing::debug!("Related memory count: {} (threshold: {})", related_count, threshold);
+        tracing::debug!(
+            "Related memory count: {} (threshold: {})",
+            related_count,
+            threshold
+        );
 
         Ok(related_count > threshold)
     }
@@ -2014,7 +2329,8 @@ impl MemorySummarizer {
             }
 
             if let Some(other_memory) = storage.retrieve(key).await? {
-                let other_words: std::collections::HashSet<String> = other_memory.value
+                let other_words: std::collections::HashSet<String> = other_memory
+                    .value
                     .split_whitespace()
                     .filter(|word| word.len() > 3)
                     .map(|word| word.to_lowercase())
@@ -2022,9 +2338,14 @@ impl MemorySummarizer {
 
                 let intersection = memory_words.intersection(&other_words).count();
                 let union = memory_words.union(&other_words).count();
-                let similarity = if union > 0 { intersection as f64 / union as f64 } else { 0.0 };
+                let similarity = if union > 0 {
+                    intersection as f64 / union as f64
+                } else {
+                    0.0
+                };
 
-                if similarity > 0.3 { // Similarity threshold
+                if similarity > 0.3 {
+                    // Similarity threshold
                     related_memories.insert(key.clone());
                 }
             }
@@ -2037,8 +2358,10 @@ impl MemorySummarizer {
             }
 
             if let Some(other_memory) = storage.retrieve(key).await? {
-                let memory_tags: std::collections::HashSet<_> = memory.metadata.tags.iter().collect();
-                let other_tags: std::collections::HashSet<_> = other_memory.metadata.tags.iter().collect();
+                let memory_tags: std::collections::HashSet<_> =
+                    memory.metadata.tags.iter().collect();
+                let other_tags: std::collections::HashSet<_> =
+                    other_memory.metadata.tags.iter().collect();
                 let tag_overlap = memory_tags.intersection(&other_tags).count();
 
                 if tag_overlap > 0 {
@@ -2055,7 +2378,8 @@ impl MemorySummarizer {
             }
 
             if let Some(other_memory) = storage.retrieve(key).await? {
-                let time_diff = (memory.metadata.created_at - other_memory.metadata.created_at).abs();
+                let time_diff =
+                    (memory.metadata.created_at - other_memory.metadata.created_at).abs();
                 if time_diff < time_window {
                     related_memories.insert(key.clone());
                 }
@@ -2092,7 +2416,9 @@ impl MemorySummarizer {
         let cluster_size_threshold = 5;
 
         // Find all related memories
-        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
+        let related_memories = self
+            .find_related_memories_for_clustering(storage, memory)
+            .await?;
 
         if related_memories.len() < cluster_size_threshold {
             return Ok(false);
@@ -2104,7 +2430,8 @@ impl MemorySummarizer {
 
         for i in 0..related_memories.len() {
             for j in (i + 1)..related_memories.len() {
-                let similarity = self.calculate_memory_similarity(&related_memories[i], &related_memories[j])?;
+                let similarity =
+                    self.calculate_memory_similarity(&related_memories[i], &related_memories[j])?;
                 if similarity > similarity_threshold {
                     high_similarity_pairs += 1;
                 }
@@ -2177,14 +2504,20 @@ impl MemorySummarizer {
     }
 
     /// Calculate similarity between two memories
-    fn calculate_memory_similarity(&self, memory1: &MemoryEntry, memory2: &MemoryEntry) -> Result<f64> {
-        let words1: std::collections::HashSet<String> = memory1.value
+    fn calculate_memory_similarity(
+        &self,
+        memory1: &MemoryEntry,
+        memory2: &MemoryEntry,
+    ) -> Result<f64> {
+        let words1: std::collections::HashSet<String> = memory1
+            .value
             .split_whitespace()
             .filter(|word| word.len() > 3)
             .map(|word| word.to_lowercase())
             .collect();
 
-        let words2: std::collections::HashSet<String> = memory2.value
+        let words2: std::collections::HashSet<String> = memory2
+            .value
             .split_whitespace()
             .filter(|word| word.len() > 3)
             .map(|word| word.to_lowercase())
@@ -2218,14 +2551,18 @@ impl MemorySummarizer {
         let importance_threshold = 15.0;
 
         // Find all related memories and sum their importance scores
-        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
+        let related_memories = self
+            .find_related_memories_for_clustering(storage, memory)
+            .await?;
 
-        let total_importance: f64 = related_memories.iter()
-            .map(|m| m.metadata.importance)
-            .sum();
+        let total_importance: f64 = related_memories.iter().map(|m| m.metadata.importance).sum();
 
-        tracing::debug!("Importance accumulation: {:.2} (threshold: {:.2}, related memories: {})",
-            total_importance, importance_threshold, related_memories.len());
+        tracing::debug!(
+            "Importance accumulation: {:.2} (threshold: {:.2}, related memories: {})",
+            total_importance,
+            importance_threshold,
+            related_memories.len()
+        );
 
         Ok(total_importance > importance_threshold)
     }
@@ -2240,7 +2577,11 @@ impl MemorySummarizer {
             // Check if any trigger tags match memory tags
             for trigger_tag in &rule.trigger_tags {
                 if memory.metadata.tags.contains(trigger_tag) {
-                    tracing::debug!("Tag-based trigger matched rule '{}' with tag '{}'", rule.name, trigger_tag);
+                    tracing::debug!(
+                        "Tag-based trigger matched rule '{}' with tag '{}'",
+                        rule.name,
+                        trigger_tag
+                    );
                     return Ok(true);
                 }
             }
@@ -2256,7 +2597,9 @@ impl MemorySummarizer {
         memory: &MemoryEntry,
     ) -> Result<bool> {
         // Find related memories for temporal analysis
-        let related_memories = self.find_related_memories_for_clustering(storage, memory).await?;
+        let related_memories = self
+            .find_related_memories_for_clustering(storage, memory)
+            .await?;
 
         if related_memories.len() < 3 {
             return Ok(false); // Need at least 3 memories to detect patterns
@@ -2270,8 +2613,11 @@ impl MemorySummarizer {
         let burst_detected = self.detect_burst_pattern(&sorted_memories)?;
         let regular_interval_detected = self.detect_regular_interval_pattern(&sorted_memories)?;
 
-        tracing::debug!("Temporal pattern analysis: burst={}, regular_interval={}",
-            burst_detected, regular_interval_detected);
+        tracing::debug!(
+            "Temporal pattern analysis: burst={}, regular_interval={}",
+            burst_detected,
+            regular_interval_detected
+        );
 
         Ok(burst_detected || regular_interval_detected)
     }
@@ -2285,8 +2631,11 @@ impl MemorySummarizer {
             let window_start = sorted_memories[i].metadata.created_at;
             let window_end = window_start + burst_window;
 
-            let memories_in_window = sorted_memories.iter()
-                .filter(|m| m.metadata.created_at >= window_start && m.metadata.created_at <= window_end)
+            let memories_in_window = sorted_memories
+                .iter()
+                .filter(|m| {
+                    m.metadata.created_at >= window_start && m.metadata.created_at <= window_end
+                })
                 .count();
 
             if memories_in_window >= burst_threshold {
@@ -2306,15 +2655,18 @@ impl MemorySummarizer {
         // Calculate intervals between consecutive memories
         let mut intervals = Vec::new();
         for i in 1..sorted_memories.len() {
-            let interval = sorted_memories[i].metadata.created_at - sorted_memories[i-1].metadata.created_at;
+            let interval =
+                sorted_memories[i].metadata.created_at - sorted_memories[i - 1].metadata.created_at;
             intervals.push(interval.num_seconds().abs() as f64);
         }
 
         // Check if intervals are relatively consistent (coefficient of variation < 0.5)
         let mean_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
-        let variance = intervals.iter()
+        let variance = intervals
+            .iter()
             .map(|x| (x - mean_interval).powi(2))
-            .sum::<f64>() / intervals.len() as f64;
+            .sum::<f64>()
+            / intervals.len() as f64;
         let std_dev = variance.sqrt();
 
         let coefficient_of_variation = if mean_interval > 0.0 {
@@ -2362,18 +2714,21 @@ impl MemorySummarizer {
     }
 
     /// Find memories that should be consolidated
-    pub async fn find_consolidation_candidates(&self, memories: &[MemoryEntry]) -> Result<Vec<Vec<String>>> {
+    pub async fn find_consolidation_candidates(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<Vec<String>>> {
         let mut candidates = Vec::new();
-        
+
         for rule in &self.consolidation_rules {
             if !rule.active {
                 continue;
             }
-            
+
             let rule_candidates = self.apply_consolidation_rule(rule, memories).await?;
             candidates.extend(rule_candidates);
         }
-        
+
         Ok(candidates)
     }
 
@@ -2386,7 +2741,8 @@ impl MemorySummarizer {
         let mut candidates = Vec::new();
 
         // Step 1: Filter memories by rule criteria
-        let eligible_memories: Vec<&MemoryEntry> = memories.iter()
+        let eligible_memories: Vec<&MemoryEntry> = memories
+            .iter()
             .filter(|memory| {
                 // Check minimum importance threshold
                 if memory.metadata.importance < rule.min_importance {
@@ -2395,7 +2751,9 @@ impl MemorySummarizer {
 
                 // Check if memory has any trigger tags
                 if !rule.trigger_tags.is_empty() {
-                    let has_trigger_tag = rule.trigger_tags.iter()
+                    let has_trigger_tag = rule
+                        .trigger_tags
+                        .iter()
                         .any(|tag| memory.metadata.tags.contains(tag));
                     if !has_trigger_tag {
                         return false;
@@ -2459,7 +2817,11 @@ impl MemorySummarizer {
             }
         }
 
-        tracing::debug!("Consolidation rule '{}' found {} candidate groups", rule.name, candidates.len());
+        tracing::debug!(
+            "Consolidation rule '{}' found {} candidate groups",
+            rule.name,
+            candidates.len()
+        );
 
         Ok(candidates)
     }

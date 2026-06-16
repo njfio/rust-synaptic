@@ -1,24 +1,26 @@
 // Real External Integrations Example
 // Demonstrates actual database, ML models, LLM, and visualization integrations
 
-use synaptic::{AgentMemory, MemoryConfig};
-use synaptic::integrations::{IntegrationConfig, IntegrationManager};
-use std::error::Error;
 use std::collections::HashMap;
+use std::error::Error;
+use synaptic::integrations::{IntegrationConfig, IntegrationManager};
+use synaptic::{AgentMemory, MemoryConfig};
 
 #[cfg(feature = "sql-storage")]
-use synaptic::integrations::database::{DatabaseConfig, DatabaseClient};
+use synaptic::integrations::database::{DatabaseClient, DatabaseConfig};
 
 #[cfg(feature = "ml-models")]
 use synaptic::integrations::ml_models::{MLConfig, MLModelManager};
 
 #[cfg(feature = "llm-integration")]
-use synaptic::integrations::llm::{LLMConfig, LLMClient, LLMProvider};
+use synaptic::integrations::llm::{LLMClient, LLMConfig, LLMProvider};
 
 #[cfg(feature = "visualization")]
-use synaptic::integrations::visualization::{VisualizationConfig, RealVisualizationEngine, ImageFormat, ColorScheme};
+use synaptic::integrations::visualization::{
+    ColorScheme, ImageFormat, RealVisualizationEngine, VisualizationConfig,
+};
 
-use synaptic::integrations::redis_cache::{RedisConfig, RedisClient};
+use synaptic::integrations::redis_cache::{RedisClient, RedisConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -55,7 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 fn check_enabled_features() {
     println!("\n Enabled Features:");
-    
+
     #[cfg(feature = "sql-storage")]
     println!("    SQL Database Storage");
     #[cfg(not(feature = "sql-storage"))]
@@ -89,8 +91,9 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "sql-storage")]
     {
         // Check if PostgreSQL is available
-        let db_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string());
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string()
+        });
 
         println!("📡 Connecting to PostgreSQL: {}", db_url);
 
@@ -105,7 +108,7 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
         match DatabaseClient::new(config).await {
             Ok(mut client) => {
                 println!(" Connected to PostgreSQL successfully");
-                
+
                 // Test health check
                 match client.health_check().await {
                     Ok(_) => println!(" Database health check passed"),
@@ -116,28 +119,31 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
                 let memory_entry = synaptic::memory::types::MemoryEntry::new(
                     "test_db_key".to_string(),
                     "Test database integration content".to_string(),
-                    synaptic::memory::types::MemoryType::LongTerm
+                    synaptic::memory::types::MemoryType::LongTerm,
                 );
 
                 match client.store_memory(&memory_entry).await {
                     Ok(_) => {
                         println!(" Stored memory entry in database");
-                        
+
                         // Test retrieving the memory entry
                         match client.get_memory("test_db_key").await {
                             Ok(Some(retrieved)) => {
                                 println!(" Retrieved memory entry: {}", retrieved.key);
-                            },
+                            }
                             Ok(None) => println!(" Memory entry not found"),
                             Err(e) => println!(" Failed to retrieve memory: {}", e),
                         }
-                    },
+                    }
                     Err(e) => println!(" Failed to store memory: {}", e),
                 }
 
                 let metrics = client.get_metrics();
-                println!(" Database metrics: {} queries executed", metrics.queries_executed);
-            },
+                println!(
+                    " Database metrics: {} queries executed",
+                    metrics.queries_executed
+                );
+            }
             Err(e) => {
                 println!(" Failed to connect to PostgreSQL: {}", e);
                 println!(" Make sure PostgreSQL is running and DATABASE_URL is set");
@@ -170,7 +176,7 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
         };
 
         println!(" Initializing ML models...");
-        
+
         match MLModelManager::new(config).await {
             Ok(mut manager) => {
                 println!(" ML model manager initialized");
@@ -185,48 +191,61 @@ async fn ml_models_integration_demo() -> Result<(), Box<dyn Error>> {
                 let memory_entry = synaptic::memory::types::MemoryEntry::new(
                     "ml_test_key".to_string(),
                     "This is a test for machine learning embedding generation".to_string(),
-                    synaptic::memory::types::MemoryType::ShortTerm
+                    synaptic::memory::types::MemoryType::ShortTerm,
                 );
 
                 match manager.generate_memory_embedding(&memory_entry).await {
                     Ok(embedding) => {
                         println!(" Generated embedding with {} dimensions", embedding.len());
-                        
+
                         // Test similarity calculation
                         let embedding2 = manager.generate_memory_embedding(&memory_entry).await?;
                         let similarity = manager.calculate_similarity(&embedding, &embedding2);
                         println!(" Similarity calculation: {:.3}", similarity);
-                    },
+                    }
                     Err(e) => println!(" Failed to generate embedding: {}", e),
                 }
 
                 // Test access pattern prediction
                 let memory_keys = vec!["key1".to_string(), "key2".to_string()];
                 let historical_data = vec![
-                    ("key1".to_string(), chrono::Utc::now() - chrono::Duration::hours(2)),
-                    ("key1".to_string(), chrono::Utc::now() - chrono::Duration::hours(1)),
-                    ("key2".to_string(), chrono::Utc::now() - chrono::Duration::minutes(30)),
+                    (
+                        "key1".to_string(),
+                        chrono::Utc::now() - chrono::Duration::hours(2),
+                    ),
+                    (
+                        "key1".to_string(),
+                        chrono::Utc::now() - chrono::Duration::hours(1),
+                    ),
+                    (
+                        "key2".to_string(),
+                        chrono::Utc::now() - chrono::Duration::minutes(30),
+                    ),
                 ];
 
-                match manager.predict_access_pattern(&memory_keys, &historical_data).await {
+                match manager
+                    .predict_access_pattern(&memory_keys, &historical_data)
+                    .await
+                {
                     Ok(predictions) => {
                         println!(" Generated {} access predictions", predictions.len());
                         for prediction in predictions.iter().take(2) {
-                            println!("   • {}: {:.1}% confidence", 
-                                prediction.memory_key, 
+                            println!(
+                                "   • {}: {:.1}% confidence",
+                                prediction.memory_key,
                                 prediction.confidence * 100.0
                             );
                         }
-                    },
+                    }
                     Err(e) => println!(" Failed to generate predictions: {}", e),
                 }
 
                 let metrics = manager.get_metrics();
-                println!(" ML metrics: {} embeddings, {} predictions", 
-                    metrics.embeddings_generated, 
-                    metrics.predictions_made
+                println!(
+                    " ML metrics: {} embeddings, {} predictions",
+                    metrics.embeddings_generated, metrics.predictions_made
                 );
-            },
+            }
             Err(e) => {
                 println!(" Failed to initialize ML models: {}", e);
                 println!(" Make sure BERT model is available in ./models/bert-base-uncased/");
@@ -251,7 +270,11 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
     {
         // Check for API key and determine provider
         let (api_key, provider, model) = if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            (key, LLMProvider::Anthropic, "claude-3-5-haiku-20241022".to_string())
+            (
+                key,
+                LLMProvider::Anthropic,
+                "claude-3-5-haiku-20241022".to_string(),
+            )
         } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             (key, LLMProvider::OpenAI, "gpt-3.5-turbo".to_string())
         } else {
@@ -288,22 +311,29 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
                     synaptic::memory::types::MemoryEntry::new(
                         "project_status".to_string(),
                         "Project is 80% complete with some performance issues".to_string(),
-                        synaptic::memory::types::MemoryType::ShortTerm
+                        synaptic::memory::types::MemoryType::ShortTerm,
                     ),
                     synaptic::memory::types::MemoryEntry::new(
                         "user_feedback".to_string(),
                         "Users report slow response times during peak hours".to_string(),
-                        synaptic::memory::types::MemoryType::ShortTerm
+                        synaptic::memory::types::MemoryType::ShortTerm,
                     ),
                 ];
 
-                match client.generate_insights(&memories, "Software development project").await {
+                match client
+                    .generate_insights(&memories, "Software development project")
+                    .await
+                {
                     Ok(insights) => {
                         println!(" Generated {} insights from LLM", insights.len());
                         for insight in insights.iter().take(2) {
-                            println!("   • {}: {}", insight.title, insight.description.chars().take(50).collect::<String>());
+                            println!(
+                                "   • {}: {}",
+                                insight.title,
+                                insight.description.chars().take(50).collect::<String>()
+                            );
                         }
-                    },
+                    }
                     Err(e) => println!(" Failed to generate insights: {}", e),
                 }
 
@@ -311,18 +341,20 @@ async fn llm_integration_demo() -> Result<(), Box<dyn Error>> {
                 let memory_to_summarize = &memories[0];
                 match client.summarize_memory(memory_to_summarize).await {
                     Ok(summary) => {
-                        println!(" Generated summary: {}", summary.chars().take(100).collect::<String>());
-                    },
+                        println!(
+                            " Generated summary: {}",
+                            summary.chars().take(100).collect::<String>()
+                        );
+                    }
                     Err(e) => println!(" Failed to generate summary: {}", e),
                 }
 
                 let metrics = client.get_metrics();
-                println!(" LLM metrics: {} requests, {} tokens consumed, ${:.4} cost", 
-                    metrics.requests_made, 
-                    metrics.tokens_consumed,
-                    metrics.total_cost_usd
+                println!(
+                    " LLM metrics: {} requests, {} tokens consumed, ${:.4} cost",
+                    metrics.requests_made, metrics.tokens_consumed, metrics.total_cost_usd
                 );
-            },
+            }
             Err(e) => {
                 println!(" Failed to initialize LLM client: {}", e);
             }
@@ -371,49 +403,48 @@ async fn visualization_integration_demo() -> Result<(), Box<dyn Error>> {
                     synaptic::memory::types::MemoryEntry::new(
                         "node1".to_string(),
                         "First memory node".to_string(),
-                        synaptic::memory::types::MemoryType::ShortTerm
+                        synaptic::memory::types::MemoryType::ShortTerm,
                     ),
                     synaptic::memory::types::MemoryEntry::new(
                         "node2".to_string(),
                         "Second memory node".to_string(),
-                        synaptic::memory::types::MemoryType::LongTerm
+                        synaptic::memory::types::MemoryType::LongTerm,
                     ),
                 ];
 
-                let relationships = vec![
-                    ("node1".to_string(), "node2".to_string(), 0.8),
-                ];
+                let relationships = vec![("node1".to_string(), "node2".to_string(), 0.8)];
 
-                match engine.generate_memory_network(&memories, &relationships).await {
+                match engine
+                    .generate_memory_network(&memories, &relationships)
+                    .await
+                {
                     Ok(filename) => {
                         println!(" Generated memory network: {}", filename);
-                    },
+                    }
                     Err(e) => println!(" Failed to generate memory network: {}", e),
                 }
 
                 // Test analytics timeline
-                let events = vec![
-                    synaptic::memory::management::analytics::AnalyticsEvent {
-                        id: "test_event".to_string(),
-                        event_type: "memory_access".to_string(),
-                        timestamp: chrono::Utc::now(),
-                        data: std::collections::HashMap::new(),
-                    },
-                ];
+                let events = vec![synaptic::memory::management::analytics::AnalyticsEvent {
+                    id: "test_event".to_string(),
+                    event_type: "memory_access".to_string(),
+                    timestamp: chrono::Utc::now(),
+                    data: std::collections::HashMap::new(),
+                }];
 
                 match engine.generate_analytics_timeline(&events).await {
                     Ok(filename) => {
                         println!(" Generated analytics timeline: {}", filename);
-                    },
+                    }
                     Err(e) => println!(" Failed to generate timeline: {}", e),
                 }
 
                 let metrics = engine.get_metrics();
-                println!(" Visualization metrics: {} charts generated, {} images exported", 
-                    metrics.charts_generated, 
-                    metrics.images_exported
+                println!(
+                    " Visualization metrics: {} charts generated, {} images exported",
+                    metrics.charts_generated, metrics.images_exported
                 );
-            },
+            }
             Err(e) => {
                 println!(" Failed to initialize visualization engine: {}", e);
             }
@@ -433,8 +464,8 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
     println!("\n Redis Cache Integration Demo");
     println!("------------------------------");
 
-    let redis_url = std::env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://localhost:11111".to_string());
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:11111".to_string());
 
     println!("📡 Connecting to Redis: {}", redis_url);
 
@@ -461,46 +492,49 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
             let memory_entry = synaptic::memory::types::MemoryEntry::new(
                 "cache_test_key".to_string(),
                 "Test cache integration content".to_string(),
-                synaptic::memory::types::MemoryType::ShortTerm
+                synaptic::memory::types::MemoryType::ShortTerm,
             );
 
             #[cfg(feature = "distributed")]
             {
-                match client.cache_memory("test_key", &memory_entry, Some(60)).await {
+                match client
+                    .cache_memory("test_key", &memory_entry, Some(60))
+                    .await
+                {
                     Ok(_) => {
                         println!(" Cached memory entry");
-                        
+
                         // Test retrieval
                         match client.get_cached_memory("test_key").await {
                             Ok(Some(cached)) => {
                                 println!(" Retrieved cached memory: {}", cached.key);
-                            },
+                            }
                             Ok(None) => println!(" Cached memory not found"),
                             Err(e) => println!(" Failed to retrieve cached memory: {}", e),
                         }
-                    },
+                    }
                     Err(e) => println!(" Failed to cache memory: {}", e),
                 }
 
                 // Test cache statistics
                 match client.get_cache_stats().await {
                     Ok(stats) => {
-                        println!(" Cache stats: {:.1}% hit rate, {} total keys", 
-                            stats.hit_rate * 100.0, 
+                        println!(
+                            " Cache stats: {:.1}% hit rate, {} total keys",
+                            stats.hit_rate * 100.0,
                             stats.total_keys
                         );
-                    },
+                    }
                     Err(e) => println!(" Failed to get cache stats: {}", e),
                 }
             }
 
             let metrics = client.get_metrics();
-            println!(" Redis metrics: {} hits, {} misses, {} operations", 
-                metrics.cache_hits, 
-                metrics.cache_misses,
-                metrics.total_operations
+            println!(
+                " Redis metrics: {} hits, {} misses, {} operations",
+                metrics.cache_hits, metrics.cache_misses, metrics.total_operations
             );
-        },
+        }
         Err(e) => {
             println!(" Failed to connect to Redis: {}", e);
             println!(" Make sure Redis is running and REDIS_URL is set");
@@ -521,8 +555,9 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "sql-storage")]
     {
         integration_config.database = Some(DatabaseConfig {
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string()),
+            database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string()
+            }),
             max_connections: 5,
             connect_timeout_secs: 30,
             ssl_mode: "prefer".to_string(),
@@ -532,8 +567,7 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
 
     // Override Redis config with correct port
     integration_config.redis = Some(RedisConfig {
-        url: std::env::var("REDIS_URL")
-            .unwrap_or_else(|_| "redis://localhost:11111".to_string()),
+        url: std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:11111".to_string()),
         pool_size: 5,
         connect_timeout_secs: 5,
         default_ttl_secs: 300,
@@ -555,7 +589,7 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
                         let status = if healthy { "" } else { "" };
                         println!("   {} {}", status, service);
                     }
-                },
+                }
                 Err(e) => println!(" Health check failed: {}", e),
             }
 
@@ -569,17 +603,25 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
                     println!(" Memory system with integrations initialized");
 
                     // Test storing and retrieving with all integrations
-                    memory.store("integrated_test", "This is a test of the integrated system with real external services").await?;
-                    
+                    memory
+                        .store(
+                            "integrated_test",
+                            "This is a test of the integrated system with real external services",
+                        )
+                        .await?;
+
                     if let Some(retrieved) = memory.retrieve("integrated_test").await? {
-                        println!(" Stored and retrieved memory with integrations: {}", retrieved.key);
+                        println!(
+                            " Stored and retrieved memory with integrations: {}",
+                            retrieved.key
+                        );
                     }
 
                     println!(" Memory stats: {:?}", memory.stats());
-                },
+                }
                 Err(e) => println!(" Failed to create integrated memory system: {}", e),
             }
-        },
+        }
         Err(e) => {
             println!(" Failed to initialize integration manager: {}", e);
             println!(" Some external services may not be available");

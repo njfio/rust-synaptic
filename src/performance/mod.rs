@@ -3,29 +3,28 @@
 // This module provides comprehensive performance optimization capabilities
 // including advanced profiling, benchmarking, and optimization strategies.
 
-/// Performance profiling and analysis
-pub mod profiler;
+/// Asynchronous task execution optimization
+pub mod async_executor;
 /// Benchmarking and performance testing
 pub mod benchmarks;
-/// Performance optimization strategies
-pub mod optimizer;
-/// Performance metrics collection and analysis
-pub mod metrics;
 /// Caching performance optimization
 pub mod cache;
 /// Memory pool management and optimization
 pub mod memory_pool;
-/// Asynchronous task execution optimization
-pub mod async_executor;
+/// Performance metrics collection and analysis
+pub mod metrics;
+/// Performance optimization strategies
+pub mod optimizer;
+/// Performance profiling and analysis
+pub mod profiler;
 /// Real-time performance monitoring
 pub mod real_time_monitoring;
 
-
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -35,13 +34,13 @@ use crate::error::Result;
 pub struct PerformanceConfig {
     /// Enable advanced profiling
     pub enable_profiling: bool,
-    
+
     /// Enable automatic optimization
     pub enable_auto_optimization: bool,
-    
+
     /// Optimization interval in seconds
     pub optimization_interval_seconds: u64,
-    
+
     /// Performance target thresholds
     pub target_latency_ms: f64,
     /// Target throughput in operations per second
@@ -50,17 +49,17 @@ pub struct PerformanceConfig {
     pub target_memory_usage_mb: f64,
     /// Target CPU usage percentage
     pub target_cpu_usage_percent: f64,
-    
+
     /// Cache configuration
     pub cache_size_mb: usize,
     /// Cache time-to-live in seconds
     pub cache_ttl_seconds: u64,
-    
+
     /// Memory pool configuration
     pub memory_pool_size_mb: usize,
     /// Memory pool chunk size in kilobytes
     pub memory_pool_chunk_size_kb: usize,
-    
+
     /// Async executor configuration
     pub worker_threads: usize,
     /// Maximum number of blocking threads
@@ -107,31 +106,29 @@ impl PerformanceManager {
     /// Create a new performance manager
     pub async fn new(config: PerformanceConfig) -> Result<Self> {
         let profiler = Arc::new(RwLock::new(
-            profiler::AdvancedProfiler::new(config.clone()).await?
+            profiler::AdvancedProfiler::new(config.clone()).await?,
         ));
-        
+
         let optimizer = Arc::new(RwLock::new(
-            optimizer::PerformanceOptimizer::new(config.clone()).await?
+            optimizer::PerformanceOptimizer::new(config.clone()).await?,
         ));
-        
+
         let metrics = Arc::new(RwLock::new(
-            metrics::MetricsCollector::new(config.clone()).await?
+            metrics::MetricsCollector::new(config.clone()).await?,
         ));
-        
+
         let cache = Arc::new(RwLock::new(
-            cache::PerformanceCache::new(config.clone()).await?
+            cache::PerformanceCache::new(config.clone()).await?,
         ));
-        
+
         let memory_pool = Arc::new(RwLock::new(
-            memory_pool::MemoryPool::new(config.clone()).await?
+            memory_pool::MemoryPool::new(config.clone()).await?,
         ));
-        
-        let executor = Arc::new(
-            async_executor::AsyncExecutor::new(config.clone()).await?
-        );
-        
+
+        let executor = Arc::new(async_executor::AsyncExecutor::new(config.clone()).await?);
+
         let optimization_history = Arc::new(RwLock::new(Vec::new()));
-        
+
         Ok(Self {
             config,
             profiler,
@@ -143,46 +140,46 @@ impl PerformanceManager {
             optimization_history,
         })
     }
-    
+
     /// Start performance monitoring
     pub async fn start_monitoring(&self) -> Result<()> {
         // Start profiler
         self.profiler.write().await.start().await?;
-        
+
         // Start metrics collection
         self.metrics.write().await.start_collection().await?;
-        
+
         // Start automatic optimization if enabled
         if self.config.enable_auto_optimization {
             self.start_auto_optimization().await?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Stop performance monitoring
     pub async fn stop_monitoring(&self) -> Result<()> {
         self.profiler.write().await.stop().await?;
         self.metrics.write().await.stop_collection().await?;
         Ok(())
     }
-    
+
     /// Run performance optimization
     pub async fn optimize(&self) -> Result<OptimizationResult> {
         let start_time = Instant::now();
-        
+
         // Collect current metrics
         let current_metrics = self.metrics.read().await.get_current_metrics().await?;
-        
+
         // Run optimization
         let mut optimizer = self.optimizer.write().await;
         let optimization_result = optimizer.optimize(&current_metrics).await?;
-        
+
         // Apply optimizations
         self.apply_optimizations(&optimization_result).await?;
-        
+
         let duration = start_time.elapsed();
-        
+
         let result = OptimizationResult {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -193,19 +190,19 @@ impl PerformanceManager {
             metrics_after: self.metrics.read().await.get_current_metrics().await?,
             details: optimization_result,
         };
-        
+
         // Store in history
         self.optimization_history.write().await.push(result.clone());
-        
+
         Ok(result)
     }
-    
+
     /// Get performance report
     pub async fn get_performance_report(&self) -> Result<PerformanceReport> {
         let current_metrics = self.metrics.read().await.get_current_metrics().await?;
         let profiling_data = self.profiler.read().await.get_profiling_data().await?;
         let optimization_history = self.optimization_history.read().await.clone();
-        
+
         Ok(PerformanceReport {
             timestamp: Utc::now(),
             current_metrics,
@@ -214,54 +211,64 @@ impl PerformanceManager {
             recommendations: self.generate_recommendations().await?,
         })
     }
-    
+
     /// Start automatic optimization
     async fn start_auto_optimization(&self) -> Result<()> {
         let interval = Duration::from_secs(self.config.optimization_interval_seconds);
         let manager = Arc::new(self.clone());
-        
+
         tokio::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
-            
+
             loop {
                 interval_timer.tick().await;
-                
+
                 if let Err(e) = manager.optimize().await {
-                    eprintln!("Auto-optimization failed: {}", e);
+                    tracing::warn!("Auto-optimization failed: {}", e);
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Apply optimizations
     async fn apply_optimizations(&self, result: &optimizer::OptimizationPlan) -> Result<()> {
         for optimization in &result.optimizations {
             match optimization.optimization_type {
                 optimizer::OptimizationType::CacheOptimization => {
-                    self.cache.write().await.apply_optimization(&optimization.parameters).await?;
+                    self.cache
+                        .write()
+                        .await
+                        .apply_optimization(&optimization.parameters)
+                        .await?;
                 }
                 optimizer::OptimizationType::MemoryPoolOptimization => {
-                    self.memory_pool.write().await.apply_optimization(&optimization.parameters).await?;
+                    self.memory_pool
+                        .write()
+                        .await
+                        .apply_optimization(&optimization.parameters)
+                        .await?;
                 }
                 optimizer::OptimizationType::ExecutorOptimization => {
-                    self.executor.apply_optimization(&optimization.parameters).await?;
+                    self.executor
+                        .apply_optimization(&optimization.parameters)
+                        .await?;
                 }
                 _ => {
                     // Handle other optimization types
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Generate performance recommendations
     async fn generate_recommendations(&self) -> Result<Vec<PerformanceRecommendation>> {
         let current_metrics = self.metrics.read().await.get_current_metrics().await?;
         let mut recommendations = Vec::new();
-        
+
         // Check latency
         if current_metrics.avg_latency_ms > self.config.target_latency_ms {
             recommendations.push(PerformanceRecommendation {
@@ -271,8 +278,7 @@ impl PerformanceManager {
                 title: "High Latency Detected".to_string(),
                 description: format!(
                     "Current latency ({:.2}ms) exceeds target ({:.2}ms)",
-                    current_metrics.avg_latency_ms,
-                    self.config.target_latency_ms
+                    current_metrics.avg_latency_ms, self.config.target_latency_ms
                 ),
                 suggested_actions: vec![
                     "Optimize cache configuration".to_string(),
@@ -282,7 +288,7 @@ impl PerformanceManager {
                 expected_impact: 25.0,
             });
         }
-        
+
         // Check throughput
         if current_metrics.throughput_ops_per_sec < self.config.target_throughput_ops_per_sec {
             recommendations.push(PerformanceRecommendation {
@@ -303,7 +309,7 @@ impl PerformanceManager {
                 expected_impact: 30.0,
             });
         }
-        
+
         Ok(recommendations)
     }
 }

@@ -4,10 +4,9 @@
 //! executable query plans with detailed execution strategies.
 
 use super::ast::*;
-use super::{QueryPlan, PlanNode, PlanNodeType, PlanStatistics, QueryValue};
+use super::{PlanNode, PlanNodeType, PlanStatistics, QueryPlan, QueryValue};
 use crate::error::Result;
 use std::collections::HashMap;
-
 
 /// Query planner for SyQL
 pub struct QueryPlanner {
@@ -54,7 +53,7 @@ impl QueryPlanner {
                         index_operations: 0,
                     },
                 })
-            },
+            }
         }
     }
 
@@ -88,7 +87,9 @@ impl QueryPlanner {
 
         // Create plan node for HAVING clause
         if let Some(having_expr) = &query.having {
-            let having_node = self.create_having_node(having_expr, _estimated_rows).await?;
+            let having_node = self
+                .create_having_node(having_expr, _estimated_rows)
+                .await?;
             estimated_cost += having_node.cost;
             _estimated_rows = (_estimated_rows as f64 * 0.1) as usize; // Assume 10% selectivity
             nodes.push(having_node);
@@ -102,7 +103,9 @@ impl QueryPlanner {
         }
 
         // Create plan node for SELECT clause (projection)
-        let project_node = self.create_project_node(&query.select, _estimated_rows).await?;
+        let project_node = self
+            .create_project_node(&query.select, _estimated_rows)
+            .await?;
         estimated_cost += project_node.cost;
         nodes.push(project_node);
 
@@ -116,9 +119,23 @@ impl QueryPlanner {
 
         let statistics = PlanStatistics {
             total_nodes: nodes.len(),
-            scan_operations: nodes.iter().filter(|n| matches!(n.node_type, PlanNodeType::MemoryScan | PlanNodeType::IndexScan)).count(),
-            join_operations: nodes.iter().filter(|n| matches!(n.node_type, PlanNodeType::Join)).count(),
-            index_operations: nodes.iter().filter(|n| matches!(n.node_type, PlanNodeType::IndexScan)).count(),
+            scan_operations: nodes
+                .iter()
+                .filter(|n| {
+                    matches!(
+                        n.node_type,
+                        PlanNodeType::MemoryScan | PlanNodeType::IndexScan
+                    )
+                })
+                .count(),
+            join_operations: nodes
+                .iter()
+                .filter(|n| matches!(n.node_type, PlanNodeType::Join))
+                .count(),
+            index_operations: nodes
+                .iter()
+                .filter(|n| matches!(n.node_type, PlanNodeType::IndexScan))
+                .count(),
         };
 
         Ok(QueryPlan {
@@ -141,8 +158,13 @@ impl QueryPlanner {
                 let scan_node = PlanNode {
                     id: self.next_node_id(),
                     node_type: PlanNodeType::MemoryScan,
-                    description: format!("Memory Scan{}", 
-                        if let Some(alias) = alias { format!(" AS {}", alias) } else { String::new() }
+                    description: format!(
+                        "Memory Scan{}",
+                        if let Some(alias) = alias {
+                            format!(" AS {}", alias)
+                        } else {
+                            String::new()
+                        }
                     ),
                     cost: 100.0, // Base scan cost
                     rows,
@@ -167,7 +189,7 @@ impl QueryPlanner {
                 }
 
                 Ok((nodes, cost, rows))
-            },
+            }
             FromClause::Pattern { patterns } => {
                 let mut nodes = Vec::new();
                 let mut cost = 0.0;
@@ -184,8 +206,14 @@ impl QueryPlanner {
                         properties: {
                             let mut props = HashMap::new();
                             props.insert("pattern_id".to_string(), QueryValue::Integer(i as i64));
-                            props.insert("node_count".to_string(), QueryValue::Integer(pattern.nodes.len() as i64));
-                            props.insert("relationship_count".to_string(), QueryValue::Integer(pattern.relationships.len() as i64));
+                            props.insert(
+                                "node_count".to_string(),
+                                QueryValue::Integer(pattern.nodes.len() as i64),
+                            );
+                            props.insert(
+                                "relationship_count".to_string(),
+                                QueryValue::Integer(pattern.relationships.len() as i64),
+                            );
                             props
                         },
                     };
@@ -194,28 +222,39 @@ impl QueryPlanner {
                 }
 
                 Ok((nodes, cost, rows))
-            },
+            }
             FromClause::Path { path_pattern } => {
                 let path_node = PlanNode {
                     id: self.next_node_id(),
                     node_type: PlanNodeType::PathExpansion,
                     description: format!("Path Finding ({:?})", path_pattern.algorithm),
                     cost: 200.0, // Path finding is expensive
-                    rows: 100, // Paths are typically fewer
+                    rows: 100,   // Paths are typically fewer
                     children: Vec::new(),
                     properties: {
                         let mut props = HashMap::new();
-                        props.insert("algorithm".to_string(), QueryValue::String(format!("{:?}", path_pattern.algorithm)));
+                        props.insert(
+                            "algorithm".to_string(),
+                            QueryValue::String(format!("{:?}", path_pattern.algorithm)),
+                        );
                         if let Some(max_length) = path_pattern.max_length {
-                            props.insert("max_length".to_string(), QueryValue::Integer(max_length as i64));
+                            props.insert(
+                                "max_length".to_string(),
+                                QueryValue::Integer(max_length as i64),
+                            );
                         }
                         props
                     },
                 };
 
                 Ok((vec![path_node], 200.0, 100))
-            },
-            FromClause::Join { left: _, right: _, join_type, condition } => {
+            }
+            FromClause::Join {
+                left: _,
+                right: _,
+                join_type,
+                condition,
+            } => {
                 // Simplified join handling without recursion
                 let left_rows = 1000; // Default estimate
                 let right_rows = 1000; // Default estimate
@@ -260,9 +299,18 @@ impl QueryPlanner {
                     children: Vec::new(),
                     properties: {
                         let mut props = HashMap::new();
-                        props.insert("join_type".to_string(), QueryValue::String(format!("{:?}", join_type)));
-                        props.insert("left_rows".to_string(), QueryValue::Integer(left_rows as i64));
-                        props.insert("right_rows".to_string(), QueryValue::Integer(right_rows as i64));
+                        props.insert(
+                            "join_type".to_string(),
+                            QueryValue::String(format!("{:?}", join_type)),
+                        );
+                        props.insert(
+                            "left_rows".to_string(),
+                            QueryValue::Integer(left_rows as i64),
+                        );
+                        props.insert(
+                            "right_rows".to_string(),
+                            QueryValue::Integer(right_rows as i64),
+                        );
                         if condition.is_some() {
                             props.insert("has_condition".to_string(), QueryValue::Boolean(true));
                         }
@@ -275,12 +323,12 @@ impl QueryPlanner {
                 nodes.push(join_node);
 
                 Ok((nodes, total_cost, total_rows))
-            },
+            }
             FromClause::Subquery { query: _, alias } => {
                 // Simplified subquery handling without recursion
                 let estimated_cost = 50.0; // Default subquery cost
                 let estimated_rows = 100; // Default subquery rows
-                
+
                 let subquery_node = PlanNode {
                     id: self.next_node_id(),
                     node_type: PlanNodeType::MemoryScan, // Treat as a scan
@@ -299,7 +347,7 @@ impl QueryPlanner {
                 let nodes = vec![subquery_node];
 
                 Ok((nodes, estimated_cost, estimated_rows))
-            },
+            }
         }
     }
 
@@ -314,15 +362,25 @@ impl QueryPlanner {
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
-                props.insert("expression_type".to_string(), QueryValue::String(self.expression_type_name(expr)));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "expression_type".to_string(),
+                    QueryValue::String(self.expression_type_name(expr)),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 props
             },
         })
     }
 
     /// Create GROUP BY node
-    async fn create_group_by_node(&self, group_by: &GroupByClause, input_rows: usize) -> Result<PlanNode> {
+    async fn create_group_by_node(
+        &self,
+        group_by: &GroupByClause,
+        input_rows: usize,
+    ) -> Result<PlanNode> {
         Ok(PlanNode {
             id: self.next_node_id(),
             node_type: PlanNodeType::Aggregate,
@@ -332,8 +390,14 @@ impl QueryPlanner {
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
-                props.insert("group_expressions".to_string(), QueryValue::Integer(group_by.expressions.len() as i64));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "group_expressions".to_string(),
+                    QueryValue::Integer(group_by.expressions.len() as i64),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 props
             },
         })
@@ -350,15 +414,25 @@ impl QueryPlanner {
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
-                props.insert("expression_type".to_string(), QueryValue::String(self.expression_type_name(expr)));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "expression_type".to_string(),
+                    QueryValue::String(self.expression_type_name(expr)),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 props
             },
         })
     }
 
     /// Create ORDER BY node
-    async fn create_sort_node(&self, order_by: &OrderByClause, input_rows: usize) -> Result<PlanNode> {
+    async fn create_sort_node(
+        &self,
+        order_by: &OrderByClause,
+        input_rows: usize,
+    ) -> Result<PlanNode> {
         Ok(PlanNode {
             id: self.next_node_id(),
             node_type: PlanNodeType::Sort,
@@ -368,27 +442,48 @@ impl QueryPlanner {
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
-                props.insert("sort_expressions".to_string(), QueryValue::Integer(order_by.expressions.len() as i64));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "sort_expressions".to_string(),
+                    QueryValue::Integer(order_by.expressions.len() as i64),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 props
             },
         })
     }
 
     /// Create projection node
-    async fn create_project_node(&self, select: &SelectClause, input_rows: usize) -> Result<PlanNode> {
+    async fn create_project_node(
+        &self,
+        select: &SelectClause,
+        input_rows: usize,
+    ) -> Result<PlanNode> {
         Ok(PlanNode {
             id: self.next_node_id(),
             node_type: PlanNodeType::Project,
-            description: if select.distinct { "Project (Distinct)" } else { "Project" }.to_string(),
+            description: if select.distinct {
+                "Project (Distinct)"
+            } else {
+                "Project"
+            }
+            .to_string(),
             cost: input_rows as f64 * 0.005, // Small projection cost
             rows: input_rows,
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
                 props.insert("distinct".to_string(), QueryValue::Boolean(select.distinct));
-                props.insert("expressions".to_string(), QueryValue::Integer(select.expressions.len() as i64));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "expressions".to_string(),
+                    QueryValue::Integer(select.expressions.len() as i64),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 props
             },
         })
@@ -397,7 +492,7 @@ impl QueryPlanner {
     /// Create LIMIT node
     async fn create_limit_node(&self, limit: &LimitClause, input_rows: usize) -> Result<PlanNode> {
         let limit_count = self.extract_limit_count(limit);
-        
+
         Ok(PlanNode {
             id: self.next_node_id(),
             node_type: PlanNodeType::Limit,
@@ -407,8 +502,14 @@ impl QueryPlanner {
             children: Vec::new(),
             properties: {
                 let mut props = HashMap::new();
-                props.insert("limit_count".to_string(), QueryValue::Integer(limit_count as i64));
-                props.insert("input_rows".to_string(), QueryValue::Integer(input_rows as i64));
+                props.insert(
+                    "limit_count".to_string(),
+                    QueryValue::Integer(limit_count as i64),
+                );
+                props.insert(
+                    "input_rows".to_string(),
+                    QueryValue::Integer(input_rows as i64),
+                );
                 if limit.offset.is_some() {
                     props.insert("has_offset".to_string(), QueryValue::Boolean(true));
                 }
@@ -548,7 +649,8 @@ impl QueryPlanner {
             Expression::Subquery(_) => "Subquery",
             Expression::Array(_) => "Array",
             Expression::Map(_) => "Map",
-        }.to_string()
+        }
+        .to_string()
     }
 
     /// Extract limit count from limit clause

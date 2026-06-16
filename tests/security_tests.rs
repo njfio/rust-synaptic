@@ -3,9 +3,11 @@
 #![cfg(feature = "security")]
 
 use synaptic::{
-    security::{SecurityManager, SecurityConfig, Permission},
-    security::access_control::{AccessControlManager, AuthenticationCredentials, AuthenticationType},
     error::Result,
+    security::access_control::{
+        AccessControlManager, AuthenticationCredentials, AuthenticationType,
+    },
+    security::{Permission, SecurityConfig, SecurityManager},
 };
 
 #[tokio::test]
@@ -21,10 +23,12 @@ async fn test_access_control_authentication() -> Result<()> {
     let mut access_control = AccessControlManager::new(&config).await?;
 
     // Add a role with permissions
-    access_control.add_role(
-        "user".to_string(),
-        vec![Permission::ReadMemory, Permission::WriteMemory]
-    ).await?;
+    access_control
+        .add_role(
+            "user".to_string(),
+            vec![Permission::ReadMemory, Permission::WriteMemory],
+        )
+        .await?;
 
     // Test authentication with valid credentials
     let creds = AuthenticationCredentials {
@@ -37,7 +41,9 @@ async fn test_access_control_authentication() -> Result<()> {
         user_agent: Some("test".to_string()),
     };
 
-    let context = access_control.authenticate("user".to_string(), creds).await?;
+    let context = access_control
+        .authenticate("user".to_string(), creds)
+        .await?;
     assert_eq!(context.user_id, "user");
     assert!(!context.roles.is_empty());
 
@@ -50,15 +56,23 @@ async fn test_permission_checking() -> Result<()> {
     let mut access_control = AccessControlManager::new(&config).await?;
 
     // Add roles with different permissions
-    access_control.add_role(
-        "admin".to_string(),
-        vec![Permission::ReadMemory, Permission::WriteMemory, Permission::DeleteMemory]
-    ).await?;
+    access_control
+        .add_role(
+            "admin".to_string(),
+            vec![
+                Permission::ReadMemory,
+                Permission::WriteMemory,
+                Permission::DeleteMemory,
+            ],
+        )
+        .await?;
 
-    access_control.add_role(
-        "user".to_string(),
-        vec![Permission::ReadMemory, Permission::WriteMemory]
-    ).await?;
+    access_control
+        .add_role(
+            "user".to_string(),
+            vec![Permission::ReadMemory, Permission::WriteMemory],
+        )
+        .await?;
 
     // Test admin authentication
     let admin_creds = AuthenticationCredentials {
@@ -71,10 +85,15 @@ async fn test_permission_checking() -> Result<()> {
         user_agent: Some("test".to_string()),
     };
 
-    let admin_ctx = access_control.authenticate("admin".to_string(), admin_creds).await?;
+    let admin_ctx = access_control
+        .authenticate("admin".to_string(), admin_creds)
+        .await?;
 
     // Admin should have delete permission
-    assert!(access_control.check_permission(&admin_ctx, Permission::DeleteMemory).await.is_ok());
+    assert!(access_control
+        .check_permission(&admin_ctx, Permission::DeleteMemory)
+        .await
+        .is_ok());
 
     // Test user authentication
     let user_creds = AuthenticationCredentials {
@@ -87,13 +106,21 @@ async fn test_permission_checking() -> Result<()> {
         user_agent: Some("test".to_string()),
     };
 
-    let user_ctx = access_control.authenticate("user".to_string(), user_creds).await?;
+    let user_ctx = access_control
+        .authenticate("user".to_string(), user_creds)
+        .await?;
 
     // User should have read permission
-    assert!(access_control.check_permission(&user_ctx, Permission::ReadMemory).await.is_ok());
+    assert!(access_control
+        .check_permission(&user_ctx, Permission::ReadMemory)
+        .await
+        .is_ok());
 
     // User should NOT have delete permission
-    assert!(access_control.check_permission(&user_ctx, Permission::DeleteMemory).await.is_err());
+    assert!(access_control
+        .check_permission(&user_ctx, Permission::DeleteMemory)
+        .await
+        .is_err());
 
     Ok(())
 }
@@ -104,10 +131,9 @@ async fn test_session_management() -> Result<()> {
     let mut access_control = AccessControlManager::new(&config).await?;
 
     // Add a role
-    access_control.add_role(
-        "user".to_string(),
-        vec![Permission::ReadMemory]
-    ).await?;
+    access_control
+        .add_role("user".to_string(), vec![Permission::ReadMemory])
+        .await?;
 
     // Authenticate and create session
     let creds = AuthenticationCredentials {
@@ -120,7 +146,9 @@ async fn test_session_management() -> Result<()> {
         user_agent: Some("test".to_string()),
     };
 
-    let context = access_control.authenticate("user".to_string(), creds).await?;
+    let context = access_control
+        .authenticate("user".to_string(), creds)
+        .await?;
 
     // Session should be valid
     assert!(access_control.validate_session(&context).await.is_ok());
@@ -140,10 +168,9 @@ async fn test_access_control_metrics() -> Result<()> {
     let mut access_control = AccessControlManager::new(&config).await?;
 
     // Add a role
-    access_control.add_role(
-        "user".to_string(),
-        vec![Permission::ReadMemory]
-    ).await?;
+    access_control
+        .add_role("user".to_string(), vec![Permission::ReadMemory])
+        .await?;
 
     // Perform some operations
     let creds = AuthenticationCredentials {
@@ -156,8 +183,12 @@ async fn test_access_control_metrics() -> Result<()> {
         user_agent: Some("test".to_string()),
     };
 
-    let context = access_control.authenticate("user".to_string(), creds).await?;
-    let _ = access_control.check_permission(&context, Permission::ReadMemory).await;
+    let context = access_control
+        .authenticate("user".to_string(), creds)
+        .await?;
+    let _ = access_control
+        .check_permission(&context, Permission::ReadMemory)
+        .await;
 
     // Get metrics
     let metrics = access_control.get_metrics().await?;
@@ -166,17 +197,3 @@ async fn test_access_control_metrics() -> Result<()> {
 
     Ok(())
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

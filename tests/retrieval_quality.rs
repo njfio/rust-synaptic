@@ -3,14 +3,14 @@
 //! These tests verify that the retrieval pipeline components work correctly
 //! and can be combined for high-quality search results.
 
-use synaptic::{
-    AgentMemory, MemoryConfig, StorageBackend,
-    memory::retrieval::{
-        RetrievalPipeline, HybridRetriever, PipelineConfig, FusionStrategy,
-        KeywordRetriever, TemporalRetriever, GraphRetriever, RetrievalSignal,
-    },
-};
 use std::sync::Arc;
+use synaptic::{
+    memory::retrieval::{
+        FusionStrategy, GraphRetriever, HybridRetriever, KeywordRetriever, PipelineConfig,
+        RetrievalPipeline, RetrievalSignal, TemporalRetriever,
+    },
+    AgentMemory, MemoryConfig, StorageBackend,
+};
 
 #[tokio::test]
 async fn test_keyword_retriever() {
@@ -35,8 +35,7 @@ async fn test_temporal_retriever() {
     };
 
     let agent = AgentMemory::new(config).await.unwrap();
-    let retriever = TemporalRetriever::new(agent.storage().clone())
-        .with_weights(0.7, 0.3);
+    let retriever = TemporalRetriever::new(agent.storage().clone()).with_weights(0.7, 0.3);
 
     assert_eq!(retriever.name(), "TemporalRetriever");
     assert_eq!(retriever.signal_type(), RetrievalSignal::TemporalRelevance);
@@ -70,27 +69,49 @@ async fn test_pipeline_config_defaults() {
     assert!(config.enable_caching);
 
     // Check default weights
-    assert_eq!(config.signal_weights.get(&RetrievalSignal::DenseVector), Some(&0.4));
-    assert_eq!(config.signal_weights.get(&RetrievalSignal::SparseKeyword), Some(&0.3));
+    assert_eq!(
+        config.signal_weights.get(&RetrievalSignal::DenseVector),
+        Some(&0.4)
+    );
+    assert_eq!(
+        config.signal_weights.get(&RetrievalSignal::SparseKeyword),
+        Some(&0.3)
+    );
 }
 
 #[tokio::test]
 async fn test_pipeline_config_presets() {
     // Test semantic focus
     let semantic = PipelineConfig::semantic_focus();
-    assert_eq!(semantic.signal_weights.get(&RetrievalSignal::DenseVector), Some(&0.6));
+    assert_eq!(
+        semantic.signal_weights.get(&RetrievalSignal::DenseVector),
+        Some(&0.6)
+    );
 
     // Test keyword focus
     let keyword = PipelineConfig::keyword_focus();
-    assert_eq!(keyword.signal_weights.get(&RetrievalSignal::SparseKeyword), Some(&0.6));
+    assert_eq!(
+        keyword.signal_weights.get(&RetrievalSignal::SparseKeyword),
+        Some(&0.6)
+    );
 
     // Test graph focus
     let graph = PipelineConfig::graph_focus();
-    assert_eq!(graph.signal_weights.get(&RetrievalSignal::GraphRelationship), Some(&0.4));
+    assert_eq!(
+        graph
+            .signal_weights
+            .get(&RetrievalSignal::GraphRelationship),
+        Some(&0.4)
+    );
 
     // Test temporal focus
     let temporal = PipelineConfig::temporal_focus();
-    assert_eq!(temporal.signal_weights.get(&RetrievalSignal::TemporalRelevance), Some(&0.4));
+    assert_eq!(
+        temporal
+            .signal_weights
+            .get(&RetrievalSignal::TemporalRelevance),
+        Some(&0.4)
+    );
 }
 
 #[tokio::test]
@@ -100,7 +121,10 @@ async fn test_pipeline_config_builder() {
         .with_fusion_strategy(FusionStrategy::WeightedAverage)
         .with_min_score(0.2);
 
-    assert_eq!(config.signal_weights.get(&RetrievalSignal::DenseVector), Some(&0.5));
+    assert_eq!(
+        config.signal_weights.get(&RetrievalSignal::DenseVector),
+        Some(&0.5)
+    );
     assert_eq!(config.fusion_strategy, FusionStrategy::WeightedAverage);
     assert_eq!(config.min_score, 0.2);
 }
@@ -165,9 +189,18 @@ async fn test_hybrid_search_with_results() {
     let mut agent = AgentMemory::new(agent_config).await.unwrap();
 
     // Store test memories
-    agent.store("rust_basics", "Introduction to Rust programming language").await.unwrap();
-    agent.store("rust_advanced", "Advanced Rust concepts and patterns").await.unwrap();
-    agent.store("python_intro", "Python programming for beginners").await.unwrap();
+    agent
+        .store("rust_basics", "Introduction to Rust programming language")
+        .await
+        .unwrap();
+    agent
+        .store("rust_advanced", "Advanced Rust concepts and patterns")
+        .await
+        .unwrap();
+    agent
+        .store("python_intro", "Python programming for beginners")
+        .await
+        .unwrap();
 
     let config = PipelineConfig::keyword_focus();
     let retriever = HybridRetriever::new(config)
@@ -191,10 +224,12 @@ async fn test_fusion_strategy_weighted_average() {
 
     let mut agent = AgentMemory::new(agent_config).await.unwrap();
 
-    agent.store("test1", "rust programming systems").await.unwrap();
+    agent
+        .store("test1", "rust programming systems")
+        .await
+        .unwrap();
 
-    let config = PipelineConfig::default()
-        .with_fusion_strategy(FusionStrategy::WeightedAverage);
+    let config = PipelineConfig::default().with_fusion_strategy(FusionStrategy::WeightedAverage);
 
     let retriever = HybridRetriever::new(config)
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())))
@@ -215,8 +250,7 @@ async fn test_fusion_strategy_max_score() {
 
     agent.store("test1", "rust programming").await.unwrap();
 
-    let config = PipelineConfig::default()
-        .with_fusion_strategy(FusionStrategy::MaxScore);
+    let config = PipelineConfig::default().with_fusion_strategy(FusionStrategy::MaxScore);
 
     let retriever = HybridRetriever::new(config)
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())));
@@ -297,11 +331,16 @@ async fn test_min_score_filtering() {
 
     let mut agent = AgentMemory::new(agent_config).await.unwrap();
 
-    agent.store("highly_relevant", "rust programming systems").await.unwrap();
-    agent.store("less_relevant", "cooking recipes").await.unwrap();
+    agent
+        .store("highly_relevant", "rust programming systems")
+        .await
+        .unwrap();
+    agent
+        .store("less_relevant", "cooking recipes")
+        .await
+        .unwrap();
 
-    let config = PipelineConfig::default()
-        .with_min_score(0.3); // Higher threshold
+    let config = PipelineConfig::default().with_min_score(0.3); // Higher threshold
 
     let retriever = HybridRetriever::new(config)
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())));
@@ -335,7 +374,10 @@ async fn test_temporal_retriever_recency_bias() {
     sleep(Duration::from_millis(100)).await;
 
     // Store a recent memory
-    agent.store("recent_memory", "recent content").await.unwrap();
+    agent
+        .store("recent_memory", "recent content")
+        .await
+        .unwrap();
 
     let config = PipelineConfig::temporal_focus();
     let retriever = HybridRetriever::new(config)
@@ -360,8 +402,14 @@ async fn test_multiple_signals_fusion() {
     let mut agent = AgentMemory::new(agent_config).await.unwrap();
 
     // Store diverse memories
-    agent.store("mem1", "rust programming language").await.unwrap();
-    agent.store("mem2", "rust systems programming").await.unwrap();
+    agent
+        .store("mem1", "rust programming language")
+        .await
+        .unwrap();
+    agent
+        .store("mem2", "rust systems programming")
+        .await
+        .unwrap();
     agent.store("mem3", "python scripting").await.unwrap();
 
     let config = PipelineConfig::default();
@@ -373,7 +421,10 @@ async fn test_multiple_signals_fusion() {
 
     // Should combine signals and return relevant results
     assert!(!results.is_empty());
-    let rust_count = results.iter().filter(|r| r.entry.key.contains("mem1") || r.entry.key.contains("mem2")).count();
+    let rust_count = results
+        .iter()
+        .filter(|r| r.entry.key.contains("mem1") || r.entry.key.contains("mem2"))
+        .count();
     assert!(rust_count >= 1, "Should find rust-related memories");
 }
 
@@ -388,7 +439,10 @@ async fn test_limit_enforcement() {
 
     // Store many memories
     for i in 0..20 {
-        agent.store(&format!("mem{}", i), "test content").await.unwrap();
+        agent
+            .store(&format!("mem{}", i), "test content")
+            .await
+            .unwrap();
     }
 
     let config = PipelineConfig::default();
@@ -412,7 +466,10 @@ async fn test_config_update() {
 
     // Verify config was updated
     assert_eq!(
-        retriever.config().signal_weights.get(&RetrievalSignal::DenseVector),
+        retriever
+            .config()
+            .signal_weights
+            .get(&RetrievalSignal::DenseVector),
         new_config.signal_weights.get(&RetrievalSignal::DenseVector)
     );
 }

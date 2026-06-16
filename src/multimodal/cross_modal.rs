@@ -4,8 +4,8 @@
 //! Enables intelligent connections between different types of content (image, audio, code, text).
 
 use super::{
-    ContentSpecificMetadata, ContentType, CrossModalLink, CrossModalRelationship,
-    MultiModalMemory, MultiModalResult,
+    ContentSpecificMetadata, ContentType, CrossModalLink, CrossModalRelationship, MultiModalMemory,
+    MultiModalResult,
 };
 use crate::error::SynapticError;
 use crate::memory::types::MemoryId;
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 pub struct CrossModalAnalyzer {
     /// Configuration for relationship detection
     config: CrossModalConfig,
-    
+
     /// Relationship detection strategies
     strategies: Vec<Box<dyn RelationshipStrategy>>,
 }
@@ -27,22 +27,22 @@ pub struct CrossModalAnalyzer {
 pub struct CrossModalConfig {
     /// Minimum confidence threshold for relationships
     pub min_confidence_threshold: f32,
-    
+
     /// Enable text extraction relationships
     pub enable_text_extraction: bool,
-    
+
     /// Enable semantic similarity relationships
     pub enable_semantic_similarity: bool,
-    
+
     /// Enable temporal relationships
     pub enable_temporal_relationships: bool,
-    
+
     /// Enable content generation relationships
     pub enable_generation_relationships: bool,
-    
+
     /// Maximum number of relationships per memory
     pub max_relationships_per_memory: usize,
-    
+
     /// Similarity threshold for "similar to" relationships
     pub similarity_threshold: f32,
 }
@@ -69,7 +69,7 @@ pub trait RelationshipStrategy: Send + Sync {
         source: &MultiModalMemory,
         target: &MultiModalMemory,
     ) -> MultiModalResult<Vec<CrossModalLink>>;
-    
+
     /// Get the strategy name
     fn name(&self) -> &str;
 }
@@ -82,7 +82,9 @@ pub struct TextExtractionStrategy {
 
 impl TextExtractionStrategy {
     pub fn new(confidence_threshold: f32) -> Self {
-        Self { confidence_threshold }
+        Self {
+            confidence_threshold,
+        }
     }
 }
 
@@ -96,7 +98,13 @@ impl RelationshipStrategy for TextExtractionStrategy {
 
         // Check if target is extracted text from source
         match (&source.content_type, &target.content_type) {
-            (ContentType::Image { .. }, ContentType::ExtractedText { source_modality, confidence }) => {
+            (
+                ContentType::Image { .. },
+                ContentType::ExtractedText {
+                    source_modality,
+                    confidence,
+                },
+            ) => {
                 if let ContentType::Image { .. } = source_modality.as_ref() {
                     if *confidence >= self.confidence_threshold {
                         relationships.push(CrossModalLink {
@@ -105,14 +113,23 @@ impl RelationshipStrategy for TextExtractionStrategy {
                             confidence: *confidence,
                             metadata: {
                                 let mut meta = HashMap::new();
-                                meta.insert("extraction_method".to_string(), serde_json::Value::String("ocr".to_string()));
+                                meta.insert(
+                                    "extraction_method".to_string(),
+                                    serde_json::Value::String("ocr".to_string()),
+                                );
                                 meta
                             },
                         });
                     }
                 }
             }
-            (ContentType::Audio { .. }, ContentType::ExtractedText { source_modality, confidence }) => {
+            (
+                ContentType::Audio { .. },
+                ContentType::ExtractedText {
+                    source_modality,
+                    confidence,
+                },
+            ) => {
                 if let ContentType::Audio { .. } = source_modality.as_ref() {
                     if *confidence >= self.confidence_threshold {
                         relationships.push(CrossModalLink {
@@ -121,7 +138,10 @@ impl RelationshipStrategy for TextExtractionStrategy {
                             confidence: *confidence,
                             metadata: {
                                 let mut meta = HashMap::new();
-                                meta.insert("extraction_method".to_string(), serde_json::Value::String("speech_to_text".to_string()));
+                                meta.insert(
+                                    "extraction_method".to_string(),
+                                    serde_json::Value::String("speech_to_text".to_string()),
+                                );
                                 meta
                             },
                         });
@@ -147,7 +167,9 @@ pub struct SemanticSimilarityStrategy {
 
 impl SemanticSimilarityStrategy {
     pub fn new(similarity_threshold: f32) -> Self {
-        Self { similarity_threshold }
+        Self {
+            similarity_threshold,
+        }
     }
 
     /// Calculate semantic similarity between text content
@@ -155,10 +177,10 @@ impl SemanticSimilarityStrategy {
         // Simple word overlap similarity (in production, use embeddings)
         let words1: std::collections::HashSet<&str> = text1.split_whitespace().collect();
         let words2: std::collections::HashSet<&str> = text2.split_whitespace().collect();
-        
+
         let intersection = words1.intersection(&words2).count();
         let union = words1.union(&words2).count();
-        
+
         if union == 0 {
             0.0
         } else {
@@ -171,14 +193,19 @@ impl SemanticSimilarityStrategy {
         match &memory.metadata.content_specific {
             ContentSpecificMetadata::Image { text_regions, .. } => {
                 if !text_regions.is_empty() {
-                    Some(text_regions.iter().map(|r| &r.text).cloned().collect::<Vec<_>>().join(" "))
+                    Some(
+                        text_regions
+                            .iter()
+                            .map(|r| &r.text)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    )
                 } else {
                     None
                 }
             }
-            ContentSpecificMetadata::Audio { transcript, .. } => {
-                transcript.clone()
-            }
+            ContentSpecificMetadata::Audio { transcript, .. } => transcript.clone(),
             ContentSpecificMetadata::Code { .. } => {
                 // For code, we could extract comments or function names
                 None
@@ -201,7 +228,7 @@ impl RelationshipStrategy for SemanticSimilarityStrategy {
 
         if let (Some(source_text), Some(target_text)) = (source_text, target_text) {
             let similarity = self.calculate_text_similarity(&source_text, &target_text);
-            
+
             if similarity >= self.similarity_threshold {
                 relationships.push(CrossModalLink {
                     target_id: target.id.clone(),
@@ -209,10 +236,17 @@ impl RelationshipStrategy for SemanticSimilarityStrategy {
                     confidence: similarity,
                     metadata: {
                         let mut meta = HashMap::new();
-                        meta.insert("similarity_score".to_string(), serde_json::Value::Number(
-                            serde_json::Number::from_f64(similarity as f64).unwrap()
-                        ));
-                        meta.insert("comparison_method".to_string(), serde_json::Value::String("text_overlap".to_string()));
+                        meta.insert(
+                            "similarity_score".to_string(),
+                            serde_json::Value::Number(
+                                serde_json::Number::from_f64(similarity as f64)
+                                    .expect("value should be available"),
+                            ),
+                        );
+                        meta.insert(
+                            "comparison_method".to_string(),
+                            serde_json::Value::String("text_overlap".to_string()),
+                        );
                         meta
                     },
                 });
@@ -235,7 +269,9 @@ pub struct TemporalRelationshipStrategy {
 
 impl TemporalRelationshipStrategy {
     pub fn new(time_window_minutes: i64) -> Self {
-        Self { time_window_minutes }
+        Self {
+            time_window_minutes,
+        }
     }
 }
 
@@ -249,19 +285,20 @@ impl RelationshipStrategy for TemporalRelationshipStrategy {
 
         // Check if memories were created within the time window
         let time_diff = (target.created_at - source.created_at).num_minutes().abs();
-        
+
         if time_diff <= self.time_window_minutes {
             let confidence = 1.0 - (time_diff as f32 / self.time_window_minutes as f32);
-            
+
             relationships.push(CrossModalLink {
                 target_id: target.id.clone(),
                 relationship_type: CrossModalRelationship::Custom("temporal_proximity".to_string()),
                 confidence,
                 metadata: {
                     let mut meta = HashMap::new();
-                    meta.insert("time_diff_minutes".to_string(), serde_json::Value::Number(
-                        serde_json::Number::from(time_diff)
-                    ));
+                    meta.insert(
+                        "time_diff_minutes".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(time_diff)),
+                    );
                     meta
                 },
             });
@@ -299,7 +336,10 @@ impl RelationshipStrategy for ContentGenerationStrategy {
                             confidence: 0.8,
                             metadata: {
                                 let mut meta = HashMap::new();
-                                meta.insert("generation_type".to_string(), serde_json::Value::String("documentation".to_string()));
+                                meta.insert(
+                                    "generation_type".to_string(),
+                                    serde_json::Value::String("documentation".to_string()),
+                                );
                                 meta
                             },
                         });
@@ -316,7 +356,10 @@ impl RelationshipStrategy for ContentGenerationStrategy {
                             confidence: 0.9,
                             metadata: {
                                 let mut meta = HashMap::new();
-                                meta.insert("description_type".to_string(), serde_json::Value::String("image_caption".to_string()));
+                                meta.insert(
+                                    "description_type".to_string(),
+                                    serde_json::Value::String("image_caption".to_string()),
+                                );
                                 meta
                             },
                         });
@@ -340,11 +383,15 @@ impl CrossModalAnalyzer {
         let mut strategies: Vec<Box<dyn RelationshipStrategy>> = Vec::new();
 
         if config.enable_text_extraction {
-            strategies.push(Box::new(TextExtractionStrategy::new(config.min_confidence_threshold)));
+            strategies.push(Box::new(TextExtractionStrategy::new(
+                config.min_confidence_threshold,
+            )));
         }
 
         if config.enable_semantic_similarity {
-            strategies.push(Box::new(SemanticSimilarityStrategy::new(config.similarity_threshold)));
+            strategies.push(Box::new(SemanticSimilarityStrategy::new(
+                config.similarity_threshold,
+            )));
         }
 
         if config.enable_temporal_relationships {
@@ -383,7 +430,11 @@ impl CrossModalAnalyzer {
         all_relationships.retain(|link| link.confidence >= self.config.min_confidence_threshold);
 
         // Sort by confidence (highest first)
-        all_relationships.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        all_relationships.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit number of relationships
         all_relationships.truncate(self.config.max_relationships_per_memory);
@@ -411,7 +462,7 @@ impl CrossModalAnalyzer {
         relationship_types: Option<&[CrossModalRelationship]>,
     ) -> MultiModalResult<Vec<(MemoryId, CrossModalRelationship, f32)>> {
         let relationships = self.analyze_relationships(source, candidates)?;
-        
+
         let mut related = Vec::new();
         for link in relationships {
             // Filter by relationship type if specified
@@ -420,7 +471,7 @@ impl CrossModalAnalyzer {
                     continue;
                 }
             }
-            
+
             related.push((link.target_id, link.relationship_type, link.confidence));
         }
 
@@ -428,15 +479,21 @@ impl CrossModalAnalyzer {
     }
 
     /// Get relationship statistics
-    pub fn get_relationship_statistics(&self, memories: &[MultiModalMemory]) -> RelationshipStatistics {
+    pub fn get_relationship_statistics(
+        &self,
+        memories: &[MultiModalMemory],
+    ) -> RelationshipStatistics {
         let mut stats = RelationshipStatistics::default();
-        
+
         for memory in memories {
             stats.total_memories += 1;
             stats.total_relationships += memory.cross_modal_links.len();
-            
+
             for link in &memory.cross_modal_links {
-                *stats.relationship_type_counts.entry(link.relationship_type.clone()).or_insert(0) += 1;
+                *stats
+                    .relationship_type_counts
+                    .entry(link.relationship_type.clone())
+                    .or_insert(0) += 1;
                 stats.confidence_sum += link.confidence;
             }
         }
@@ -505,13 +562,13 @@ mod tests {
     #[test]
     fn test_text_extraction_strategy() {
         let strategy = TextExtractionStrategy::new(0.7);
-        
+
         let source = create_test_memory(ContentType::Image {
             format: super::ImageFormat::Png,
             width: 100,
             height: 100,
         });
-        
+
         let target = create_test_memory(ContentType::ExtractedText {
             source_modality: Box::new(ContentType::Image {
                 format: super::ImageFormat::Png,
@@ -521,8 +578,13 @@ mod tests {
             confidence: 0.8,
         });
 
-        let relationships = strategy.detect_relationships(&source, &target).unwrap();
+        let relationships = strategy
+            .detect_relationships(&source, &target)
+            .expect("value should be available");
         assert_eq!(relationships.len(), 1);
-        assert_eq!(relationships[0].relationship_type, CrossModalRelationship::ExtractedFrom);
+        assert_eq!(
+            relationships[0].relationship_type,
+            CrossModalRelationship::ExtractedFrom
+        );
     }
 }

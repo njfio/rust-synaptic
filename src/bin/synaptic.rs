@@ -4,18 +4,17 @@
 //! providing comprehensive memory management, graph querying, and system
 //! administration capabilities.
 
-use synaptic::cli::{SynapticCli, CliRunner};
-use synaptic::error::Result;
 use clap::Parser;
-use tracing::{info, error};
-use tracing_subscriber::{EnvFilter, fmt};
+use synaptic::cli::{CliRunner, SynapticCli};
+use synaptic::error::Result;
+use tracing::{error, info};
+use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-    
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
     fmt()
         .with_env_filter(filter)
         .with_target(false)
@@ -36,12 +35,12 @@ async fn main() -> Result<()> {
     match CliRunner::new(args.clone()).await {
         Ok(mut runner) => {
             info!("Starting Synaptic CLI");
-            
+
             if let Err(e) = runner.run(args).await {
                 error!("CLI execution failed: {}", e);
                 std::process::exit(1);
             }
-        },
+        }
         Err(e) => {
             error!("Failed to initialize CLI: {}", e);
             std::process::exit(1);

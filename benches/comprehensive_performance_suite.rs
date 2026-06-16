@@ -1,10 +1,10 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use synaptic::memory::management::MemoryManager;
-use synaptic::memory::storage::memory::MemoryStorage;
-use synaptic::memory::storage::file::FileStorage;
-use synaptic::memory::types::{MemoryEntry, MemoryType};
-use synaptic::memory::storage::Storage;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::Arc;
+use synaptic::memory::management::MemoryManager;
+use synaptic::memory::storage::file::FileStorage;
+use synaptic::memory::storage::memory::MemoryStorage;
+use synaptic::memory::storage::Storage;
+use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
@@ -24,13 +24,13 @@ fn create_test_entries(count: usize) -> Vec<MemoryEntry> {
 /// Benchmark memory storage operations
 fn bench_storage_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("storage_operations");
-    
+
     // Test different entry counts
     for entry_count in [100, 1000, 10000].iter() {
         let entries = create_test_entries(*entry_count);
-        
+
         // Benchmark MemoryStorage
         group.throughput(Throughput::Elements(*entry_count as u64));
         group.bench_with_input(
@@ -47,7 +47,7 @@ fn bench_storage_operations(c: &mut Criterion) {
                 })
             },
         );
-        
+
         // Benchmark retrieval
         group.bench_with_input(
             BenchmarkId::new("memory_storage_retrieve", entry_count),
@@ -60,7 +60,7 @@ fn bench_storage_operations(c: &mut Criterion) {
                     }
                     storage
                 });
-                
+
                 b.iter(|| {
                     rt.block_on(async {
                         for i in 0..*entry_count {
@@ -71,7 +71,7 @@ fn bench_storage_operations(c: &mut Criterion) {
                 })
             },
         );
-        
+
         // Benchmark FileStorage
         group.bench_with_input(
             BenchmarkId::new("file_storage_store", entry_count),
@@ -80,7 +80,9 @@ fn bench_storage_operations(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let temp_dir = TempDir::new().unwrap();
-                        let storage = FileStorage::new(temp_dir.path().join("bench.db")).await.unwrap();
+                        let storage = FileStorage::new(temp_dir.path().join("bench.db"))
+                            .await
+                            .unwrap();
                         for entry in &entries {
                             storage.store(black_box(entry)).await.unwrap();
                         }
@@ -89,16 +91,16 @@ fn bench_storage_operations(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark search operations
 fn bench_search_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("search_operations");
-    
+
     // Prepare data
     let entries = create_test_entries(10000);
     let storage = rt.block_on(async {
@@ -108,11 +110,11 @@ fn bench_search_operations(c: &mut Criterion) {
         }
         storage
     });
-    
+
     // Test different search terms and limits
     let search_terms = ["benchmark", "content", "entry", "text"];
     let limits = [10, 100, 1000];
-    
+
     for term in search_terms.iter() {
         for limit in limits.iter() {
             group.bench_with_input(
@@ -121,27 +123,30 @@ fn bench_search_operations(c: &mut Criterion) {
                 |b, &limit| {
                     b.iter(|| {
                         rt.block_on(async {
-                            storage.search(black_box(term), black_box(limit)).await.unwrap()
+                            storage
+                                .search(black_box(term), black_box(limit))
+                                .await
+                                .unwrap()
                         })
                     })
                 },
             );
         }
     }
-    
+
     group.finish();
 }
 
 /// Benchmark memory manager operations
 fn bench_memory_manager(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("memory_manager");
-    
+
     // Test different scenarios
     for entry_count in [100, 1000, 5000].iter() {
         group.throughput(Throughput::Elements(*entry_count as u64));
-        
+
         group.bench_with_input(
             BenchmarkId::new("store_memory", entry_count),
             entry_count,
@@ -149,58 +154,63 @@ fn bench_memory_manager(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage).await.unwrap();
-                        
+                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+
                         for i in 0..count {
-                            let content = format!("Memory content for benchmark {}", i);
-                            manager.store_memory(
-                                black_box(&content),
+                            let entry = MemoryEntry::new(
+                                format!("benchmark_key_{}", i),
+                                format!("Memory content for benchmark {}", i),
                                 MemoryType::ShortTerm,
-                                std::collections::HashMap::new(),
-                            ).await.unwrap();
+                            );
+                            manager.store_memory(black_box(&entry)).await.unwrap();
                         }
                     })
                 })
             },
         );
-        
+
         group.bench_with_input(
             BenchmarkId::new("search_memories", entry_count),
             entry_count,
             |b, &count| {
-                let manager = rt.block_on(async {
+                let storage = rt.block_on(async {
                     let storage = Arc::new(MemoryStorage::new());
-                    let manager = MemoryManager::new(storage).await.unwrap();
-                    
+                    let manager = MemoryManager::new(storage.clone(), None, None, None)
+                        .await
+                        .unwrap();
+
                     for i in 0..count {
-                        let content = format!("Memory content for benchmark {}", i);
-                        manager.store_memory(
-                            &content,
+                        let entry = MemoryEntry::new(
+                            format!("benchmark_key_{}", i),
+                            format!("Memory content for benchmark {}", i),
                             MemoryType::ShortTerm,
-                            std::collections::HashMap::new(),
-                        ).await.unwrap();
+                        );
+                        manager.store_memory(&entry).await.unwrap();
                     }
-                    manager
+                    storage
                 });
-                
+
                 b.iter(|| {
                     rt.block_on(async {
-                        manager.search_memories(black_box("benchmark"), black_box(50)).await.unwrap()
+                        storage
+                            .search(black_box("benchmark"), black_box(50))
+                            .await
+                            .unwrap()
                     })
                 })
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark concurrent operations
 fn bench_concurrent_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("concurrent_operations");
-    
+
     // Test different thread counts
     for thread_count in [1, 2, 4, 8].iter() {
         group.bench_with_input(
@@ -211,7 +221,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
                         let mut handles = vec![];
-                        
+
                         for thread_id in 0..threads {
                             let storage_clone = storage.clone();
                             let handle = tokio::spawn(async move {
@@ -226,7 +236,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
                             });
                             handles.push(handle);
                         }
-                        
+
                         for handle in handles {
                             handle.await.unwrap();
                         }
@@ -235,16 +245,16 @@ fn bench_concurrent_operations(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark memory consolidation
 fn bench_consolidation(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("consolidation");
-    
+
     for entry_count in [100, 500, 1000].iter() {
         group.bench_with_input(
             BenchmarkId::new("consolidate_memories", entry_count),
@@ -253,80 +263,85 @@ fn bench_consolidation(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage).await.unwrap();
-                        
+                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+
                         // Store memories with some duplicates
+                        let mut entries = Vec::new();
                         for i in 0..count {
                             let content = if i % 10 == 0 {
                                 "Duplicate content for consolidation testing".to_string()
                             } else {
                                 format!("Unique content for entry {}", i)
                             };
-                            
-                            manager.store_memory(
-                                &content,
+                            let entry = MemoryEntry::new(
+                                format!("consolidation_key_{}", i),
+                                content,
                                 MemoryType::LongTerm,
-                                std::collections::HashMap::new(),
-                            ).await.unwrap();
+                            );
+                            manager.store_memory(&entry).await.unwrap();
+                            entries.push(entry);
                         }
-                        
-                        // Benchmark consolidation
-                        manager.consolidate_memories().await.unwrap();
+
+                        // Benchmark consolidation-style related-memory analysis
+                        for entry in &entries {
+                            manager
+                                .count_related_memories(black_box(entry))
+                                .await
+                                .unwrap();
+                        }
                     })
                 })
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark similarity calculations
 fn bench_similarity_calculations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("similarity");
-    
+
     let entries = create_test_entries(1000);
-    
+
     group.bench_function("calculate_similarity_matrix", |b| {
         b.iter(|| {
             rt.block_on(async {
                 let storage = Arc::new(MemoryStorage::new());
-                let manager = MemoryManager::new(storage).await.unwrap();
-                
-                // Store entries
-                for entry in &entries[..100] { // Use subset for performance
-                    manager.store_memory(
-                        &entry.value,
-                        entry.memory_type.clone(),
-                        std::collections::HashMap::new(),
-                    ).await.unwrap();
+                let manager = MemoryManager::new(storage.clone(), None, None, None)
+                    .await
+                    .unwrap();
+
+                // Store entries (subset for performance)
+                for entry in &entries[..100] {
+                    manager.store_memory(entry).await.unwrap();
                 }
-                
+
                 // Calculate similarities
-                let memories = manager.get_all_memories().await.unwrap();
+                let memories = storage.get_all_entries().await.unwrap();
                 for i in 0..memories.len().min(10) {
-                    for j in (i+1)..memories.len().min(10) {
-                        manager.calculate_similarity(&memories[i], &memories[j]).await.unwrap();
+                    for j in (i + 1)..memories.len().min(10) {
+                        black_box(memories[i].similarity_score(&memories[j]));
                     }
                 }
             })
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark backup and restore operations
 fn bench_backup_restore(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("backup_restore");
-    
+
     for entry_count in [100, 1000, 5000].iter() {
         let entries = create_test_entries(*entry_count);
-        
+
         group.bench_with_input(
             BenchmarkId::new("backup", entry_count),
             entry_count,
@@ -337,7 +352,7 @@ fn bench_backup_restore(c: &mut Criterion) {
                         for entry in &entries {
                             storage.store(entry).await.unwrap();
                         }
-                        
+
                         let temp_dir = TempDir::new().unwrap();
                         let backup_path = temp_dir.path().join("benchmark_backup.json");
                         storage.backup(backup_path.to_str().unwrap()).await.unwrap();
@@ -345,7 +360,7 @@ fn bench_backup_restore(c: &mut Criterion) {
                 })
             },
         );
-        
+
         group.bench_with_input(
             BenchmarkId::new("restore", entry_count),
             entry_count,
@@ -355,23 +370,26 @@ fn bench_backup_restore(c: &mut Criterion) {
                     for entry in &entries {
                         storage.store(entry).await.unwrap();
                     }
-                    
+
                     let temp_dir = TempDir::new().unwrap();
                     let backup_path = temp_dir.path().join("benchmark_backup.json");
                     storage.backup(backup_path.to_str().unwrap()).await.unwrap();
                     backup_path
                 });
-                
+
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = MemoryStorage::new();
-                        storage.restore(backup_path.to_str().unwrap()).await.unwrap();
+                        storage
+                            .restore(backup_path.to_str().unwrap())
+                            .await
+                            .unwrap();
                     })
                 })
             },
         );
     }
-    
+
     group.finish();
 }
 

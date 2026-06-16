@@ -4,7 +4,7 @@
 //! fully private and self-hosted embedding generation.
 
 use super::super::provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities, compute_content_hash,
+    compute_content_hash, EmbedOptions, Embedding, EmbeddingProvider, ProviderCapabilities,
 };
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
@@ -78,8 +78,8 @@ impl OllamaConfig {
     pub fn from_env() -> Self {
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        let model = std::env::var("OLLAMA_MODEL")
-            .unwrap_or_else(|_| "nomic-embed-text".to_string());
+        let model =
+            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
         let embedding_dim = std::env::var("OLLAMA_EMBEDDING_DIM")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -214,7 +214,10 @@ impl OllamaProvider {
                         }
                     } else {
                         let status = resp.status();
-                        let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                        let error_text = resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unknown error".to_string());
                         last_error = Some(MemoryError::External(format!(
                             "Ollama API error {}: {}",
                             status, error_text
@@ -317,7 +320,7 @@ impl EmbeddingProvider for OllamaProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
             supports_batch: true,
-            max_batch_size: None, // No hard limit, but sequential processing
+            max_batch_size: None,   // No hard limit, but sequential processing
             max_input_length: None, // Model-dependent
             supports_input_types: false,
             requires_api_key: false,
@@ -362,7 +365,7 @@ mod tests {
         let provider = OllamaProvider::new(config);
         assert!(provider.is_ok());
 
-        let provider = provider.unwrap();
+        let provider = provider.expect("provider should be valid");
         assert_eq!(provider.name(), "OllamaProvider");
         assert_eq!(provider.embedding_dimension(), 768);
         assert!(provider.is_available());
@@ -372,25 +375,25 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_availability() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
         let available = provider.check_availability().await;
         assert!(available.is_ok());
 
-        if available.unwrap() {
-            println!("Ollama server is available");
+        if available.expect("available should be valid") {
+            tracing::info!("Ollama server is available");
         } else {
-            println!("Ollama server is not running");
+            tracing::info!("Ollama server is not running");
         }
     }
 
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_embedding_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         // Check if server is available
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
@@ -398,7 +401,7 @@ mod tests {
         let embedding = provider.embed(text, None).await;
 
         assert!(embedding.is_ok());
-        let embedding = embedding.unwrap();
+        let embedding = embedding.expect("embedding should be valid");
         assert_eq!(embedding.dimension(), 768);
         assert!(embedding.model.starts_with("ollama:"));
         assert!(!embedding.content_hash.is_empty());
@@ -407,10 +410,10 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_batch_embedding_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
@@ -422,7 +425,7 @@ mod tests {
         let embeddings = provider.embed_batch(&texts, None).await;
 
         assert!(embeddings.is_ok());
-        let embeddings = embeddings.unwrap();
+        let embeddings = embeddings.expect("embeddings should be valid");
         assert_eq!(embeddings.len(), 2);
 
         for embedding in embeddings {
@@ -433,22 +436,35 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_similarity_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
-        let emb1 = provider.embed("machine learning and AI", None).await.unwrap();
-        let emb2 = provider.embed("deep learning and neural networks", None).await.unwrap();
-        let emb3 = provider.embed("cooking pasta recipes", None).await.unwrap();
+        let emb1 = provider
+            .embed("machine learning and AI", None)
+            .await
+            .expect("await should be present");
+        let emb2 = provider
+            .embed("deep learning and neural networks", None)
+            .await
+            .expect("await should be present");
+        let emb3 = provider
+            .embed("cooking pasta recipes", None)
+            .await
+            .expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        println!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!(
+            "Related similarity: {}, Unrelated similarity: {}",
+            sim_related,
+            sim_unrelated
+        );
     }
 }

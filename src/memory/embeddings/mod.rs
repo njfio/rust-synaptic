@@ -1,36 +1,36 @@
 //! Vector embeddings for semantic memory search
-//! 
+//!
 //! This module provides semantic understanding through vector embeddings,
 //! enabling similarity search and semantic relationships between memories.
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
-pub mod simple_embeddings;
-pub mod similarity;
+pub mod config;
+pub mod multi_provider;
 pub mod provider;
 pub mod providers;
-pub mod multi_provider;
-pub mod config;
+pub mod similarity;
+pub mod simple_embeddings;
 
 // Re-export provider types
 pub use provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities,
-    EmbeddingCache, CacheStats, compute_content_hash, normalize_vector,
+    compute_content_hash, normalize_vector, CacheStats, EmbedOptions, Embedding, EmbeddingCache,
+    EmbeddingProvider, ProviderCapabilities,
 };
 
 // Re-export concrete providers
-pub use providers::{TfIdfProvider, TfIdfConfig};
+pub use providers::{TfIdfConfig, TfIdfProvider};
 
 // Re-export multi-provider system
 pub use multi_provider::{MultiProvider, MultiProviderBuilder, MultiProviderConfig};
 
 // Re-export configuration
-pub use config::{EmbeddingProviderConfig, ProviderType, ProviderConfig, GlobalConfig};
+pub use config::{EmbeddingProviderConfig, GlobalConfig, ProviderConfig, ProviderType};
 
 /// Configuration for embedding system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +103,7 @@ impl EmbeddingManager {
     /// Create a new embedding manager
     pub fn new(config: EmbeddingConfig) -> Self {
         let embedder = simple_embeddings::SimpleEmbedder::new(config.embedding_dim);
-        
+
         Self {
             config,
             embedder,
@@ -119,7 +119,7 @@ impl EmbeddingManager {
 
         // Generate embedding
         let embedding = self.generate_embedding(&memory)?;
-        
+
         // Cache if enabled
         if self.config.enable_cache {
             let content_hash = self.calculate_content_hash(&memory.value);
@@ -142,17 +142,21 @@ impl EmbeddingManager {
     }
 
     /// Find memories similar to a query string
-    pub fn find_similar_to_query(&mut self, query: &str, limit: Option<usize>) -> Result<Vec<SimilarMemory>> {
+    pub fn find_similar_to_query(
+        &mut self,
+        query: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<SimilarMemory>> {
         let query_embedding = self.embedder.embed_text(query)?;
         let limit = limit.unwrap_or(self.config.max_similar);
-        
+
         let mut similarities = Vec::new();
-        
+
         for embedding in self.embedding_cache.values() {
             if let Some(memory) = self.memory_store.get(&embedding.memory_id) {
                 let similarity = similarity::cosine_similarity(&query_embedding, &embedding.vector);
                 let distance = similarity::euclidean_distance(&query_embedding, &embedding.vector);
-                
+
                 if similarity >= self.config.similarity_threshold {
                     similarities.push(SimilarMemory {
                         memory: memory.clone(),
@@ -164,17 +168,30 @@ impl EmbeddingManager {
         }
 
         // Sort by similarity (highest first) and limit results
-        similarities.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        similarities.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         similarities.truncate(limit);
-        
+
         Ok(similarities)
     }
 
     /// Find memories similar to a given memory
-    pub fn find_similar_to_memory(&mut self, memory_id: Uuid, limit: Option<usize>) -> Result<Vec<SimilarMemory>> {
-        let memory_value = self.memory_store.get(&memory_id)
-            .ok_or_else(|| MemoryError::NotFound { key: memory_id.to_string() })?
-            .value.clone();
+    pub fn find_similar_to_memory(
+        &mut self,
+        memory_id: Uuid,
+        limit: Option<usize>,
+    ) -> Result<Vec<SimilarMemory>> {
+        let memory_value = self
+            .memory_store
+            .get(&memory_id)
+            .ok_or_else(|| MemoryError::NotFound {
+                key: memory_id.to_string(),
+            })?
+            .value
+            .clone();
 
         self.find_similar_to_query(&memory_value, limit)
     }
@@ -183,7 +200,7 @@ impl EmbeddingManager {
     pub fn get_memory_similarities(&mut self, query: &str) -> Result<Vec<(Uuid, f64)>> {
         let query_embedding = self.embedder.embed_text(query)?;
         let mut similarities = Vec::new();
-        
+
         for embedding in self.embedding_cache.values() {
             let similarity = similarity::cosine_similarity(&query_embedding, &embedding.vector);
             similarities.push((embedding.memory_id, similarity));
@@ -191,7 +208,7 @@ impl EmbeddingManager {
 
         // Sort by similarity (highest first)
         similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         Ok(similarities)
     }
 
@@ -199,9 +216,11 @@ impl EmbeddingManager {
     pub fn get_stats(&self) -> EmbeddingStats {
         let total_embeddings = self.embedding_cache.len();
         let average_quality = if total_embeddings > 0 {
-            self.embedding_cache.values()
+            self.embedding_cache
+                .values()
                 .map(|e| e.metadata.quality_score)
-                .sum::<f64>() / total_embeddings as f64
+                .sum::<f64>()
+                / total_embeddings as f64
         } else {
             0.0
         };
@@ -244,7 +263,7 @@ impl EmbeddingManager {
     fn calculate_content_hash(&self, content: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         format!("{:x}", hasher.finish())
@@ -258,13 +277,11 @@ impl EmbeddingManager {
 
         // Calculate vector magnitude
         let magnitude = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
-        
+
         // Calculate variance (measure of information content)
         let mean = vector.iter().sum::<f64>() / vector.len() as f64;
-        let variance = vector.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / vector.len() as f64;
-        
+        let variance = vector.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / vector.len() as f64;
+
         // Combine magnitude and variance for quality score
         let quality = (magnitude * variance.sqrt()).min(1.0).max(0.0);
         quality

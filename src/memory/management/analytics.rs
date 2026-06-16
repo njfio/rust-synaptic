@@ -1,11 +1,11 @@
 //! Memory analytics and insights
 
-use crate::error::{Result, MemoryError};
-use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
+use crate::error::{MemoryError, Result};
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
+use rand::seq::SliceRandom;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use rand::Rng;
-use rand::seq::SliceRandom;
 
 /// Analytics engine for memory insights
 pub struct MemoryAnalytics {
@@ -44,7 +44,7 @@ struct AccessPattern {
     access_count: u64,
     last_access: DateTime<Utc>,
     access_frequency: f64, // accesses per day
-    peak_hours: Vec<u8>, // hours of day with most access
+    peak_hours: Vec<u8>,   // hours of day with most access
 }
 
 /// Configuration for analytics
@@ -317,9 +317,7 @@ enum IsolationNode {
         right: Box<IsolationNode>,
     },
     /// Leaf node with size information
-    Leaf {
-        size: usize,
-    },
+    Leaf { size: usize },
 }
 
 #[allow(dead_code)]
@@ -333,7 +331,10 @@ impl MemoryAnalytics {
     }
 
     /// Record a memory addition
-    pub async fn record_memory_addition(&mut self, memory: &crate::memory::types::MemoryEntry) -> Result<()> {
+    pub async fn record_memory_addition(
+        &mut self,
+        memory: &crate::memory::types::MemoryEntry,
+    ) -> Result<()> {
         if self.config.enable_detailed_tracking {
             let event = MemoryEvent {
                 timestamp: Utc::now(),
@@ -347,7 +348,10 @@ impl MemoryAnalytics {
     }
 
     /// Record a memory update
-    pub async fn record_memory_update(&mut self, memory: &crate::memory::types::MemoryEntry) -> Result<()> {
+    pub async fn record_memory_update(
+        &mut self,
+        memory: &crate::memory::types::MemoryEntry,
+    ) -> Result<()> {
         if self.config.enable_detailed_tracking {
             let event = MemoryEvent {
                 timestamp: Utc::now(),
@@ -388,7 +392,8 @@ impl MemoryAnalytics {
         let trends = self.analyze_trends_advanced().await?;
         let usage_stats = self.calculate_usage_statistics_advanced().await?;
         let ml_recommendations = self.generate_ml_recommendations(&insights, &trends).await?;
-        let recommendations = ml_recommendations.into_iter()
+        let recommendations = ml_recommendations
+            .into_iter()
             .map(|rec| Recommendation {
                 id: format!("ml_rec_{}", Utc::now().timestamp()),
                 title: rec.clone(),
@@ -483,9 +488,13 @@ impl MemoryAnalytics {
         // 2. Analyze access frequency patterns
         let total_accesses = access_times.len();
         let time_span = if access_times.len() > 1 {
-            let earliest = access_times.iter().min()
+            let earliest = access_times
+                .iter()
+                .min()
                 .ok_or_else(|| MemoryError::validation("No access times available"))?;
-            let latest = access_times.iter().max()
+            let latest = access_times
+                .iter()
+                .max()
                 .ok_or_else(|| MemoryError::validation("No access times available"))?;
             (*latest - *earliest).num_days().max(1)
         } else {
@@ -513,15 +522,33 @@ impl MemoryAnalytics {
 
         // 4. Create supporting data
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("total_accesses".to_string(), serde_json::Value::Number(serde_json::Number::from(total_accesses)));
-        supporting_data.insert("daily_average".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(daily_average).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("peak_hours_count".to_string(), serde_json::Value::Number(serde_json::Number::from(peak_hours.len())));
-        supporting_data.insert("burst_periods_count".to_string(), serde_json::Value::Number(serde_json::Number::from(burst_periods.len())));
-        supporting_data.insert("analysis_time_span_days".to_string(), serde_json::Value::Number(serde_json::Number::from(time_span)));
+        supporting_data.insert(
+            "total_accesses".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(total_accesses)),
+        );
+        supporting_data.insert(
+            "daily_average".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(daily_average).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "peak_hours_count".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(peak_hours.len())),
+        );
+        supporting_data.insert(
+            "burst_periods_count".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(burst_periods.len())),
+        );
+        supporting_data.insert(
+            "analysis_time_span_days".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(time_span)),
+        );
 
         // 5. Generate insight based on analysis
         let insight = if !peak_hours.is_empty() {
-            let peak_hours_str = peak_hours.iter()
+            let peak_hours_str = peak_hours
+                .iter()
                 .map(|h| format!("{}:00", h))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -534,7 +561,13 @@ impl MemoryAnalytics {
                     peak_hours_str, daily_average, burst_periods.len())
             };
 
-            let confidence = if total_accesses > 100 { 0.9 } else if total_accesses > 50 { 0.8 } else { 0.6 };
+            let confidence = if total_accesses > 100 {
+                0.9
+            } else if total_accesses > 50 {
+                0.8
+            } else {
+                0.6
+            };
             let impact = if burst_periods.len() > 3 { 0.8 } else { 0.6 };
 
             Insight {
@@ -560,8 +593,12 @@ impl MemoryAnalytics {
             }
         };
 
-        tracing::debug!("Usage pattern analysis: {} peak hours, {:.1} daily average, {} burst periods",
-            peak_hours.len(), daily_average, burst_periods.len());
+        tracing::debug!(
+            "Usage pattern analysis: {} peak hours, {:.1} daily average, {} burst periods",
+            peak_hours.len(),
+            daily_average,
+            burst_periods.len()
+        );
 
         Ok(Some(insight))
     }
@@ -569,9 +606,9 @@ impl MemoryAnalytics {
     /// Analyze performance patterns using sophisticated metrics analysis
     async fn analyze_performance_patterns(&self) -> Result<Option<Insight>> {
         // Analyze performance based on event frequency and patterns
-        let total_events = self.analytics_data.additions.len() +
-                          self.analytics_data.updates.len() +
-                          self.analytics_data.deletions.len();
+        let total_events = self.analytics_data.additions.len()
+            + self.analytics_data.updates.len()
+            + self.analytics_data.deletions.len();
 
         if total_events == 0 {
             return Ok(None);
@@ -637,13 +674,45 @@ impl MemoryAnalytics {
 
         // 6. Create supporting data
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("total_events".to_string(), serde_json::Value::Number(serde_json::Number::from(total_events)));
-        supporting_data.insert("avg_operations_per_day".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(avg_operations_per_day).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("anomaly_days".to_string(), serde_json::Value::Number(serde_json::Number::from(anomaly_days)));
-        supporting_data.insert("addition_ratio".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(addition_ratio).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("update_ratio".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(update_ratio).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("deletion_ratio".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(deletion_ratio).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("load_variance".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(load_variance).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert(
+            "total_events".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(total_events)),
+        );
+        supporting_data.insert(
+            "avg_operations_per_day".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(avg_operations_per_day)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "anomaly_days".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(anomaly_days)),
+        );
+        supporting_data.insert(
+            "addition_ratio".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(addition_ratio).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "update_ratio".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(update_ratio).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "deletion_ratio".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(deletion_ratio).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "load_variance".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(load_variance).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
 
         // 7. Generate insight based on analysis
         let insight = if anomaly_days == 0 && load_variance < avg_operations_per_day {
@@ -684,8 +753,12 @@ impl MemoryAnalytics {
             }
         };
 
-        tracing::debug!("Performance analysis: {:.1} avg ops/day, {} anomaly days, {:.1} load variance",
-            avg_operations_per_day, anomaly_days, load_variance);
+        tracing::debug!(
+            "Performance analysis: {:.1} avg ops/day, {} anomaly days, {:.1} load variance",
+            avg_operations_per_day,
+            anomaly_days,
+            load_variance
+        );
 
         Ok(Some(insight))
     }
@@ -709,17 +782,29 @@ impl MemoryAnalytics {
 
             // Infer content type from key patterns
             if key.contains("task") || key.contains("todo") {
-                *content_type_indicators.entry("task".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("task".to_string())
+                    .or_insert(0) += 1;
             } else if key.contains("note") || key.contains("memo") {
-                *content_type_indicators.entry("note".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("note".to_string())
+                    .or_insert(0) += 1;
             } else if key.contains("project") {
-                *content_type_indicators.entry("project".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("project".to_string())
+                    .or_insert(0) += 1;
             } else if key.contains("meeting") {
-                *content_type_indicators.entry("meeting".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("meeting".to_string())
+                    .or_insert(0) += 1;
             } else if key.contains("doc") || key.contains("document") {
-                *content_type_indicators.entry("document".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("document".to_string())
+                    .or_insert(0) += 1;
             } else {
-                *content_type_indicators.entry("general".to_string()).or_insert(0) += 1;
+                *content_type_indicators
+                    .entry("general".to_string())
+                    .or_insert(0) += 1;
             }
         }
 
@@ -733,7 +818,8 @@ impl MemoryAnalytics {
 
         // 3. Analyze key length patterns (indicator of content complexity)
         let avg_key_length = if !key_length_distribution.is_empty() {
-            key_length_distribution.iter().sum::<usize>() as f64 / key_length_distribution.len() as f64
+            key_length_distribution.iter().sum::<usize>() as f64
+                / key_length_distribution.len() as f64
         } else {
             0.0
         };
@@ -745,7 +831,9 @@ impl MemoryAnalytics {
         let mut monthly_content_types = std::collections::HashMap::new();
         for event in &self.analytics_data.additions {
             let month = event.timestamp.format("%Y-%m").to_string();
-            let entry = monthly_content_types.entry(month).or_insert_with(std::collections::HashSet::new);
+            let entry = monthly_content_types
+                .entry(month)
+                .or_insert_with(std::collections::HashSet::new);
 
             // Determine content type for this event
             let key = &event.memory_key;
@@ -763,11 +851,17 @@ impl MemoryAnalytics {
         // Calculate content type growth
         let content_type_growth = if monthly_content_types.len() > 1 {
             let months: Vec<_> = monthly_content_types.keys().collect();
-            let latest_month = months.iter().max().unwrap();
-            let earliest_month = months.iter().min().unwrap();
+            let latest_month = months.iter().max().expect("max() should succeed");
+            let earliest_month = months.iter().min().expect("min() should succeed");
 
-            let latest_types = monthly_content_types.get(*latest_month).map(|s| s.len()).unwrap_or(0);
-            let earliest_types = monthly_content_types.get(*earliest_month).map(|s| s.len()).unwrap_or(1);
+            let latest_types = monthly_content_types
+                .get(*latest_month)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let earliest_types = monthly_content_types
+                .get(*earliest_month)
+                .map(|s| s.len())
+                .unwrap_or(1);
 
             if earliest_types > 0 {
                 ((latest_types as f64 - earliest_types as f64) / earliest_types as f64) * 100.0
@@ -780,15 +874,41 @@ impl MemoryAnalytics {
 
         // 5. Create supporting data
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("total_memories".to_string(), serde_json::Value::Number(serde_json::Number::from(total_memories)));
-        supporting_data.insert("unique_content_types".to_string(), serde_json::Value::Number(serde_json::Number::from(unique_content_types)));
-        supporting_data.insert("content_diversity_score".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(content_diversity_score).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("avg_key_length".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(avg_key_length).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("content_type_growth_percent".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(content_type_growth).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert(
+            "total_memories".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(total_memories)),
+        );
+        supporting_data.insert(
+            "unique_content_types".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(unique_content_types)),
+        );
+        supporting_data.insert(
+            "content_diversity_score".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(content_diversity_score)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "avg_key_length".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(avg_key_length).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "content_type_growth_percent".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(content_type_growth)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
 
         // Add content type distribution
         for (content_type, count) in &content_type_indicators {
-            supporting_data.insert(format!("content_type_{}", content_type), serde_json::Value::Number(serde_json::Number::from(*count)));
+            supporting_data.insert(
+                format!("content_type_{}", content_type),
+                serde_json::Value::Number(serde_json::Number::from(*count)),
+            );
         }
 
         // 6. Generate insight based on analysis
@@ -827,8 +947,12 @@ impl MemoryAnalytics {
             }
         };
 
-        tracing::debug!("Content analysis: {} types, {:.2} diversity score, {:.1}% growth",
-            unique_content_types, content_diversity_score, content_type_growth);
+        tracing::debug!(
+            "Content analysis: {} types, {:.2} diversity score, {:.1}% growth",
+            unique_content_types,
+            content_diversity_score,
+            content_type_growth
+        );
 
         Ok(Some(insight))
     }
@@ -874,11 +998,16 @@ impl MemoryAnalytics {
 
         // 2. Calculate average memory size (estimate based on key length and metadata)
         let avg_memory_size = if !self.analytics_data.additions.is_empty() {
-            let total_estimated_size: usize = self.analytics_data.additions.iter()
+            let total_estimated_size: usize = self
+                .analytics_data
+                .additions
+                .iter()
                 .map(|event| {
                     // Estimate size based on key length and metadata
                     let key_size = event.memory_key.len();
-                    let metadata_size = event.metadata.iter()
+                    let metadata_size = event
+                        .metadata
+                        .iter()
                         .map(|(k, v)| k.len() + v.len())
                         .sum::<usize>();
                     // Assume content is roughly 10x the key length (heuristic)
@@ -891,7 +1020,10 @@ impl MemoryAnalytics {
         };
 
         // 3. Find most and least active memories based on access patterns
-        let mut memory_activity: Vec<(String, u64)> = self.analytics_data.access_patterns.iter()
+        let mut memory_activity: Vec<(String, u64)> = self
+            .analytics_data
+            .access_patterns
+            .iter()
             .map(|(key, pattern)| (key.clone(), pattern.access_count))
             .collect();
         memory_activity.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by access count descending
@@ -919,7 +1051,8 @@ impl MemoryAnalytics {
 
         // Find hours with above-average activity
         let avg_hourly_activity = hour_activity.iter().sum::<u64>() as f64 / 24.0;
-        let peak_usage_hours: Vec<u8> = hour_activity.iter()
+        let peak_usage_hours: Vec<u8> = hour_activity
+            .iter()
             .enumerate()
             .filter(|(_, &activity)| activity as f64 > avg_hourly_activity)
             .map(|(hour, _)| hour as u8)
@@ -927,9 +1060,15 @@ impl MemoryAnalytics {
 
         // 5. Calculate growth rate (memories per day)
         let growth_rate = if !self.analytics_data.additions.is_empty() {
-            let earliest_addition = self.analytics_data.additions.iter()
+            let earliest_addition = self
+                .analytics_data
+                .additions
+                .iter()
                 .min_by_key(|event| event.timestamp);
-            let latest_addition = self.analytics_data.additions.iter()
+            let latest_addition = self
+                .analytics_data
+                .additions
+                .iter()
                 .max_by_key(|event| event.timestamp);
 
             if let (Some(earliest), Some(latest)) = (earliest_addition, latest_addition) {
@@ -977,7 +1116,7 @@ impl MemoryAnalytics {
                             category: RecommendationCategory::Performance,
                         });
                     }
-                },
+                }
                 InsightType::UsagePattern => {
                     if insight.confidence > 0.8 {
                         recommendations.push(Recommendation {
@@ -990,7 +1129,7 @@ impl MemoryAnalytics {
                             category: RecommendationCategory::UserExperience,
                         });
                     }
-                },
+                }
                 InsightType::Content => {
                     if insight.impact > 0.7 {
                         recommendations.push(Recommendation {
@@ -1003,7 +1142,7 @@ impl MemoryAnalytics {
                             category: RecommendationCategory::Organization,
                         });
                     }
-                },
+                }
                 _ => {
                     // General recommendations for other insight types
                     if insight.impact > 0.6 {
@@ -1036,7 +1175,7 @@ impl MemoryAnalytics {
                             category: RecommendationCategory::Performance,
                         });
                     }
-                },
+                }
                 TrendDirection::Decreasing => {
                     if trend.strength > 0.6 {
                         recommendations.push(Recommendation {
@@ -1049,7 +1188,7 @@ impl MemoryAnalytics {
                             category: RecommendationCategory::Maintenance,
                         });
                     }
-                },
+                }
                 TrendDirection::Volatile => {
                     recommendations.push(Recommendation {
                         id: format!("trend_vol_rec_{}", Utc::now().timestamp()),
@@ -1060,7 +1199,7 @@ impl MemoryAnalytics {
                         difficulty: 4,
                         category: RecommendationCategory::Performance,
                     });
-                },
+                }
                 _ => {} // No specific recommendations for stable or unknown trends
             }
         }
@@ -1080,7 +1219,8 @@ impl MemoryAnalytics {
             recommendations.push(Recommendation {
                 id: "baseline_storage_rec".to_string(),
                 title: "Storage Optimization Review".to_string(),
-                description: "Conduct periodic storage optimization to maintain efficiency".to_string(),
+                description: "Conduct periodic storage optimization to maintain efficiency"
+                    .to_string(),
                 priority: 4,
                 expected_impact: "Optimized storage utilization".to_string(),
                 difficulty: 2,
@@ -1091,8 +1231,12 @@ impl MemoryAnalytics {
         // Sort recommendations by priority (lower number = higher priority)
         recommendations.sort_by_key(|r| r.priority);
 
-        tracing::debug!("Generated {} recommendations based on {} insights and {} trends",
-            recommendations.len(), insights.len(), trends.len());
+        tracing::debug!(
+            "Generated {} recommendations based on {} insights and {} trends",
+            recommendations.len(),
+            insights.len(),
+            trends.len()
+        );
 
         Ok(recommendations)
     }
@@ -1114,15 +1258,21 @@ impl MemoryAnalytics {
 
         // Clean up old events
         let original_additions = self.analytics_data.additions.len();
-        self.analytics_data.additions.retain(|event| event.timestamp >= cutoff_date);
+        self.analytics_data
+            .additions
+            .retain(|event| event.timestamp >= cutoff_date);
         cleaned_count += original_additions - self.analytics_data.additions.len();
 
         let original_updates = self.analytics_data.updates.len();
-        self.analytics_data.updates.retain(|event| event.timestamp >= cutoff_date);
+        self.analytics_data
+            .updates
+            .retain(|event| event.timestamp >= cutoff_date);
         cleaned_count += original_updates - self.analytics_data.updates.len();
 
         let original_deletions = self.analytics_data.deletions.len();
-        self.analytics_data.deletions.retain(|event| event.timestamp >= cutoff_date);
+        self.analytics_data
+            .deletions
+            .retain(|event| event.timestamp >= cutoff_date);
         cleaned_count += original_deletions - self.analytics_data.deletions.len();
 
         Ok(cleaned_count)
@@ -1185,15 +1335,23 @@ impl MemoryAnalytics {
         let clusters = self.perform_kmeans_clustering(&access_features, 3).await?;
 
         // Analyze cluster characteristics
-        let _cluster_analysis = self.analyze_access_clusters(&clusters, &access_features).await?;
+        let _cluster_analysis = self
+            .analyze_access_clusters(&clusters, &access_features)
+            .await?;
 
         // Detect temporal patterns using time series analysis
         let temporal_patterns = self.detect_temporal_patterns(&access_times).await?;
 
         // Generate advanced insights
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("num_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(clusters.len())));
-        supporting_data.insert("temporal_patterns_detected".to_string(), serde_json::Value::Number(serde_json::Number::from(temporal_patterns.len())));
+        supporting_data.insert(
+            "num_clusters".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(clusters.len())),
+        );
+        supporting_data.insert(
+            "temporal_patterns_detected".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(temporal_patterns.len())),
+        );
 
         let insight = Insight {
             id: format!("ml_usage_pattern_{}", Utc::now().timestamp()),
@@ -1250,10 +1408,31 @@ impl MemoryAnalytics {
         let forecast = self.forecast_performance(&performance_data, 7).await?;
 
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("trend_slope".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(trend_analysis.slope).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("trend_r_squared".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(trend_analysis.r_squared).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("anomalies_detected".to_string(), serde_json::Value::Number(serde_json::Number::from(anomalies.len())));
-        supporting_data.insert("forecast_confidence".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(forecast.confidence).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert(
+            "trend_slope".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(trend_analysis.slope)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "trend_r_squared".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(trend_analysis.r_squared)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "anomalies_detected".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(anomalies.len())),
+        );
+        supporting_data.insert(
+            "forecast_confidence".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(forecast.confidence)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
 
         let insight = Insight {
             id: format!("ml_performance_{}", Utc::now().timestamp()),
@@ -1296,9 +1475,21 @@ impl MemoryAnalytics {
         let sequence_patterns = self.detect_content_sequences().await?;
 
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("semantic_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(semantic_clusters.len())));
-        supporting_data.insert("evolution_score".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(content_evolution.complexity_score).unwrap_or(serde_json::Number::from(0))));
-        supporting_data.insert("sequence_patterns".to_string(), serde_json::Value::Number(serde_json::Number::from(sequence_patterns.len())));
+        supporting_data.insert(
+            "semantic_clusters".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(semantic_clusters.len())),
+        );
+        supporting_data.insert(
+            "evolution_score".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(content_evolution.complexity_score)
+                    .unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
+        supporting_data.insert(
+            "sequence_patterns".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(sequence_patterns.len())),
+        );
 
         let insight = Insight {
             id: format!("ml_content_{}", Utc::now().timestamp()),
@@ -1346,9 +1537,20 @@ impl MemoryAnalytics {
         let anomaly_rate = total_anomalies as f64 / feature_vectors.len() as f64;
 
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("isolation_anomalies".to_string(), serde_json::Value::Number(serde_json::Number::from(anomalies.len())));
-        supporting_data.insert("statistical_outliers".to_string(), serde_json::Value::Number(serde_json::Number::from(statistical_outliers.len())));
-        supporting_data.insert("anomaly_rate".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(anomaly_rate).unwrap_or(serde_json::Number::from(0))));
+        supporting_data.insert(
+            "isolation_anomalies".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(anomalies.len())),
+        );
+        supporting_data.insert(
+            "statistical_outliers".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(statistical_outliers.len())),
+        );
+        supporting_data.insert(
+            "anomaly_rate".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(anomaly_rate).unwrap_or(serde_json::Number::from(0)),
+            ),
+        );
 
         let insight = if anomaly_rate > 0.1 {
             Insight {
@@ -1407,9 +1609,18 @@ impl MemoryAnalytics {
         let personas = self.identify_user_personas(&behavior_clusters).await?;
 
         let mut supporting_data = HashMap::new();
-        supporting_data.insert("behavior_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(behavior_clusters.len())));
-        supporting_data.insert("markov_patterns".to_string(), serde_json::Value::Number(serde_json::Number::from(markov_patterns.len())));
-        supporting_data.insert("user_personas".to_string(), serde_json::Value::Number(serde_json::Number::from(personas.len())));
+        supporting_data.insert(
+            "behavior_clusters".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(behavior_clusters.len())),
+        );
+        supporting_data.insert(
+            "markov_patterns".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(markov_patterns.len())),
+        );
+        supporting_data.insert(
+            "user_personas".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(personas.len())),
+        );
 
         let insight = Insight {
             id: format!("ml_behavior_{}", Utc::now().timestamp()),
@@ -1470,7 +1681,11 @@ impl MemoryAnalytics {
     }
 
     /// Generate ML-based recommendations
-    async fn generate_ml_recommendations(&self, insights: &[Insight], trends: &[TrendAnalysis]) -> Result<Vec<String>> {
+    async fn generate_ml_recommendations(
+        &self,
+        insights: &[Insight],
+        trends: &[TrendAnalysis],
+    ) -> Result<Vec<String>> {
         let mut recommendations = Vec::new();
 
         // Analyze insights for optimization opportunities
@@ -1478,25 +1693,35 @@ impl MemoryAnalytics {
             match insight.insight_type {
                 InsightType::Performance => {
                     if insight.impact > 0.7 {
-                        recommendations.push("Consider implementing performance optimization based on ML analysis".to_string());
+                        recommendations.push(
+                            "Consider implementing performance optimization based on ML analysis"
+                                .to_string(),
+                        );
                     }
-                },
+                }
                 InsightType::UsagePattern => {
                     if insight.confidence > 0.8 {
-                        recommendations.push("Optimize memory access patterns based on ML clustering results".to_string());
+                        recommendations.push(
+                            "Optimize memory access patterns based on ML clustering results"
+                                .to_string(),
+                        );
                     }
-                },
+                }
                 InsightType::Content => {
-                    recommendations.push("Implement content-aware indexing based on semantic analysis".to_string());
-                },
+                    recommendations.push(
+                        "Implement content-aware indexing based on semantic analysis".to_string(),
+                    );
+                }
                 InsightType::Anomaly => {
                     if insight.impact > 0.8 {
-                        recommendations.push("Investigate anomalies detected by ML algorithms".to_string());
+                        recommendations
+                            .push("Investigate anomalies detected by ML algorithms".to_string());
                     }
-                },
+                }
                 InsightType::Behavioral => {
-                    recommendations.push("Personalize memory system based on behavioral patterns".to_string());
-                },
+                    recommendations
+                        .push("Personalize memory system based on behavioral patterns".to_string());
+                }
                 _ => {}
             }
         }
@@ -1506,11 +1731,17 @@ impl MemoryAnalytics {
             if trend.strength > 0.7 {
                 match trend.direction {
                     TrendDirection::Increasing => {
-                        recommendations.push(format!("Prepare for increased {} based on ML trend analysis", trend.name));
-                    },
+                        recommendations.push(format!(
+                            "Prepare for increased {} based on ML trend analysis",
+                            trend.name
+                        ));
+                    }
                     TrendDirection::Decreasing => {
-                        recommendations.push(format!("Investigate declining {} trend identified by ML", trend.name));
-                    },
+                        recommendations.push(format!(
+                            "Investigate declining {} trend identified by ML",
+                            trend.name
+                        ));
+                    }
                     _ => {}
                 }
             }
@@ -1522,7 +1753,11 @@ impl MemoryAnalytics {
     // Helper ML methods for advanced analytics
 
     /// Perform k-means clustering on feature vectors
-    async fn perform_kmeans_clustering(&self, features: &[Vec<f64>], k: usize) -> Result<Vec<Vec<usize>>> {
+    async fn perform_kmeans_clustering(
+        &self,
+        features: &[Vec<f64>],
+        k: usize,
+    ) -> Result<Vec<Vec<usize>>> {
         if features.is_empty() || k == 0 {
             return Ok(Vec::new());
         }
@@ -1583,10 +1818,8 @@ impl MemoryAnalytics {
                     }
 
                     // Check convergence
-                    let centroid_movement = self.euclidean_distance(
-                        &centroids[cluster_idx],
-                        &new_centroids[cluster_idx]
-                    );
+                    let centroid_movement = self
+                        .euclidean_distance(&centroids[cluster_idx], &new_centroids[cluster_idx]);
 
                     if centroid_movement > convergence_threshold {
                         convergence_achieved = false;
@@ -1606,7 +1839,11 @@ impl MemoryAnalytics {
     }
 
     /// Initialize centroids using k-means++ algorithm for better clustering
-    fn initialize_centroids_kmeans_plus_plus(&self, features: &[Vec<f64>], k: usize) -> Vec<Vec<f64>> {
+    fn initialize_centroids_kmeans_plus_plus(
+        &self,
+        features: &[Vec<f64>],
+        k: usize,
+    ) -> Vec<Vec<f64>> {
         let mut centroids = Vec::new();
         let mut rng = rand::thread_rng();
 
@@ -1660,7 +1897,11 @@ impl MemoryAnalytics {
     }
 
     /// Analyze access clusters to extract insights
-    async fn analyze_access_clusters(&self, clusters: &[Vec<usize>], features: &[Vec<f64>]) -> Result<Vec<String>> {
+    async fn analyze_access_clusters(
+        &self,
+        clusters: &[Vec<usize>],
+        features: &[Vec<f64>],
+    ) -> Result<Vec<String>> {
         let mut cluster_insights = Vec::new();
 
         for (cluster_idx, cluster) in clusters.iter().enumerate() {
@@ -1669,20 +1910,22 @@ impl MemoryAnalytics {
             }
 
             // Calculate cluster statistics
-            let cluster_features: Vec<&Vec<f64>> = cluster.iter()
-                .map(|&idx| &features[idx])
-                .collect();
+            let cluster_features: Vec<&Vec<f64>> =
+                cluster.iter().map(|&idx| &features[idx]).collect();
 
-            let avg_hour = cluster_features.iter()
-                .map(|f| f[0])
-                .sum::<f64>() / cluster_features.len() as f64;
+            let avg_hour =
+                cluster_features.iter().map(|f| f[0]).sum::<f64>() / cluster_features.len() as f64;
 
-            let avg_day = cluster_features.iter()
-                .map(|f| f[1])
-                .sum::<f64>() / cluster_features.len() as f64;
+            let avg_day =
+                cluster_features.iter().map(|f| f[1]).sum::<f64>() / cluster_features.len() as f64;
 
-            let insight = format!("Cluster {}: {} users, avg access hour: {:.1}, avg day: {:.1}",
-                cluster_idx, cluster.len(), avg_hour, avg_day);
+            let insight = format!(
+                "Cluster {}: {} users, avg access hour: {:.1}, avg day: {:.1}",
+                cluster_idx,
+                cluster.len(),
+                avg_hour,
+                avg_day
+            );
             cluster_insights.push(insight);
         }
 
@@ -1690,7 +1933,10 @@ impl MemoryAnalytics {
     }
 
     /// Detect temporal patterns in access times
-    async fn detect_temporal_patterns(&self, access_times: &[DateTime<Utc>]) -> Result<Vec<String>> {
+    async fn detect_temporal_patterns(
+        &self,
+        access_times: &[DateTime<Utc>],
+    ) -> Result<Vec<String>> {
         let mut patterns = Vec::new();
 
         if access_times.len() < 2 {
@@ -1705,7 +1951,8 @@ impl MemoryAnalytics {
 
         // Find peak hours
         let max_count = *hourly_counts.iter().max().unwrap_or(&0);
-        let peak_hours: Vec<usize> = hourly_counts.iter()
+        let peak_hours: Vec<usize> = hourly_counts
+            .iter()
             .enumerate()
             .filter(|(_, &count)| count > max_count / 2)
             .map(|(hour, _)| hour)
@@ -1722,7 +1969,8 @@ impl MemoryAnalytics {
         }
 
         let max_weekly = *weekly_counts.iter().max().unwrap_or(&0);
-        let peak_days: Vec<usize> = weekly_counts.iter()
+        let peak_days: Vec<usize> = weekly_counts
+            .iter()
             .enumerate()
             .filter(|(_, &count)| count > max_weekly / 2)
             .map(|(day, _)| day)
@@ -1750,7 +1998,11 @@ impl MemoryAnalytics {
 
         let sum_x = x_values.iter().sum::<f64>();
         let sum_y = data.iter().sum::<f64>();
-        let sum_xy = x_values.iter().zip(data.iter()).map(|(x, y)| x * y).sum::<f64>();
+        let sum_xy = x_values
+            .iter()
+            .zip(data.iter())
+            .map(|(x, y)| x * y)
+            .sum::<f64>();
         let sum_x_squared = x_values.iter().map(|x| x * x).sum::<f64>();
         let _sum_y_squared = data.iter().map(|y| y * y).sum::<f64>();
 
@@ -1760,14 +2012,20 @@ impl MemoryAnalytics {
         // Calculate R-squared
         let y_mean = sum_y / n;
         let ss_tot = data.iter().map(|y| (y - y_mean).powi(2)).sum::<f64>();
-        let ss_res = x_values.iter().zip(data.iter())
+        let ss_res = x_values
+            .iter()
+            .zip(data.iter())
             .map(|(x, y)| {
                 let predicted = slope * x + intercept;
                 (y - predicted).powi(2)
             })
             .sum::<f64>();
 
-        let r_squared = if ss_tot > 0.0 { 1.0 - (ss_res / ss_tot) } else { 0.0 };
+        let r_squared = if ss_tot > 0.0 {
+            1.0 - (ss_res / ss_tot)
+        } else {
+            0.0
+        };
 
         Ok(LinearRegressionResult {
             slope,
@@ -1783,14 +2041,13 @@ impl MemoryAnalytics {
         }
 
         let mean = data.iter().sum::<f64>() / data.len() as f64;
-        let variance = data.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / data.len() as f64;
+        let variance = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / data.len() as f64;
         let std_dev = variance.sqrt();
 
         let threshold = 2.0 * std_dev; // 2 standard deviations
 
-        let anomalies: Vec<usize> = data.iter()
+        let anomalies: Vec<usize> = data
+            .iter()
             .enumerate()
             .filter(|(_, &value)| (value - mean).abs() > threshold)
             .map(|(idx, _)| idx)
@@ -1814,9 +2071,8 @@ impl MemoryAnalytics {
         let avg = recent_data.iter().sum::<f64>() / recent_data.len() as f64;
 
         // Calculate confidence based on variance in recent data
-        let variance = recent_data.iter()
-            .map(|x| (x - avg).powi(2))
-            .sum::<f64>() / recent_data.len() as f64;
+        let variance =
+            recent_data.iter().map(|x| (x - avg).powi(2)).sum::<f64>() / recent_data.len() as f64;
         let confidence = 1.0 / (1.0 + variance / avg.max(1.0));
 
         let predictions = vec![avg; periods];
@@ -1845,9 +2101,24 @@ impl MemoryAnalytics {
         let note_indicators = ["note", "memo", "thought", "idea"];
         let project_indicators = ["project", "plan", "goal", "objective"];
 
-        features.push(task_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
-        features.push(note_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
-        features.push(project_indicators.iter().map(|&word| text.to_lowercase().matches(word).count()).sum::<usize>() as f64);
+        features.push(
+            task_indicators
+                .iter()
+                .map(|&word| text.to_lowercase().matches(word).count())
+                .sum::<usize>() as f64,
+        );
+        features.push(
+            note_indicators
+                .iter()
+                .map(|&word| text.to_lowercase().matches(word).count())
+                .sum::<usize>() as f64,
+        );
+        features.push(
+            project_indicators
+                .iter()
+                .map(|&word| text.to_lowercase().matches(word).count())
+                .sum::<usize>() as f64,
+        );
 
         Ok(features)
     }
@@ -1856,7 +2127,8 @@ impl MemoryAnalytics {
     async fn perform_semantic_clustering(&self, features: &[Vec<f64>]) -> Result<Vec<Vec<usize>>> {
         // Use k-means with semantic-appropriate number of clusters
         let k = (features.len() as f64).sqrt().ceil() as usize;
-        self.perform_kmeans_clustering(features, k.min(5).max(2)).await
+        self.perform_kmeans_clustering(features, k.min(5).max(2))
+            .await
     }
 
     /// Analyze content evolution over time
@@ -1870,7 +2142,9 @@ impl MemoryAnalytics {
             complexity_scores.push(complexity);
 
             let month = event.timestamp.format("%Y-%m").to_string();
-            monthly_diversity.entry(month).or_insert_with(std::collections::HashSet::new)
+            monthly_diversity
+                .entry(month)
+                .or_insert_with(std::collections::HashSet::new)
                 .insert(self.classify_content_type(&event.memory_key));
         }
 
@@ -1881,7 +2155,8 @@ impl MemoryAnalytics {
         };
 
         // Calculate diversity trend
-        let diversity_values: Vec<f64> = monthly_diversity.values()
+        let diversity_values: Vec<f64> = monthly_diversity
+            .values()
             .map(|types| types.len() as f64)
             .collect();
 
@@ -1896,7 +2171,7 @@ impl MemoryAnalytics {
         let growth_rate = if self.analytics_data.additions.len() > 1 {
             let time_span = if let (Some(first), Some(last)) = (
                 self.analytics_data.additions.first(),
-                self.analytics_data.additions.last()
+                self.analytics_data.additions.last(),
             ) {
                 (last.timestamp - first.timestamp).num_days().max(1) as f64
             } else {
@@ -1918,7 +2193,10 @@ impl MemoryAnalytics {
     fn calculate_content_complexity(&self, content: &str) -> f64 {
         let length_score = (content.len() as f64).ln();
         let word_count = content.split_whitespace().count() as f64;
-        let special_chars = content.chars().filter(|c| !c.is_alphanumeric() && !c.is_whitespace()).count() as f64;
+        let special_chars = content
+            .chars()
+            .filter(|c| !c.is_alphanumeric() && !c.is_whitespace())
+            .count() as f64;
 
         (length_score + word_count + special_chars) / 3.0
     }
@@ -1945,8 +2223,16 @@ impl MemoryAnalytics {
         let mut sequences = Vec::new();
 
         // Analyze temporal sequences of content creation
-        let mut content_timeline: Vec<(DateTime<Utc>, String)> = self.analytics_data.additions.iter()
-            .map(|event| (event.timestamp, self.classify_content_type(&event.memory_key)))
+        let mut content_timeline: Vec<(DateTime<Utc>, String)> = self
+            .analytics_data
+            .additions
+            .iter()
+            .map(|event| {
+                (
+                    event.timestamp,
+                    self.classify_content_type(&event.memory_key),
+                )
+            })
             .collect();
 
         content_timeline.sort_by_key(|(timestamp, _)| *timestamp);
@@ -2010,12 +2296,21 @@ impl MemoryAnalytics {
             }
         }
 
-        tracing::info!("Isolation forest detected {} anomalies out of {} data points", anomalies.len(), features.len());
+        tracing::info!(
+            "Isolation forest detected {} anomalies out of {} data points",
+            anomalies.len(),
+            features.len()
+        );
         Ok(anomalies)
     }
 
     /// Build an isolation tree for anomaly detection
-    fn build_isolation_tree(&self, features: &[Vec<f64>], subsample_size: usize, depth: usize) -> IsolationNode {
+    fn build_isolation_tree(
+        &self,
+        features: &[Vec<f64>],
+        subsample_size: usize,
+        depth: usize,
+    ) -> IsolationNode {
         let mut rng = rand::thread_rng();
 
         // Subsample data
@@ -2023,16 +2318,25 @@ impl MemoryAnalytics {
         indices.shuffle(&mut rng);
         let sample_indices = &indices[..subsample_size.min(features.len())];
 
-        self.build_isolation_tree_recursive(features, sample_indices, depth, 10) // max depth = 10
+        self.build_isolation_tree_recursive(features, sample_indices, depth, 10)
+        // max depth = 10
     }
 
     /// Recursively build isolation tree
-    fn build_isolation_tree_recursive(&self, features: &[Vec<f64>], indices: &[usize], depth: usize, max_depth: usize) -> IsolationNode {
+    fn build_isolation_tree_recursive(
+        &self,
+        features: &[Vec<f64>],
+        indices: &[usize],
+        depth: usize,
+        max_depth: usize,
+    ) -> IsolationNode {
         let mut rng = rand::thread_rng();
 
         // Stop conditions
         if indices.len() <= 1 || depth >= max_depth {
-            return IsolationNode::Leaf { size: indices.len() };
+            return IsolationNode::Leaf {
+                size: indices.len(),
+            };
         }
 
         // Randomly select feature and split point
@@ -2050,7 +2354,9 @@ impl MemoryAnalytics {
         }
 
         if (max_val - min_val).abs() < 1e-10 {
-            return IsolationNode::Leaf { size: indices.len() };
+            return IsolationNode::Leaf {
+                size: indices.len(),
+            };
         }
 
         let split_value = rng.gen_range(min_val..max_val);
@@ -2068,8 +2374,18 @@ impl MemoryAnalytics {
         }
 
         // Recursively build subtrees
-        let left_child = Box::new(self.build_isolation_tree_recursive(features, &left_indices, depth + 1, max_depth));
-        let right_child = Box::new(self.build_isolation_tree_recursive(features, &right_indices, depth + 1, max_depth));
+        let left_child = Box::new(self.build_isolation_tree_recursive(
+            features,
+            &left_indices,
+            depth + 1,
+            max_depth,
+        ));
+        let right_child = Box::new(self.build_isolation_tree_recursive(
+            features,
+            &right_indices,
+            depth + 1,
+            max_depth,
+        ));
 
         IsolationNode::Internal {
             split_feature,
@@ -2084,8 +2400,13 @@ impl MemoryAnalytics {
         match node {
             IsolationNode::Leaf { size } => {
                 depth as f64 + self.calculate_average_path_length(*size)
-            },
-            IsolationNode::Internal { split_feature, split_value, left, right } => {
+            }
+            IsolationNode::Internal {
+                split_feature,
+                split_value,
+                left,
+                right,
+            } => {
                 if point[*split_feature] < *split_value {
                     self.calculate_path_length(left, point, depth + 1)
                 } else {
@@ -2102,7 +2423,8 @@ impl MemoryAnalytics {
         } else if size == 2 {
             1.0
         } else {
-            2.0 * (((size - 1) as f64).ln() + 0.5772156649) - (2.0 * (size - 1) as f64 / size as f64)
+            2.0 * (((size - 1) as f64).ln() + 0.5772156649)
+                - (2.0 * (size - 1) as f64 / size as f64)
         }
     }
 
@@ -2111,7 +2433,8 @@ impl MemoryAnalytics {
         if size <= 1 {
             0.0
         } else {
-            2.0 * (((size - 1) as f64).ln() + 0.5772156649) - (2.0 * (size - 1) as f64 / size as f64)
+            2.0 * (((size - 1) as f64).ln() + 0.5772156649)
+                - (2.0 * (size - 1) as f64 / size as f64)
         }
     }
 
@@ -2126,7 +2449,7 @@ impl MemoryAnalytics {
         // For each feature dimension
         for dim in 0..features[0].len() {
             let mut values: Vec<f64> = features.iter().map(|f| f[dim]).collect();
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            values.sort_by(|a, b| a.partial_cmp(b).expect("value should be available"));
 
             let q1_idx = values.len() / 4;
             let q3_idx = 3 * values.len() / 4;
@@ -2139,7 +2462,9 @@ impl MemoryAnalytics {
                 let upper_bound = q3 + 1.5 * iqr;
 
                 for (idx, feature) in features.iter().enumerate() {
-                    if (feature[dim] < lower_bound || feature[dim] > upper_bound) && !outliers.contains(&idx) {
+                    if (feature[dim] < lower_bound || feature[dim] > upper_bound)
+                        && !outliers.contains(&idx)
+                    {
                         outliers.push(idx);
                     }
                 }
@@ -2167,7 +2492,11 @@ impl MemoryAnalytics {
             // Find closest clusters
             for i in 0..clusters.len() {
                 for j in (i + 1)..clusters.len() {
-                    let distance = self.calculate_cluster_distance_behavior(&clusters[i], &clusters[j], behaviors);
+                    let distance = self.calculate_cluster_distance_behavior(
+                        &clusters[i],
+                        &clusters[j],
+                        behaviors,
+                    );
                     if distance < min_distance {
                         min_distance = distance;
                         merge_indices = (i, j);
@@ -2190,7 +2519,12 @@ impl MemoryAnalytics {
     }
 
     /// Calculate distance between behavior clusters
-    fn calculate_cluster_distance_behavior(&self, cluster1: &[usize], cluster2: &[usize], behaviors: &[Vec<f64>]) -> f64 {
+    fn calculate_cluster_distance_behavior(
+        &self,
+        cluster1: &[usize],
+        cluster2: &[usize],
+        behaviors: &[Vec<f64>],
+    ) -> f64 {
         let mut total_distance = 0.0;
         let mut count = 0;
 
@@ -2219,12 +2553,21 @@ impl MemoryAnalytics {
         }
 
         // Discretize behaviors into states
-        let states: Vec<usize> = behaviors.iter()
+        let states: Vec<usize> = behaviors
+            .iter()
             .map(|behavior| {
                 // Simple state classification based on first feature (e.g., access count)
-                if behavior[0] > 10.0 { 2 } // High activity
-                else if behavior[0] > 5.0 { 1 } // Medium activity
-                else { 0 } // Low activity
+                if behavior[0] > 10.0 {
+                    2
+                }
+                // High activity
+                else if behavior[0] > 5.0 {
+                    1
+                }
+                // Medium activity
+                else {
+                    0
+                } // Low activity
             })
             .collect();
 
@@ -2239,8 +2582,12 @@ impl MemoryAnalytics {
         let total_transitions: usize = transitions.values().sum();
         for ((from, to), count) in transitions {
             let probability = count as f64 / total_transitions as f64;
-            if probability > 0.1 { // Significant transitions
-                patterns.push(format!("State {} -> State {} (p={:.2})", from, to, probability));
+            if probability > 0.1 {
+                // Significant transitions
+                patterns.push(format!(
+                    "State {} -> State {} (p={:.2})",
+                    from, to, probability
+                ));
             }
         }
 
@@ -2293,9 +2640,13 @@ impl MemoryAnalytics {
             TrendDirection::Stable
         };
 
-        let data_points: Vec<TrendDataPoint> = daily_counts.iter()
+        let data_points: Vec<TrendDataPoint> = daily_counts
+            .iter()
             .map(|(date, &count)| TrendDataPoint {
-                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                timestamp: date
+                    .and_hms_opt(0, 0, 0)
+                    .expect("value should be available")
+                    .and_utc(),
                 value: count as f64,
                 label: date.format("%Y-%m-%d").to_string(),
             })
@@ -2322,7 +2673,10 @@ impl MemoryAnalytics {
         }
 
         // Analyze access frequency trends
-        let access_counts: Vec<f64> = self.analytics_data.access_patterns.values()
+        let access_counts: Vec<f64> = self
+            .analytics_data
+            .access_patterns
+            .values()
             .map(|pattern| pattern.access_count as f64)
             .collect();
 
@@ -2340,7 +2694,8 @@ impl MemoryAnalytics {
             TrendDirection::Stable
         };
 
-        let data_points: Vec<TrendDataPoint> = access_counts.iter()
+        let data_points: Vec<TrendDataPoint> = access_counts
+            .iter()
             .enumerate()
             .map(|(idx, &count)| TrendDataPoint {
                 timestamp: Utc::now() - Duration::days((access_counts.len() - idx) as i64),
@@ -2356,7 +2711,8 @@ impl MemoryAnalytics {
             strength: regression.r_squared,
             data_points,
             prediction: Some(TrendPrediction {
-                predicted_value: regression.slope * access_counts.len() as f64 + regression.intercept,
+                predicted_value: regression.slope * access_counts.len() as f64
+                    + regression.intercept,
                 confidence: regression.r_squared,
                 time_horizon: Duration::days(7),
             }),
@@ -2381,7 +2737,10 @@ impl MemoryAnalytics {
             return Ok(None);
         }
 
-        let values: Vec<f64> = daily_performance.values().map(|&count| count as f64).collect();
+        let values: Vec<f64> = daily_performance
+            .values()
+            .map(|&count| count as f64)
+            .collect();
         let regression = self.perform_linear_regression(&values).await?;
 
         let direction = if regression.slope > 0.2 {
@@ -2392,9 +2751,13 @@ impl MemoryAnalytics {
             TrendDirection::Stable
         };
 
-        let data_points: Vec<TrendDataPoint> = daily_performance.iter()
+        let data_points: Vec<TrendDataPoint> = daily_performance
+            .iter()
             .map(|(date, &count)| TrendDataPoint {
-                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                timestamp: date
+                    .and_hms_opt(0, 0, 0)
+                    .expect("value should be available")
+                    .and_utc(),
                 value: count as f64,
                 label: date.format("%Y-%m-%d").to_string(),
             })
@@ -2421,13 +2784,24 @@ impl MemoryAnalytics {
         }
 
         // Calculate complexity scores over time
-        let mut complexity_timeline: Vec<(DateTime<Utc>, f64)> = self.analytics_data.additions.iter()
-            .map(|event| (event.timestamp, self.calculate_content_complexity(&event.memory_key)))
+        let mut complexity_timeline: Vec<(DateTime<Utc>, f64)> = self
+            .analytics_data
+            .additions
+            .iter()
+            .map(|event| {
+                (
+                    event.timestamp,
+                    self.calculate_content_complexity(&event.memory_key),
+                )
+            })
             .collect();
 
         complexity_timeline.sort_by_key(|(timestamp, _)| *timestamp);
 
-        let values: Vec<f64> = complexity_timeline.iter().map(|(_, complexity)| *complexity).collect();
+        let values: Vec<f64> = complexity_timeline
+            .iter()
+            .map(|(_, complexity)| *complexity)
+            .collect();
         let regression = self.perform_linear_regression(&values).await?;
 
         let direction = if regression.slope > 0.1 {
@@ -2438,7 +2812,8 @@ impl MemoryAnalytics {
             TrendDirection::Stable
         };
 
-        let data_points: Vec<TrendDataPoint> = complexity_timeline.iter()
+        let data_points: Vec<TrendDataPoint> = complexity_timeline
+            .iter()
             .map(|(timestamp, complexity)| TrendDataPoint {
                 timestamp: *timestamp,
                 value: *complexity,
@@ -2463,13 +2838,19 @@ impl MemoryAnalytics {
     /// Calculate ML usage insights
     async fn calculate_ml_usage_insights(&self) -> Result<MLUsageInsights> {
         let total_memories = self.analytics_data.additions.len() as f64;
-        let total_accesses = self.analytics_data.access_patterns.values()
+        let total_accesses = self
+            .analytics_data
+            .access_patterns
+            .values()
             .map(|pattern| pattern.access_count)
             .sum::<u64>() as f64;
 
         let projected_growth = if total_memories > 0.0 {
             // Simple growth projection based on recent activity
-            let recent_activity = self.analytics_data.additions.iter()
+            let recent_activity = self
+                .analytics_data
+                .additions
+                .iter()
                 .filter(|event| event.timestamp > Utc::now() - Duration::days(7))
                 .count() as f64;
             recent_activity * 4.0 // Project 4 weeks ahead
@@ -2494,9 +2875,9 @@ impl MemoryAnalytics {
 
     /// Calculate predictive metrics
     async fn calculate_predictive_metrics(&self) -> Result<PredictiveMetrics> {
-        let current_load = self.analytics_data.additions.len() as f64 +
-                          self.analytics_data.updates.len() as f64 +
-                          self.analytics_data.deletions.len() as f64;
+        let current_load = self.analytics_data.additions.len() as f64
+            + self.analytics_data.updates.len() as f64
+            + self.analytics_data.deletions.len() as f64;
 
         // Simple load forecasting
         let future_load = current_load * 1.2; // Assume 20% growth

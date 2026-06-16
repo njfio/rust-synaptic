@@ -21,16 +21,16 @@ pub mod sync;
 pub struct CrossPlatformConfig {
     /// Enable WebAssembly support
     pub enable_wasm: bool,
-    
+
     /// Enable mobile platform support
     pub enable_mobile: bool,
-    
+
     /// Enable offline-first capabilities
     pub enable_offline: bool,
-    
+
     /// Enable cross-platform synchronization
     pub enable_sync: bool,
-    
+
     /// Platform-specific configurations
     pub platform_configs: HashMap<Platform, PlatformConfig>,
 }
@@ -67,16 +67,16 @@ pub enum Platform {
 pub struct PlatformConfig {
     /// Maximum memory usage (bytes)
     pub max_memory_usage: usize,
-    
+
     /// Enable local storage
     pub enable_local_storage: bool,
-    
+
     /// Enable network synchronization
     pub enable_network_sync: bool,
-    
+
     /// Storage backend preferences
     pub storage_backends: Vec<StorageBackend>,
-    
+
     /// Performance optimization settings
     pub performance_settings: PerformanceSettings,
 }
@@ -115,16 +115,16 @@ pub enum StorageBackend {
 pub struct PerformanceSettings {
     /// Enable lazy loading
     pub lazy_loading: bool,
-    
+
     /// Enable compression
     pub compression: bool,
-    
+
     /// Enable caching
     pub caching: bool,
-    
+
     /// Batch size for operations
     pub batch_size: usize,
-    
+
     /// Worker thread count
     pub worker_threads: usize,
 }
@@ -145,25 +145,25 @@ impl Default for PerformanceSettings {
 pub trait CrossPlatformAdapter: Send + Sync {
     /// Initialize the adapter for the target platform
     fn initialize(&mut self, config: &PlatformConfig) -> Result<(), SynapticError>;
-    
+
     /// Store data on the platform
     fn store(&self, key: &str, data: &[u8]) -> Result<(), SynapticError>;
-    
+
     /// Retrieve data from the platform
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError>;
-    
+
     /// Delete data from the platform
     fn delete(&self, key: &str) -> Result<bool, SynapticError>;
-    
+
     /// List all keys
     fn list_keys(&self) -> Result<Vec<String>, SynapticError>;
-    
+
     /// Get storage statistics
     fn get_stats(&self) -> Result<StorageStats, SynapticError>;
-    
+
     /// Check if platform supports feature
     fn supports_feature(&self, feature: PlatformFeature) -> bool;
-    
+
     /// Get platform information
     fn get_platform_info(&self) -> PlatformInfo;
 }
@@ -192,19 +192,19 @@ pub enum PlatformFeature {
 pub struct PlatformInfo {
     /// Platform type
     pub platform: Platform,
-    
+
     /// Platform version
     pub version: String,
-    
+
     /// Available memory (bytes)
     pub available_memory: usize,
-    
+
     /// Available storage (bytes)
     pub available_storage: usize,
-    
+
     /// Supported features
     pub supported_features: Vec<PlatformFeature>,
-    
+
     /// Performance characteristics
     pub performance_profile: PerformanceProfile,
 }
@@ -214,16 +214,16 @@ pub struct PlatformInfo {
 pub struct PerformanceProfile {
     /// CPU performance score (0.0 - 1.0)
     pub cpu_score: f32,
-    
+
     /// Memory performance score (0.0 - 1.0)
     pub memory_score: f32,
-    
+
     /// Storage performance score (0.0 - 1.0)
     pub storage_score: f32,
-    
+
     /// Network performance score (0.0 - 1.0)
     pub network_score: f32,
-    
+
     /// Battery optimization needed
     pub battery_optimization: bool,
 }
@@ -233,16 +233,16 @@ pub struct PerformanceProfile {
 pub struct StorageStats {
     /// Total storage used (bytes)
     pub used_storage: usize,
-    
+
     /// Available storage (bytes)
     pub available_storage: usize,
-    
+
     /// Number of stored items
     pub item_count: usize,
-    
+
     /// Average item size (bytes)
     pub average_item_size: usize,
-    
+
     /// Storage backend in use
     pub backend: StorageBackend,
 }
@@ -251,13 +251,13 @@ pub struct StorageStats {
 pub struct CrossPlatformMemoryManager {
     /// Platform adapters
     adapters: HashMap<Platform, Box<dyn CrossPlatformAdapter>>,
-    
+
     /// Current platform
     current_platform: Platform,
-    
+
     /// Configuration
     config: CrossPlatformConfig,
-    
+
     /// Synchronization manager
     sync_manager: Option<sync::SyncManager>,
 }
@@ -266,7 +266,7 @@ impl CrossPlatformMemoryManager {
     /// Create a new cross-platform memory manager
     pub fn new(config: CrossPlatformConfig) -> Result<Self, SynapticError> {
         let current_platform = Self::detect_platform();
-        
+
         let mut manager = Self {
             adapters: HashMap::new(),
             current_platform,
@@ -303,7 +303,14 @@ impl CrossPlatformMemoryManager {
         {
             Platform::Desktop
         }
-        #[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android", target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(
+            target_arch = "wasm32",
+            target_os = "ios",
+            target_os = "android",
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux"
+        )))]
         {
             Platform::Server
         }
@@ -315,7 +322,8 @@ impl CrossPlatformMemoryManager {
         #[cfg(feature = "wasm")]
         if self.config.enable_wasm {
             let adapter = wasm::WasmAdapter::new()?;
-            self.adapters.insert(Platform::WebAssembly, Box::new(adapter));
+            self.adapters
+                .insert(Platform::WebAssembly, Box::new(adapter));
         }
 
         // Initialize mobile adapters
@@ -337,7 +345,8 @@ impl CrossPlatformMemoryManager {
         // Initialize offline adapter
         if self.config.enable_offline {
             let adapter = offline::OfflineAdapter::new()?;
-            self.adapters.insert(self.current_platform.clone(), Box::new(adapter));
+            self.adapters
+                .insert(self.current_platform.clone(), Box::new(adapter));
         }
 
         Ok(())
@@ -348,7 +357,12 @@ impl CrossPlatformMemoryManager {
         self.adapters
             .get(&self.current_platform)
             .map(|adapter| adapter.as_ref())
-            .ok_or_else(|| SynapticError::ProcessingError(format!("No adapter available for platform: {:?}", self.current_platform)))
+            .ok_or_else(|| {
+                SynapticError::ProcessingError(format!(
+                    "No adapter available for platform: {:?}",
+                    self.current_platform
+                ))
+            })
     }
 
     /// Store data using the current platform adapter
@@ -409,11 +423,13 @@ impl CrossPlatformMemoryManager {
     /// Optimize for the current platform
     pub fn optimize_for_platform(&mut self) -> Result<(), SynapticError> {
         let platform_info = self.get_platform_info()?;
-        
+
         // Adjust configuration based on platform capabilities
-        if let Some(platform_config) = self.config.platform_configs.get_mut(&self.current_platform) {
+        if let Some(platform_config) = self.config.platform_configs.get_mut(&self.current_platform)
+        {
             // Adjust memory usage based on available memory
-            if platform_info.available_memory < 512 * 1024 * 1024 { // Less than 512MB
+            if platform_info.available_memory < 512 * 1024 * 1024 {
+                // Less than 512MB
                 platform_config.max_memory_usage = platform_info.available_memory / 4; // Use 25% of available memory
                 platform_config.performance_settings.batch_size = 50; // Smaller batches
                 platform_config.performance_settings.worker_threads = 2; // Fewer threads
@@ -429,7 +445,8 @@ impl CrossPlatformMemoryManager {
             if matches!(self.current_platform, Platform::WebAssembly) {
                 platform_config.max_memory_usage = 50 * 1024 * 1024; // 50MB limit
                 platform_config.performance_settings.worker_threads = 1; // Single-threaded
-                platform_config.storage_backends = vec![StorageBackend::IndexedDB, StorageBackend::Memory];
+                platform_config.storage_backends =
+                    vec![StorageBackend::IndexedDB, StorageBackend::Memory];
             }
         }
 
@@ -456,7 +473,14 @@ mod tests {
     fn test_platform_detection() {
         let platform = CrossPlatformMemoryManager::detect_platform();
         // Platform detection should work on any target
-        assert!(matches!(platform, Platform::Desktop | Platform::Server | Platform::WebAssembly | Platform::iOS | Platform::Android));
+        assert!(matches!(
+            platform,
+            Platform::Desktop
+                | Platform::Server
+                | Platform::WebAssembly
+                | Platform::iOS
+                | Platform::Android
+        ));
     }
 
     #[test]

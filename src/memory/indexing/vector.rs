@@ -205,13 +205,12 @@ impl DistanceMetric {
                     1.0 - (dot / (norm_a * norm_b))
                 }
             }
-            Self::Euclidean => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(x, y)| (x - y).powi(2))
-                    .sum::<f32>()
-                    .sqrt()
-            }
+            Self::Euclidean => a
+                .iter()
+                .zip(b.iter())
+                .map(|(x, y)| (x - y).powi(2))
+                .sum::<f32>()
+                .sqrt(),
             Self::Manhattan => a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum(),
             Self::DotProduct => {
                 // Negative dot product (to maintain "lower is better" convention)

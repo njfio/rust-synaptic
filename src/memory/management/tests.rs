@@ -2,14 +2,17 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::memory::management::{MemoryManager, AdvancedMemoryManager, SummarizationTrigger, SummarizationTriggerType, MemoryManagementConfig};
+    use crate::error::Result;
+    use crate::memory::knowledge_graph::{GraphConfig, MemoryKnowledgeGraph};
+    use crate::memory::management::{
+        AdvancedMemoryManager, MemoryManagementConfig, MemoryManager, SummarizationTrigger,
+        SummarizationTriggerType,
+    };
     use crate::memory::storage::memory::MemoryStorage;
     use crate::memory::storage::Storage;
-    use crate::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
-    use crate::error::Result;
-    use crate::memory::knowledge_graph::{MemoryKnowledgeGraph, GraphConfig};
+    use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
+    use chrono::{Duration, Utc};
     use std::sync::Arc;
-    use chrono::{Utc, Duration};
 
     /// Create a test memory manager with knowledge graph
     async fn create_test_memory_manager() -> Result<MemoryManager> {
@@ -127,7 +130,11 @@ mod tests {
 
         // Should find memory1 (shares ai, ml) and memory2 (shares ai, research)
         // memory3 has no overlapping tags
-        assert!(count >= 2, "Should find at least 2 related memories based on tags, found: {}", count);
+        assert!(
+            count >= 2,
+            "Should find at least 2 related memories based on tags, found: {}",
+            count
+        );
 
         Ok(())
     }
@@ -178,7 +185,11 @@ mod tests {
         let count = manager.count_related_memories(&test_memory).await?;
 
         // Should find memory2 due to high similarity (memory1 has identical embedding)
-        assert!(count >= 1, "Should find at least 1 related memory based on similarity, found: {}", count);
+        assert!(
+            count >= 1,
+            "Should find at least 1 related memory based on similarity, found: {}",
+            count
+        );
 
         Ok(())
     }
@@ -229,7 +240,11 @@ mod tests {
         let count = manager.count_related_memories(&test_memory).await?;
 
         // Should find memory1 and memory2 due to temporal proximity and content similarity
-        assert!(count >= 1, "Should find at least 1 related memory based on temporal proximity, found: {}", count);
+        assert!(
+            count >= 1,
+            "Should find at least 1 related memory based on temporal proximity, found: {}",
+            count
+        );
 
         Ok(())
     }
@@ -271,7 +286,11 @@ mod tests {
         let count = manager.count_related_memories(&test_memory).await?;
 
         // Should find memory1 due to content similarity
-        assert!(count >= 1, "Should find at least 1 related memory based on content similarity, found: {}", count);
+        assert!(
+            count >= 1,
+            "Should find at least 1 related memory based on content similarity, found: {}",
+            count
+        );
 
         Ok(())
     }
@@ -324,7 +343,11 @@ mod tests {
         // Should find memory1 (tag overlap + embedding similarity + content similarity)
         // Should find memory2 (tag overlap + temporal proximity + content similarity)
         // Should NOT find memory3 (no relationships)
-        assert!(count >= 2, "Should find at least 2 related memories through multiple strategies, found: {}", count);
+        assert!(
+            count >= 2,
+            "Should find at least 2 related memories through multiple strategies, found: {}",
+            count
+        );
 
         Ok(())
     }
@@ -347,12 +370,17 @@ mod tests {
         );
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should trigger because our placeholder returns 5 related memories, which exceeds threshold of 3
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
-        assert_eq!(trigger.trigger_type, SummarizationTriggerType::RelatedMemoryThreshold);
+        let trigger = trigger_result.expect("trigger_result should be valid");
+        assert_eq!(
+            trigger.trigger_type,
+            SummarizationTriggerType::RelatedMemoryThreshold
+        );
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Related memory count"));
 
@@ -374,12 +402,17 @@ mod tests {
         );
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should trigger due to content complexity
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
-        assert_eq!(trigger.trigger_type, SummarizationTriggerType::ContentComplexity);
+        let trigger = trigger_result.expect("trigger_result should be valid");
+        assert_eq!(
+            trigger.trigger_type,
+            SummarizationTriggerType::ContentComplexity
+        );
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Content complexity score"));
 
@@ -398,12 +431,17 @@ mod tests {
         );
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should not trigger because our placeholder cluster size (3) is below threshold (5)
         // But let's test that the evaluation runs without error
         if let Some(trigger) = trigger_result {
-            assert_eq!(trigger.trigger_type, SummarizationTriggerType::TemporalClustering);
+            assert_eq!(
+                trigger.trigger_type,
+                SummarizationTriggerType::TemporalClustering
+            );
         }
 
         Ok(())
@@ -423,19 +461,30 @@ mod tests {
 
         // Add many tags to increase semantic density
         memory.metadata.tags = vec![
-            "ai".to_string(), "ml".to_string(), "neural".to_string(),
-            "deep".to_string(), "learning".to_string(), "algorithms".to_string(),
-            "optimization".to_string(), "performance".to_string(), "metrics".to_string(),
-            "evaluation".to_string()
+            "ai".to_string(),
+            "ml".to_string(),
+            "neural".to_string(),
+            "deep".to_string(),
+            "learning".to_string(),
+            "algorithms".to_string(),
+            "optimization".to_string(),
+            "performance".to_string(),
+            "metrics".to_string(),
+            "evaluation".to_string(),
         ];
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should trigger due to high semantic density
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
-        assert_eq!(trigger.trigger_type, SummarizationTriggerType::SemanticDensity);
+        let trigger = trigger_result.expect("trigger_result should be valid");
+        assert_eq!(
+            trigger.trigger_type,
+            SummarizationTriggerType::SemanticDensity
+        );
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Semantic density"));
 
@@ -448,7 +497,9 @@ mod tests {
         let advanced_manager = AdvancedMemoryManager::new(config);
 
         // Create a very large memory that should trigger storage optimization
-        let large_content = "This is a very large memory entry that exceeds the storage optimization threshold. ".repeat(200);
+        let large_content =
+            "This is a very large memory entry that exceeds the storage optimization threshold. "
+                .repeat(200);
 
         let memory = MemoryEntry::new(
             "large_memory".to_string(),
@@ -457,12 +508,17 @@ mod tests {
         );
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should trigger due to large size
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
-        assert_eq!(trigger.trigger_type, SummarizationTriggerType::StorageOptimization);
+        let trigger = trigger_result.expect("trigger_result should be valid");
+        assert_eq!(
+            trigger.trigger_type,
+            SummarizationTriggerType::StorageOptimization
+        );
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Memory size"));
 
@@ -486,7 +542,9 @@ mod tests {
         );
 
         // Test the trigger evaluation
-        let trigger_result = advanced_manager.evaluate_summarization_triggers(&memory, None).await?;
+        let trigger_result = advanced_manager
+            .evaluate_summarization_triggers(&memory, None)
+            .await?;
 
         // Should not trigger any summarization
         assert!(trigger_result.is_none());
@@ -530,7 +588,9 @@ mod tests {
         };
 
         // Execute the summarization
-        let result = advanced_manager.execute_automatic_summarization(&*storage, trigger).await?;
+        let result = advanced_manager
+            .execute_automatic_summarization(&*storage, trigger)
+            .await?;
 
         // Verify the result
         assert_eq!(result.processed_count, 0); // No memories processed due to empty keys

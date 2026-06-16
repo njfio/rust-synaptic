@@ -1,9 +1,9 @@
 //! Temporal pattern detection and analysis
 
-use crate::error::{Result, MemoryError};
-use crate::memory::types::MemoryEntry;
+use crate::error::{MemoryError, Result};
 use crate::memory::temporal::TimeRange;
-use chrono::{DateTime, Utc, Duration, Weekday, Timelike, Datelike};
+use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc, Weekday};
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -228,12 +228,15 @@ impl PatternDetector {
 
         // Update existing patterns or detect new ones
         self.update_existing_patterns(&evidence).await?;
-        
+
         Ok(())
     }
 
     /// Detect patterns within a time range using advanced algorithms
-    pub async fn detect_patterns_in_range(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    pub async fn detect_patterns_in_range(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut detected_patterns = Vec::new();
 
         // Basic pattern detection
@@ -278,15 +281,18 @@ impl PatternDetector {
 
         // Filter by minimum strength and confidence
         detected_patterns.retain(|p| {
-            p.strength >= self.config.min_pattern_strength &&
-            p.confidence >= self.config.min_confidence
+            p.strength >= self.config.min_pattern_strength
+                && p.confidence >= self.config.min_confidence
         });
 
         Ok(detected_patterns)
     }
 
     /// Detect daily recurring patterns
-    async fn detect_daily_pattern(&self, time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+    async fn detect_daily_pattern(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Option<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points {
             return Ok(None);
@@ -301,7 +307,7 @@ impl PatternDetector {
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| *c)
-            .unwrap();
+            .expect("value should be available");
         if peak_count == 0 {
             return Ok(None);
         }
@@ -328,7 +334,10 @@ impl PatternDetector {
     }
 
     /// Detect weekly recurring patterns
-    async fn detect_weekly_pattern(&self, time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+    async fn detect_weekly_pattern(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Option<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points {
             return Ok(None);
@@ -343,7 +352,7 @@ impl PatternDetector {
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| *c)
-            .unwrap();
+            .expect("value should be available");
         if peak_count == 0 {
             return Ok(None);
         }
@@ -351,7 +360,10 @@ impl PatternDetector {
         let strength = peak_count as f64 / evidence.len() as f64;
         let weekday = Weekday::from_u64(peak_day_idx as u64).unwrap_or(Weekday::Mon);
         let mut metadata = HashMap::new();
-        metadata.insert("day_of_week".into(), weekday.num_days_from_monday().to_string());
+        metadata.insert(
+            "day_of_week".into(),
+            weekday.num_days_from_monday().to_string(),
+        );
 
         let pattern = TemporalPattern {
             id: format!("weekly_{:?}", weekday),
@@ -392,11 +404,16 @@ impl PatternDetector {
         }
 
         let mut patterns = Vec::new();
-        for cluster in clusters.into_iter().filter(|c| c.len() as usize >= self.config.min_data_points) {
-            let start = cluster.first()
+        for cluster in clusters
+            .into_iter()
+            .filter(|c| c.len() as usize >= self.config.min_data_points)
+        {
+            let start = cluster
+                .first()
                 .ok_or_else(|| MemoryError::validation("Empty cluster"))?
                 .timestamp;
-            let end = cluster.last()
+            let end = cluster
+                .last()
                 .ok_or_else(|| MemoryError::validation("Empty cluster"))?
                 .timestamp;
             let strength = cluster.len() as f64 / self.config.min_data_points as f64;
@@ -425,7 +442,13 @@ impl PatternDetector {
 
         let mut daily_counts: BTreeMap<i64, u32> = BTreeMap::new();
         for ev in &evidence {
-            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+            let day = ev
+                .timestamp
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .expect("value should be available")
+                .and_utc()
+                .timestamp();
             *daily_counts.entry(day).or_insert(0) += 1;
         }
 
@@ -456,15 +479,17 @@ impl PatternDetector {
         };
 
         let strength = slope.abs().min(1.0);
-        let start = *daily_counts.keys().next().unwrap();
-        let end = *daily_counts.keys().last().unwrap();
+        let start = *daily_counts.keys().next().expect("next() should succeed");
+        let end = *daily_counts.keys().last().expect("last() should succeed");
         let pattern = TemporalPattern {
             id: format!("trend_{:?}", pattern_type),
             pattern_type,
             strength,
             confidence: strength,
-            time_range: TimeRange::new(DateTime::from_timestamp(start, 0).unwrap(),
-                                         DateTime::from_timestamp(end, 0).unwrap()),
+            time_range: TimeRange::new(
+                DateTime::from_timestamp(start, 0).expect("value should be available"),
+                DateTime::from_timestamp(end, 0).expect("value should be available"),
+            ),
             description: "Gradual trend detected".to_string(),
             evidence,
             metadata: HashMap::new(),
@@ -473,31 +498,45 @@ impl PatternDetector {
     }
 
     /// Detect seasonal patterns using advanced statistical analysis
-    async fn detect_seasonal_patterns_advanced(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_seasonal_patterns_advanced(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
-        if evidence.len() < self.config.min_data_points * 4 { // Need more data for seasonal analysis
+        if evidence.len() < self.config.min_data_points * 4 {
+            // Need more data for seasonal analysis
             return Ok(Vec::new());
         }
 
         let mut patterns = Vec::new();
 
         // Monthly seasonal analysis
-        let monthly_patterns = self.detect_monthly_seasonal_patterns(&evidence, time_range).await?;
+        let monthly_patterns = self
+            .detect_monthly_seasonal_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(monthly_patterns);
 
         // Quarterly seasonal analysis
-        let quarterly_patterns = self.detect_quarterly_seasonal_patterns(&evidence, time_range).await?;
+        let quarterly_patterns = self
+            .detect_quarterly_seasonal_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(quarterly_patterns);
 
         // Custom seasonal periods (e.g., academic year, fiscal year)
-        let custom_seasonal_patterns = self.detect_custom_seasonal_patterns(&evidence, time_range).await?;
+        let custom_seasonal_patterns = self
+            .detect_custom_seasonal_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(custom_seasonal_patterns);
 
         Ok(patterns)
     }
 
     /// Detect monthly seasonal patterns
-    async fn detect_monthly_seasonal_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_monthly_seasonal_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut monthly_counts = [0u32; 12];
         for ev in evidence {
             monthly_counts[(ev.timestamp.month() - 1) as usize] += 1;
@@ -511,9 +550,11 @@ impl PatternDetector {
         // Find months with significantly higher activity
         for (month_idx, &count) in monthly_counts.iter().enumerate() {
             let deviation = (count as f64 - expected_per_month) / expected_per_month;
-            if deviation > 0.5 { // 50% above average
+            if deviation > 0.5 {
+                // 50% above average
                 let strength = deviation.min(1.0);
-                let confidence = self.calculate_seasonal_confidence(count as f64, total_evidence, 12.0);
+                let confidence =
+                    self.calculate_seasonal_confidence(count as f64, total_evidence, 12.0);
 
                 let mut metadata = HashMap::new();
                 metadata.insert("month".to_string(), (month_idx + 1).to_string());
@@ -526,7 +567,8 @@ impl PatternDetector {
                     confidence,
                     time_range: time_range.clone(),
                     description: format!("Seasonal peak in month {}", month_idx + 1),
-                    evidence: evidence.iter()
+                    evidence: evidence
+                        .iter()
                         .filter(|e| e.timestamp.month() == (month_idx + 1) as u32)
                         .cloned()
                         .collect(),
@@ -540,7 +582,11 @@ impl PatternDetector {
     }
 
     /// Detect quarterly seasonal patterns
-    async fn detect_quarterly_seasonal_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_quarterly_seasonal_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut quarterly_counts = [0u32; 4];
         for ev in evidence {
             let quarter = ((ev.timestamp.month() - 1) / 3) as usize;
@@ -554,9 +600,11 @@ impl PatternDetector {
 
         for (quarter_idx, &count) in quarterly_counts.iter().enumerate() {
             let deviation = (count as f64 - expected_per_quarter) / expected_per_quarter;
-            if deviation > 0.3 { // 30% above average
+            if deviation > 0.3 {
+                // 30% above average
                 let strength = deviation.min(1.0);
-                let confidence = self.calculate_seasonal_confidence(count as f64, total_evidence, 4.0);
+                let confidence =
+                    self.calculate_seasonal_confidence(count as f64, total_evidence, 4.0);
 
                 let mut metadata = HashMap::new();
                 metadata.insert("quarter".to_string(), (quarter_idx + 1).to_string());
@@ -568,7 +616,8 @@ impl PatternDetector {
                     confidence,
                     time_range: time_range.clone(),
                     description: format!("Seasonal peak in Q{}", quarter_idx + 1),
-                    evidence: evidence.iter()
+                    evidence: evidence
+                        .iter()
                         .filter(|e| ((e.timestamp.month() - 1) / 3) as usize == quarter_idx)
                         .cloned()
                         .collect(),
@@ -582,17 +631,25 @@ impl PatternDetector {
     }
 
     /// Detect custom seasonal patterns (e.g., academic year, fiscal year)
-    async fn detect_custom_seasonal_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_custom_seasonal_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Academic year pattern (September to June)
-        let academic_pattern = self.detect_academic_year_pattern(evidence, time_range).await?;
+        let academic_pattern = self
+            .detect_academic_year_pattern(evidence, time_range)
+            .await?;
         if let Some(pattern) = academic_pattern {
             patterns.push(pattern);
         }
 
         // Fiscal year pattern (varies by organization, using April-March as example)
-        let fiscal_pattern = self.detect_fiscal_year_pattern(evidence, time_range).await?;
+        let fiscal_pattern = self
+            .detect_fiscal_year_pattern(evidence, time_range)
+            .await?;
         if let Some(pattern) = fiscal_pattern {
             patterns.push(pattern);
         }
@@ -601,7 +658,11 @@ impl PatternDetector {
     }
 
     /// Detect academic year seasonal pattern
-    async fn detect_academic_year_pattern(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+    async fn detect_academic_year_pattern(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Option<TemporalPattern>> {
         let academic_months = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6]; // Sep-Jun
         let mut academic_count = 0;
         let mut non_academic_count = 0;
@@ -622,9 +683,14 @@ impl PatternDetector {
         let academic_ratio = academic_count as f64 / total as f64;
         let expected_ratio = 10.0 / 12.0; // 10 months out of 12
 
-        if academic_ratio > expected_ratio + 0.1 { // 10% above expected
+        if academic_ratio > expected_ratio + 0.1 {
+            // 10% above expected
             let strength = ((academic_ratio - expected_ratio) / (1.0 - expected_ratio)).min(1.0);
-            let confidence = self.calculate_seasonal_confidence(academic_count as f64, total as f64, expected_ratio);
+            let confidence = self.calculate_seasonal_confidence(
+                academic_count as f64,
+                total as f64,
+                expected_ratio,
+            );
 
             let mut metadata = HashMap::new();
             metadata.insert("academic_ratio".to_string(), academic_ratio.to_string());
@@ -636,7 +702,8 @@ impl PatternDetector {
                 confidence,
                 time_range: time_range.clone(),
                 description: "Academic year seasonal pattern (Sep-Jun)".to_string(),
-                evidence: evidence.iter()
+                evidence: evidence
+                    .iter()
                     .filter(|e| academic_months.contains(&e.timestamp.month()))
                     .cloned()
                     .collect(),
@@ -650,7 +717,11 @@ impl PatternDetector {
     }
 
     /// Detect fiscal year seasonal pattern
-    async fn detect_fiscal_year_pattern(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Option<TemporalPattern>> {
+    async fn detect_fiscal_year_pattern(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Option<TemporalPattern>> {
         // Using April-March fiscal year as example
         let fiscal_q1 = [4, 5, 6]; // Apr-Jun
         let fiscal_q4 = [1, 2, 3]; // Jan-Mar
@@ -681,7 +752,11 @@ impl PatternDetector {
 
         if q4_ratio > expected_q4_ratio + 0.1 {
             let strength = ((q4_ratio - expected_q4_ratio) / (1.0 - expected_q4_ratio)).min(1.0);
-            let confidence = self.calculate_seasonal_confidence(q4_count as f64, total as f64, expected_q4_ratio);
+            let confidence = self.calculate_seasonal_confidence(
+                q4_count as f64,
+                total as f64,
+                expected_q4_ratio,
+            );
 
             let mut metadata = HashMap::new();
             metadata.insert("fiscal_q4_ratio".to_string(), q4_ratio.to_string());
@@ -693,7 +768,8 @@ impl PatternDetector {
                 confidence,
                 time_range: time_range.clone(),
                 description: "Fiscal year-end seasonal pattern (Jan-Mar)".to_string(),
-                evidence: evidence.iter()
+                evidence: evidence
+                    .iter()
                     .filter(|e| fiscal_q4.contains(&e.timestamp.month()))
                     .cloned()
                     .collect(),
@@ -719,11 +795,16 @@ impl PatternDetector {
         let statistical_confidence = 1.0 - (deviation / max_deviation);
         let sample_size_factor = (total / 100.0).min(1.0); // More confidence with more data
 
-        (statistical_confidence * sample_size_factor).max(0.0).min(1.0)
+        (statistical_confidence * sample_size_factor)
+            .max(0.0)
+            .min(1.0)
     }
 
     /// Detect cyclical patterns with variable periods using spectral analysis
-    async fn detect_cyclical_patterns_advanced(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_cyclical_patterns_advanced(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points * 2 {
             return Ok(Vec::new());
@@ -735,22 +816,32 @@ impl PatternDetector {
         let time_series = self.evidence_to_time_series(&evidence, time_range);
 
         // Detect periods using autocorrelation
-        let autocorr_patterns = self.detect_periods_by_autocorrelation(&time_series, &evidence, time_range).await?;
+        let autocorr_patterns = self
+            .detect_periods_by_autocorrelation(&time_series, &evidence, time_range)
+            .await?;
         patterns.extend(autocorr_patterns);
 
         // Detect periods using peak analysis
-        let peak_patterns = self.detect_periods_by_peak_analysis(&time_series, &evidence, time_range).await?;
+        let peak_patterns = self
+            .detect_periods_by_peak_analysis(&time_series, &evidence, time_range)
+            .await?;
         patterns.extend(peak_patterns);
 
         // Detect harmonic patterns
-        let harmonic_patterns = self.detect_harmonic_patterns(&time_series, &evidence, time_range).await?;
+        let harmonic_patterns = self
+            .detect_harmonic_patterns(&time_series, &evidence, time_range)
+            .await?;
         patterns.extend(harmonic_patterns);
 
         Ok(patterns)
     }
 
     /// Convert evidence to time series for analysis
-    fn evidence_to_time_series(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Vec<f64> {
+    fn evidence_to_time_series(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Vec<f64> {
         let duration_hours = (time_range.end - time_range.start).num_hours() as usize;
         let mut time_series = vec![0.0; duration_hours];
 
@@ -765,10 +856,16 @@ impl PatternDetector {
     }
 
     /// Detect periods using autocorrelation analysis
-    async fn detect_periods_by_autocorrelation(&self, time_series: &[f64], evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_periods_by_autocorrelation(
+        &self,
+        time_series: &[f64],
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
-        if time_series.len() < 48 { // Need at least 48 hours of data
+        if time_series.len() < 48 {
+            // Need at least 48 hours of data
             return Ok(patterns);
         }
 
@@ -785,7 +882,8 @@ impl PatternDetector {
         let mut peaks = Vec::new();
         for window in autocorrelations.windows(3) {
             let (lag, corr) = window[1];
-            if corr > window[0].1 && corr > window[2].1 && corr > 0.3 { // Significant correlation
+            if corr > window[0].1 && corr > window[2].1 && corr > 0.3 {
+                // Significant correlation
                 peaks.push((lag, corr));
             }
         }
@@ -854,7 +952,12 @@ impl PatternDetector {
     }
 
     /// Detect periods using peak analysis
-    async fn detect_periods_by_peak_analysis(&self, time_series: &[f64], evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_periods_by_peak_analysis(
+        &self,
+        time_series: &[f64],
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Find peaks in the time series
@@ -870,14 +973,16 @@ impl PatternDetector {
         }
 
         // Find common intervals (periods)
-        let mut interval_counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut interval_counts: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
         for &interval in &intervals {
             *interval_counts.entry(interval).or_insert(0) += 1;
         }
 
         // Create patterns for frequent intervals
         for (&interval, &count) in &interval_counts {
-            if count >= 3 && interval >= 2 { // At least 3 occurrences and minimum 2-hour period
+            if count >= 3 && interval >= 2 {
+                // At least 3 occurrences and minimum 2-hour period
                 let strength = count as f64 / intervals.len() as f64;
                 let confidence = strength * 0.9;
 
@@ -887,11 +992,16 @@ impl PatternDetector {
 
                 let pattern = TemporalPattern {
                     id: format!("cyclical_peaks_{}", interval),
-                    pattern_type: PatternType::Cyclical { period_hours: interval as u64 },
+                    pattern_type: PatternType::Cyclical {
+                        period_hours: interval as u64,
+                    },
                     strength,
                     confidence,
                     time_range: time_range.clone(),
-                    description: format!("Cyclical pattern with {}-hour intervals between peaks", interval),
+                    description: format!(
+                        "Cyclical pattern with {}-hour intervals between peaks",
+                        interval
+                    ),
                     evidence: evidence.to_vec(),
                     metadata,
                 };
@@ -937,7 +1047,12 @@ impl PatternDetector {
     }
 
     /// Detect harmonic patterns (multiples of fundamental frequencies)
-    async fn detect_harmonic_patterns(&self, time_series: &[f64], evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_harmonic_patterns(
+        &self,
+        time_series: &[f64],
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Find fundamental periods first
@@ -948,24 +1063,32 @@ impl PatternDetector {
             for harmonic in 2..=4 {
                 let harmonic_period = fundamental * harmonic;
                 if harmonic_period < time_series.len() / 2 {
-                    let correlation = self.calculate_harmonic_correlation(time_series, fundamental, harmonic);
+                    let correlation =
+                        self.calculate_harmonic_correlation(time_series, fundamental, harmonic);
 
-                    if correlation > 0.4 { // Significant harmonic relationship
+                    if correlation > 0.4 {
+                        // Significant harmonic relationship
                         let strength = correlation;
                         let confidence = correlation * 0.7; // Lower confidence for harmonics
 
                         let mut metadata = HashMap::new();
                         metadata.insert("fundamental_period".to_string(), fundamental.to_string());
                         metadata.insert("harmonic_multiple".to_string(), harmonic.to_string());
-                        metadata.insert("harmonic_correlation".to_string(), correlation.to_string());
+                        metadata
+                            .insert("harmonic_correlation".to_string(), correlation.to_string());
 
                         let pattern = TemporalPattern {
                             id: format!("harmonic_{}x_{}", harmonic, fundamental),
-                            pattern_type: PatternType::Cyclical { period_hours: harmonic_period as u64 },
+                            pattern_type: PatternType::Cyclical {
+                                period_hours: harmonic_period as u64,
+                            },
                             strength,
                             confidence,
                             time_range: time_range.clone(),
-                            description: format!("Harmonic pattern ({}x fundamental {}-hour period)", harmonic, fundamental),
+                            description: format!(
+                                "Harmonic pattern ({}x fundamental {}-hour period)",
+                                harmonic, fundamental
+                            ),
                             evidence: evidence.to_vec(),
                             metadata,
                         };
@@ -999,7 +1122,12 @@ impl PatternDetector {
     }
 
     /// Calculate correlation between fundamental and harmonic patterns
-    fn calculate_harmonic_correlation(&self, time_series: &[f64], fundamental: usize, harmonic: usize) -> f64 {
+    fn calculate_harmonic_correlation(
+        &self,
+        time_series: &[f64],
+        fundamental: usize,
+        harmonic: usize,
+    ) -> f64 {
         let harmonic_period = fundamental * harmonic;
         if harmonic_period >= time_series.len() {
             return 0.0;
@@ -1047,7 +1175,10 @@ impl PatternDetector {
     }
 
     /// Detect anomaly patterns using statistical methods
-    async fn detect_anomaly_patterns(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_anomaly_patterns(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points {
             return Ok(Vec::new());
@@ -1056,22 +1187,32 @@ impl PatternDetector {
         let mut patterns = Vec::new();
 
         // Statistical outlier detection
-        let outlier_patterns = self.detect_statistical_outliers(&evidence, time_range).await?;
+        let outlier_patterns = self
+            .detect_statistical_outliers(&evidence, time_range)
+            .await?;
         patterns.extend(outlier_patterns);
 
         // Isolation forest-like anomaly detection
-        let isolation_patterns = self.detect_isolation_anomalies(&evidence, time_range).await?;
+        let isolation_patterns = self
+            .detect_isolation_anomalies(&evidence, time_range)
+            .await?;
         patterns.extend(isolation_patterns);
 
         // Time series anomaly detection
-        let time_series_patterns = self.detect_time_series_anomalies(&evidence, time_range).await?;
+        let time_series_patterns = self
+            .detect_time_series_anomalies(&evidence, time_range)
+            .await?;
         patterns.extend(time_series_patterns);
 
         Ok(patterns)
     }
 
     /// Detect statistical outliers
-    async fn detect_statistical_outliers(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_statistical_outliers(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Calculate statistics for strength values
@@ -1081,7 +1222,8 @@ impl PatternDetector {
         }
 
         let mean = strengths.iter().sum::<f64>() / strengths.len() as f64;
-        let variance = strengths.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / strengths.len() as f64;
+        let variance =
+            strengths.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / strengths.len() as f64;
         let std_dev = variance.sqrt();
 
         // Find outliers (more than 2 standard deviations from mean)
@@ -1096,7 +1238,8 @@ impl PatternDetector {
         }
 
         if !outliers.is_empty() {
-            let strength = outliers.iter().map(|(_, z)| z.abs()).sum::<f64>() / outliers.len() as f64 / 3.0; // Normalize
+            let strength =
+                outliers.iter().map(|(_, z)| z.abs()).sum::<f64>() / outliers.len() as f64 / 3.0; // Normalize
             let confidence = (outliers.len() as f64 / evidence.len() as f64).min(1.0);
 
             let mut metadata = HashMap::new();
@@ -1109,7 +1252,10 @@ impl PatternDetector {
                 strength: strength.min(1.0),
                 confidence,
                 time_range: time_range.clone(),
-                description: format!("Statistical outliers detected ({} anomalies)", outliers.len()),
+                description: format!(
+                    "Statistical outliers detected ({} anomalies)",
+                    outliers.len()
+                ),
                 evidence: outliers.into_iter().map(|(ev, _)| ev).collect(),
                 metadata,
             };
@@ -1121,7 +1267,11 @@ impl PatternDetector {
     }
 
     /// Detect anomalies using isolation forest-like algorithm
-    async fn detect_isolation_anomalies(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_isolation_anomalies(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         if evidence.len() < 10 {
@@ -1129,14 +1279,17 @@ impl PatternDetector {
         }
 
         // Create feature vectors for each evidence point
-        let features: Vec<Vec<f64>> = evidence.iter().map(|ev| {
-            vec![
-                ev.timestamp.hour() as f64,
-                ev.timestamp.weekday().num_days_from_monday() as f64,
-                ev.strength,
-                (ev.timestamp - time_range.start).num_hours() as f64,
-            ]
-        }).collect();
+        let features: Vec<Vec<f64>> = evidence
+            .iter()
+            .map(|ev| {
+                vec![
+                    ev.timestamp.hour() as f64,
+                    ev.timestamp.weekday().num_days_from_monday() as f64,
+                    ev.strength,
+                    (ev.timestamp - time_range.start).num_hours() as f64,
+                ]
+            })
+            .collect();
 
         // Calculate isolation scores
         let mut isolation_scores = Vec::new();
@@ -1156,12 +1309,16 @@ impl PatternDetector {
             .collect();
 
         if !anomalies.is_empty() {
-            let avg_score = anomalies.iter().map(|(_, score)| score).sum::<f64>() / anomalies.len() as f64;
+            let avg_score =
+                anomalies.iter().map(|(_, score)| score).sum::<f64>() / anomalies.len() as f64;
             let strength = avg_score;
             let confidence = (anomalies.len() as f64 / evidence.len() as f64 * 10.0).min(1.0);
 
             let mut metadata = HashMap::new();
-            metadata.insert("isolation_anomalies".to_string(), anomalies.len().to_string());
+            metadata.insert(
+                "isolation_anomalies".to_string(),
+                anomalies.len().to_string(),
+            );
             metadata.insert("avg_isolation_score".to_string(), avg_score.to_string());
 
             let pattern = TemporalPattern {
@@ -1170,7 +1327,10 @@ impl PatternDetector {
                 strength,
                 confidence,
                 time_range: time_range.clone(),
-                description: format!("Isolation-based anomalies detected ({} anomalies)", anomalies.len()),
+                description: format!(
+                    "Isolation-based anomalies detected ({} anomalies)",
+                    anomalies.len()
+                ),
                 evidence: anomalies.into_iter().map(|(ev, _)| ev).collect(),
                 metadata,
             };
@@ -1202,7 +1362,13 @@ impl PatternDetector {
     }
 
     /// Calculate path length in isolation tree
-    fn isolation_tree_path_length(&self, target: &[f64], data: &[Vec<f64>], depth: usize, max_depth: usize) -> f64 {
+    fn isolation_tree_path_length(
+        &self,
+        target: &[f64],
+        data: &[Vec<f64>],
+        depth: usize,
+        max_depth: usize,
+    ) -> f64 {
         if depth >= max_depth || data.len() <= 1 {
             return depth as f64 + self.expected_isolation_path_length(data.len());
         }
@@ -1216,7 +1382,9 @@ impl PatternDetector {
         // Random split point
         let feature_values: Vec<f64> = data.iter().map(|row| row[feature_idx]).collect();
         let min_val = feature_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        let max_val = feature_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let max_val = feature_values
+            .iter()
+            .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
         if min_val >= max_val {
             return depth as f64;
@@ -1241,12 +1409,17 @@ impl PatternDetector {
     }
 
     /// Detect time series anomalies
-    async fn detect_time_series_anomalies(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_time_series_anomalies(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Convert to time series
         let time_series = self.evidence_to_time_series(evidence, time_range);
-        if time_series.len() < 24 { // Need at least 24 hours
+        if time_series.len() < 24 {
+            // Need at least 24 hours
             return Ok(patterns);
         }
 
@@ -1259,8 +1432,14 @@ impl PatternDetector {
 
             let mut metadata = HashMap::new();
             metadata.insert("change_points".to_string(), change_points.len().to_string());
-            metadata.insert("change_point_positions".to_string(),
-                change_points.iter().map(|&x| x.to_string()).collect::<Vec<_>>().join(","));
+            metadata.insert(
+                "change_point_positions".to_string(),
+                change_points
+                    .iter()
+                    .map(|&x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
 
             let pattern = TemporalPattern {
                 id: "anomaly_change_points".to_string(),
@@ -1268,7 +1447,10 @@ impl PatternDetector {
                 strength: strength.min(1.0),
                 confidence,
                 time_range: time_range.clone(),
-                description: format!("Change point anomalies detected ({} change points)", change_points.len()),
+                description: format!(
+                    "Change point anomalies detected ({} change points)",
+                    change_points.len()
+                ),
                 evidence: evidence.to_vec(),
                 metadata,
             };
@@ -1289,15 +1471,21 @@ impl PatternDetector {
         }
 
         for i in window_size..time_series.len() - window_size {
-            let before_mean = time_series[i - window_size..i].iter().sum::<f64>() / window_size as f64;
-            let after_mean = time_series[i..i + window_size].iter().sum::<f64>() / window_size as f64;
+            let before_mean =
+                time_series[i - window_size..i].iter().sum::<f64>() / window_size as f64;
+            let after_mean =
+                time_series[i..i + window_size].iter().sum::<f64>() / window_size as f64;
 
-            let before_var = time_series[i - window_size..i].iter()
+            let before_var = time_series[i - window_size..i]
+                .iter()
                 .map(|x| (x - before_mean).powi(2))
-                .sum::<f64>() / window_size as f64;
-            let after_var = time_series[i..i + window_size].iter()
+                .sum::<f64>()
+                / window_size as f64;
+            let after_var = time_series[i..i + window_size]
+                .iter()
                 .map(|x| (x - after_mean).powi(2))
-                .sum::<f64>() / window_size as f64;
+                .sum::<f64>()
+                / window_size as f64;
 
             // Detect significant change in mean or variance
             let mean_change = (before_mean - after_mean).abs() / (before_mean + after_mean + 1e-10);
@@ -1321,33 +1509,47 @@ impl PatternDetector {
         let mut patterns = Vec::new();
 
         // Clustering-based pattern detection
-        let cluster_patterns = self.detect_clustering_patterns(&evidence, time_range).await?;
+        let cluster_patterns = self
+            .detect_clustering_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(cluster_patterns);
 
         // Decision tree-like pattern detection
-        let decision_patterns = self.detect_decision_tree_patterns(&evidence, time_range).await?;
+        let decision_patterns = self
+            .detect_decision_tree_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(decision_patterns);
 
         // Neural network-inspired pattern detection
-        let neural_patterns = self.detect_neural_network_patterns(&evidence, time_range).await?;
+        let neural_patterns = self
+            .detect_neural_network_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(neural_patterns);
 
         Ok(patterns)
     }
 
     /// Detect patterns using clustering techniques
-    async fn detect_clustering_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_clustering_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Create feature vectors for clustering
-        let features: Vec<Vec<f64>> = evidence.iter().map(|ev| {
-            vec![
-                ev.timestamp.hour() as f64 / 24.0, // Normalize to [0,1]
-                ev.timestamp.weekday().num_days_from_monday() as f64 / 7.0,
-                ev.strength,
-                (ev.timestamp - time_range.start).num_hours() as f64 / (time_range.end - time_range.start).num_hours() as f64,
-            ]
-        }).collect();
+        let features: Vec<Vec<f64>> = evidence
+            .iter()
+            .map(|ev| {
+                vec![
+                    ev.timestamp.hour() as f64 / 24.0, // Normalize to [0,1]
+                    ev.timestamp.weekday().num_days_from_monday() as f64 / 7.0,
+                    ev.strength,
+                    (ev.timestamp - time_range.start).num_hours() as f64
+                        / (time_range.end - time_range.start).num_hours() as f64,
+                ]
+            })
+            .collect();
 
         // Simple k-means clustering (k=3)
         let clusters = self.simple_kmeans_clustering(&features, 3);
@@ -1355,7 +1557,8 @@ impl PatternDetector {
         // Analyze clusters for patterns
         for (cluster_id, cluster_indices) in clusters.iter().enumerate() {
             if cluster_indices.len() >= self.config.min_data_points {
-                let cluster_evidence: Vec<PatternEvidence> = cluster_indices.iter()
+                let cluster_evidence: Vec<PatternEvidence> = cluster_indices
+                    .iter()
                     .map(|&i| evidence[i].clone())
                     .collect();
 
@@ -1364,7 +1567,10 @@ impl PatternDetector {
 
                 let mut metadata = HashMap::new();
                 metadata.insert("cluster_id".to_string(), cluster_id.to_string());
-                metadata.insert("cluster_size".to_string(), cluster_indices.len().to_string());
+                metadata.insert(
+                    "cluster_size".to_string(),
+                    cluster_indices.len().to_string(),
+                );
                 metadata.insert("cohesion".to_string(), cluster_strength.to_string());
 
                 let pattern = TemporalPattern {
@@ -1423,7 +1629,8 @@ impl PatternDetector {
 
             // Update centroids
             for j in 0..k {
-                let cluster_points: Vec<&Vec<f64>> = features.iter()
+                let cluster_points: Vec<&Vec<f64>> = features
+                    .iter()
                     .enumerate()
                     .filter(|(i, _)| assignments[*i] == j)
                     .map(|(_, feature)| feature)
@@ -1431,9 +1638,9 @@ impl PatternDetector {
 
                 if !cluster_points.is_empty() {
                     for dim in 0..feature_dim {
-                        centroids[j][dim] = cluster_points.iter()
-                            .map(|point| point[dim])
-                            .sum::<f64>() / cluster_points.len() as f64;
+                        centroids[j][dim] =
+                            cluster_points.iter().map(|point| point[dim]).sum::<f64>()
+                                / cluster_points.len() as f64;
                     }
                 }
             }
@@ -1454,7 +1661,8 @@ impl PatternDetector {
             return f64::INFINITY;
         }
 
-        a.iter().zip(b.iter())
+        a.iter()
+            .zip(b.iter())
             .map(|(x, y)| (x - y).powi(2))
             .sum::<f64>()
             .sqrt()
@@ -1466,9 +1674,8 @@ impl PatternDetector {
             return 1.0;
         }
 
-        let cluster_features: Vec<&Vec<f64>> = cluster_indices.iter()
-            .map(|&i| &features[i])
-            .collect();
+        let cluster_features: Vec<&Vec<f64>> =
+            cluster_indices.iter().map(|&i| &features[i]).collect();
 
         // Calculate centroid
         let feature_dim = cluster_features[0].len();
@@ -1483,23 +1690,30 @@ impl PatternDetector {
         }
 
         // Calculate average distance to centroid
-        let avg_distance = cluster_features.iter()
+        let avg_distance = cluster_features
+            .iter()
             .map(|feature| self.euclidean_distance(feature, &centroid))
-            .sum::<f64>() / cluster_features.len() as f64;
+            .sum::<f64>()
+            / cluster_features.len() as f64;
 
         // Convert to cohesion score (lower distance = higher cohesion)
         (1.0 / (1.0 + avg_distance)).min(1.0)
     }
 
     /// Detect patterns using decision tree-like analysis
-    async fn detect_decision_tree_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_decision_tree_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Create decision rules based on features
         let rules = self.generate_decision_rules(evidence);
 
         for rule in rules {
-            let matching_evidence: Vec<PatternEvidence> = evidence.iter()
+            let matching_evidence: Vec<PatternEvidence> = evidence
+                .iter()
                 .filter(|ev| self.evidence_matches_rule(ev, &rule))
                 .cloned()
                 .collect();
@@ -1604,28 +1818,45 @@ impl PatternDetector {
     }
 
     /// Detect patterns using neural network-inspired techniques
-    async fn detect_neural_network_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_neural_network_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Create feature vectors
-        let features: Vec<Vec<f64>> = evidence.iter().map(|ev| {
-            vec![
-                (ev.timestamp.hour() as f64 / 24.0) * 2.0 - 1.0, // Normalize to [-1,1]
-                (ev.timestamp.weekday().num_days_from_monday() as f64 / 7.0) * 2.0 - 1.0,
-                ev.strength * 2.0 - 1.0,
-                ((ev.timestamp - time_range.start).num_hours() as f64 / (time_range.end - time_range.start).num_hours() as f64) * 2.0 - 1.0,
-            ]
-        }).collect();
+        let features: Vec<Vec<f64>> = evidence
+            .iter()
+            .map(|ev| {
+                vec![
+                    (ev.timestamp.hour() as f64 / 24.0) * 2.0 - 1.0, // Normalize to [-1,1]
+                    (ev.timestamp.weekday().num_days_from_monday() as f64 / 7.0) * 2.0 - 1.0,
+                    ev.strength * 2.0 - 1.0,
+                    ((ev.timestamp - time_range.start).num_hours() as f64
+                        / (time_range.end - time_range.start).num_hours() as f64)
+                        * 2.0
+                        - 1.0,
+                ]
+            })
+            .collect();
 
         // Simple perceptron-like pattern detection
-        let neural_patterns = self.detect_perceptron_patterns(&features, evidence, time_range).await?;
+        let neural_patterns = self
+            .detect_perceptron_patterns(&features, evidence, time_range)
+            .await?;
         patterns.extend(neural_patterns);
 
         Ok(patterns)
     }
 
     /// Detect patterns using perceptron-like analysis
-    async fn detect_perceptron_patterns(&self, features: &[Vec<f64>], evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_perceptron_patterns(
+        &self,
+        features: &[Vec<f64>],
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         if features.is_empty() {
@@ -1644,25 +1875,29 @@ impl PatternDetector {
         ];
 
         for (i, weights) in weight_combinations.iter().enumerate() {
-            let activations: Vec<f64> = features.iter()
+            let activations: Vec<f64> = features
+                .iter()
                 .map(|feature| self.calculate_activation(feature, weights))
                 .collect();
 
             // Find threshold that separates high and low activations
             let mut sorted_activations = activations.clone();
-            sorted_activations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            sorted_activations
+                .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
             if sorted_activations.len() > 4 {
                 let threshold = sorted_activations[sorted_activations.len() * 3 / 4]; // 75th percentile
 
-                let high_activation_indices: Vec<usize> = activations.iter()
+                let high_activation_indices: Vec<usize> = activations
+                    .iter()
                     .enumerate()
                     .filter(|(_, &activation)| activation > threshold)
                     .map(|(idx, _)| idx)
                     .collect();
 
                 if high_activation_indices.len() >= self.config.min_data_points {
-                    let pattern_evidence: Vec<PatternEvidence> = high_activation_indices.iter()
+                    let pattern_evidence: Vec<PatternEvidence> = high_activation_indices
+                        .iter()
                         .map(|&idx| evidence[idx].clone())
                         .collect();
 
@@ -1672,8 +1907,14 @@ impl PatternDetector {
                     let mut metadata = HashMap::new();
                     metadata.insert("perceptron_id".to_string(), i.to_string());
                     metadata.insert("threshold".to_string(), threshold.to_string());
-                    metadata.insert("weights".to_string(),
-                        weights.iter().map(|w| format!("{:.2}", w)).collect::<Vec<_>>().join(","));
+                    metadata.insert(
+                        "weights".to_string(),
+                        weights
+                            .iter()
+                            .map(|w| format!("{:.2}", w))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    );
 
                     let pattern = TemporalPattern {
                         id: format!("ml_perceptron_{}", i),
@@ -1696,7 +1937,8 @@ impl PatternDetector {
 
     /// Calculate activation using weighted sum
     fn calculate_activation(&self, features: &[f64], weights: &[f64]) -> f64 {
-        let weighted_sum: f64 = features.iter()
+        let weighted_sum: f64 = features
+            .iter()
             .zip(weights.iter())
             .map(|(f, w)| f * w)
             .sum();
@@ -1715,12 +1957,16 @@ impl PatternDetector {
         }
 
         // Calculate separation quality
-        let separation = (above_threshold - below_threshold).abs() / (above_threshold + below_threshold);
+        let separation =
+            (above_threshold - below_threshold).abs() / (above_threshold + below_threshold);
         separation.min(1.0)
     }
 
     /// Detect complex multi-dimensional patterns
-    async fn detect_complex_patterns(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_complex_patterns(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points * 3 {
             return Ok(Vec::new());
@@ -1729,22 +1975,32 @@ impl PatternDetector {
         let mut patterns = Vec::new();
 
         // Multi-scale temporal patterns
-        let multiscale_patterns = self.detect_multiscale_patterns(&evidence, time_range).await?;
+        let multiscale_patterns = self
+            .detect_multiscale_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(multiscale_patterns);
 
         // Hierarchical patterns
-        let hierarchical_patterns = self.detect_hierarchical_patterns(&evidence, time_range).await?;
+        let hierarchical_patterns = self
+            .detect_hierarchical_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(hierarchical_patterns);
 
         // Composite patterns (combinations of basic patterns)
-        let composite_patterns = self.detect_composite_patterns(&evidence, time_range).await?;
+        let composite_patterns = self
+            .detect_composite_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(composite_patterns);
 
         Ok(patterns)
     }
 
     /// Detect multi-scale temporal patterns
-    async fn detect_multiscale_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_multiscale_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Analyze at different time scales
@@ -1756,7 +2012,9 @@ impl PatternDetector {
         ];
 
         for (scale_name, scale_hours) in scales {
-            let scale_patterns = self.analyze_at_time_scale(evidence, time_range, scale_hours, scale_name).await?;
+            let scale_patterns = self
+                .analyze_at_time_scale(evidence, time_range, scale_hours, scale_name)
+                .await?;
             patterns.extend(scale_patterns);
         }
 
@@ -1764,7 +2022,13 @@ impl PatternDetector {
     }
 
     /// Analyze patterns at a specific time scale
-    async fn analyze_at_time_scale(&self, evidence: &[PatternEvidence], time_range: &TimeRange, scale_hours: usize, scale_name: &str) -> Result<Vec<TemporalPattern>> {
+    async fn analyze_at_time_scale(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+        scale_hours: usize,
+        scale_name: &str,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Aggregate evidence at the given scale
@@ -1826,7 +2090,8 @@ impl PatternDetector {
 
             if count > 0 {
                 let avg_correlation = correlation_sum / count as f64;
-                let normalized_correlation = avg_correlation / (buckets.iter().map(|x| x * x).sum::<f64>() / buckets.len() as f64 + 1e-10);
+                let normalized_correlation = avg_correlation
+                    / (buckets.iter().map(|x| x * x).sum::<f64>() / buckets.len() as f64 + 1e-10);
                 max_periodicity = max_periodicity.max(normalized_correlation);
             }
         }
@@ -1835,7 +2100,11 @@ impl PatternDetector {
     }
 
     /// Detect hierarchical patterns
-    async fn detect_hierarchical_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_hierarchical_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Create hierarchy: hour -> day -> week -> month
@@ -1870,7 +2139,11 @@ impl PatternDetector {
     }
 
     /// Build temporal hierarchy from evidence
-    fn build_temporal_hierarchy(&self, evidence: &[PatternEvidence], _time_range: &TimeRange) -> Vec<(String, Vec<f64>)> {
+    fn build_temporal_hierarchy(
+        &self,
+        evidence: &[PatternEvidence],
+        _time_range: &TimeRange,
+    ) -> Vec<(String, Vec<f64>)> {
         let mut hierarchy = Vec::new();
 
         // Hour level
@@ -1905,7 +2178,8 @@ impl PatternDetector {
 
         // Calculate variance and regularity
         let mean = level_data.iter().sum::<f64>() / level_data.len() as f64;
-        let variance = level_data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / level_data.len() as f64;
+        let variance =
+            level_data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / level_data.len() as f64;
 
         // Higher variance indicates more pattern structure
         let variance_score = (variance / (mean + 1e-10)).min(1.0);
@@ -1922,22 +2196,34 @@ impl PatternDetector {
     }
 
     /// Detect composite patterns (combinations of basic patterns)
-    async fn detect_composite_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_composite_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Detect combinations of daily and weekly patterns
-        let daily_weekly = self.detect_daily_weekly_composite(evidence, time_range).await?;
+        let daily_weekly = self
+            .detect_daily_weekly_composite(evidence, time_range)
+            .await?;
         patterns.extend(daily_weekly);
 
         // Detect burst + trend combinations
-        let burst_trend = self.detect_burst_trend_composite(evidence, time_range).await?;
+        let burst_trend = self
+            .detect_burst_trend_composite(evidence, time_range)
+            .await?;
         patterns.extend(burst_trend);
 
         Ok(patterns)
     }
 
     /// Detect daily-weekly composite patterns
-    async fn detect_daily_weekly_composite(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_daily_weekly_composite(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Create 2D histogram: hour x day_of_week
@@ -1959,7 +2245,8 @@ impl PatternDetector {
         }
 
         // Sort by strength and take top combinations
-        peak_combinations.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        peak_combinations
+            .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
         if peak_combinations.len() >= 3 {
             let top_combinations = &peak_combinations[..3.min(peak_combinations.len())];
@@ -1968,11 +2255,14 @@ impl PatternDetector {
 
             if avg_strength > 0.3 {
                 let mut metadata = HashMap::new();
-                metadata.insert("top_combinations".to_string(),
-                    top_combinations.iter()
+                metadata.insert(
+                    "top_combinations".to_string(),
+                    top_combinations
+                        .iter()
                         .map(|(h, d, s)| format!("{}h-{}d:{:.2}", h, d, s))
                         .collect::<Vec<_>>()
-                        .join(","));
+                        .join(","),
+                );
 
                 let pattern = TemporalPattern {
                     id: "composite_daily_weekly".to_string(),
@@ -1993,7 +2283,11 @@ impl PatternDetector {
     }
 
     /// Detect burst-trend composite patterns
-    async fn detect_burst_trend_composite(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_burst_trend_composite(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // First detect bursts and trends separately
@@ -2004,7 +2298,8 @@ impl PatternDetector {
         for burst in &bursts {
             for trend in &trends {
                 let overlap = self.calculate_pattern_overlap(&burst.time_range, &trend.time_range);
-                let sequence_score = self.calculate_pattern_sequence_score(&burst.time_range, &trend.time_range);
+                let sequence_score =
+                    self.calculate_pattern_sequence_score(&burst.time_range, &trend.time_range);
 
                 if overlap > 0.3 || sequence_score > 0.5 {
                     let composite_strength = (burst.strength + trend.strength) / 2.0;
@@ -2076,7 +2371,10 @@ impl PatternDetector {
     }
 
     /// Detect correlation-based patterns
-    async fn detect_correlation_patterns(&self, time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_correlation_patterns(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let evidence = self.gather_evidence_in_range(time_range);
         if evidence.len() < self.config.min_data_points * 2 {
             return Ok(Vec::new());
@@ -2085,24 +2383,36 @@ impl PatternDetector {
         let mut patterns = Vec::new();
 
         // Cross-correlation patterns
-        let cross_corr_patterns = self.detect_cross_correlation_patterns(&evidence, time_range).await?;
+        let cross_corr_patterns = self
+            .detect_cross_correlation_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(cross_corr_patterns);
 
         // Lag correlation patterns
-        let lag_corr_patterns = self.detect_lag_correlation_patterns(&evidence, time_range).await?;
+        let lag_corr_patterns = self
+            .detect_lag_correlation_patterns(&evidence, time_range)
+            .await?;
         patterns.extend(lag_corr_patterns);
 
         Ok(patterns)
     }
 
     /// Detect cross-correlation patterns
-    async fn detect_cross_correlation_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_cross_correlation_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Group evidence by memory key
-        let mut memory_groups: std::collections::HashMap<String, Vec<&PatternEvidence>> = std::collections::HashMap::new();
+        let mut memory_groups: std::collections::HashMap<String, Vec<&PatternEvidence>> =
+            std::collections::HashMap::new();
         for ev in evidence {
-            memory_groups.entry(ev.memory_key.clone()).or_default().push(ev);
+            memory_groups
+                .entry(ev.memory_key.clone())
+                .or_default()
+                .push(ev);
         }
 
         // Find correlated memory access patterns
@@ -2112,11 +2422,15 @@ impl PatternDetector {
                 let key1 = &memory_keys[i];
                 let key2 = &memory_keys[j];
 
-                if let (Some(group1), Some(group2)) = (memory_groups.get(key1), memory_groups.get(key2)) {
-                    let correlation = self.calculate_memory_access_correlation(group1, group2, time_range);
+                if let (Some(group1), Some(group2)) =
+                    (memory_groups.get(key1), memory_groups.get(key2))
+                {
+                    let correlation =
+                        self.calculate_memory_access_correlation(group1, group2, time_range);
 
                     if correlation > 0.6 {
-                        let combined_evidence: Vec<PatternEvidence> = group1.iter()
+                        let combined_evidence: Vec<PatternEvidence> = group1
+                            .iter()
                             .chain(group2.iter())
                             .map(|&ev| ev.clone())
                             .collect();
@@ -2132,7 +2446,10 @@ impl PatternDetector {
                             strength: correlation,
                             confidence: correlation * 0.9,
                             time_range: time_range.clone(),
-                            description: format!("Correlated access pattern between {} and {}", key1, key2),
+                            description: format!(
+                                "Correlated access pattern between {} and {}",
+                                key1, key2
+                            ),
                             evidence: combined_evidence,
                             metadata,
                         };
@@ -2147,7 +2464,12 @@ impl PatternDetector {
     }
 
     /// Calculate correlation between memory access patterns
-    fn calculate_memory_access_correlation(&self, group1: &[&PatternEvidence], group2: &[&PatternEvidence], time_range: &TimeRange) -> f64 {
+    fn calculate_memory_access_correlation(
+        &self,
+        group1: &[&PatternEvidence],
+        group2: &[&PatternEvidence],
+        time_range: &TimeRange,
+    ) -> f64 {
         // Create time series for both groups
         let duration_hours = (time_range.end - time_range.start).num_hours() as usize;
         let mut series1 = vec![0.0; duration_hours];
@@ -2172,7 +2494,11 @@ impl PatternDetector {
     }
 
     /// Detect lag correlation patterns
-    async fn detect_lag_correlation_patterns(&self, evidence: &[PatternEvidence], time_range: &TimeRange) -> Result<Vec<TemporalPattern>> {
+    async fn detect_lag_correlation_patterns(
+        &self,
+        evidence: &[PatternEvidence],
+        time_range: &TimeRange,
+    ) -> Result<Vec<TemporalPattern>> {
         let mut patterns = Vec::new();
 
         // Convert evidence to time series
@@ -2229,7 +2555,11 @@ impl PatternDetector {
     }
 
     /// Check if evidence supports an existing pattern
-    fn evidence_supports_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
+    fn evidence_supports_pattern(
+        &self,
+        evidence: &PatternEvidence,
+        pattern: &TemporalPattern,
+    ) -> bool {
         match pattern.pattern_type {
             PatternType::Daily => {
                 // Check if the evidence fits the daily pattern
@@ -2239,27 +2569,17 @@ impl PatternDetector {
                 // Check if the evidence fits the weekly pattern
                 self.fits_weekly_pattern(evidence, pattern)
             }
-            PatternType::Monthly => {
-                self.fits_monthly_pattern(evidence, pattern)
-            }
-            PatternType::Seasonal => {
-                self.fits_seasonal_pattern(evidence, pattern)
-            }
-            PatternType::Burst => {
-                self.fits_burst_pattern(evidence, pattern)
-            }
+            PatternType::Monthly => self.fits_monthly_pattern(evidence, pattern),
+            PatternType::Seasonal => self.fits_seasonal_pattern(evidence, pattern),
+            PatternType::Burst => self.fits_burst_pattern(evidence, pattern),
             PatternType::GradualIncrease | PatternType::GradualDecrease => {
                 self.fits_gradual_pattern(evidence, pattern)
             }
             PatternType::Cyclical { period_hours } => {
                 self.fits_cyclical_pattern(evidence, pattern, period_hours)
             }
-            PatternType::Irregular => {
-                self.fits_irregular_pattern(evidence, pattern)
-            }
-            PatternType::Custom(_) => {
-                self.fits_custom_pattern(evidence, pattern)
-            }
+            PatternType::Irregular => self.fits_irregular_pattern(evidence, pattern),
+            PatternType::Custom(_) => self.fits_custom_pattern(evidence, pattern),
         }
     }
 
@@ -2297,7 +2617,10 @@ impl PatternDetector {
 
     /// Check if evidence fits a seasonal pattern
     fn fits_seasonal_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern) -> bool {
-        if let (Some(start_str), Some(end_str)) = (pattern.metadata.get("start_month"), pattern.metadata.get("end_month")) {
+        if let (Some(start_str), Some(end_str)) = (
+            pattern.metadata.get("start_month"),
+            pattern.metadata.get("end_month"),
+        ) {
             if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>()) {
                 let month = evidence.timestamp.month();
                 if start <= end {
@@ -2322,17 +2645,26 @@ impl PatternDetector {
     }
 
     /// Check if evidence fits a cyclical pattern
-    fn fits_cyclical_pattern(&self, evidence: &PatternEvidence, pattern: &TemporalPattern, period_hours: u64) -> bool {
+    fn fits_cyclical_pattern(
+        &self,
+        evidence: &PatternEvidence,
+        pattern: &TemporalPattern,
+        period_hours: u64,
+    ) -> bool {
         if period_hours == 0 {
             return false;
         }
         let diff = evidence.timestamp - pattern.time_range.start;
-        let hours = diff.num_hours().abs() as u64;
+        let hours = diff.num_hours().unsigned_abs();
         hours % period_hours == 0
     }
 
     /// Check if evidence fits an irregular pattern
-    fn fits_irregular_pattern(&self, _evidence: &PatternEvidence, _pattern: &TemporalPattern) -> bool {
+    fn fits_irregular_pattern(
+        &self,
+        _evidence: &PatternEvidence,
+        _pattern: &TemporalPattern,
+    ) -> bool {
         true
     }
 
@@ -2370,16 +2702,15 @@ impl PatternDetector {
         }
 
         // Calculate strength based on evidence consistency
-        let avg_strength = pattern.evidence.iter()
-            .map(|e| e.strength)
-            .sum::<f64>() / pattern.evidence.len() as f64;
+        let avg_strength = pattern.evidence.iter().map(|e| e.strength).sum::<f64>()
+            / pattern.evidence.len() as f64;
 
         pattern.strength = avg_strength;
 
         // Calculate confidence based on evidence count and consistency
         let evidence_count_factor = (pattern.evidence.len() as f64 / 10.0).min(1.0);
         let consistency_factor = self.calculate_evidence_consistency(&pattern.evidence);
-        
+
         pattern.confidence = (evidence_count_factor + consistency_factor) / 2.0;
 
         Ok(())
@@ -2392,10 +2723,13 @@ impl PatternDetector {
         }
 
         // Calculate variance in evidence strength
-        let mean_strength = evidence.iter().map(|e| e.strength).sum::<f64>() / evidence.len() as f64;
-        let variance = evidence.iter()
+        let mean_strength =
+            evidence.iter().map(|e| e.strength).sum::<f64>() / evidence.len() as f64;
+        let variance = evidence
+            .iter()
             .map(|e| (e.strength - mean_strength).powi(2))
-            .sum::<f64>() / evidence.len() as f64;
+            .sum::<f64>()
+            / evidence.len() as f64;
 
         // Lower variance means higher consistency
         (1.0 - variance).max(0.0)
@@ -2434,8 +2768,15 @@ impl PatternDetector {
         if let (Some(start), Some(end)) = (timestamps.iter().min(), timestamps.iter().max()) {
             let range = TimeRange::new(*start, *end);
             if let Some(p) = self.detect_daily_pattern(&range).await? {
-                if let Some(h) = p.metadata.get("hour_of_day").and_then(|s| s.parse::<u32>().ok()) {
-                    let dt = start.date_naive().and_hms_opt(h, 0, 0).unwrap();
+                if let Some(h) = p
+                    .metadata
+                    .get("hour_of_day")
+                    .and_then(|s| s.parse::<u32>().ok())
+                {
+                    let dt = start
+                        .date_naive()
+                        .and_hms_opt(h, 0, 0)
+                        .expect("value should be available");
                     peak_times.push(dt.and_utc());
                 }
             }
@@ -2449,7 +2790,7 @@ impl PatternDetector {
         let mut clusters: Vec<Vec<DateTime<Utc>>> = Vec::new();
         for ts in timestamps {
             if let Some(cluster) = clusters.last_mut() {
-                if ts - *cluster.last().unwrap() <= Duration::minutes(60) {
+                if ts - *cluster.last().expect("last() should succeed") <= Duration::minutes(60) {
                     cluster.push(ts);
                     continue;
                 }
@@ -2459,11 +2800,13 @@ impl PatternDetector {
         let cluster_count = clusters.len();
         let avg_cluster_size = if cluster_count > 0 {
             clusters.iter().map(|c| c.len()).sum::<usize>() as f64 / cluster_count as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let inter_cluster_time = if clusters.len() > 1 {
             let mut times = Vec::new();
             for pair in clusters.windows(2) {
-                times.push(pair[1][0] - *pair[0].last().unwrap());
+                times.push(pair[1][0] - *pair[0].last().expect("last() should succeed"));
             }
             times.iter().fold(Duration::zero(), |acc, d| acc + *d) / (times.len() as i32)
         } else {
@@ -2490,7 +2833,8 @@ impl PatternDetector {
 
     /// Get patterns of a specific type
     pub fn get_patterns_by_type(&self, pattern_type: &PatternType) -> Vec<&TemporalPattern> {
-        self.patterns.iter()
+        self.patterns
+            .iter()
             .filter(|p| &p.pattern_type == pattern_type)
             .collect()
     }
@@ -2498,10 +2842,9 @@ impl PatternDetector {
     /// Clear old patterns that are no longer relevant
     pub async fn cleanup_old_patterns(&mut self, cutoff_date: DateTime<Utc>) -> Result<usize> {
         let original_count = self.patterns.len();
-        
-        self.patterns.retain(|pattern| {
-            pattern.time_range.end >= cutoff_date
-        });
+
+        self.patterns
+            .retain(|pattern| pattern.time_range.end >= cutoff_date);
 
         Ok(original_count - self.patterns.len())
     }
@@ -2519,7 +2862,11 @@ mod tests {
     use chrono::NaiveDate;
 
     fn dt(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap().and_utc()
+        NaiveDate::from_ymd_opt(y, m, d)
+            .expect("value should be available")
+            .and_hms_opt(h, 0, 0)
+            .expect("value should be available")
+            .and_utc()
     }
 
     fn evidence_at(ts: DateTime<Utc>) -> PatternEvidence {
@@ -2531,7 +2878,11 @@ mod tests {
         }
     }
 
-    fn base_pattern(pt: PatternType, range: TimeRange, metadata: HashMap<String, String>) -> TemporalPattern {
+    fn base_pattern(
+        pt: PatternType,
+        range: TimeRange,
+        metadata: HashMap<String, String>,
+    ) -> TemporalPattern {
         TemporalPattern {
             id: "p".into(),
             pattern_type: pt,
@@ -2611,7 +2962,11 @@ mod tests {
         let detector = PatternDetector::new();
         let start = dt(2024, 1, 1, 0);
         let range = TimeRange::new(start, start + Duration::days(5));
-        let pattern = base_pattern(PatternType::Cyclical { period_hours: 24 }, range.clone(), HashMap::new());
+        let pattern = base_pattern(
+            PatternType::Cyclical { period_hours: 24 },
+            range.clone(),
+            HashMap::new(),
+        );
         let ev = evidence_at(start + Duration::hours(48));
         assert!(detector.evidence_supports_pattern(&ev, &pattern));
     }
@@ -2620,7 +2975,11 @@ mod tests {
     fn supports_irregular() {
         let detector = PatternDetector::new();
         let start = dt(2024, 1, 1, 0);
-        let pattern = base_pattern(PatternType::Irregular, TimeRange::new(start, start + Duration::days(1)), HashMap::new());
+        let pattern = base_pattern(
+            PatternType::Irregular,
+            TimeRange::new(start, start + Duration::days(1)),
+            HashMap::new(),
+        );
         let ev = evidence_at(start + Duration::hours(6));
         assert!(detector.evidence_supports_pattern(&ev, &pattern));
     }
@@ -2631,7 +2990,11 @@ mod tests {
         let start = dt(2024, 1, 1, 0);
         let mut meta = HashMap::new();
         meta.insert("memory_key".into(), "m1".into());
-        let pattern = base_pattern(PatternType::Custom("x".into()), TimeRange::new(start, start + Duration::days(1)), meta);
+        let pattern = base_pattern(
+            PatternType::Custom("x".into()),
+            TimeRange::new(start, start + Duration::days(1)),
+            meta,
+        );
         let ev = evidence_at(start + Duration::hours(1));
         assert!(detector.evidence_supports_pattern(&ev, &pattern));
     }

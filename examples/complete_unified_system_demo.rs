@@ -1,14 +1,13 @@
 // Complete Unified System Demo - Shows all Phase 1-4 features working together
 // This demonstrates the complete Synaptic AI Agent Memory system
 
-use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
 #[cfg(feature = "security")]
 use synaptic::security::{
-    SecurityManager, SecurityConfig,
-    Permission,
     access_control::{AuthenticationCredentials, AuthenticationType},
     zero_knowledge::{AccessType, ContentPredicate},
+    Permission, SecurityConfig, SecurityManager,
 };
+use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 1: Initialize the complete memory system
     println!(" Phase 1: Core Memory System");
     println!("===============================");
-    
+
     let memory_config = MemoryConfig {
         enable_knowledge_graph: true,
         enable_temporal_tracking: true,
@@ -62,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Permission::ExecuteQueries,
             Permission::AccessDistributed,
             Permission::ManageIntegrations,
-        ]
+        ],
     );
 
     let mut security_manager = SecurityManager::new(security_config).await?;
@@ -79,8 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         user_agent: Some("Synaptic-Demo/1.0".to_string()),
     };
 
-    let admin_context = security_manager.access_control
-        .authenticate("admin".to_string(), credentials).await?;
+    let admin_context = security_manager
+        .access_control
+        .authenticate("admin".to_string(), credentials)
+        .await?;
     println!(" User authenticated successfully");
     println!("   Session ID: {}", admin_context.session_id);
     println!("   MFA Verified: {}", admin_context.mfa_verified);
@@ -92,14 +93,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sensitive_memory = MemoryEntry::new(
         "financial_data".to_string(),
         "Q4 Revenue: $2.5M, Profit Margin: 15%, Growth: +12%".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Store memory with encryption
     println!("🔒 Storing encrypted memory...");
-    let encrypted_memory = security_manager.encrypt_memory(&sensitive_memory, &admin_context).await?;
-    memory.store("financial_q4", &sensitive_memory.value).await?;
-    println!(" Memory stored with encryption: {}", encrypted_memory.encryption_algorithm);
+    let encrypted_memory = security_manager
+        .encrypt_memory(&sensitive_memory, &admin_context)
+        .await?;
+    memory
+        .store("financial_q4", &sensitive_memory.value)
+        .await?;
+    println!(
+        " Memory stored with encryption: {}",
+        encrypted_memory.encryption_algorithm
+    );
 
     // Phase 4: Knowledge Graph with Security
     println!("\n Knowledge Graph Operations");
@@ -109,12 +117,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     memory.store("project_alpha", project_value).await?;
 
     // Create knowledge graph relationships
-    memory.create_memory_relationship(
-        "financial_q4",
-        "project_alpha",
-        synaptic::memory::knowledge_graph::RelationshipType::CausedBy,
-    ).await?;
-    
+    memory
+        .create_memory_relationship(
+            "financial_q4",
+            "project_alpha",
+            synaptic::memory::knowledge_graph::RelationshipType::CausedBy,
+        )
+        .await?;
+
     println!(" Knowledge graph relationship created");
     println!("   Financial data ← CausedBy → Project Alpha");
 
@@ -122,22 +132,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Zero-Knowledge Proof Generation");
     println!("===================================");
 
-    let access_proof = security_manager.generate_access_proof(
-        "financial_q4",
-        &admin_context,
-        AccessType::Read
-    ).await?;
-    
+    let access_proof = security_manager
+        .generate_access_proof("financial_q4", &admin_context, AccessType::Read)
+        .await?;
+
     println!(" Zero-knowledge access proof generated");
     println!("   Proof ID: {}", access_proof.id);
     println!("   Statement Hash: {}", access_proof.statement_hash);
 
-    let content_proof = security_manager.generate_content_proof(
-        &sensitive_memory,
-        ContentPredicate::ContainsKeyword("Revenue".to_string()),
-        &admin_context
-    ).await?;
-    
+    let content_proof = security_manager
+        .generate_content_proof(
+            &sensitive_memory,
+            ContentPredicate::ContainsKeyword("Revenue".to_string()),
+            &admin_context,
+        )
+        .await?;
+
     println!(" Zero-knowledge content proof generated");
     println!("   Proof ID: {}", content_proof.id);
     println!("   Proves content contains 'Revenue' without revealing data");
@@ -146,19 +156,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Differential Privacy");
     println!("========================");
 
-    let privatized_memory = security_manager.privacy_manager
-        .apply_differential_privacy(&sensitive_memory, &admin_context).await?;
-    
+    let privatized_memory = security_manager
+        .privacy_manager
+        .apply_differential_privacy(&sensitive_memory, &admin_context)
+        .await?;
+
     println!(" Differential privacy applied");
     println!("   Original length: {} chars", sensitive_memory.value.len());
-    println!("   Privatized length: {} chars", privatized_memory.value.len());
+    println!(
+        "   Privatized length: {} chars",
+        privatized_memory.value.len()
+    );
 
     // Phase 7: Advanced Analytics (if enabled)
     #[cfg(feature = "analytics")]
     {
         println!("\n Advanced Analytics");
         println!("=====================");
-        
+
         // Analytics would be integrated here
         println!(" Analytics engine ready for insights generation");
     }
@@ -168,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\n Distributed System Status");
         println!("=============================");
-        
+
         // Distributed operations would be shown here
         println!(" Distributed coordination ready");
     }
@@ -177,17 +192,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Security Metrics Summary");
     println!("============================");
 
-    let security_metrics = security_manager.get_security_metrics(&admin_context).await?;
+    let security_metrics = security_manager
+        .get_security_metrics(&admin_context)
+        .await?;
     println!(" Security Operations Summary:");
-    println!("    Encryption Operations: {}", security_metrics.encryption_metrics.total_encryptions);
-    println!("    Privacy Operations: {}", security_metrics.privacy_metrics.total_privatizations);
-    println!("    Access Checks: {:.2}ms avg", 
-             security_metrics.access_metrics.total_access_time_ms as f64 / 
-             security_metrics.access_metrics.total_permission_checks.max(1) as f64);
+    println!(
+        "    Encryption Operations: {}",
+        security_metrics.encryption_metrics.total_encryptions
+    );
+    println!(
+        "    Privacy Operations: {}",
+        security_metrics.privacy_metrics.total_privatizations
+    );
+    println!(
+        "    Access Checks: {:.2}ms avg",
+        security_metrics.access_metrics.total_access_time_ms as f64
+            / security_metrics
+                .access_metrics
+                .total_permission_checks
+                .max(1) as f64
+    );
 
     if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs);
-        println!("    ZK Verification Rate: {:.1}%", zk_metrics.verification_success_rate);
+        println!(
+            "    ZK Proofs Generated: {}",
+            zk_metrics.total_proofs_generated
+        );
+        println!(
+            "    ZK Verification Rate: {:.1}%",
+            zk_metrics.verification_success_rate
+        );
     }
 
     // Phase 10: Memory Retrieval and Search
@@ -199,7 +233,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(" Memory retrieved successfully");
         println!("   Key: financial_q4");
         println!("   Type: {:?}", memory_entry.memory_type);
-        println!("   Content preview: {}...", &memory_entry.value[..30.min(memory_entry.value.len())]);
+        println!(
+            "   Content preview: {}...",
+            &memory_entry.value[..30.min(memory_entry.value.len())]
+        );
     }
 
     // Final Summary
@@ -213,7 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("     Access Control - Authentication and authorization");
     println!("    Analytics Ready - Performance and behavioral insights");
     println!("    Distributed Ready - Scalable multi-node architecture");
-    
+
     println!("\n The Synaptic AI Agent Memory system is a complete,");
     println!("   state-of-the-art memory solution with enterprise-grade");
     println!("   security, privacy, and advanced AI capabilities!");

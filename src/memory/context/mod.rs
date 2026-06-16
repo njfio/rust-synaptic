@@ -107,7 +107,10 @@ impl AgentContext {
         if !self.related_memories.is_empty() {
             output.push_str("Related Memories:\n");
             for (memory, strength) in &self.related_memories {
-                output.push_str(&format!("- {} (relevance: {:.2})\n", memory.value, strength));
+                output.push_str(&format!(
+                    "- {} (relevance: {:.2})\n",
+                    memory.value, strength
+                ));
             }
             output.push_str("\n");
         }
@@ -143,7 +146,8 @@ impl AgentContext {
         if !self.core_memories.is_empty() {
             output.push_str("## Core Memories\n\n");
             for (i, memory) in self.core_memories.iter().enumerate() {
-                output.push_str(&format!("{}. **{}**\n   - Type: {:?}\n   - Created: {}\n\n",
+                output.push_str(&format!(
+                    "{}. **{}**\n   - Type: {:?}\n   - Created: {}\n\n",
                     i + 1,
                     memory.value,
                     memory.memory_type,
@@ -155,7 +159,11 @@ impl AgentContext {
         if !self.related_memories.is_empty() {
             output.push_str("## Related Memories\n\n");
             for (memory, strength) in &self.related_memories {
-                output.push_str(&format!("- {} *(relevance: {:.0}%)*\n", memory.value, strength * 100.0));
+                output.push_str(&format!(
+                    "- {} *(relevance: {:.0}%)*\n",
+                    memory.value,
+                    strength * 100.0
+                ));
             }
             output.push_str("\n");
         }
@@ -163,7 +171,8 @@ impl AgentContext {
         if !self.temporal_memories.is_empty() {
             output.push_str("## Recent Context\n\n");
             for memory in &self.temporal_memories {
-                output.push_str(&format!("- {} *({} ago)*\n",
+                output.push_str(&format!(
+                    "- {} *({} ago)*\n",
                     memory.value,
                     format_time_ago(memory.created_at())
                 ));
@@ -188,15 +197,21 @@ impl AgentContext {
 
         output.push_str("  <core_memories>\n");
         for memory in &self.core_memories {
-            output.push_str(&format!("    <memory type=\"{:?}\">{}</memory>\n",
-                memory.memory_type, escape_xml(&memory.value)));
+            output.push_str(&format!(
+                "    <memory type=\"{:?}\">{}</memory>\n",
+                memory.memory_type,
+                escape_xml(&memory.value)
+            ));
         }
         output.push_str("  </core_memories>\n");
 
         output.push_str("  <related_memories>\n");
         for (memory, strength) in &self.related_memories {
-            output.push_str(&format!("    <memory strength=\"{}\">{}</memory>\n",
-                strength, escape_xml(&memory.value)));
+            output.push_str(&format!(
+                "    <memory strength=\"{}\">{}</memory>\n",
+                strength,
+                escape_xml(&memory.value)
+            ));
         }
         output.push_str("  </related_memories>\n");
 

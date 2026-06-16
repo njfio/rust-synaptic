@@ -5,6 +5,12 @@ use thiserror::Error;
 /// Result type alias for memory operations
 pub type Result<T> = std::result::Result<T, MemoryError>;
 
+/// Backwards-compatible alias for [`MemoryError`].
+///
+/// Several modules historically referred to the crate's error type as
+/// `SynapticError`; this alias keeps those references valid.
+pub type SynapticError = MemoryError;
+
 /// Comprehensive error types for memory operations
 #[derive(Error, Debug)]
 pub enum MemoryError {
@@ -210,6 +216,10 @@ pub enum MemoryError {
     /// Errors originating from external systems/services
     #[error("External error: {0}")]
     External(String),
+
+    /// Circuit breaker is open and rejecting calls
+    #[error("Circuit breaker open: {0}")]
+    CircuitBreakerOpen(String),
 }
 
 impl MemoryError {
@@ -490,10 +500,7 @@ impl MemoryError {
 
     /// Check if this is a serialization error
     pub fn is_serialization_error(&self) -> bool {
-        matches!(
-            self,
-            Self::Serialization(_) | Self::BinarySerialization(_)
-        )
+        matches!(self, Self::Serialization(_) | Self::BinarySerialization(_))
     }
 }
 
@@ -639,7 +646,7 @@ where
 #[cfg(feature = "visualization")]
 impl<T> From<plotters::drawing::DrawingAreaErrorKind<T>> for MemoryError
 where
-    T: std::fmt::Debug + Send + Sync + 'static + std::error::Error
+    T: std::fmt::Debug + Send + Sync + 'static + std::error::Error,
 {
     fn from(err: plotters::drawing::DrawingAreaErrorKind<T>) -> Self {
         MemoryError::storage(format!("Visualization error: {:?}", err))
@@ -650,6 +657,22 @@ where
 impl From<candle_core::Error> for MemoryError {
     fn from(err: candle_core::Error) -> Self {
         MemoryError::storage(format!("ML model error: {}", err))
+    }
+}
+
+/// Convert from prometheus::Error for observability/metrics operations
+#[cfg(feature = "observability")]
+impl From<prometheus::Error> for MemoryError {
+    fn from(err: prometheus::Error) -> Self {
+        MemoryError::processing_error(format!("Prometheus error: {}", err))
+    }
+}
+
+/// Convert from opentelemetry trace errors for observability/tracing operations
+#[cfg(feature = "observability")]
+impl From<opentelemetry::trace::TraceError> for MemoryError {
+    fn from(err: opentelemetry::trace::TraceError) -> Self {
+        MemoryError::processing_error(format!("OpenTelemetry trace error: {}", err))
     }
 }
 
@@ -689,7 +712,10 @@ mod tests {
     fn test_vector_operation_error_creation() {
         let err = MemoryError::vector_operation("dimension mismatch");
         assert!(matches!(err, MemoryError::VectorOperation { .. }));
-        assert_eq!(err.to_string(), "Vector operation error: dimension mismatch");
+        assert_eq!(
+            err.to_string(),
+            "Vector operation error: dimension mismatch"
+        );
     }
 
     #[test]
@@ -750,9 +776,7 @@ mod tests {
     #[test]
     fn test_sled_error_conversion() {
         // Create a sled error by trying to use an invalid path
-        let result = sled::Config::new()
-            .path("\0invalid")
-            .open();
+        let result = sled::Config::new().path("\0invalid").open();
         if let Err(sled_err) = result {
             let mem_err: MemoryError = sled_err.into();
             assert!(matches!(mem_err, MemoryError::Sled(_)));
@@ -776,7 +800,10 @@ mod tests {
         let err = MemoryError::InvalidConfiguration {
             message: "missing required field".to_string(),
         };
-        assert_eq!(err.to_string(), "Invalid configuration: missing required field");
+        assert_eq!(
+            err.to_string(),
+            "Invalid configuration: missing required field"
+        );
     }
 
     #[test]
@@ -800,7 +827,10 @@ mod tests {
         let err = MemoryError::Privacy {
             message: "differential privacy violation".to_string(),
         };
-        assert_eq!(err.to_string(), "Privacy error: differential privacy violation");
+        assert_eq!(
+            err.to_string(),
+            "Privacy error: differential privacy violation"
+        );
     }
 
     #[test]
@@ -824,7 +854,10 @@ mod tests {
         let err = MemoryError::DistributedError {
             message: "shard unavailable".to_string(),
         };
-        assert_eq!(err.to_string(), "Distributed system error: shard unavailable");
+        assert_eq!(
+            err.to_string(),
+            "Distributed system error: shard unavailable"
+        );
     }
 
     #[test]
@@ -839,7 +872,7 @@ mod tests {
     fn test_result_type_alias() {
         // Test that Result<T> is properly aliased
         let ok_result: Result<i32> = Ok(42);
-        assert_eq!(ok_result.unwrap(), 42);
+        assert_eq!(ok_result.expect("ok_result should be valid"), 42);
 
         let err_result: Result<i32> = Err(MemoryError::storage("test"));
         assert!(err_result.is_err());
@@ -868,4 +901,3 @@ mod tests {
         assert_eq!(err.to_string(), "Invalid query: syntax error");
     }
 }
-

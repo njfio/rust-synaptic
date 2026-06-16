@@ -19,46 +19,46 @@ use tracing::{debug, error, info, warn};
 #[derive(Clone)]
 pub struct PrometheusMetrics {
     registry: Arc<Registry>,
-    
+
     // Memory operation metrics
     memory_operations_total: IntCounterVec,
     memory_operation_duration: HistogramVec,
     memory_size_bytes: HistogramVec,
     memory_nodes_total: IntGaugeVec,
     memory_relationships_total: IntGaugeVec,
-    
+
     // Performance metrics
     query_duration_seconds: HistogramVec,
     query_operations_total: IntCounterVec,
     cache_operations_total: IntCounterVec,
     cache_hit_ratio: GaugeVec,
-    
+
     // System health metrics
     system_memory_usage_bytes: IntGauge,
     system_cpu_usage_percent: Gauge,
     active_connections: IntGauge,
     error_rate: GaugeVec,
-    
+
     // Storage metrics
     storage_operations_total: IntCounterVec,
     storage_operation_duration: HistogramVec,
     storage_size_bytes: IntGaugeVec,
-    
+
     // Analytics metrics
     analytics_operations_total: IntCounterVec,
     analytics_processing_duration: HistogramVec,
     vector_search_duration: HistogramVec,
-    
+
     // Security metrics
     authentication_attempts_total: IntCounterVec,
     authorization_checks_total: IntCounterVec,
     security_violations_total: IntCounterVec,
-    
+
     // Learning metrics
     learning_operations_total: IntCounterVec,
     model_training_duration: HistogramVec,
     model_accuracy: GaugeVec,
-    
+
     // Custom metrics registry
     custom_metrics: Arc<RwLock<HashMap<String, Box<dyn CustomMetric + Send + Sync>>>>,
 }
@@ -73,190 +73,256 @@ impl PrometheusMetrics {
     /// Create a new Prometheus metrics collector with comprehensive metric definitions
     pub fn new() -> Result<Self> {
         let registry = Arc::new(Registry::new());
-        
+
         // Memory operation metrics
         let memory_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_memory_operations_total", "Total number of memory operations")
-                .namespace("synaptic")
-                .subsystem("memory"),
-            &["operation_type", "memory_type", "status"]
+            Opts::new(
+                "synaptic_memory_operations_total",
+                "Total number of memory operations",
+            )
+            .namespace("synaptic")
+            .subsystem("memory"),
+            &["operation_type", "memory_type", "status"],
         )?;
-        
+
         let memory_operation_duration = HistogramVec::new(
-            HistogramOpts::new("synaptic_memory_operation_duration_seconds", "Duration of memory operations")
-                .namespace("synaptic")
-                .subsystem("memory")
-                .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
-            &["operation_type", "memory_type"]
+            HistogramOpts::new(
+                "synaptic_memory_operation_duration_seconds",
+                "Duration of memory operations",
+            )
+            .namespace("synaptic")
+            .subsystem("memory")
+            .buckets(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+            ]),
+            &["operation_type", "memory_type"],
         )?;
-        
+
         let memory_size_bytes = HistogramVec::new(
-            HistogramOpts::new("synaptic_memory_size_bytes", "Size of memory objects in bytes")
-                .namespace("synaptic")
-                .subsystem("memory")
-                .buckets(vec![1024.0, 4096.0, 16384.0, 65536.0, 262144.0, 1048576.0, 4194304.0, 16777216.0]),
-            &["memory_type", "content_type"]
+            HistogramOpts::new(
+                "synaptic_memory_size_bytes",
+                "Size of memory objects in bytes",
+            )
+            .namespace("synaptic")
+            .subsystem("memory")
+            .buckets(vec![
+                1024.0, 4096.0, 16384.0, 65536.0, 262144.0, 1048576.0, 4194304.0, 16777216.0,
+            ]),
+            &["memory_type", "content_type"],
         )?;
-        
+
         let memory_nodes_total = IntGaugeVec::new(
-            Opts::new("synaptic_memory_nodes_total", "Total number of memory nodes")
-                .namespace("synaptic")
-                .subsystem("memory"),
-            &["memory_type", "status"]
+            Opts::new(
+                "synaptic_memory_nodes_total",
+                "Total number of memory nodes",
+            )
+            .namespace("synaptic")
+            .subsystem("memory"),
+            &["memory_type", "status"],
         )?;
-        
+
         let memory_relationships_total = IntGaugeVec::new(
-            Opts::new("synaptic_memory_relationships_total", "Total number of memory relationships")
-                .namespace("synaptic")
-                .subsystem("memory"),
-            &["relationship_type", "strength_category"]
+            Opts::new(
+                "synaptic_memory_relationships_total",
+                "Total number of memory relationships",
+            )
+            .namespace("synaptic")
+            .subsystem("memory"),
+            &["relationship_type", "strength_category"],
         )?;
-        
+
         // Performance metrics
         let query_duration_seconds = HistogramVec::new(
-            HistogramOpts::new("synaptic_query_duration_seconds", "Duration of query operations")
-                .namespace("synaptic")
-                .subsystem("performance")
-                .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
-            &["query_type", "complexity", "result_size"]
+            HistogramOpts::new(
+                "synaptic_query_duration_seconds",
+                "Duration of query operations",
+            )
+            .namespace("synaptic")
+            .subsystem("performance")
+            .buckets(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ]),
+            &["query_type", "complexity", "result_size"],
         )?;
-        
+
         let query_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_query_operations_total", "Total number of query operations")
-                .namespace("synaptic")
-                .subsystem("performance"),
-            &["query_type", "status", "optimization_level"]
+            Opts::new(
+                "synaptic_query_operations_total",
+                "Total number of query operations",
+            )
+            .namespace("synaptic")
+            .subsystem("performance"),
+            &["query_type", "status", "optimization_level"],
         )?;
-        
+
         let cache_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_cache_operations_total", "Total number of cache operations")
-                .namespace("synaptic")
-                .subsystem("performance"),
-            &["operation_type", "cache_type", "result"]
+            Opts::new(
+                "synaptic_cache_operations_total",
+                "Total number of cache operations",
+            )
+            .namespace("synaptic")
+            .subsystem("performance"),
+            &["operation_type", "cache_type", "result"],
         )?;
-        
+
         let cache_hit_ratio = GaugeVec::new(
             Opts::new("synaptic_cache_hit_ratio", "Cache hit ratio")
                 .namespace("synaptic")
                 .subsystem("performance"),
-            &["cache_type", "time_window"]
+            &["cache_type", "time_window"],
         )?;
-        
+
         // System health metrics
         let system_memory_usage_bytes = IntGauge::new(
             "synaptic_system_memory_usage_bytes",
-            "Current system memory usage in bytes"
+            "Current system memory usage in bytes",
         )?;
-        
+
         let system_cpu_usage_percent = Gauge::new(
             "synaptic_system_cpu_usage_percent",
-            "Current system CPU usage percentage"
+            "Current system CPU usage percentage",
         )?;
-        
+
         let active_connections = IntGauge::new(
             "synaptic_active_connections",
-            "Number of active connections"
+            "Number of active connections",
         )?;
-        
+
         let error_rate = GaugeVec::new(
             Opts::new("synaptic_error_rate", "Error rate by component")
                 .namespace("synaptic")
                 .subsystem("health"),
-            &["component", "error_type", "severity"]
+            &["component", "error_type", "severity"],
         )?;
-        
+
         // Storage metrics
         let storage_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_storage_operations_total", "Total number of storage operations")
-                .namespace("synaptic")
-                .subsystem("storage"),
-            &["operation_type", "storage_backend", "status"]
+            Opts::new(
+                "synaptic_storage_operations_total",
+                "Total number of storage operations",
+            )
+            .namespace("synaptic")
+            .subsystem("storage"),
+            &["operation_type", "storage_backend", "status"],
         )?;
-        
+
         let storage_operation_duration = HistogramVec::new(
-            HistogramOpts::new("synaptic_storage_operation_duration_seconds", "Duration of storage operations")
-                .namespace("synaptic")
-                .subsystem("storage")
-                .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
-            &["operation_type", "storage_backend"]
+            HistogramOpts::new(
+                "synaptic_storage_operation_duration_seconds",
+                "Duration of storage operations",
+            )
+            .namespace("synaptic")
+            .subsystem("storage")
+            .buckets(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ]),
+            &["operation_type", "storage_backend"],
         )?;
-        
+
         let storage_size_bytes = IntGaugeVec::new(
             Opts::new("synaptic_storage_size_bytes", "Storage size in bytes")
                 .namespace("synaptic")
                 .subsystem("storage"),
-            &["storage_backend", "data_type"]
+            &["storage_backend", "data_type"],
         )?;
-        
+
         // Analytics metrics
         let analytics_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_analytics_operations_total", "Total number of analytics operations")
-                .namespace("synaptic")
-                .subsystem("analytics"),
-            &["operation_type", "algorithm", "status"]
+            Opts::new(
+                "synaptic_analytics_operations_total",
+                "Total number of analytics operations",
+            )
+            .namespace("synaptic")
+            .subsystem("analytics"),
+            &["operation_type", "algorithm", "status"],
         )?;
-        
+
         let analytics_processing_duration = HistogramVec::new(
-            HistogramOpts::new("synaptic_analytics_processing_duration_seconds", "Duration of analytics processing")
-                .namespace("synaptic")
-                .subsystem("analytics")
-                .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]),
-            &["operation_type", "algorithm", "data_size"]
+            HistogramOpts::new(
+                "synaptic_analytics_processing_duration_seconds",
+                "Duration of analytics processing",
+            )
+            .namespace("synaptic")
+            .subsystem("analytics")
+            .buckets(vec![
+                0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
+            ]),
+            &["operation_type", "algorithm", "data_size"],
         )?;
-        
+
         let vector_search_duration = HistogramVec::new(
-            HistogramOpts::new("synaptic_vector_search_duration_seconds", "Duration of vector search operations")
-                .namespace("synaptic")
-                .subsystem("analytics")
-                .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]),
-            &["search_type", "index_type", "result_count"]
+            HistogramOpts::new(
+                "synaptic_vector_search_duration_seconds",
+                "Duration of vector search operations",
+            )
+            .namespace("synaptic")
+            .subsystem("analytics")
+            .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]),
+            &["search_type", "index_type", "result_count"],
         )?;
-        
+
         // Security metrics
         let authentication_attempts_total = IntCounterVec::new(
-            Opts::new("synaptic_authentication_attempts_total", "Total number of authentication attempts")
-                .namespace("synaptic")
-                .subsystem("security"),
-            &["method", "status", "user_type"]
+            Opts::new(
+                "synaptic_authentication_attempts_total",
+                "Total number of authentication attempts",
+            )
+            .namespace("synaptic")
+            .subsystem("security"),
+            &["method", "status", "user_type"],
         )?;
-        
+
         let authorization_checks_total = IntCounterVec::new(
-            Opts::new("synaptic_authorization_checks_total", "Total number of authorization checks")
-                .namespace("synaptic")
-                .subsystem("security"),
-            &["resource_type", "action", "status"]
+            Opts::new(
+                "synaptic_authorization_checks_total",
+                "Total number of authorization checks",
+            )
+            .namespace("synaptic")
+            .subsystem("security"),
+            &["resource_type", "action", "status"],
         )?;
-        
+
         let security_violations_total = IntCounterVec::new(
-            Opts::new("synaptic_security_violations_total", "Total number of security violations")
-                .namespace("synaptic")
-                .subsystem("security"),
-            &["violation_type", "severity", "source"]
+            Opts::new(
+                "synaptic_security_violations_total",
+                "Total number of security violations",
+            )
+            .namespace("synaptic")
+            .subsystem("security"),
+            &["violation_type", "severity", "source"],
         )?;
-        
+
         // Learning metrics
         let learning_operations_total = IntCounterVec::new(
-            Opts::new("synaptic_learning_operations_total", "Total number of learning operations")
-                .namespace("synaptic")
-                .subsystem("learning"),
-            &["operation_type", "algorithm", "status"]
+            Opts::new(
+                "synaptic_learning_operations_total",
+                "Total number of learning operations",
+            )
+            .namespace("synaptic")
+            .subsystem("learning"),
+            &["operation_type", "algorithm", "status"],
         )?;
-        
+
         let model_training_duration = HistogramVec::new(
-            HistogramOpts::new("synaptic_model_training_duration_seconds", "Duration of model training")
-                .namespace("synaptic")
-                .subsystem("learning")
-                .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]),
-            &["model_type", "algorithm", "data_size"]
+            HistogramOpts::new(
+                "synaptic_model_training_duration_seconds",
+                "Duration of model training",
+            )
+            .namespace("synaptic")
+            .subsystem("learning")
+            .buckets(vec![
+                1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0,
+            ]),
+            &["model_type", "algorithm", "data_size"],
         )?;
-        
+
         let model_accuracy = GaugeVec::new(
             Opts::new("synaptic_model_accuracy", "Model accuracy metrics")
                 .namespace("synaptic")
                 .subsystem("learning"),
-            &["model_type", "metric_type", "dataset"]
+            &["model_type", "metric_type", "dataset"],
         )?;
-        
+
         // Register all metrics
         registry.register(Box::new(memory_operations_total.clone()))?;
         registry.register(Box::new(memory_operation_duration.clone()))?;
@@ -283,7 +349,7 @@ impl PrometheusMetrics {
         registry.register(Box::new(learning_operations_total.clone()))?;
         registry.register(Box::new(model_training_duration.clone()))?;
         registry.register(Box::new(model_accuracy.clone()))?;
-        
+
         Ok(Self {
             registry,
             memory_operations_total,
@@ -314,7 +380,7 @@ impl PrometheusMetrics {
             custom_metrics: Arc::new(RwLock::new(HashMap::new())),
         })
     }
-    
+
     /// Get the Prometheus registry for HTTP endpoint exposure
     pub fn registry(&self) -> Arc<Registry> {
         self.registry.clone()
@@ -323,7 +389,14 @@ impl PrometheusMetrics {
     // Memory operation metrics
 
     /// Record a memory operation with timing and metadata
-    pub fn record_memory_operation(&self, operation_type: &str, memory_type: &str, duration: Duration, status: &str, size_bytes: Option<u64>) {
+    pub fn record_memory_operation(
+        &self,
+        operation_type: &str,
+        memory_type: &str,
+        duration: Duration,
+        status: &str,
+        size_bytes: Option<u64>,
+    ) {
         self.memory_operations_total
             .with_label_values(&[operation_type, memory_type, status])
             .inc();
@@ -346,7 +419,10 @@ impl PrometheusMetrics {
                 .observe(size as f64);
         }
 
-        debug!("Recorded memory operation: {} {} {} {:?}", operation_type, memory_type, status, duration);
+        debug!(
+            "Recorded memory operation: {} {} {} {:?}",
+            operation_type, memory_type, status, duration
+        );
     }
 
     /// Update memory node counts
@@ -357,7 +433,12 @@ impl PrometheusMetrics {
     }
 
     /// Update memory relationship counts
-    pub fn update_memory_relationship_count(&self, relationship_type: &str, strength_category: &str, count: i64) {
+    pub fn update_memory_relationship_count(
+        &self,
+        relationship_type: &str,
+        strength_category: &str,
+        count: i64,
+    ) {
         self.memory_relationships_total
             .with_label_values(&[relationship_type, strength_category])
             .set(count);
@@ -366,7 +447,15 @@ impl PrometheusMetrics {
     // Performance metrics
 
     /// Record a query operation with detailed metrics
-    pub fn record_query_operation(&self, query_type: &str, complexity: &str, result_size: &str, duration: Duration, status: &str, optimization_level: &str) {
+    pub fn record_query_operation(
+        &self,
+        query_type: &str,
+        complexity: &str,
+        result_size: &str,
+        duration: Duration,
+        status: &str,
+        optimization_level: &str,
+    ) {
         self.query_operations_total
             .with_label_values(&[query_type, status, optimization_level])
             .inc();
@@ -375,7 +464,10 @@ impl PrometheusMetrics {
             .with_label_values(&[query_type, complexity, result_size])
             .observe(duration.as_secs_f64());
 
-        debug!("Recorded query operation: {} {} {} {:?}", query_type, status, optimization_level, duration);
+        debug!(
+            "Recorded query operation: {} {} {} {:?}",
+            query_type, status, optimization_level, duration
+        );
     }
 
     /// Record cache operation
@@ -419,7 +511,13 @@ impl PrometheusMetrics {
     // Storage metrics
 
     /// Record storage operation
-    pub fn record_storage_operation(&self, operation_type: &str, storage_backend: &str, duration: Duration, status: &str) {
+    pub fn record_storage_operation(
+        &self,
+        operation_type: &str,
+        storage_backend: &str,
+        duration: Duration,
+        status: &str,
+    ) {
         self.storage_operations_total
             .with_label_values(&[operation_type, storage_backend, status])
             .inc();
@@ -428,7 +526,10 @@ impl PrometheusMetrics {
             .with_label_values(&[operation_type, storage_backend])
             .observe(duration.as_secs_f64());
 
-        debug!("Recorded storage operation: {} {} {} {:?}", operation_type, storage_backend, status, duration);
+        debug!(
+            "Recorded storage operation: {} {} {} {:?}",
+            operation_type, storage_backend, status, duration
+        );
     }
 
     /// Update storage size
@@ -441,7 +542,14 @@ impl PrometheusMetrics {
     // Analytics metrics
 
     /// Record analytics operation
-    pub fn record_analytics_operation(&self, operation_type: &str, algorithm: &str, duration: Duration, status: &str, data_size: &str) {
+    pub fn record_analytics_operation(
+        &self,
+        operation_type: &str,
+        algorithm: &str,
+        duration: Duration,
+        status: &str,
+        data_size: &str,
+    ) {
         self.analytics_operations_total
             .with_label_values(&[operation_type, algorithm, status])
             .inc();
@@ -450,16 +558,28 @@ impl PrometheusMetrics {
             .with_label_values(&[operation_type, algorithm, data_size])
             .observe(duration.as_secs_f64());
 
-        debug!("Recorded analytics operation: {} {} {} {:?}", operation_type, algorithm, status, duration);
+        debug!(
+            "Recorded analytics operation: {} {} {} {:?}",
+            operation_type, algorithm, status, duration
+        );
     }
 
     /// Record vector search operation
-    pub fn record_vector_search(&self, search_type: &str, index_type: &str, result_count: &str, duration: Duration) {
+    pub fn record_vector_search(
+        &self,
+        search_type: &str,
+        index_type: &str,
+        result_count: &str,
+        duration: Duration,
+    ) {
         self.vector_search_duration
             .with_label_values(&[search_type, index_type, result_count])
             .observe(duration.as_secs_f64());
 
-        debug!("Recorded vector search: {} {} {} {:?}", search_type, index_type, result_count, duration);
+        debug!(
+            "Recorded vector search: {} {} {} {:?}",
+            search_type, index_type, result_count, duration
+        );
     }
 
     // Security metrics
@@ -470,7 +590,10 @@ impl PrometheusMetrics {
             .with_label_values(&[method, status, user_type])
             .inc();
 
-        debug!("Recorded authentication attempt: {} {} {}", method, status, user_type);
+        debug!(
+            "Recorded authentication attempt: {} {} {}",
+            method, status, user_type
+        );
     }
 
     /// Record authorization check
@@ -479,7 +602,10 @@ impl PrometheusMetrics {
             .with_label_values(&[resource_type, action, status])
             .inc();
 
-        debug!("Recorded authorization check: {} {} {}", resource_type, action, status);
+        debug!(
+            "Recorded authorization check: {} {} {}",
+            resource_type, action, status
+        );
     }
 
     /// Record security violation
@@ -488,7 +614,10 @@ impl PrometheusMetrics {
             .with_label_values(&[violation_type, severity, source])
             .inc();
 
-        warn!("Recorded security violation: {} {} {}", violation_type, severity, source);
+        warn!(
+            "Recorded security violation: {} {} {}",
+            violation_type, severity, source
+        );
     }
 
     // Learning metrics
@@ -499,31 +628,56 @@ impl PrometheusMetrics {
             .with_label_values(&[operation_type, algorithm, status])
             .inc();
 
-        debug!("Recorded learning operation: {} {} {}", operation_type, algorithm, status);
+        debug!(
+            "Recorded learning operation: {} {} {}",
+            operation_type, algorithm, status
+        );
     }
 
     /// Record model training
-    pub fn record_model_training(&self, model_type: &str, algorithm: &str, data_size: &str, duration: Duration) {
+    pub fn record_model_training(
+        &self,
+        model_type: &str,
+        algorithm: &str,
+        data_size: &str,
+        duration: Duration,
+    ) {
         self.model_training_duration
             .with_label_values(&[model_type, algorithm, data_size])
             .observe(duration.as_secs_f64());
 
-        info!("Recorded model training: {} {} {} {:?}", model_type, algorithm, data_size, duration);
+        info!(
+            "Recorded model training: {} {} {} {:?}",
+            model_type, algorithm, data_size, duration
+        );
     }
 
     /// Update model accuracy
-    pub fn update_model_accuracy(&self, model_type: &str, metric_type: &str, dataset: &str, accuracy: f64) {
+    pub fn update_model_accuracy(
+        &self,
+        model_type: &str,
+        metric_type: &str,
+        dataset: &str,
+        accuracy: f64,
+    ) {
         self.model_accuracy
             .with_label_values(&[model_type, metric_type, dataset])
             .set(accuracy);
 
-        info!("Updated model accuracy: {} {} {} {:.4}", model_type, metric_type, dataset, accuracy);
+        info!(
+            "Updated model accuracy: {} {} {} {:.4}",
+            model_type, metric_type, dataset, accuracy
+        );
     }
 
     // Custom metrics management
 
     /// Register a custom metric
-    pub async fn register_custom_metric(&self, name: String, metric: Box<dyn CustomMetric + Send + Sync>) -> Result<()> {
+    pub async fn register_custom_metric(
+        &self,
+        name: String,
+        metric: Box<dyn CustomMetric + Send + Sync>,
+    ) -> Result<()> {
         let mut custom_metrics = self.custom_metrics.write().await;
         custom_metrics.insert(name.clone(), metric);
         info!("Registered custom metric: {}", name);
@@ -537,8 +691,14 @@ impl PrometheusMetrics {
             info!("Unregistered custom metric: {}", name);
             Ok(())
         } else {
-            warn!("Attempted to unregister non-existent custom metric: {}", name);
-            Err(crate::error::SynapticError::NotFound(format!("Custom metric '{}' not found", name)))
+            warn!(
+                "Attempted to unregister non-existent custom metric: {}",
+                name
+            );
+            Err(crate::error::SynapticError::not_found(format!(
+                "Custom metric '{}' not found",
+                name
+            )))
         }
     }
 
@@ -594,13 +754,25 @@ impl PrometheusMetrics {
                 output.push('\n');
 
                 if metric.has_counter() {
-                    output.push_str(&format!("  Counter Value: {}\n", metric.get_counter().get_value()));
+                    output.push_str(&format!(
+                        "  Counter Value: {}\n",
+                        metric.get_counter().get_value()
+                    ));
                 } else if metric.has_gauge() {
-                    output.push_str(&format!("  Gauge Value: {}\n", metric.get_gauge().get_value()));
+                    output.push_str(&format!(
+                        "  Gauge Value: {}\n",
+                        metric.get_gauge().get_value()
+                    ));
                 } else if metric.has_histogram() {
                     let hist = metric.get_histogram();
-                    output.push_str(&format!("  Histogram Sample Count: {}\n", hist.get_sample_count()));
-                    output.push_str(&format!("  Histogram Sample Sum: {}\n", hist.get_sample_sum()));
+                    output.push_str(&format!(
+                        "  Histogram Sample Count: {}\n",
+                        hist.get_sample_count()
+                    ));
+                    output.push_str(&format!(
+                        "  Histogram Sample Sum: {}\n",
+                        hist.get_sample_sum()
+                    ));
                 }
             }
             output.push('\n');
@@ -620,7 +792,11 @@ pub struct MetricTimer {
 
 impl MetricTimer {
     /// Create a new timer for memory operations
-    pub fn new_memory_timer(metrics: PrometheusMetrics, operation_type: &str, memory_type: &str) -> Self {
+    pub fn new_memory_timer(
+        metrics: PrometheusMetrics,
+        operation_type: &str,
+        memory_type: &str,
+    ) -> Self {
         Self {
             start: Instant::now(),
             metrics,
@@ -630,7 +806,12 @@ impl MetricTimer {
     }
 
     /// Create a new timer for query operations
-    pub fn new_query_timer(metrics: PrometheusMetrics, query_type: &str, complexity: &str, result_size: &str) -> Self {
+    pub fn new_query_timer(
+        metrics: PrometheusMetrics,
+        query_type: &str,
+        complexity: &str,
+        result_size: &str,
+    ) -> Self {
         Self {
             start: Instant::now(),
             metrics,

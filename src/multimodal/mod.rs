@@ -1,5 +1,5 @@
 //! # Multi-Modal Memory System
-//! 
+//!
 //! This module provides comprehensive multi-modal memory capabilities for the Synaptic AI agent memory system.
 //! It supports image, audio, and code memory with advanced processing, analysis, and cross-modal relationships.
 //!
@@ -86,10 +86,7 @@ pub enum ContentType {
         height: u32,
     },
     /// Audio content (WAV, MP3, FLAC, etc.)
-    Audio {
-        format: String,
-        duration_ms: u64,
-    },
+    Audio { format: String, duration_ms: u64 },
     /// Code content (Rust, Python, JavaScript, etc.)
     Code {
         language: String,
@@ -106,12 +103,8 @@ pub enum ContentType {
         schema: Option<String>,
     },
     /// Text content extracted from other modalities
-    Text {
-        language: Option<String>,
-    },
+    Text { language: Option<String> },
 }
-
-
 
 /// Metadata for multi-modal content
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,8 +117,6 @@ pub struct MultiModalMetadata {
     pub processing_time_ms: u64,
     pub extracted_features: HashMap<String, serde_json::Value>,
 }
-
-
 
 /// Cross-modal link between different types of content
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,14 +155,30 @@ pub type MultiModalResult<T> = Result<T, SynapticError>;
 #[async_trait::async_trait]
 pub trait MultiModalProcessor {
     /// Process content and extract features
-    async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory>;
+    async fn process(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory>;
 
     /// Extract features for similarity comparison
-    async fn extract_features(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<Vec<f32>>;
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>>;
 
     /// Calculate similarity between two pieces of content
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32>;
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32>;
 
     /// Search for similar content
-    async fn search_similar(&self, query_features: &[f32], candidates: &[MultiModalMemory]) -> MultiModalResult<Vec<(MemoryId, f32)>>;
+    async fn search_similar(
+        &self,
+        query_features: &[f32],
+        candidates: &[MultiModalMemory],
+    ) -> MultiModalResult<Vec<(MemoryId, f32)>>;
 }

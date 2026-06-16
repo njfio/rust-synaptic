@@ -52,7 +52,7 @@ impl NumpyIntegration {
     pub fn new() -> Result<Self> {
         let python_path = Self::find_python_executable()?;
         let temp_dir = std::env::temp_dir().join("synaptic_numpy");
-        
+
         std::fs::create_dir_all(&temp_dir).map_err(|e| {
             SynapticError::IoError(format!("Failed to create temp directory: {}", e))
         })?;
@@ -66,7 +66,7 @@ impl NumpyIntegration {
     /// Find Python executable with numpy
     fn find_python_executable() -> Result<String> {
         let candidates = vec!["python3", "python", "python3.8", "python3.9", "python3.10", "python3.11"];
-        
+
         for candidate in candidates {
             if let Ok(output) = std::process::Command::new(candidate)
                 .args(&["-c", "import numpy; print('OK')"])
@@ -78,7 +78,7 @@ impl NumpyIntegration {
                 }
             }
         }
-        
+
         Err(SynapticError::IntegrationError(
             "Could not find Python executable with numpy installed".to_string()
         ))
@@ -344,7 +344,7 @@ print(output_path)
     /// Generate mathematical operation script
     fn generate_math_script(&self, array_path: &str, operation: &MathOperation) -> Result<String> {
         let output_path = self.temp_dir.join("result_array.npy");
-        
+
         let script = match operation.operation_type.as_str() {
             "sum" => format!(
                 r#"

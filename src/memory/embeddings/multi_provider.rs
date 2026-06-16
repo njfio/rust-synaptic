@@ -3,7 +3,7 @@
 //! This module provides provider selection, fallback logic, and automatic
 //! failover for embedding generation across multiple providers.
 
-use super::provider::{EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities};
+use super::provider::{EmbedOptions, Embedding, EmbeddingProvider, ProviderCapabilities};
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -134,11 +134,7 @@ impl EmbeddingProvider for MultiProvider {
                     return Ok(embedding);
                 }
                 Err(e) => {
-                    debug!(
-                        "Provider {} failed: {}",
-                        provider.name(),
-                        e
-                    );
+                    debug!("Provider {} failed: {}", provider.name(), e);
                     last_error = Some(e);
 
                     if index + 1 >= self.config.max_attempts {
@@ -191,11 +187,7 @@ impl EmbeddingProvider for MultiProvider {
                     return Ok(embeddings);
                 }
                 Err(e) => {
-                    debug!(
-                        "Provider {} failed for batch: {}",
-                        provider.name(),
-                        e
-                    );
+                    debug!("Provider {} failed for batch: {}", provider.name(), e);
                     last_error = Some(e);
 
                     if index + 1 >= self.config.max_attempts {
@@ -316,8 +308,7 @@ mod tests {
         let primary: Arc<dyn EmbeddingProvider> = Arc::new(TfIdfProvider::default());
         let fallback: Arc<dyn EmbeddingProvider> = Arc::new(TfIdfProvider::default());
 
-        let multi = MultiProvider::new(Arc::clone(&primary))
-            .with_fallback(fallback);
+        let multi = MultiProvider::new(Arc::clone(&primary)).with_fallback(fallback);
 
         assert_eq!(multi.name(), "MultiProvider");
         assert!(multi.is_available());
@@ -335,7 +326,7 @@ mod tests {
             .build();
 
         assert!(multi.is_ok());
-        let multi = multi.unwrap();
+        let multi = multi.expect("multi should be valid");
         assert_eq!(multi.name(), "MultiProvider");
     }
 
@@ -343,9 +334,7 @@ mod tests {
     async fn test_multi_provider_builder_no_primary() {
         let fallback = Arc::new(TfIdfProvider::default());
 
-        let multi = MultiProviderBuilder::new()
-            .fallback(fallback)
-            .build();
+        let multi = MultiProviderBuilder::new().fallback(fallback).build();
 
         assert!(multi.is_err());
     }
@@ -359,7 +348,7 @@ mod tests {
         let result = multi.embed(text, None).await;
 
         assert!(result.is_ok());
-        let embedding = result.unwrap();
+        let embedding = result.expect("result should be valid");
         assert_eq!(embedding.dimension(), 384);
     }
 
@@ -368,14 +357,11 @@ mod tests {
         let primary = Arc::new(TfIdfProvider::default());
         let multi = MultiProvider::new(primary);
 
-        let texts = vec![
-            "first text".to_string(),
-            "second text".to_string(),
-        ];
+        let texts = vec!["first text".to_string(), "second text".to_string()];
         let result = multi.embed_batch(&texts, None).await;
 
         assert!(result.is_ok());
-        let embeddings = result.unwrap();
+        let embeddings = result.expect("result should be valid");
         assert_eq!(embeddings.len(), 2);
     }
 }

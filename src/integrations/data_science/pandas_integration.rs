@@ -50,7 +50,7 @@ impl PandasIntegration {
     pub fn new() -> Result<Self> {
         let python_path = Self::find_python_executable()?;
         let temp_dir = std::env::temp_dir().join("synaptic_pandas");
-        
+
         std::fs::create_dir_all(&temp_dir).map_err(|e| {
             SynapticError::IoError(format!("Failed to create temp directory: {}", e))
         })?;
@@ -64,7 +64,7 @@ impl PandasIntegration {
     /// Find Python executable with pandas
     fn find_python_executable() -> Result<String> {
         let candidates = vec!["python3", "python", "python3.8", "python3.9", "python3.10", "python3.11"];
-        
+
         for candidate in candidates {
             if let Ok(output) = Command::new(candidate)
                 .args(&["-c", "import pandas; print('OK')"])
@@ -76,7 +76,7 @@ impl PandasIntegration {
                 }
             }
         }
-        
+
         Err(SynapticError::IntegrationError(
             "Could not find Python executable with pandas installed".to_string()
         ))

@@ -276,13 +276,13 @@ impl AdaptiveAlgorithmSelector {
     pub async fn register_algorithm(&self, algorithm_info: AlgorithmInfo) -> Result<()> {
         let mut registry = self.algorithm_registry.write().await;
         let mut metrics = self.algorithm_metrics.write().await;
-        
+
         registry.insert(algorithm_info.id.clone(), algorithm_info.clone());
         metrics.insert(algorithm_info.id.clone(), AlgorithmMetrics {
             algorithm_id: algorithm_info.id,
             ..Default::default()
         });
-        
+
         tracing::info!("Registered algorithm: {}", algorithm_info.name);
         Ok(())
     }
@@ -290,7 +290,7 @@ impl AdaptiveAlgorithmSelector {
     /// Select the best algorithm for a given workload pattern
     pub async fn select_algorithm(&self, workload: &WorkloadPattern) -> Result<String> {
         let strategy = self.selection_strategy.read().await.clone();
-        
+
         match strategy {
             SelectionStrategy::PerformanceBased { weight_execution_time, weight_accuracy, weight_resource_usage } => {
                 self.performance_based_selection(workload, weight_execution_time, weight_accuracy, weight_resource_usage).await
@@ -592,7 +592,7 @@ impl AdaptiveAlgorithmSelector {
         match voting_method {
             VotingMethod::Majority => {
                 strategy_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No votes received".to_string(),
@@ -607,7 +607,7 @@ impl AdaptiveAlgorithmSelector {
                 }
 
                 weighted_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No weighted votes received".to_string(),
@@ -616,7 +616,7 @@ impl AdaptiveAlgorithmSelector {
             VotingMethod::Ranked => {
                 // Simple ranked voting (could be more sophisticated)
                 strategy_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No ranked votes received".to_string(),

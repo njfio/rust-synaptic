@@ -3,14 +3,14 @@
 //! Tests all advanced security components including homomorphic encryption,
 //! zero-knowledge proofs, differential privacy, and advanced access control.
 
-use synaptic::{MemoryEntry, MemoryType};
-use synaptic::security::{
-    SecurityManager, SecurityConfig, SecurityContext, SecureOperation,
-    zero_knowledge::{AccessType, ContentPredicate},
-    privacy::{PrivacyQuery, PrivacyQueryType},
-    access_control::{AuthenticationCredentials, AuthenticationType}
-};
 use std::error::Error;
+use synaptic::security::{
+    access_control::{AuthenticationCredentials, AuthenticationType},
+    privacy::{PrivacyQuery, PrivacyQueryType},
+    zero_knowledge::{AccessType, ContentPredicate},
+    SecureOperation, SecurityConfig, SecurityContext, SecurityManager,
+};
+use synaptic::{MemoryEntry, MemoryType};
 
 // Helper function to create authenticated security context
 async fn create_authenticated_context(
@@ -28,8 +28,10 @@ async fn create_authenticated_context(
         user_agent: Some("test-agent".to_string()),
     };
 
-    let context = security_manager.access_control
-        .authenticate(user_id.to_string(), credentials).await?;
+    let context = security_manager
+        .access_control
+        .authenticate(user_id.to_string(), credentials)
+        .await?;
 
     Ok(context)
 }
@@ -47,23 +49,27 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role with required permissions
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![
-            synaptic::security::Permission::ReadMemory,
-            synaptic::security::Permission::WriteMemory,
-            synaptic::security::Permission::ExecuteQueries
-        ]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![
+                synaptic::security::Permission::ReadMemory,
+                synaptic::security::Permission::WriteMemory,
+                synaptic::security::Permission::ExecuteQueries,
+            ],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
 
     // Create test memory entry
     let entry = MemoryEntry::new(
         "test_key".to_string(),
         "Test data for homomorphic encryption".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Encrypt with homomorphic encryption
@@ -72,7 +78,9 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
     assert_eq!(encrypted.encryption_algorithm, "Homomorphic-CKKS");
 
     // Decrypt and verify basic properties
-    let decrypted = security_manager.decrypt_memory(&encrypted, &context).await?;
+    let decrypted = security_manager
+        .decrypt_memory(&encrypted, &context)
+        .await?;
     // Note: Homomorphic encryption may change the key during processing
     assert_eq!(decrypted.memory_type, entry.memory_type);
     // Verify that decryption completed successfully (non-empty result)
@@ -92,23 +100,39 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add admin role with required permissions
-    security_manager.access_control.add_role(
-        "admin".to_string(),
-        vec![
-            synaptic::security::Permission::ReadMemory,
-            synaptic::security::Permission::WriteMemory,
-            synaptic::security::Permission::ExecuteQueries
-        ]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "admin".to_string(),
+            vec![
+                synaptic::security::Permission::ReadMemory,
+                synaptic::security::Permission::WriteMemory,
+                synaptic::security::Permission::ExecuteQueries,
+            ],
+        )
+        .await?;
 
     // Authenticate admin user properly
-    let context = create_authenticated_context(&mut security_manager, "admin", "adminpass123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "admin", "adminpass123").await?;
 
     // Create multiple test entries
     let entries = vec![
-        MemoryEntry::new("entry1".to_string(), "Data one".to_string(), MemoryType::LongTerm),
-        MemoryEntry::new("entry2".to_string(), "Data two".to_string(), MemoryType::LongTerm),
-        MemoryEntry::new("entry3".to_string(), "Data three".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new(
+            "entry1".to_string(),
+            "Data one".to_string(),
+            MemoryType::LongTerm,
+        ),
+        MemoryEntry::new(
+            "entry2".to_string(),
+            "Data two".to_string(),
+            MemoryType::LongTerm,
+        ),
+        MemoryEntry::new(
+            "entry3".to_string(),
+            "Data three".to_string(),
+            MemoryType::LongTerm,
+        ),
     ];
 
     // Encrypt all entries
@@ -119,11 +143,9 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
     }
 
     // Perform secure computation
-    let result = security_manager.secure_compute(
-        &encrypted_entries,
-        SecureOperation::Count,
-        &context
-    ).await?;
+    let result = security_manager
+        .secure_compute(&encrypted_entries, SecureOperation::Count, &context)
+        .await?;
 
     assert!(result.privacy_preserved);
     assert!(matches!(result.operation, SecureOperation::Count));
@@ -143,20 +165,22 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![synaptic::security::Permission::ReadMemory]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![synaptic::security::Permission::ReadMemory],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
 
     // Generate access proof
-    let proof = security_manager.generate_access_proof(
-        "test_memory_key",
-        &context,
-        AccessType::Read
-    ).await?;
+    let proof = security_manager
+        .generate_access_proof("test_memory_key", &context, AccessType::Read)
+        .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
@@ -171,7 +195,9 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
     };
 
     // Verify the proof
-    let is_valid = security_manager.verify_access_proof(&proof, &statement).await?;
+    let is_valid = security_manager
+        .verify_access_proof(&proof, &statement)
+        .await?;
     assert!(is_valid);
 
     Ok(())
@@ -188,37 +214,41 @@ async fn test_zero_knowledge_content_proofs() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![synaptic::security::Permission::ReadMemory]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![synaptic::security::Permission::ReadMemory],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
 
     // Create test entry with specific content
     let entry = MemoryEntry::new(
         "content_test".to_string(),
         "This content contains the keyword secret and is quite long".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Generate content proof for keyword presence
-    let proof = security_manager.generate_content_proof(
-        &entry,
-        ContentPredicate::ContainsKeyword("secret".to_string()),
-        &context
-    ).await?;
+    let proof = security_manager
+        .generate_content_proof(
+            &entry,
+            ContentPredicate::ContainsKeyword("secret".to_string()),
+            &context,
+        )
+        .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
 
     // Generate proof for length constraint
-    let length_proof = security_manager.generate_content_proof(
-        &entry,
-        ContentPredicate::LengthGreaterThan(30),
-        &context
-    ).await?;
+    let length_proof = security_manager
+        .generate_content_proof(&entry, ContentPredicate::LengthGreaterThan(30), &context)
+        .await?;
 
     assert!(!length_proof.id.is_empty());
     assert_ne!(proof.statement_hash, length_proof.statement_hash);
@@ -238,24 +268,30 @@ async fn test_differential_privacy_basic() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![synaptic::security::Permission::ReadMemory]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![synaptic::security::Permission::ReadMemory],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
 
     // Create test entry
     let entry = MemoryEntry::new(
         "privacy_test".to_string(),
         "Sensitive data that needs privacy protection".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Apply differential privacy
-    let privatized = security_manager.privacy_manager
-        .apply_differential_privacy(&entry, &context).await?;
+    let privatized = security_manager
+        .privacy_manager
+        .apply_differential_privacy(&entry, &context)
+        .await?;
 
     // The privatized version should be different (with high probability)
     // Note: Due to randomness, this might occasionally be the same
@@ -277,19 +313,35 @@ async fn test_differential_privacy_statistics() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![synaptic::security::Permission::ReadMemory]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![synaptic::security::Permission::ReadMemory],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
 
     // Create test entries
     let entries = vec![
-        MemoryEntry::new("entry1".to_string(), "Short".to_string(), MemoryType::LongTerm),
-        MemoryEntry::new("entry2".to_string(), "Medium length text".to_string(), MemoryType::LongTerm),
-        MemoryEntry::new("entry3".to_string(), "This is a much longer text entry".to_string(), MemoryType::LongTerm),
+        MemoryEntry::new(
+            "entry1".to_string(),
+            "Short".to_string(),
+            MemoryType::LongTerm,
+        ),
+        MemoryEntry::new(
+            "entry2".to_string(),
+            "Medium length text".to_string(),
+            MemoryType::LongTerm,
+        ),
+        MemoryEntry::new(
+            "entry3".to_string(),
+            "This is a much longer text entry".to_string(),
+            MemoryType::LongTerm,
+        ),
     ];
 
     // Test count query
@@ -300,8 +352,10 @@ async fn test_differential_privacy_statistics() -> Result<(), Box<dyn Error>> {
         quantile: None,
     };
 
-    let count_stats = security_manager.privacy_manager
-        .generate_private_statistics(&entries, count_query, &context).await?;
+    let count_stats = security_manager
+        .privacy_manager
+        .generate_private_statistics(&entries, count_query, &context)
+        .await?;
 
     assert!(count_stats.result >= 0.0); // Should be non-negative
     assert!(count_stats.epsilon_used > 0.0);
@@ -315,8 +369,10 @@ async fn test_differential_privacy_statistics() -> Result<(), Box<dyn Error>> {
         quantile: None,
     };
 
-    let avg_stats = security_manager.privacy_manager
-        .generate_private_statistics(&entries, avg_query, &context).await?;
+    let avg_stats = security_manager
+        .privacy_manager
+        .generate_private_statistics(&entries, avg_query, &context)
+        .await?;
 
     assert!(avg_stats.epsilon_used > 0.0);
 
@@ -335,33 +391,44 @@ async fn test_privacy_budget_management() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add user role
-    security_manager.access_control.add_role(
-        "user".to_string(),
-        vec![synaptic::security::Permission::ReadMemory]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "user".to_string(),
+            vec![synaptic::security::Permission::ReadMemory],
+        )
+        .await?;
 
     // Authenticate user properly
-    let context = create_authenticated_context(&mut security_manager, "budget_test_user", "password123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "budget_test_user", "password123")
+            .await?;
 
     // Check initial budget
-    let initial_budget = security_manager.privacy_manager
-        .get_remaining_budget(&context.user_id).await?;
+    let initial_budget = security_manager
+        .privacy_manager
+        .get_remaining_budget(&context.user_id)
+        .await?;
     assert_eq!(initial_budget, 2.0);
 
     // Create test entry
     let entry = MemoryEntry::new(
         "budget_test".to_string(),
         "Test data for budget management".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Consume some budget
-    let _privatized = security_manager.privacy_manager
-        .apply_differential_privacy(&entry, &context).await?;
+    let _privatized = security_manager
+        .privacy_manager
+        .apply_differential_privacy(&entry, &context)
+        .await?;
 
     // Check remaining budget (should be less)
-    let remaining_budget = security_manager.privacy_manager
-        .get_remaining_budget(&context.user_id).await?;
+    let remaining_budget = security_manager
+        .privacy_manager
+        .get_remaining_budget(&context.user_id)
+        .await?;
     assert!(remaining_budget < initial_budget);
 
     Ok(())
@@ -380,40 +447,44 @@ async fn test_security_metrics_collection() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add admin role with all permissions
-    security_manager.access_control.add_role(
-        "admin".to_string(),
-        vec![
-            synaptic::security::Permission::ReadMemory,
-            synaptic::security::Permission::WriteMemory,
-            synaptic::security::Permission::ExecuteQueries,
-            synaptic::security::Permission::ViewAuditLogs,
-            synaptic::security::Permission::ManageUsers
-        ]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "admin".to_string(),
+            vec![
+                synaptic::security::Permission::ReadMemory,
+                synaptic::security::Permission::WriteMemory,
+                synaptic::security::Permission::ExecuteQueries,
+                synaptic::security::Permission::ViewAuditLogs,
+                synaptic::security::Permission::ManageUsers,
+            ],
+        )
+        .await?;
 
     // Authenticate admin user properly
-    let context = create_authenticated_context(&mut security_manager, "metrics_user", "adminpass123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "metrics_user", "adminpass123").await?;
 
     // Perform various operations to generate metrics
     let entry = MemoryEntry::new(
         "metrics_test".to_string(),
         "Test data for metrics collection".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // Encryption operation
     let _encrypted = security_manager.encrypt_memory(&entry, &context).await?;
 
     // Privacy operation
-    let _privatized = security_manager.privacy_manager
-        .apply_differential_privacy(&entry, &context).await?;
+    let _privatized = security_manager
+        .privacy_manager
+        .apply_differential_privacy(&entry, &context)
+        .await?;
 
     // Zero-knowledge operation
-    let _proof = security_manager.generate_access_proof(
-        "metrics_test",
-        &context,
-        AccessType::Read
-    ).await?;
+    let _proof = security_manager
+        .generate_access_proof("metrics_test", &context, AccessType::Read)
+        .await?;
 
     // Collect metrics
     let metrics = security_manager.get_security_metrics(&context).await?;
@@ -421,7 +492,7 @@ async fn test_security_metrics_collection() -> Result<(), Box<dyn Error>> {
     // Verify metrics are collected
     assert!(metrics.encryption_metrics.total_homomorphic_encryptions > 0);
     assert!(metrics.privacy_metrics.total_privatizations > 0);
-    
+
     if let Some(ref zk_metrics) = metrics.zero_knowledge_metrics {
         assert!(zk_metrics.total_proofs_generated > 0);
     }
@@ -443,55 +514,62 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
     let mut security_manager = SecurityManager::new(security_config).await?;
 
     // Add admin role with all permissions
-    security_manager.access_control.add_role(
-        "admin".to_string(),
-        vec![
-            synaptic::security::Permission::ReadMemory,
-            synaptic::security::Permission::WriteMemory,
-            synaptic::security::Permission::ExecuteQueries,
-            synaptic::security::Permission::ViewAuditLogs,
-            synaptic::security::Permission::ManageUsers
-        ]
-    ).await?;
+    security_manager
+        .access_control
+        .add_role(
+            "admin".to_string(),
+            vec![
+                synaptic::security::Permission::ReadMemory,
+                synaptic::security::Permission::WriteMemory,
+                synaptic::security::Permission::ExecuteQueries,
+                synaptic::security::Permission::ViewAuditLogs,
+                synaptic::security::Permission::ManageUsers,
+            ],
+        )
+        .await?;
 
     // Authenticate admin user properly
-    let context = create_authenticated_context(&mut security_manager, "workflow_user", "adminpass123").await?;
+    let context =
+        create_authenticated_context(&mut security_manager, "workflow_user", "adminpass123")
+            .await?;
 
     // 1. Create sensitive data
     let sensitive_entry = MemoryEntry::new(
         "workflow_test".to_string(),
         "Highly sensitive financial data: $1,000,000 budget allocation".to_string(),
-        MemoryType::LongTerm
+        MemoryType::LongTerm,
     );
 
     // 2. Apply differential privacy
-    let privatized_entry = security_manager.privacy_manager
-        .apply_differential_privacy(&sensitive_entry, &context).await?;
+    let privatized_entry = security_manager
+        .privacy_manager
+        .apply_differential_privacy(&sensitive_entry, &context)
+        .await?;
 
     // 3. Encrypt with homomorphic encryption
-    let encrypted_entry = security_manager.encrypt_memory(&privatized_entry, &context).await?;
+    let encrypted_entry = security_manager
+        .encrypt_memory(&privatized_entry, &context)
+        .await?;
     assert!(encrypted_entry.is_homomorphic);
 
     // 4. Generate zero-knowledge proof for access
-    let access_proof = security_manager.generate_access_proof(
-        "workflow_test",
-        &context,
-        AccessType::Read
-    ).await?;
+    let access_proof = security_manager
+        .generate_access_proof("workflow_test", &context, AccessType::Read)
+        .await?;
 
     // 5. Generate content proof
-    let content_proof = security_manager.generate_content_proof(
-        &sensitive_entry,
-        ContentPredicate::ContainsKeyword("financial".to_string()),
-        &context
-    ).await?;
+    let content_proof = security_manager
+        .generate_content_proof(
+            &sensitive_entry,
+            ContentPredicate::ContainsKeyword("financial".to_string()),
+            &context,
+        )
+        .await?;
 
     // 6. Perform secure computation
-    let computation_result = security_manager.secure_compute(
-        &[encrypted_entry.clone()],
-        SecureOperation::Count,
-        &context
-    ).await?;
+    let computation_result = security_manager
+        .secure_compute(&[encrypted_entry.clone()], SecureOperation::Count, &context)
+        .await?;
 
     // 7. Verify all operations completed successfully
     assert!(!access_proof.id.is_empty());
@@ -500,9 +578,14 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
 
     // 8. Collect final metrics
     let final_metrics = security_manager.get_security_metrics(&context).await?;
-    assert!(final_metrics.encryption_metrics.total_homomorphic_encryptions > 0);
+    assert!(
+        final_metrics
+            .encryption_metrics
+            .total_homomorphic_encryptions
+            > 0
+    );
     assert!(final_metrics.privacy_metrics.total_privatizations > 0);
-    
+
     if let Some(ref zk_metrics) = final_metrics.zero_knowledge_metrics {
         assert!(zk_metrics.total_proofs_generated >= 2); // Access + content proofs
     }

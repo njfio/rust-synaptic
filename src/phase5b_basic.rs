@@ -111,12 +111,12 @@ pub struct MultiModalMetadata {
     /// Extracted features from content analysis
     pub extracted_features: HashMap<String, serde_json::Value>,
 }
+use pdf_extract;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use std::io::Read;
-use pdf_extract;
 
 /// Basic document and data memory manager for Phase 5B
 pub struct BasicDocumentDataManager {
@@ -152,10 +152,17 @@ impl Default for DocumentDataConfig {
             enable_batch_processing: true,
             max_batch_size: 100,
             supported_extensions: vec![
-                "pdf".to_string(), "doc".to_string(), "docx".to_string(),
-                "md".to_string(), "txt".to_string(), "html".to_string(),
-                "csv".to_string(), "json".to_string(), "xlsx".to_string(),
-                "tsv".to_string(), "xml".to_string(),
+                "pdf".to_string(),
+                "doc".to_string(),
+                "docx".to_string(),
+                "md".to_string(),
+                "txt".to_string(),
+                "html".to_string(),
+                "csv".to_string(),
+                "json".to_string(),
+                "xlsx".to_string(),
+                "tsv".to_string(),
+                "xml".to_string(),
             ],
         }
     }
@@ -216,19 +223,22 @@ pub struct BatchProcessingResult {
 pub trait BasicDocumentDataAdapter: Send + Sync {
     /// Store processed document/data memory
     fn store_memory(&mut self, memory: &MultiModalMemory) -> Result<(), SynapticError>;
-    
+
     /// Retrieve memory by ID
     fn get_memory(&self, id: &MemoryId) -> Result<Option<MultiModalMemory>, SynapticError>;
-    
+
     /// Search memories by content type
-    fn search_by_type(&self, content_type: &ContentType) -> Result<Vec<MultiModalMemory>, SynapticError>;
-    
+    fn search_by_type(
+        &self,
+        content_type: &ContentType,
+    ) -> Result<Vec<MultiModalMemory>, SynapticError>;
+
     /// Get all stored memories
     fn get_all_memories(&self) -> Result<Vec<MultiModalMemory>, SynapticError>;
-    
+
     /// Delete memory by ID
     fn delete_memory(&mut self, id: &MemoryId) -> Result<bool, SynapticError>;
-    
+
     /// Get storage statistics
     fn get_stats(&self) -> Result<StorageStats, SynapticError>;
 }
@@ -265,37 +275,46 @@ impl BasicDocumentDataAdapter for BasicMemoryDocumentDataAdapter {
         self.memories.insert(memory.id.clone(), memory.clone());
         Ok(())
     }
-    
+
     fn get_memory(&self, id: &MemoryId) -> Result<Option<MultiModalMemory>, SynapticError> {
         Ok(self.memories.get(id).cloned())
     }
-    
-    fn search_by_type(&self, content_type: &ContentType) -> Result<Vec<MultiModalMemory>, SynapticError> {
-        let results = self.memories.values()
+
+    fn search_by_type(
+        &self,
+        content_type: &ContentType,
+    ) -> Result<Vec<MultiModalMemory>, SynapticError> {
+        let results = self
+            .memories
+            .values()
             .filter(|memory| &memory.content_type == content_type)
             .cloned()
             .collect();
         Ok(results)
     }
-    
+
     fn get_all_memories(&self) -> Result<Vec<MultiModalMemory>, SynapticError> {
         Ok(self.memories.values().cloned().collect())
     }
-    
+
     fn delete_memory(&mut self, id: &MemoryId) -> Result<bool, SynapticError> {
         Ok(self.memories.remove(id).is_some())
     }
-    
+
     fn get_stats(&self) -> Result<StorageStats, SynapticError> {
         let total_memories = self.memories.len();
-        let total_size = self.memories.values()
+        let total_size = self
+            .memories
+            .values()
             .map(|m| m.primary_content.len() as u64)
             .sum();
-        
+
         let mut memories_by_type = HashMap::new();
         for memory in self.memories.values() {
             let type_key = match &memory.content_type {
-                ContentType::Document { format, .. } => format!("document_{}", format.to_lowercase()),
+                ContentType::Document { format, .. } => {
+                    format!("document_{}", format.to_lowercase())
+                }
                 ContentType::Data { format, .. } => format!("data_{}", format.to_lowercase()),
                 ContentType::Image { format, .. } => format!("image_{}", format.to_lowercase()),
                 ContentType::Audio { format, .. } => format!("audio_{}", format.to_lowercase()),
@@ -304,7 +323,7 @@ impl BasicDocumentDataAdapter for BasicMemoryDocumentDataAdapter {
             };
             *memories_by_type.entry(type_key).or_insert(0) += 1;
         }
-        
+
         Ok(StorageStats {
             total_memories,
             total_size,
@@ -321,37 +340,43 @@ impl BasicDocumentDataManager {
             config: DocumentDataConfig::default(),
         }
     }
-    
+
     /// Create with custom configuration
-    pub fn with_config(adapter: Box<dyn BasicDocumentDataAdapter>, config: DocumentDataConfig) -> Self {
-        Self {
-            adapter,
-            config,
-        }
+    pub fn with_config(
+        adapter: Box<dyn BasicDocumentDataAdapter>,
+        config: DocumentDataConfig,
+    ) -> Self {
+        Self { adapter, config }
     }
-    
+
     /// Process a single file
-    pub fn process_file<P: AsRef<Path>>(&mut self, file_path: P) -> Result<ProcessingResult, SynapticError> {
+    pub fn process_file<P: AsRef<Path>>(
+        &mut self,
+        file_path: P,
+    ) -> Result<ProcessingResult, SynapticError> {
         let start_time = std::time::Instant::now();
         let path = file_path.as_ref();
-        
+
         // Check if file exists
         if !path.exists() {
-            return Err(SynapticError::storage(
-                format!("File does not exist: {}", path.display())
-            ));
+            return Err(SynapticError::storage(format!(
+                "File does not exist: {}",
+                path.display()
+            )));
         }
 
         // Check file extension
-        let extension = path.extension()
+        let extension = path
+            .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("")
             .to_lowercase();
 
         if !self.config.supported_extensions.contains(&extension) {
-            return Err(SynapticError::configuration(
-                format!("Unsupported file extension: {}", extension)
-            ));
+            return Err(SynapticError::configuration(format!(
+                "Unsupported file extension: {}",
+                extension
+            )));
         }
 
         // Read file content
@@ -360,17 +385,20 @@ impl BasicDocumentDataManager {
 
         // Check file size
         if content.len() > self.config.max_file_size {
-            return Err(SynapticError::configuration(
-                format!("File size {} exceeds maximum {}", content.len(), self.config.max_file_size)
-            ));
+            return Err(SynapticError::configuration(format!(
+                "File size {} exceeds maximum {}",
+                content.len(),
+                self.config.max_file_size
+            )));
         }
-        
+
         // Detect content type
         let content_type = self.detect_content_type(path, &content)?;
-        
+
         // Extract content and metadata
-        let (extracted_content, metadata) = self.extract_content_and_metadata(&content, &content_type)?;
-        
+        let (extracted_content, metadata) =
+            self.extract_content_and_metadata(&content, &content_type)?;
+
         // Create memory entry
         let memory_id = Uuid::new_v4().to_string();
         let memory = MultiModalMemory {
@@ -378,7 +406,12 @@ impl BasicDocumentDataManager {
             content_type: content_type.clone(),
             primary_content: content.clone(),
             metadata: MultiModalMetadata {
-                title: Some(path.file_name().unwrap_or_default().to_string_lossy().to_string()),
+                title: Some(
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                ),
                 description: metadata.summary.clone(),
                 tags: metadata.keywords.clone(),
                 quality_score: metadata.quality_score,
@@ -388,16 +421,25 @@ impl BasicDocumentDataManager {
             },
             extracted_features: {
                 let mut features = HashMap::new();
-                features.insert("file_path".to_string(), serde_json::to_value(path.to_string_lossy().to_string())?);
-                features.insert("extracted_content".to_string(), serde_json::to_value(extracted_content)?);
-                features.insert("processing_metadata".to_string(), serde_json::to_value(&metadata)?);
+                features.insert(
+                    "file_path".to_string(),
+                    serde_json::to_value(path.to_string_lossy().to_string())?,
+                );
+                features.insert(
+                    "extracted_content".to_string(),
+                    serde_json::to_value(extracted_content)?,
+                );
+                features.insert(
+                    "processing_metadata".to_string(),
+                    serde_json::to_value(&metadata)?,
+                );
                 features
             },
             cross_modal_links: Vec::new(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
-        
+
         // Store memory
         self.adapter.store_memory(&memory)?;
 
@@ -405,7 +447,7 @@ impl BasicDocumentDataManager {
         std::thread::sleep(std::time::Duration::from_millis(1));
 
         let processing_time = start_time.elapsed();
-        
+
         Ok(ProcessingResult {
             memory_id,
             content_type,
@@ -415,34 +457,38 @@ impl BasicDocumentDataManager {
             errors: Vec::new(),
         })
     }
-    
+
     /// Process multiple files in a directory
-    pub fn process_directory<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<BatchProcessingResult, SynapticError> {
+    pub fn process_directory<P: AsRef<Path>>(
+        &mut self,
+        dir_path: P,
+    ) -> Result<BatchProcessingResult, SynapticError> {
         let start_time = std::time::Instant::now();
         let path = dir_path.as_ref();
-        
+
         if !path.exists() || !path.is_dir() {
-            return Err(SynapticError::storage(
-                format!("Directory does not exist: {}", path.display())
-            ));
+            return Err(SynapticError::storage(format!(
+                "Directory does not exist: {}",
+                path.display()
+            )));
         }
-        
+
         // Discover files
         let mut files = Vec::new();
         self.discover_files_recursive(path, &mut files)?;
-        
+
         // Process files in batches
         let mut results = Vec::new();
         let mut successful_files = 0;
         let mut failed_files = 0;
         let mut file_type_distribution = HashMap::new();
-        
+
         for chunk in files.chunks(self.config.max_batch_size) {
             for file_path in chunk {
                 match self.process_file(file_path) {
                     Ok(result) => {
                         successful_files += 1;
-                        
+
                         // Update file type distribution
                         let type_key = match &result.content_type {
                             ContentType::Document { format, .. } => format.clone(),
@@ -450,7 +496,7 @@ impl BasicDocumentDataManager {
                             _ => "other".to_string(),
                         };
                         *file_type_distribution.entry(type_key).or_insert(0) += 1;
-                        
+
                         results.push(result);
                     }
                     Err(e) => {
@@ -474,9 +520,9 @@ impl BasicDocumentDataManager {
                 }
             }
         }
-        
+
         let processing_duration = start_time.elapsed();
-        
+
         Ok(BatchProcessingResult {
             total_files: files.len(),
             successful_files,
@@ -488,19 +534,28 @@ impl BasicDocumentDataManager {
     }
 
     /// Discover files recursively in a directory
-    fn discover_files_recursive(&self, dir_path: &Path, files: &mut Vec<PathBuf>) -> Result<(), SynapticError> {
+    fn discover_files_recursive(
+        &self,
+        dir_path: &Path,
+        files: &mut Vec<PathBuf>,
+    ) -> Result<(), SynapticError> {
         let entries = std::fs::read_dir(dir_path)
             .map_err(|e| SynapticError::storage(format!("Failed to read directory: {}", e)))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| SynapticError::storage(format!("Failed to read entry: {}", e)))?;
+            let entry = entry
+                .map_err(|e| SynapticError::storage(format!("Failed to read entry: {}", e)))?;
             let path = entry.path();
 
             if path.is_file() {
                 // Check if file extension is supported
                 if let Some(extension) = path.extension() {
                     if let Some(ext_str) = extension.to_str() {
-                        if self.config.supported_extensions.contains(&ext_str.to_lowercase()) {
+                        if self
+                            .config
+                            .supported_extensions
+                            .contains(&ext_str.to_lowercase())
+                        {
                             files.push(path);
                         }
                     }
@@ -515,8 +570,13 @@ impl BasicDocumentDataManager {
     }
 
     /// Detect content type from file path and content
-    fn detect_content_type(&self, file_path: &Path, content: &[u8]) -> Result<ContentType, SynapticError> {
-        let extension = file_path.extension()
+    fn detect_content_type(
+        &self,
+        file_path: &Path,
+        content: &[u8],
+    ) -> Result<ContentType, SynapticError> {
+        let extension = file_path
+            .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("")
             .to_lowercase();
@@ -591,14 +651,14 @@ impl BasicDocumentDataManager {
     }
 
     /// Extract content and metadata from file
-    fn extract_content_and_metadata(&self, content: &[u8], content_type: &ContentType) -> Result<(String, ProcessingMetadata), SynapticError> {
+    fn extract_content_and_metadata(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> Result<(String, ProcessingMetadata), SynapticError> {
         match content_type {
-            ContentType::Document { format, .. } => {
-                self.extract_document_content(content, format)
-            }
-            ContentType::Data { format, .. } => {
-                self.extract_data_content(content, format)
-            }
+            ContentType::Document { format, .. } => self.extract_document_content(content, format),
+            ContentType::Data { format, .. } => self.extract_data_content(content, format),
             _ => {
                 // Default text extraction
                 let text = String::from_utf8_lossy(content).to_string();
@@ -616,15 +676,19 @@ impl BasicDocumentDataManager {
     }
 
     /// Extract content from document formats
-    fn extract_document_content(&self, content: &[u8], format: &str) -> Result<(String, ProcessingMetadata), SynapticError> {
+    fn extract_document_content(
+        &self,
+        content: &[u8],
+        format: &str,
+    ) -> Result<(String, ProcessingMetadata), SynapticError> {
         let text = match format {
-            "PDF" => {
-                pdf_extract::extract_text_from_mem(content)
-                    .map_err(|e| SynapticError::storage(format!("Failed to extract PDF text: {e}")))?
-            }
+            "PDF" => pdf_extract::extract_text_from_mem(content)
+                .map_err(|e| SynapticError::storage(format!("Failed to extract PDF text: {e}")))?,
             "Word" => {
-                let mut archive = zip::ZipArchive::new(std::io::Cursor::new(content))
-                    .map_err(|e| SynapticError::storage(format!("Failed to open DOCX archive: {e}")))?;
+                let mut archive =
+                    zip::ZipArchive::new(std::io::Cursor::new(content)).map_err(|e| {
+                        SynapticError::storage(format!("Failed to open DOCX archive: {e}"))
+                    })?;
                 let mut doc_xml = String::new();
                 archive
                     .by_name("word/document.xml")
@@ -637,10 +701,16 @@ impl BasicDocumentDataManager {
                 let mut t = String::new();
                 loop {
                     match reader.read_event_into(&mut buf) {
-                        Ok(quick_xml::events::Event::Text(e)) => t.push_str(&e.unescape().unwrap_or_default()),
+                        Ok(quick_xml::events::Event::Text(e)) => {
+                            t.push_str(&e.unescape().unwrap_or_default())
+                        }
                         Ok(quick_xml::events::Event::Eof) => break,
                         Ok(_) => {}
-                        Err(e) => return Err(SynapticError::storage(format!("Failed to parse DOCX XML: {e}"))),
+                        Err(e) => {
+                            return Err(SynapticError::storage(format!(
+                                "Failed to parse DOCX XML: {e}"
+                            )))
+                        }
                     }
                     buf.clear();
                 }
@@ -649,7 +719,8 @@ impl BasicDocumentDataManager {
             "Markdown" => {
                 let markdown_text = String::from_utf8_lossy(content);
                 // Basic markdown processing (remove markdown syntax)
-                markdown_text.lines()
+                markdown_text
+                    .lines()
                     .map(|line| {
                         line.trim_start_matches('#')
                             .trim_start_matches('-')
@@ -685,8 +756,14 @@ impl BasicDocumentDataManager {
             properties: {
                 let mut props = HashMap::new();
                 props.insert("format".to_string(), serde_json::to_value(format)?);
-                props.insert("word_count".to_string(), serde_json::to_value(text.split_whitespace().count())?);
-                props.insert("char_count".to_string(), serde_json::to_value(text.chars().count())?);
+                props.insert(
+                    "word_count".to_string(),
+                    serde_json::to_value(text.split_whitespace().count())?,
+                );
+                props.insert(
+                    "char_count".to_string(),
+                    serde_json::to_value(text.chars().count())?,
+                );
                 props
             },
         };
@@ -695,7 +772,11 @@ impl BasicDocumentDataManager {
     }
 
     /// Extract content from data formats
-    fn extract_data_content(&self, content: &[u8], format: &str) -> Result<(String, ProcessingMetadata), SynapticError> {
+    fn extract_data_content(
+        &self,
+        content: &[u8],
+        format: &str,
+    ) -> Result<(String, ProcessingMetadata), SynapticError> {
         let text = String::from_utf8_lossy(content);
 
         let (summary, properties) = match format {
@@ -703,14 +784,21 @@ impl BasicDocumentDataManager {
                 let lines: Vec<&str> = text.lines().collect();
                 let row_count = lines.len();
                 let delimiter = if format == "CSV" { "," } else { "\t" };
-                let column_count = lines.first()
+                let column_count = lines
+                    .first()
                     .map(|line| line.split(delimiter).count())
                     .unwrap_or(0);
 
-                let summary = format!("Data file with {} rows and {} columns", row_count, column_count);
+                let summary = format!(
+                    "Data file with {} rows and {} columns",
+                    row_count, column_count
+                );
                 let mut props = HashMap::new();
                 props.insert("row_count".to_string(), serde_json::to_value(row_count)?);
-                props.insert("column_count".to_string(), serde_json::to_value(column_count)?);
+                props.insert(
+                    "column_count".to_string(),
+                    serde_json::to_value(column_count)?,
+                );
                 props.insert("delimiter".to_string(), serde_json::to_value(delimiter)?);
 
                 (summary, props)
@@ -718,8 +806,14 @@ impl BasicDocumentDataManager {
             "JSON" => {
                 let summary = format!("JSON data file with {} characters", text.len());
                 let mut props = HashMap::new();
-                props.insert("is_array".to_string(), serde_json::to_value(text.trim().starts_with('['))?);
-                props.insert("is_object".to_string(), serde_json::to_value(text.trim().starts_with('{'))?);
+                props.insert(
+                    "is_array".to_string(),
+                    serde_json::to_value(text.trim().starts_with('['))?,
+                );
+                props.insert(
+                    "is_object".to_string(),
+                    serde_json::to_value(text.trim().starts_with('{'))?,
+                );
 
                 (summary, props)
             }
@@ -766,7 +860,8 @@ impl BasicDocumentDataManager {
         }
 
         // Take first and last sentence as summary
-        format!("{}. {}",
+        format!(
+            "{}. {}",
             sentences.first().unwrap_or(&"").trim(),
             sentences.last().unwrap_or(&"").trim()
         )
@@ -781,7 +876,8 @@ impl BasicDocumentDataManager {
 
         let mut word_counts = HashMap::new();
         for word in words {
-            let clean_word = word.to_lowercase()
+            let clean_word = word
+                .to_lowercase()
                 .trim_matches(|c: char| !c.is_alphabetic())
                 .to_string();
             if !clean_word.is_empty() && !self.is_stop_word(&clean_word) {
@@ -802,11 +898,11 @@ impl BasicDocumentDataManager {
     /// Check if word is a stop word
     fn is_stop_word(&self, word: &str) -> bool {
         const STOP_WORDS: &[&str] = &[
-            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
-            "from", "up", "about", "into", "through", "during", "before", "after", "above",
-            "below", "between", "among", "this", "that", "these", "those", "is", "are", "was",
-            "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "must", "can", "shall", "a", "an",
+            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "from",
+            "up", "about", "into", "through", "during", "before", "after", "above", "below",
+            "between", "among", "this", "that", "these", "those", "is", "are", "was", "were", "be",
+            "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "must", "can", "shall", "a", "an",
         ];
         STOP_WORDS.contains(&word)
     }
@@ -817,7 +913,10 @@ impl BasicDocumentDataManager {
     }
 
     /// Search memories by content type
-    pub fn search_by_type(&self, content_type: &ContentType) -> Result<Vec<MultiModalMemory>, SynapticError> {
+    pub fn search_by_type(
+        &self,
+        content_type: &ContentType,
+    ) -> Result<Vec<MultiModalMemory>, SynapticError> {
         self.adapter.search_by_type(content_type)
     }
 

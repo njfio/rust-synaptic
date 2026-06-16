@@ -3,7 +3,9 @@
 //! Advanced data file processing capabilities for CSV, Parquet, Excel, and other structured data formats.
 //! Provides intelligent data analysis, schema detection, and statistical insights.
 
-use super::{ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult};
+use super::{
+    ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult,
+};
 use crate::error::SynapticError;
 use crate::memory::types::MemoryId;
 use serde::{Deserialize, Serialize};
@@ -38,10 +40,7 @@ pub enum DataFormat {
         object_count: u32,
     },
     /// TSV (Tab-Separated Values)
-    Tsv {
-        has_header: bool,
-        encoding: String,
-    },
+    Tsv { has_header: bool, encoding: String },
     /// Apache Arrow format
     Arrow {
         schema_version: u32,
@@ -291,7 +290,7 @@ impl DataMemoryProcessor {
             // Try to detect CSV/TSV/JSON from content
             let text = String::from_utf8_lossy(content);
             let first_line = text.lines().next().unwrap_or("");
-            
+
             if first_line.starts_with('{') || first_line.starts_with('[') {
                 Ok(DataFormat::Json {
                     is_array: first_line.starts_with('['),
@@ -319,15 +318,16 @@ impl DataMemoryProcessor {
     fn detect_csv_delimiter(&self, text: &str) -> char {
         let delimiters = [',', ';', '|', '\t'];
         let first_lines: Vec<&str> = text.lines().take(5).collect();
-        
+
         let mut best_delimiter = ',';
         let mut best_consistency = 0;
-        
+
         for &delimiter in &delimiters {
-            let counts: Vec<usize> = first_lines.iter()
+            let counts: Vec<usize> = first_lines
+                .iter()
                 .map(|line| line.matches(delimiter).count())
                 .collect();
-            
+
             if let Some(&first_count) = counts.first() {
                 let consistency = counts.iter().filter(|&&count| count == first_count).count();
                 if consistency > best_consistency && first_count > 0 {
@@ -336,7 +336,7 @@ impl DataMemoryProcessor {
                 }
             }
         }
-        
+
         best_delimiter
     }
 
@@ -346,34 +346,41 @@ impl DataMemoryProcessor {
         if lines.len() < 2 {
             return false;
         }
-        
+
         let first_line = lines[0];
         let second_line = lines[1];
-        
+
         // Simple heuristic: if first line has more text and second line has more numbers
-        let first_has_text = first_line.split(',').any(|field| {
-            field.trim().chars().any(|c| c.is_alphabetic())
-        });
-        
-        let second_has_numbers = second_line.split(',').any(|field| {
-            field.trim().parse::<f64>().is_ok()
-        });
-        
+        let first_has_text = first_line
+            .split(',')
+            .any(|field| field.trim().chars().any(|c| c.is_alphabetic()));
+
+        let second_has_numbers = second_line
+            .split(',')
+            .any(|field| field.trim().parse::<f64>().is_ok());
+
         first_has_text && second_has_numbers
     }
 
     /// Analyze data schema
-    pub async fn analyze_schema(&self, content: &[u8], format: &DataFormat) -> MultiModalResult<DataSchema> {
+    pub async fn analyze_schema(
+        &self,
+        content: &[u8],
+        format: &DataFormat,
+    ) -> MultiModalResult<DataSchema> {
         match format {
-            DataFormat::Csv { delimiter, has_header, .. } => {
-                self.analyze_csv_schema(content, *delimiter, *has_header).await
+            DataFormat::Csv {
+                delimiter,
+                has_header,
+                ..
+            } => {
+                self.analyze_csv_schema(content, *delimiter, *has_header)
+                    .await
             }
             DataFormat::Tsv { has_header, .. } => {
                 self.analyze_csv_schema(content, '\t', *has_header).await
             }
-            DataFormat::Json { .. } => {
-                self.analyze_json_schema(content).await
-            }
+            DataFormat::Json { .. } => self.analyze_json_schema(content).await,
             _ => {
                 // For other formats, return basic schema
                 Ok(DataSchema {
@@ -389,10 +396,15 @@ impl DataMemoryProcessor {
     }
 
     /// Analyze CSV schema
-    async fn analyze_csv_schema(&self, content: &[u8], delimiter: char, has_header: bool) -> MultiModalResult<DataSchema> {
+    async fn analyze_csv_schema(
+        &self,
+        content: &[u8],
+        delimiter: char,
+        has_header: bool,
+    ) -> MultiModalResult<DataSchema> {
         let text = String::from_utf8_lossy(content);
         let lines: Vec<&str> = text.lines().collect();
-        
+
         if lines.is_empty() {
             return Ok(DataSchema {
                 columns: Vec::new(),
@@ -403,13 +415,14 @@ impl DataMemoryProcessor {
                 foreign_keys: Vec::new(),
             });
         }
-        
+
         let header_line = if has_header { 0 } else { usize::MAX };
         let data_start = if has_header { 1 } else { 0 };
-        
+
         // Parse header or generate column names
         let column_names: Vec<String> = if has_header && !lines.is_empty() {
-            lines[0].split(delimiter)
+            lines[0]
+                .split(delimiter)
                 .map(|s| s.trim().to_string())
                 .collect()
         } else if !lines.is_empty() {
@@ -418,14 +431,15 @@ impl DataMemoryProcessor {
         } else {
             Vec::new()
         };
-        
+
         let column_count = column_names.len() as u32;
         let row_count = (lines.len() - data_start) as u64;
-        
+
         // Analyze each column
         let mut columns = Vec::new();
         for (col_idx, col_name) in column_names.iter().enumerate() {
-            let column_values: Vec<String> = lines.iter()
+            let column_values: Vec<String> = lines
+                .iter()
                 .skip(data_start)
                 .take(self.config.max_sample_rows)
                 .filter_map(|line| {
@@ -433,15 +447,16 @@ impl DataMemoryProcessor {
                     fields.get(col_idx).map(|s| s.trim().to_string())
                 })
                 .collect();
-            
+
             let column_info = self.analyze_column(&column_values, col_name).await?;
             columns.push(column_info);
         }
-        
-        let data_types: Vec<String> = columns.iter()
+
+        let data_types: Vec<String> = columns
+            .iter()
             .map(|col| format!("{:?}", col.data_type))
             .collect();
-        
+
         Ok(DataSchema {
             columns,
             row_count,
@@ -482,13 +497,16 @@ impl DataMemoryProcessor {
         let unique_count = unique_values.len() as u64;
 
         // Get sample values
-        let sample_values: Vec<String> = non_empty_values.iter()
+        let sample_values: Vec<String> = non_empty_values
+            .iter()
             .take(5)
             .map(|s| s.to_string())
             .collect();
 
         // Calculate statistics
-        let statistics = self.calculate_column_statistics(&non_empty_values, &data_type).await?;
+        let statistics = self
+            .calculate_column_statistics(&non_empty_values, &data_type)
+            .await?;
 
         Ok(ColumnInfo {
             name: name.to_string(),
@@ -523,20 +541,26 @@ impl DataMemoryProcessor {
         }
 
         // Check for booleans
-        let bool_count = sample.iter().filter(|v| {
-            let lower = v.to_lowercase();
-            matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no")
-        }).count();
+        let bool_count = sample
+            .iter()
+            .filter(|v| {
+                let lower = v.to_lowercase();
+                matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no")
+            })
+            .count();
         if bool_count as f64 / sample.len() as f64 > 0.8 {
             return DataType::Boolean;
         }
 
         // Check for dates
-        let date_count = sample.iter().filter(|v| {
-            chrono::DateTime::parse_from_rfc3339(v).is_ok() ||
-            chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").is_ok() ||
-            chrono::NaiveDate::parse_from_str(v, "%m/%d/%Y").is_ok()
-        }).count();
+        let date_count = sample
+            .iter()
+            .filter(|v| {
+                chrono::DateTime::parse_from_rfc3339(v).is_ok()
+                    || chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").is_ok()
+                    || chrono::NaiveDate::parse_from_str(v, "%m/%d/%Y").is_ok()
+            })
+            .count();
         if date_count as f64 / sample.len() as f64 > 0.8 {
             return DataType::Date;
         }
@@ -546,7 +570,11 @@ impl DataMemoryProcessor {
     }
 
     /// Calculate column statistics
-    async fn calculate_column_statistics(&self, values: &[&String], data_type: &DataType) -> MultiModalResult<ColumnStatistics> {
+    async fn calculate_column_statistics(
+        &self,
+        values: &[&String],
+        data_type: &DataType,
+    ) -> MultiModalResult<ColumnStatistics> {
         let mut stats = ColumnStatistics {
             min: None,
             max: None,
@@ -567,7 +595,8 @@ impl DataMemoryProcessor {
             *value_counts.entry(value.as_str()).or_insert(0) += 1;
         }
 
-        let mut distribution: Vec<(String, u64)> = value_counts.into_iter()
+        let mut distribution: Vec<(String, u64)> = value_counts
+            .into_iter()
             .map(|(k, v)| (k.to_string(), v))
             .collect();
         distribution.sort_by(|a, b| b.1.cmp(&a.1));
@@ -581,33 +610,37 @@ impl DataMemoryProcessor {
         // Calculate numeric statistics if applicable
         match data_type {
             DataType::Integer | DataType::Float => {
-                let numeric_values: Vec<f64> = values.iter()
+                let numeric_values: Vec<f64> = values
+                    .iter()
                     .filter_map(|v| v.parse::<f64>().ok())
                     .collect();
 
                 if !numeric_values.is_empty() {
-                    stats.min = numeric_values.iter().min_by(|a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }).copied();
-                    stats.max = numeric_values.iter().max_by(|a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }).copied();
+                    stats.min = numeric_values
+                        .iter()
+                        .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                        .copied();
+                    stats.max = numeric_values
+                        .iter()
+                        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                        .copied();
 
                     let sum: f64 = numeric_values.iter().sum();
                     stats.mean = Some(sum / numeric_values.len() as f64);
 
                     if let Some(mean) = stats.mean {
-                        let variance: f64 = numeric_values.iter()
+                        let variance: f64 = numeric_values
+                            .iter()
                             .map(|x| (x - mean).powi(2))
-                            .sum::<f64>() / numeric_values.len() as f64;
+                            .sum::<f64>()
+                            / numeric_values.len() as f64;
                         stats.std_dev = Some(variance.sqrt());
                     }
 
                     // Calculate median
                     let mut sorted_values = numeric_values.clone();
-                    sorted_values.sort_by(|a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    sorted_values
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     let len = sorted_values.len();
                     stats.median = if len % 2 == 0 {
                         Some((sorted_values[len / 2 - 1] + sorted_values[len / 2]) / 2.0)
@@ -655,7 +688,11 @@ impl DataMemoryProcessor {
     /// Detect data patterns
     #[tracing::instrument(skip(self, schema), fields(row_count = schema.row_count, column_count = schema.columns.len()))]
     pub async fn detect_patterns(&self, schema: &DataSchema) -> MultiModalResult<Vec<DataPattern>> {
-        tracing::debug!("Starting pattern detection for schema with {} rows and {} columns", schema.row_count, schema.columns.len());
+        tracing::debug!(
+            "Starting pattern detection for schema with {} rows and {} columns",
+            schema.row_count,
+            schema.columns.len()
+        );
         let mut patterns = Vec::new();
 
         // Check for missing data patterns
@@ -665,7 +702,11 @@ impl DataMemoryProcessor {
                 if missing_percentage > 0.1 {
                     patterns.push(DataPattern {
                         pattern_type: PatternType::Missing,
-                        description: format!("Column '{}' has {:.1}% missing values", column.name, missing_percentage * 100.0),
+                        description: format!(
+                            "Column '{}' has {:.1}% missing values",
+                            column.name,
+                            missing_percentage * 100.0
+                        ),
                         confidence: 0.9,
                         columns: vec![column.name.clone()],
                     });
@@ -680,7 +721,11 @@ impl DataMemoryProcessor {
                 if uniqueness < 0.1 && column.unique_count > 1 {
                     patterns.push(DataPattern {
                         pattern_type: PatternType::Duplicate,
-                        description: format!("Column '{}' has low uniqueness ({:.1}%)", column.name, uniqueness * 100.0),
+                        description: format!(
+                            "Column '{}' has low uniqueness ({:.1}%)",
+                            column.name,
+                            uniqueness * 100.0
+                        ),
                         confidence: 0.8,
                         columns: vec![column.name.clone()],
                     });
@@ -688,7 +733,10 @@ impl DataMemoryProcessor {
             }
         }
 
-        tracing::info!("Pattern detection completed: found {} patterns", patterns.len());
+        tracing::info!(
+            "Pattern detection completed: found {} patterns",
+            patterns.len()
+        );
         Ok(patterns)
     }
 
@@ -710,15 +758,24 @@ impl DataMemoryProcessor {
             insights.push("Large dataset suitable for statistical analysis".to_string());
         }
 
-        if schema.columns.iter().any(|col| matches!(col.data_type, DataType::Date | DataType::DateTime)) {
+        if schema
+            .columns
+            .iter()
+            .any(|col| matches!(col.data_type, DataType::Date | DataType::DateTime))
+        {
             insights.push("Contains temporal data suitable for time series analysis".to_string());
         }
 
-        let numeric_columns = schema.columns.iter()
+        let numeric_columns = schema
+            .columns
+            .iter()
             .filter(|col| matches!(col.data_type, DataType::Integer | DataType::Float))
             .count();
         if numeric_columns > 0 {
-            insights.push(format!("Contains {} numeric columns suitable for statistical analysis", numeric_columns));
+            insights.push(format!(
+                "Contains {} numeric columns suitable for statistical analysis",
+                numeric_columns
+            ));
         }
 
         let mut recommendations = Vec::new();
@@ -729,8 +786,15 @@ impl DataMemoryProcessor {
             if column.null_count > 0 {
                 let missing_percentage = column.null_count as f64 / schema.row_count as f64;
                 if missing_percentage > 0.2 {
-                    quality_issues.push(format!("Column '{}' has high missing data ({:.1}%)", column.name, missing_percentage * 100.0));
-                    recommendations.push(format!("Consider imputation or removal of column '{}'", column.name));
+                    quality_issues.push(format!(
+                        "Column '{}' has high missing data ({:.1}%)",
+                        column.name,
+                        missing_percentage * 100.0
+                    ));
+                    recommendations.push(format!(
+                        "Consider imputation or removal of column '{}'",
+                        column.name
+                    ));
                 }
             }
         }
@@ -750,12 +814,18 @@ impl DataMemoryProcessor {
 
 #[async_trait::async_trait]
 impl MultiModalProcessor for DataMemoryProcessor {
-    async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+    async fn process(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory> {
         let start_time = std::time::Instant::now();
         if content.len() > self.config.max_file_size {
-            return Err(SynapticError::ProcessingError(
-                format!("Data file size {} exceeds maximum {}", content.len(), self.config.max_file_size)
-            ));
+            return Err(SynapticError::ProcessingError(format!(
+                "Data file size {} exceeds maximum {}",
+                content.len(),
+                self.config.max_file_size
+            )));
         }
 
         // Detect data format
@@ -807,7 +877,10 @@ impl MultiModalProcessor for DataMemoryProcessor {
 
         // Create multi-modal metadata
         let metadata = MultiModalMetadata {
-            title: Some(format!("Data file with {} rows", final_metadata.schema.row_count)),
+            title: Some(format!(
+                "Data file with {} rows",
+                final_metadata.schema.row_count
+            )),
             description: Some(final_metadata.summary.description.clone()),
             tags: final_metadata.schema.data_types.clone(),
             quality_score: final_metadata.quality_score,
@@ -824,7 +897,10 @@ impl MultiModalProcessor for DataMemoryProcessor {
             metadata,
             extracted_features: {
                 let mut features = HashMap::new();
-                features.insert("data_metadata".to_string(), serde_json::to_value(final_metadata)?);
+                features.insert(
+                    "data_metadata".to_string(),
+                    serde_json::to_value(final_metadata)?,
+                );
                 features
             },
             cross_modal_links: Vec::new(),
@@ -835,7 +911,11 @@ impl MultiModalProcessor for DataMemoryProcessor {
         Ok(memory)
     }
 
-    async fn extract_features(&self, content: &[u8], _content_type: &ContentType) -> MultiModalResult<Vec<f32>> {
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        _content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>> {
         // Extract basic features from data
         let format = self.detect_data_format(content)?;
         let schema = self.analyze_schema(content, &format).await?;
@@ -843,23 +923,35 @@ impl MultiModalProcessor for DataMemoryProcessor {
         // Create feature vector
         let row_count = schema.row_count as f32;
         let column_count = schema.column_count as f32;
-        let numeric_columns = schema.columns.iter()
+        let numeric_columns = schema
+            .columns
+            .iter()
             .filter(|col| matches!(col.data_type, DataType::Integer | DataType::Float))
             .count() as f32;
-        let text_columns = schema.columns.iter()
+        let text_columns = schema
+            .columns
+            .iter()
             .filter(|col| matches!(col.data_type, DataType::String))
             .count() as f32;
 
         Ok(vec![row_count, column_count, numeric_columns, text_columns])
     }
 
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32> {
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32> {
         if features1.len() != features2.len() {
             return Ok(0.0);
         }
 
         // Cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -870,7 +962,11 @@ impl MultiModalProcessor for DataMemoryProcessor {
         }
     }
 
-    async fn search_similar(&self, query_features: &[f32], candidates: &[MultiModalMemory]) -> MultiModalResult<Vec<(MemoryId, f32)>> {
+    async fn search_similar(
+        &self,
+        query_features: &[f32],
+        candidates: &[MultiModalMemory],
+    ) -> MultiModalResult<Vec<(MemoryId, f32)>> {
         let mut results = Vec::new();
 
         for memory in candidates {
@@ -884,9 +980,7 @@ impl MultiModalProcessor for DataMemoryProcessor {
         }
 
         // Sort by similarity (highest first)
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)
     }

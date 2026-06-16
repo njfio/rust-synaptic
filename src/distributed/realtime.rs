@@ -148,7 +148,7 @@ impl RealtimeSync {
     /// Create a new real-time sync server
     pub fn new(config: RealtimeConfig) -> Self {
         let (update_sender, _) = broadcast::channel(10000);
-        
+
         Self {
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -157,7 +157,7 @@ impl RealtimeSync {
             sequence_counter: Arc::new(RwLock::new(0)),
         }
     }
-    
+
     /// Start the real-time sync server
     pub async fn start(&self) -> Result<()> {
         let addr = format!("127.0.0.1:{}", self.config.websocket_port);
@@ -165,23 +165,23 @@ impl RealtimeSync {
             .map_err(|e| MemoryError::NetworkError { 
                 message: format!("Failed to bind to {}: {}", addr, e) 
             })?;
-        
+
         tracing::info!(
             component = "realtime_sync",
             operation = "start_server",
             address = %addr,
             "Real-time sync server listening"
         );
-        
+
         // Start heartbeat task
         self.start_heartbeat_task();
-        
+
         // Accept connections
         while let Ok((stream, addr)) = listener.accept().await {
             let connections = Arc::clone(&self.connections);
             let stats = Arc::clone(&self.stats);
             let update_sender = self.update_sender.clone();
-            
+
             tokio::spawn(async move {
                 if let Err(e) = Self::handle_connection(stream, addr, connections, stats, update_sender).await {
                     tracing::error!(
@@ -194,10 +194,10 @@ impl RealtimeSync {
                 }
             });
         }
-        
+
         Ok(())
     }
-    
+
     /// Handle a new WebSocket connection
     async fn handle_connection(
         stream: tokio::net::TcpStream,
@@ -210,10 +210,10 @@ impl RealtimeSync {
             .map_err(|e| MemoryError::NetworkError { 
                 message: format!("WebSocket handshake failed: {}", e) 
             })?;
-        
+
         let client_id = ClientId::new();
         let (message_tx, mut message_rx) = mpsc::unbounded_channel();
-        
+
         let metadata = ConnectionMetadata {
             client_id,
             remote_addr: addr,
@@ -222,7 +222,7 @@ impl RealtimeSync {
             user_agent: None,
             protocol_version: "1.0".to_string(),
         };
-        
+
         let subscription = Subscription {
             client_id,
             update_types: vec![
@@ -234,7 +234,7 @@ impl RealtimeSync {
             node_filters: Vec::new(),
             min_sequence: 0,
         };
-        
+
         let connection = ClientConnection {
             client_id,
             websocket: Arc::new(RwLock::new(websocket)),
@@ -242,20 +242,20 @@ impl RealtimeSync {
             metadata,
             message_queue: message_tx,
         };
-        
+
         // Register connection
         {
             let mut conns = connections.write();
             conns.insert(client_id, connection);
         }
-        
+
         // Update statistics
         {
             let mut stats_guard = stats.write();
             stats_guard.active_connections += 1;
             stats_guard.total_connections += 1;
         }
-        
+
         tracing::info!(
             component = "realtime_sync",
             operation = "client_connected",
@@ -263,10 +263,10 @@ impl RealtimeSync {
             client_addr = %addr,
             "New client connected"
         );
-        
+
         // Subscribe to updates
         let mut update_receiver = update_sender.subscribe();
-        
+
         // Handle messages
         tokio::select! {
             // Send updates to client
@@ -277,7 +277,7 @@ impl RealtimeSync {
                     }
                 }
             } => {},
-            
+
             // Process outgoing messages
             _ = async {
                 while let Some(update) = message_rx.recv().await {
@@ -301,47 +301,47 @@ impl RealtimeSync {
                 }
             } => {},
         }
-        
+
         // Clean up connection
         {
             let mut conns = connections.write();
             conns.remove(&client_id);
         }
-        
+
         {
             let mut stats_guard = stats.write();
             stats_guard.active_connections = stats_guard.active_connections.saturating_sub(1);
         }
-        
+
         tracing::info!(
             component = "realtime_sync",
             operation = "client_disconnected",
             client_id = %client_id,
             "Client disconnected"
         );
-        
+
         Ok(())
     }
-    
+
     /// Broadcast an update to all connected clients
     pub async fn broadcast_update(&self, event: &EventEnvelope) -> Result<()> {
         let update = self.event_to_update(event)?;
-        
+
         // Send to all subscribers
         if let Err(_) = self.update_sender.send(update.clone()) {
             // No subscribers, that's okay
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
             stats.updates_sent += 1;
             stats.last_update_time = Some(Utc::now());
         }
-        
+
         Ok(())
     }
-    
+
     /// Convert an event to a live update
     fn event_to_update(&self, envelope: &EventEnvelope) -> Result<LiveUpdate> {
         let sequence = {
@@ -349,7 +349,7 @@ impl RealtimeSync {
             *counter += 1;
             *counter
         };
-        
+
         let (update_type, affected_memories, changes) = match &envelope.event {
             MemoryEvent::MemoryCreated { memory_id, key, content, .. } => {
                 let changes = ChangeSet {
@@ -367,7 +367,7 @@ impl RealtimeSync {
                 };
                 (UpdateType::MemoryCreated, vec![*memory_id], changes)
             },
-            
+
             MemoryEvent::MemoryUpdated { memory_id, key, old_content, new_content, .. } => {
                 let changes = ChangeSet {
                     changes: vec![Change {
@@ -381,7 +381,7 @@ impl RealtimeSync {
                 };
                 (UpdateType::MemoryUpdated, vec![*memory_id], changes)
             },
-            
+
             MemoryEvent::MemoryDeleted { memory_id, key, .. } => {
                 let changes = ChangeSet {
                     changes: vec![Change {
@@ -395,7 +395,7 @@ impl RealtimeSync {
                 };
                 (UpdateType::MemoryDeleted, vec![*memory_id], changes)
             },
-            
+
             _ => {
                 // Handle other event types
                 let changes = ChangeSet {
@@ -406,7 +406,7 @@ impl RealtimeSync {
                 (UpdateType::NodeStatusChanged, Vec::new(), changes)
             },
         };
-        
+
         Ok(LiveUpdate {
             update_id: Uuid::new_v4(),
             update_type,
@@ -417,20 +417,20 @@ impl RealtimeSync {
             sequence,
         })
     }
-    
+
     /// Start heartbeat task to keep connections alive
     fn start_heartbeat_task(&self) {
         let connections = Arc::clone(&self.connections);
         let heartbeat_interval = self.config.heartbeat_interval_ms;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(
                 tokio::time::Duration::from_millis(heartbeat_interval)
             );
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Send heartbeat to all connections
                 let conns = connections.read();
                 for (client_id, _connection) in conns.iter() {
@@ -445,12 +445,12 @@ impl RealtimeSync {
             }
         });
     }
-    
+
     /// Get real-time sync statistics
     pub fn get_stats(&self) -> RealtimeStats {
         self.stats.read().clone()
     }
-    
+
     /// Get list of connected clients
     pub fn get_connected_clients(&self) -> Vec<ClientId> {
         self.connections.read().keys().cloned().collect()
@@ -478,7 +478,7 @@ mod tests {
     fn test_client_id_creation() {
         let client1 = ClientId::new();
         let client2 = ClientId::new();
-        
+
         assert_ne!(client1, client2);
         assert_ne!(client1.to_string(), client2.to_string());
     }
@@ -487,7 +487,7 @@ mod tests {
     fn test_realtime_sync_creation() {
         let config = RealtimeConfig::default();
         let sync = RealtimeSync::new(config);
-        
+
         let stats = sync.get_stats();
         assert_eq!(stats.active_connections, 0);
         assert_eq!(stats.total_connections, 0);
@@ -497,7 +497,7 @@ mod tests {
     fn test_event_to_update_conversion() {
         let config = RealtimeConfig::default();
         let sync = RealtimeSync::new(config);
-        
+
         let event = MemoryEvent::MemoryCreated {
             memory_id: Uuid::new_v4(),
             key: "test".to_string(),
@@ -506,10 +506,10 @@ mod tests {
             node_id: NodeId::new(),
             timestamp: Utc::now(),
         };
-        
+
         let metadata = OperationMetadata::new(NodeId::new(), ConsistencyLevel::Eventual);
         let envelope = crate::distributed::events::EventEnvelope::new(event, metadata);
-        
+
         let update = sync.event_to_update(&envelope).expect("Failed to convert event to update in test");
 
         assert!(matches!(update.update_type, UpdateType::MemoryCreated));

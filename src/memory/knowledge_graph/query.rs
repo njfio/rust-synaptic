@@ -1,6 +1,6 @@
 //! Graph querying and traversal functionality
 
-use super::types::{NodeType, RelationshipType, GraphPath};
+use super::types::{GraphPath, NodeType, RelationshipType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -190,7 +190,9 @@ impl GraphQueryBuilder {
 
     /// Match nodes with a specific property value
     pub fn match_nodes_with_property(mut self, key: &str, value: &str) -> Self {
-        self.query.property_filters.insert(key.to_string(), value.to_string());
+        self.query
+            .property_filters
+            .insert(key.to_string(), value.to_string());
         self
     }
 

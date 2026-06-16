@@ -3,10 +3,10 @@
 // Provides comprehensive benchmarking capabilities for performance
 // measurement, regression detection, and optimization validation.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -27,41 +27,41 @@ impl BenchmarkSuite {
             baseline_results: HashMap::new(),
         }
     }
-    
+
     /// Add a benchmark to the suite
     pub fn add_benchmark(&mut self, benchmark: Benchmark) {
         self.benchmarks.push(benchmark);
     }
-    
+
     /// Run all benchmarks
     pub async fn run_all(&mut self) -> Result<Vec<BenchmarkResult>> {
         let mut results = Vec::new();
-        
+
         for benchmark in &self.benchmarks {
             let result = self.run_benchmark(benchmark).await?;
             results.push(result);
         }
-        
+
         self.results = results.clone();
         Ok(results)
     }
-    
+
     /// Run a specific benchmark
     pub async fn run_benchmark(&self, benchmark: &Benchmark) -> Result<BenchmarkResult> {
         let start_time = Instant::now();
         let mut measurements = Vec::new();
-        
+
         // Warm-up runs
         for _ in 0..benchmark.warmup_iterations {
             (benchmark.function)().await?;
         }
-        
+
         // Actual benchmark runs
         for iteration in 0..benchmark.iterations {
             let iteration_start = Instant::now();
-            
+
             (benchmark.function)().await?;
-            
+
             let iteration_duration = iteration_start.elapsed();
             measurements.push(Measurement {
                 iteration,
@@ -69,10 +69,10 @@ impl BenchmarkSuite {
                 timestamp: Utc::now(),
             });
         }
-        
+
         let total_duration = start_time.elapsed();
         let statistics = self.calculate_statistics(&measurements);
-        
+
         Ok(BenchmarkResult {
             id: Uuid::new_v4(),
             benchmark_name: benchmark.name.clone(),
@@ -85,25 +85,26 @@ impl BenchmarkSuite {
             metadata: benchmark.metadata.clone(),
         })
     }
-    
+
     /// Set baseline results for regression detection
     pub fn set_baseline(&mut self, results: Vec<BenchmarkResult>) {
         for result in results {
-            self.baseline_results.insert(result.benchmark_name.clone(), result);
+            self.baseline_results
+                .insert(result.benchmark_name.clone(), result);
         }
     }
-    
+
     /// Detect performance regressions
     pub fn detect_regressions(&self, threshold_percent: f64) -> Vec<PerformanceRegression> {
         let mut regressions = Vec::new();
-        
+
         for result in &self.results {
             if let Some(baseline) = self.baseline_results.get(&result.benchmark_name) {
                 let current_avg = result.statistics.mean_duration.as_nanos() as f64;
                 let baseline_avg = baseline.statistics.mean_duration.as_nanos() as f64;
-                
+
                 let regression_percent = ((current_avg - baseline_avg) / baseline_avg) * 100.0;
-                
+
                 if regression_percent > threshold_percent {
                     regressions.push(PerformanceRegression {
                         benchmark_name: result.benchmark_name.clone(),
@@ -121,14 +122,14 @@ impl BenchmarkSuite {
                 }
             }
         }
-        
+
         regressions
     }
-    
+
     /// Generate benchmark report
     pub fn generate_report(&self) -> BenchmarkReport {
         let regressions = self.detect_regressions(10.0); // 10% threshold
-        
+
         BenchmarkReport {
             timestamp: Utc::now(),
             total_benchmarks: self.benchmarks.len(),
@@ -137,36 +138,38 @@ impl BenchmarkSuite {
             summary: self.generate_summary(),
         }
     }
-    
+
     /// Calculate statistics from measurements
     fn calculate_statistics(&self, measurements: &[Measurement]) -> BenchmarkStatistics {
         if measurements.is_empty() {
             return BenchmarkStatistics::default();
         }
-        
+
         let mut durations: Vec<_> = measurements.iter().map(|m| m.duration).collect();
         durations.sort();
-        
+
         let total_duration: Duration = durations.iter().sum();
         let mean_duration = total_duration / durations.len() as u32;
-        
+
         let min_duration = durations[0];
         let max_duration = durations[durations.len() - 1];
-        
+
         let median_duration = durations[durations.len() / 2];
         let p95_duration = durations[(durations.len() * 95) / 100];
         let p99_duration = durations[(durations.len() * 99) / 100];
-        
+
         // Calculate standard deviation
-        let variance: f64 = durations.iter()
+        let variance: f64 = durations
+            .iter()
             .map(|d| {
                 let diff = d.as_nanos() as f64 - mean_duration.as_nanos() as f64;
                 diff * diff
             })
-            .sum::<f64>() / durations.len() as f64;
-        
+            .sum::<f64>()
+            / durations.len() as f64;
+
         let std_deviation = Duration::from_nanos(variance.sqrt() as u64);
-        
+
         BenchmarkStatistics {
             mean_duration,
             median_duration,
@@ -178,31 +181,36 @@ impl BenchmarkSuite {
             throughput_ops_per_sec: durations.len() as f64 / total_duration.as_secs_f64(),
         }
     }
-    
+
     /// Generate summary statistics
     fn generate_summary(&self) -> BenchmarkSummary {
         if self.results.is_empty() {
             return BenchmarkSummary::default();
         }
-        
-        let total_duration: Duration = self.results.iter()
-            .map(|r| r.total_duration)
-            .sum();
-        
-        let avg_throughput = self.results.iter()
+
+        let total_duration: Duration = self.results.iter().map(|r| r.total_duration).sum();
+
+        let avg_throughput = self
+            .results
+            .iter()
             .map(|r| r.statistics.throughput_ops_per_sec)
-            .sum::<f64>() / self.results.len() as f64;
-        
-        let fastest_benchmark = self.results.iter()
+            .sum::<f64>()
+            / self.results.len() as f64;
+
+        let fastest_benchmark = self
+            .results
+            .iter()
             .min_by_key(|r| r.statistics.mean_duration)
             .map(|r| r.benchmark_name.clone())
             .unwrap_or_default();
-        
-        let slowest_benchmark = self.results.iter()
+
+        let slowest_benchmark = self
+            .results
+            .iter()
             .max_by_key(|r| r.statistics.mean_duration)
             .map(|r| r.benchmark_name.clone())
             .unwrap_or_default();
-        
+
         BenchmarkSummary {
             total_duration,
             avg_throughput,
@@ -226,7 +234,11 @@ pub struct Benchmark {
     /// Number of warmup iterations
     pub warmup_iterations: usize,
     /// Function to execute for the benchmark
-    pub function: Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> + Send + Sync>,
+    pub function: Box<
+        dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
+            + Send
+            + Sync,
+    >,
     /// Additional metadata for the benchmark
     pub metadata: HashMap<String, String>,
 }
@@ -254,7 +266,7 @@ impl Benchmark {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Add metadata to benchmark
     pub fn with_metadata(mut self, key: String, value: String) -> Self {
         self.metadata.insert(key, value);
@@ -433,7 +445,7 @@ impl StandardBenchmarks {
             ),
         ]
     }
-    
+
     /// Create search operation benchmarks
     pub fn search_benchmarks() -> Vec<Benchmark> {
         vec![
@@ -453,7 +465,7 @@ impl StandardBenchmarks {
             ),
         ]
     }
-    
+
     /// Create analytics benchmarks
     pub fn analytics_benchmarks() -> Vec<Benchmark> {
         vec![

@@ -6,36 +6,27 @@
 //! - Temporal patterns and trends
 //! - Time-based memory evolution
 
-pub mod versioning;
-pub mod differential;
-pub mod patterns;
-pub mod evolution;
 pub mod decay_models;
+pub mod differential;
+pub mod evolution;
+pub mod patterns;
+pub mod versioning;
 
 // Re-export commonly used types
-pub use versioning::{MemoryVersion, VersionHistory, VersionManager, ChangeType};
-pub use differential::{MemoryDiff, DiffAnalyzer, ChangeSet, DiffMetrics};
-pub use patterns::{TemporalPattern, PatternDetector, TemporalTrend, AccessPattern};
-pub use evolution::{
-    MemoryEvolution,
-    EvolutionTracker,
-    EvolutionMetrics,
-    EvolutionEvent,
-    GlobalEvolutionMetrics,
-    EvolutionData,
-};
 pub use decay_models::{
-    TemporalDecayModels,
-    DecayModelType,
-    DecayConfig,
-    DecayParameters,
-    DecayContext,
-    DecayResult,
+    DecayConfig, DecayContext, DecayModelType, DecayParameters, DecayResult, TemporalDecayModels,
 };
+pub use differential::{ChangeSet, DiffAnalyzer, DiffMetrics, MemoryDiff};
+pub use evolution::{
+    EvolutionData, EvolutionEvent, EvolutionMetrics, EvolutionTracker, GlobalEvolutionMetrics,
+    MemoryEvolution,
+};
+pub use patterns::{AccessPattern, PatternDetector, TemporalPattern, TemporalTrend};
+pub use versioning::{ChangeType, MemoryVersion, VersionHistory, VersionManager};
 
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -200,22 +191,36 @@ impl TemporalMemoryManager {
         change_type: ChangeType,
     ) -> Result<Uuid> {
         // Create a new version
-        let version_id = self.version_manager.create_version(memory, &change_type).await?;
+        let version_id = self
+            .version_manager
+            .create_version(memory, &change_type)
+            .await?;
 
         // Analyze differences if this isn't the first version
-        if let Some(previous_version) = self.version_manager.get_previous_version(&memory.key).await? {
-            let diff = self.diff_analyzer.analyze_difference(&previous_version.memory, memory).await?;
+        if let Some(previous_version) = self
+            .version_manager
+            .get_previous_version(&memory.key)
+            .await?
+        {
+            let diff = self
+                .diff_analyzer
+                .analyze_difference(&previous_version.memory, memory)
+                .await?;
             self.version_manager.attach_diff(version_id, diff).await?;
         }
 
         // Update pattern detection if enabled
         if self.config.enable_pattern_detection {
-            self.pattern_detector.update_patterns(&memory.key, memory).await?;
+            self.pattern_detector
+                .update_patterns(&memory.key, memory)
+                .await?;
         }
 
         // Update evolution tracking if enabled
         if self.config.enable_evolution_tracking {
-            self.evolution_tracker.track_change(&memory.key, memory, change_type).await?;
+            self.evolution_tracker
+                .track_change(&memory.key, memory, change_type)
+                .await?;
         }
 
         Ok(version_id)
@@ -227,22 +232,34 @@ impl TemporalMemoryManager {
     }
 
     /// Analyze temporal patterns for a memory or set of memories
-    pub async fn analyze_temporal_patterns(&self, query: TemporalQuery) -> Result<TemporalAnalysis> {
+    pub async fn analyze_temporal_patterns(
+        &self,
+        query: TemporalQuery,
+    ) -> Result<TemporalAnalysis> {
         let time_range = query.time_range.unwrap_or_else(|| TimeRange::last_days(30));
-        
+
         // Get version history for the specified time range
         let version_history = if let Some(memory_key) = &query.memory_key {
-            self.version_manager.get_history_in_range(memory_key, &time_range).await?
+            self.version_manager
+                .get_history_in_range(memory_key, &time_range)
+                .await?
         } else {
-            self.version_manager.get_all_history_in_range(&time_range).await?
+            self.version_manager
+                .get_all_history_in_range(&time_range)
+                .await?
         };
 
         // Analyze changes
-        let changes = self.diff_analyzer.analyze_changes_in_range(&time_range).await?;
+        let changes = self
+            .diff_analyzer
+            .analyze_changes_in_range(&time_range)
+            .await?;
 
         // Detect patterns if requested
         let patterns = if query.include_patterns {
-            self.pattern_detector.detect_patterns_in_range(&time_range).await?
+            self.pattern_detector
+                .detect_patterns_in_range(&time_range)
+                .await?
         } else {
             Vec::new()
         };
@@ -280,12 +297,16 @@ impl TemporalMemoryManager {
         memory1: &MemoryEntry,
         memory2: &MemoryEntry,
     ) -> Result<MemoryDiff> {
-        self.diff_analyzer.analyze_difference(memory1, memory2).await
+        self.diff_analyzer
+            .analyze_difference(memory1, memory2)
+            .await
     }
 
     /// Get memories that have changed within a time range
     pub async fn get_changed_memories(&self, time_range: &TimeRange) -> Result<Vec<String>> {
-        self.version_manager.get_changed_memories_in_range(time_range).await
+        self.version_manager
+            .get_changed_memories_in_range(time_range)
+            .await
     }
 
     /// Get the most active memories (most frequently changed)
@@ -296,7 +317,9 @@ impl TemporalMemoryManager {
     /// Cleanup old versions based on configuration
     pub async fn cleanup_old_versions(&mut self) -> Result<usize> {
         let cutoff_date = Utc::now() - Duration::days(self.config.max_version_age_days as i64);
-        self.version_manager.cleanup_versions_before(cutoff_date).await
+        self.version_manager
+            .cleanup_versions_before(cutoff_date)
+            .await
     }
 
     /// Retrieve aggregated usage statistics
@@ -348,7 +371,9 @@ impl TemporalMemoryManager {
         // Find most common change type
         let mut change_type_counts: HashMap<ChangeType, usize> = HashMap::new();
         for version in version_history {
-            *change_type_counts.entry(version.change_type.clone()).or_insert(0) += 1;
+            *change_type_counts
+                .entry(version.change_type.clone())
+                .or_insert(0) += 1;
         }
         let most_common_change_type = change_type_counts
             .into_iter()
@@ -389,7 +414,6 @@ impl TemporalMemoryManager {
         version_history: &[MemoryVersion],
         bucket_size: Duration,
     ) -> Option<TimeRange> {
-
         let mut counts: HashMap<DateTime<Utc>, usize> = HashMap::new();
         for version in version_history {
             let ts = version.created_at.timestamp();
@@ -423,9 +447,15 @@ mod tests {
     fn test_temporal_config_clone() {
         let config1 = TemporalConfig::default();
         let config2 = config1.clone();
-        assert_eq!(config1.max_versions_per_memory, config2.max_versions_per_memory);
+        assert_eq!(
+            config1.max_versions_per_memory,
+            config2.max_versions_per_memory
+        );
         assert_eq!(config1.max_version_age_days, config2.max_version_age_days);
-        assert_eq!(config1.enable_pattern_detection, config2.enable_pattern_detection);
+        assert_eq!(
+            config1.enable_pattern_detection,
+            config2.enable_pattern_detection
+        );
     }
 
     #[test]
@@ -512,8 +542,9 @@ mod tests {
         let end = start + Duration::hours(1);
         let range = TimeRange::new(start, end);
 
-        let serialized = serde_json::to_string(&range).unwrap();
-        let deserialized: TimeRange = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&range).expect("value should be available");
+        let deserialized: TimeRange =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(range.start, deserialized.start);
         assert_eq!(range.end, deserialized.end);
@@ -536,7 +567,10 @@ mod tests {
         let manager = TemporalMemoryManager::new(config.clone());
 
         // Manager should be initialized with the config
-        assert_eq!(manager.config.max_versions_per_memory, config.max_versions_per_memory);
+        assert_eq!(
+            manager.config.max_versions_per_memory,
+            config.max_versions_per_memory
+        );
     }
 
     #[test]
@@ -547,12 +581,16 @@ mod tests {
             total_evolution_events: 25,
         };
 
-        let serialized = serde_json::to_string(&stats).unwrap();
-        let deserialized: TemporalUsageStats = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&stats).expect("value should be available");
+        let deserialized: TemporalUsageStats =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(stats.total_versions, deserialized.total_versions);
         assert_eq!(stats.total_diffs, deserialized.total_diffs);
-        assert_eq!(stats.total_evolution_events, deserialized.total_evolution_events);
+        assert_eq!(
+            stats.total_evolution_events,
+            deserialized.total_evolution_events
+        );
     }
 
     #[test]
@@ -579,12 +617,16 @@ mod tests {
             stability_score: 0.8,
         };
 
-        let serialized = serde_json::to_string(&summary).unwrap();
-        let deserialized: TemporalSummary = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&summary).expect("value should be available");
+        let deserialized: TemporalSummary =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(summary.total_versions, deserialized.total_versions);
         assert_eq!(summary.total_changes, deserialized.total_changes);
-        assert_eq!(summary.avg_change_frequency, deserialized.avg_change_frequency);
+        assert_eq!(
+            summary.avg_change_frequency,
+            deserialized.avg_change_frequency
+        );
         assert_eq!(summary.stability_score, deserialized.stability_score);
     }
 
@@ -641,11 +683,15 @@ mod tests {
             },
         };
 
-        let serialized = serde_json::to_string(&analysis).unwrap();
-        let deserialized: TemporalAnalysis = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&analysis).expect("value should be available");
+        let deserialized: TemporalAnalysis =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(analysis.query, deserialized.query);
-        assert_eq!(analysis.summary.total_versions, deserialized.summary.total_versions);
+        assert_eq!(
+            analysis.summary.total_versions,
+            deserialized.summary.total_versions
+        );
     }
 
     #[test]

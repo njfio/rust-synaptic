@@ -1,7 +1,7 @@
 //! Graph reasoning and inference engine
 
-use super::types::{Node, RelationshipType};
 use super::graph::KnowledgeGraph;
+use super::types::{Node, RelationshipType};
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -126,7 +126,7 @@ impl GraphReasoner {
             rules: Vec::new(),
             _config: ReasoningConfig::default(),
         };
-        
+
         // Add default inference rules
         reasoner.add_default_rules();
         reasoner
@@ -138,7 +138,7 @@ impl GraphReasoner {
             rules: Vec::new(),
             _config: config,
         };
-        
+
         reasoner.add_default_rules();
         reasoner
     }
@@ -169,44 +169,82 @@ impl GraphReasoner {
     }
 
     /// Infer new relationships from the graph
-    pub async fn infer_relationships(&self, graph: &KnowledgeGraph) -> Result<Vec<InferenceResult>> {
+    pub async fn infer_relationships(
+        &self,
+        graph: &KnowledgeGraph,
+    ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         for rule in &self.rules {
             if !rule.enabled {
                 continue;
             }
-            
+
             let rule_inferences = self.apply_rule(rule, graph).await?;
             inferences.extend(rule_inferences);
         }
-        
+
         // Filter by confidence threshold
         inferences.retain(|inf| inf.confidence >= self._config.min_confidence_threshold);
-        
+
         // Sort by confidence (highest first)
-        inferences.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
-        
+        inferences.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         Ok(inferences)
     }
 
     /// Apply a specific inference rule to the graph
-    async fn apply_rule(&self, rule: &InferenceRule, graph: &KnowledgeGraph) -> Result<Vec<InferenceResult>> {
+    async fn apply_rule(
+        &self,
+        rule: &InferenceRule,
+        graph: &KnowledgeGraph,
+    ) -> Result<Vec<InferenceResult>> {
         match &rule.pattern {
-            RulePattern::Transitive { relationship_type, inferred_type } => {
-                self.apply_transitive_rule(rule, graph, relationship_type, inferred_type).await
+            RulePattern::Transitive {
+                relationship_type,
+                inferred_type,
+            } => {
+                self.apply_transitive_rule(rule, graph, relationship_type, inferred_type)
+                    .await
             }
-            RulePattern::Symmetric { relationship_type, inferred_type } => {
-                self.apply_symmetric_rule(rule, graph, relationship_type, inferred_type).await
+            RulePattern::Symmetric {
+                relationship_type,
+                inferred_type,
+            } => {
+                self.apply_symmetric_rule(rule, graph, relationship_type, inferred_type)
+                    .await
             }
-            RulePattern::Inverse { source_type, inverse_type } => {
-                self.apply_inverse_rule(rule, graph, source_type, inverse_type).await
+            RulePattern::Inverse {
+                source_type,
+                inverse_type,
+            } => {
+                self.apply_inverse_rule(rule, graph, source_type, inverse_type)
+                    .await
             }
-            RulePattern::Similarity { similarity_threshold, source_relationship, inferred_relationship } => {
-                self.apply_similarity_rule(rule, graph, *similarity_threshold, source_relationship, inferred_relationship).await
+            RulePattern::Similarity {
+                similarity_threshold,
+                source_relationship,
+                inferred_relationship,
+            } => {
+                self.apply_similarity_rule(
+                    rule,
+                    graph,
+                    *similarity_threshold,
+                    source_relationship,
+                    inferred_relationship,
+                )
+                .await
             }
-            RulePattern::Temporal { max_time_diff_hours, inferred_relationship } => {
-                self.apply_temporal_rule(rule, graph, *max_time_diff_hours, inferred_relationship).await
+            RulePattern::Temporal {
+                max_time_diff_hours,
+                inferred_relationship,
+            } => {
+                self.apply_temporal_rule(rule, graph, *max_time_diff_hours, inferred_relationship)
+                    .await
             }
             RulePattern::Custom { rule_logic: _ } => {
                 // Custom rules would require a scripting engine or plugin system
@@ -224,26 +262,32 @@ impl GraphReasoner {
         inferred_type: &RelationshipType,
     ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         // Find all edges of the specified type
-        let relevant_edges: Vec<_> = graph.edges.iter()
+        let relevant_edges: Vec<_> = graph
+            .edges
+            .iter()
             .filter(|edge_ref| edge_ref.relationship.relationship_type == *relationship_type)
             .map(|edge_ref| edge_ref.clone())
             .collect();
-        
+
         // Look for transitive patterns: A->B and B->C implies A->C
         for edge1 in &relevant_edges {
             for edge2 in &relevant_edges {
                 if edge1.to_node == edge2.from_node && edge1.from_node != edge2.to_node {
                     // Check if A->C relationship already exists
-                    let existing_edge = graph.edges.iter()
-                        .find(|e| e.from_node == edge1.from_node && 
-                                 e.to_node == edge2.to_node &&
-                                 e.relationship.relationship_type == *inferred_type);
-                    
+                    let existing_edge = graph.edges.iter().find(|e| {
+                        e.from_node == edge1.from_node
+                            && e.to_node == edge2.to_node
+                            && e.relationship.relationship_type == *inferred_type
+                    });
+
                     if existing_edge.is_none() {
-                        let confidence = (edge1.relationship.confidence * edge2.relationship.confidence * rule.confidence_weight).min(1.0);
-                        
+                        let confidence = (edge1.relationship.confidence
+                            * edge2.relationship.confidence
+                            * rule.confidence_weight)
+                            .min(1.0);
+
                         if confidence >= self._config.min_confidence_threshold {
                             inferences.push(InferenceResult {
                                 from_node: edge1.from_node,
@@ -253,8 +297,11 @@ impl GraphReasoner {
                                 rule_id: rule.id.clone(),
                                 explanation: format!(
                                     "Transitive inference: {} -> {} -> {} implies {} -> {}",
-                                    edge1.from_node, edge1.to_node, edge2.to_node,
-                                    edge1.from_node, edge2.to_node
+                                    edge1.from_node,
+                                    edge1.to_node,
+                                    edge2.to_node,
+                                    edge1.from_node,
+                                    edge2.to_node
                                 ),
                                 evidence: vec![edge1.id, edge2.id],
                             });
@@ -263,7 +310,7 @@ impl GraphReasoner {
                 }
             }
         }
-        
+
         Ok(inferences)
     }
 
@@ -276,19 +323,20 @@ impl GraphReasoner {
         inferred_type: &RelationshipType,
     ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         for edge_ref in graph.edges.iter() {
             let edge = edge_ref.value();
             if edge.relationship.relationship_type == *relationship_type {
                 // Check if reverse relationship exists
-                let reverse_exists = graph.edges.iter()
-                    .any(|e| e.from_node == edge.to_node && 
-                            e.to_node == edge.from_node &&
-                            e.relationship.relationship_type == *inferred_type);
-                
+                let reverse_exists = graph.edges.iter().any(|e| {
+                    e.from_node == edge.to_node
+                        && e.to_node == edge.from_node
+                        && e.relationship.relationship_type == *inferred_type
+                });
+
                 if !reverse_exists {
                     let confidence = edge.relationship.confidence * rule.confidence_weight;
-                    
+
                     if confidence >= self._config.min_confidence_threshold {
                         inferences.push(InferenceResult {
                             from_node: edge.to_node,
@@ -306,7 +354,7 @@ impl GraphReasoner {
                 }
             }
         }
-        
+
         Ok(inferences)
     }
 
@@ -319,19 +367,20 @@ impl GraphReasoner {
         inverse_type: &RelationshipType,
     ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         for edge_ref in graph.edges.iter() {
             let edge = edge_ref.value();
             if edge.relationship.relationship_type == *source_type {
                 // Check if inverse relationship exists
-                let inverse_exists = graph.edges.iter()
-                    .any(|e| e.from_node == edge.to_node && 
-                            e.to_node == edge.from_node &&
-                            e.relationship.relationship_type == *inverse_type);
-                
+                let inverse_exists = graph.edges.iter().any(|e| {
+                    e.from_node == edge.to_node
+                        && e.to_node == edge.from_node
+                        && e.relationship.relationship_type == *inverse_type
+                });
+
                 if !inverse_exists {
                     let confidence = edge.relationship.confidence * rule.confidence_weight;
-                    
+
                     if confidence >= self._config.min_confidence_threshold {
                         inferences.push(InferenceResult {
                             from_node: edge.to_node,
@@ -341,8 +390,12 @@ impl GraphReasoner {
                             rule_id: rule.id.clone(),
                             explanation: format!(
                                 "Inverse inference: {} {} {} implies {} {} {}",
-                                edge.from_node, source_type, edge.to_node,
-                                edge.to_node, inverse_type, edge.from_node
+                                edge.from_node,
+                                source_type,
+                                edge.to_node,
+                                edge.to_node,
+                                inverse_type,
+                                edge.from_node
                             ),
                             evidence: vec![edge.id],
                         });
@@ -350,7 +403,7 @@ impl GraphReasoner {
                 }
             }
         }
-        
+
         Ok(inferences)
     }
 
@@ -364,32 +417,38 @@ impl GraphReasoner {
         inferred_relationship: &RelationshipType,
     ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         // This would require implementing similarity calculation between nodes
         // For now, we'll use a simplified version based on shared tags
-        
+
         for node1_ref in graph.nodes.iter() {
             for node2_ref in graph.nodes.iter() {
                 let node1 = node1_ref.value();
                 let node2 = node2_ref.value();
-                
+
                 if node1.id != node2.id {
                     let similarity = self.calculate_node_similarity(node1, node2);
-                    
+
                     if similarity >= similarity_threshold {
                         // Look for relationships from node2 that could be inferred for node1
                         for edge_ref in graph.edges.iter() {
                             let edge = edge_ref.value();
-                            if edge.from_node == node2.id && edge.relationship.relationship_type == *source_relationship {
+                            if edge.from_node == node2.id
+                                && edge.relationship.relationship_type == *source_relationship
+                            {
                                 // Check if similar relationship already exists for node1
-                                let exists = graph.edges.iter()
-                                    .any(|e| e.from_node == node1.id && 
-                                            e.to_node == edge.to_node &&
-                                            e.relationship.relationship_type == *inferred_relationship);
-                                
+                                let exists = graph.edges.iter().any(|e| {
+                                    e.from_node == node1.id
+                                        && e.to_node == edge.to_node
+                                        && e.relationship.relationship_type
+                                            == *inferred_relationship
+                                });
+
                                 if !exists {
-                                    let confidence = similarity * edge.relationship.confidence * rule.confidence_weight;
-                                    
+                                    let confidence = similarity
+                                        * edge.relationship.confidence
+                                        * rule.confidence_weight;
+
                                     if confidence >= self._config.min_confidence_threshold {
                                         inferences.push(InferenceResult {
                                             from_node: node1.id,
@@ -413,7 +472,7 @@ impl GraphReasoner {
                 }
             }
         }
-        
+
         Ok(inferences)
     }
 
@@ -426,27 +485,31 @@ impl GraphReasoner {
         inferred_relationship: &RelationshipType,
     ) -> Result<Vec<InferenceResult>> {
         let mut inferences = Vec::new();
-        
+
         let time_threshold = chrono::Duration::hours(max_time_diff_hours as i64);
-        
+
         for node1_ref in graph.nodes.iter() {
             for node2_ref in graph.nodes.iter() {
                 let node1 = node1_ref.value();
                 let node2 = node2_ref.value();
-                
+
                 if node1.id != node2.id {
                     if let (Some(time1), Some(time2)) = (node1.created_at, node2.created_at) {
                         let time_diff = (time1 - time2).abs();
-                        
+
                         if time_diff <= time_threshold {
                             // Check if temporal relationship already exists
-                            let exists = graph.edges.iter()
-                                .any(|e| (e.from_node == node1.id && e.to_node == node2.id) ||
-                                        (e.from_node == node2.id && e.to_node == node1.id));
-                            
+                            let exists = graph.edges.iter().any(|e| {
+                                (e.from_node == node1.id && e.to_node == node2.id)
+                                    || (e.from_node == node2.id && e.to_node == node1.id)
+                            });
+
                             if !exists {
-                                let confidence = (1.0 - (time_diff.num_minutes() as f64 / (max_time_diff_hours * 60) as f64)) * rule.confidence_weight;
-                                
+                                let confidence = (1.0
+                                    - (time_diff.num_minutes() as f64
+                                        / (max_time_diff_hours * 60) as f64))
+                                    * rule.confidence_weight;
+
                                 if confidence >= self._config.min_confidence_threshold {
                                     inferences.push(InferenceResult {
                                         from_node: node1.id,
@@ -456,7 +519,9 @@ impl GraphReasoner {
                                         rule_id: rule.id.clone(),
                                         explanation: format!(
                                             "Temporal inference: {} and {} created within {} hours",
-                                            node1.id, node2.id, time_diff.num_hours()
+                                            node1.id,
+                                            node2.id,
+                                            time_diff.num_hours()
                                         ),
                                         evidence: vec![node1.id, node2.id],
                                     });
@@ -467,7 +532,7 @@ impl GraphReasoner {
                 }
             }
         }
-        
+
         Ok(inferences)
     }
 
@@ -475,33 +540,33 @@ impl GraphReasoner {
     fn calculate_node_similarity(&self, node1: &Node, node2: &Node) -> f64 {
         let mut similarity = 0.0;
         let mut factors = 0;
-        
+
         // Tag similarity
         if !node1.tags.is_empty() || !node2.tags.is_empty() {
             let tags1: HashSet<_> = node1.tags.iter().collect();
             let tags2: HashSet<_> = node2.tags.iter().collect();
             let intersection = tags1.intersection(&tags2).count();
             let union = tags1.union(&tags2).count();
-            
+
             if union > 0 {
                 similarity += intersection as f64 / union as f64;
                 factors += 1;
             }
         }
-        
+
         // Node type similarity
         if node1.node_type == node2.node_type {
             similarity += 1.0;
         }
         factors += 1;
-        
+
         // Embedding similarity (if available)
         if let (Some(emb1), Some(emb2)) = (&node1.embedding, &node2.embedding) {
             let cosine_sim = cosine_similarity(emb1, emb2);
             similarity += cosine_sim;
             factors += 1;
         }
-        
+
         if factors > 0 {
             similarity / factors as f64
         } else {

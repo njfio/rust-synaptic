@@ -39,11 +39,11 @@
 //! }
 //! ```
 
+pub mod cli;
 pub mod error;
 pub mod error_handling;
-pub mod memory;
 pub mod logging;
-pub mod cli;
+pub mod memory;
 #[cfg(feature = "observability")]
 pub mod observability;
 
@@ -73,14 +73,12 @@ pub mod phase5b_basic;
 
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
-pub use memory::{
-    MemoryEntry, MemoryFragment, MemoryType, CheckpointManager,
-};
+pub use memory::{CheckpointManager, MemoryEntry, MemoryFragment, MemoryType};
 
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use uuid::Uuid;
 
 /// Main memory system for AI agents
 pub struct AgentMemory {
@@ -94,7 +92,8 @@ pub struct AgentMemory {
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
     #[cfg(feature = "distributed")]
-    distributed_coordinator: Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
+    distributed_coordinator:
+        Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
     #[cfg(feature = "analytics")]
     analytics_engine: Option<analytics::AnalyticsEngine>,
     _integration_manager: Option<integrations::IntegrationManager>,
@@ -103,7 +102,8 @@ pub struct AgentMemory {
     #[cfg(not(feature = "security"))]
     _security_manager: Option<()>,
     #[cfg(feature = "multimodal")]
-    multimodal_memory: Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
+    multimodal_memory:
+        Option<std::sync::Arc<tokio::sync::RwLock<multimodal::unified::UnifiedMultiModalMemory>>>,
     #[cfg(feature = "cross-platform")]
     cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
     /// Memory promotion manager for hierarchical memory management
@@ -135,7 +135,10 @@ impl AgentMemory {
             config.checkpoint_interval,
             Arc::clone(&storage),
         );
-        tracing::debug!("Checkpoint manager initialized with interval: {:?}", config.checkpoint_interval);
+        tracing::debug!(
+            "Checkpoint manager initialized with interval: {:?}",
+            config.checkpoint_interval
+        );
 
         let state = memory::state::AgentState::new(config.session_id.unwrap_or_else(Uuid::new_v4));
         tracing::debug!("Agent state initialized");
@@ -143,7 +146,9 @@ impl AgentMemory {
         // Initialize knowledge graph if enabled
         let knowledge_graph = if config.enable_knowledge_graph {
             let graph_config = memory::knowledge_graph::GraphConfig::default();
-            Some(memory::knowledge_graph::MemoryKnowledgeGraph::new(graph_config))
+            Some(memory::knowledge_graph::MemoryKnowledgeGraph::new(
+                graph_config,
+            ))
         } else {
             None
         };
@@ -151,7 +156,9 @@ impl AgentMemory {
         // Initialize temporal manager if enabled
         let temporal_manager = if config.enable_temporal_tracking {
             let temporal_config = memory::temporal::TemporalConfig::default();
-            Some(memory::temporal::TemporalMemoryManager::new(temporal_config))
+            Some(memory::temporal::TemporalMemoryManager::new(
+                temporal_config,
+            ))
         } else {
             None
         };
@@ -177,7 +184,8 @@ impl AgentMemory {
         #[cfg(feature = "distributed")]
         let distributed_coordinator = if config.enable_distributed {
             if let Some(dist_config) = config.distributed_config.clone() {
-                let coordinator = distributed::coordination::DistributedCoordinator::new(dist_config).await?;
+                let coordinator =
+                    distributed::coordination::DistributedCoordinator::new(dist_config).await?;
                 Some(std::sync::Arc::new(coordinator))
             } else {
                 None
@@ -219,7 +227,9 @@ impl AgentMemory {
         #[cfg(feature = "cross-platform")]
         let cross_platform_manager = if config.enable_cross_platform {
             let cross_platform_config = config.cross_platform_config.clone().unwrap_or_default();
-            Some(cross_platform::CrossPlatformMemoryManager::new(cross_platform_config)?)
+            Some(cross_platform::CrossPlatformMemoryManager::new(
+                cross_platform_config,
+            )?)
         } else {
             None
         };
@@ -265,13 +275,19 @@ impl AgentMemory {
         if config.enable_multimodal {
             let multimodal_config = config.multimodal_config.clone().unwrap_or_default();
             let agent_arc = std::sync::Arc::new(tokio::sync::RwLock::new(agent));
-            let mm = multimodal::unified::UnifiedMultiModalMemory::new(agent_arc.clone(), multimodal_config).await?;
+            let mm = multimodal::unified::UnifiedMultiModalMemory::new(
+                agent_arc.clone(),
+                multimodal_config,
+            )
+            .await?;
             {
                 let mut guard = agent_arc.write().await;
                 guard.multimodal_memory = Some(std::sync::Arc::new(tokio::sync::RwLock::new(mm)));
             }
             agent = std::sync::Arc::try_unwrap(agent_arc)
-                .map_err(|_| MemoryError::concurrency("Failed to unwrap Arc during initialization"))?
+                .map_err(|_| {
+                    MemoryError::concurrency("Failed to unwrap Arc during initialization")
+                })?
                 .into_inner();
         }
 
@@ -331,20 +347,24 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am.add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut()).await;
+            let _ = am
+                .add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut())
+                .await;
         }
 
         // Generate embeddings if enabled
         #[cfg(feature = "embeddings")]
         if let Some(ref mut em) = self.embedding_manager {
             let _ = em.add_memory(entry.clone()).map_err(|e| {
-                eprintln!("Warning: Failed to generate embedding: {}", e);
+                tracing::warn!("Failed to generate embedding: {}", e);
             });
         }
 
         // Check if we need to create a checkpoint
         if self.checkpoint_manager.should_checkpoint(&self.state) {
-            self.checkpoint_manager.create_checkpoint(&self.state).await?;
+            self.checkpoint_manager
+                .create_checkpoint(&self.state)
+                .await?;
         }
 
         Ok(())
@@ -382,7 +402,7 @@ impl AgentMemory {
 
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
-                use crate::analytics::{AnalyticsEvent, AccessType};
+                use crate::analytics::{AccessType, AnalyticsEvent};
                 let event = AnalyticsEvent::MemoryAccess {
                     memory_key: key.to_string(),
                     access_type: AccessType::Read,
@@ -434,7 +454,7 @@ impl AgentMemory {
 
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
-                use crate::analytics::{AnalyticsEvent, AccessType};
+                use crate::analytics::{AccessType, AnalyticsEvent};
                 let event = AnalyticsEvent::MemoryAccess {
                     memory_key: key.to_string(),
                     access_type: AccessType::Read,
@@ -474,7 +494,10 @@ impl AgentMemory {
 
     /// Restore from a checkpoint
     pub async fn restore_checkpoint(&mut self, checkpoint_id: Uuid) -> Result<()> {
-        let state = self.checkpoint_manager.restore_checkpoint(checkpoint_id).await?;
+        let state = self
+            .checkpoint_manager
+            .restore_checkpoint(checkpoint_id)
+            .await?;
         self.state = state;
 
         // Also need to sync the storage with the restored state
@@ -516,7 +539,7 @@ impl AgentMemory {
         // Clear knowledge graph if enabled
         if let Some(ref mut kg) = self.knowledge_graph {
             *kg = memory::knowledge_graph::MemoryKnowledgeGraph::new(
-                memory::knowledge_graph::GraphConfig::default()
+                memory::knowledge_graph::GraphConfig::default(),
             );
         }
 
@@ -537,12 +560,9 @@ impl AgentMemory {
         validate_non_empty_string(to_memory, "to_memory key")?;
 
         if let Some(ref mut kg) = self.knowledge_graph {
-            let relationship_id = kg.create_relationship(
-                from_memory,
-                to_memory,
-                relationship_type,
-                None,
-            ).await?;
+            let relationship_id = kg
+                .create_relationship(from_memory, to_memory, relationship_type, None)
+                .await?;
 
             #[cfg(feature = "analytics")]
             if let Some(ref mut analytics) = self.analytics_engine {
@@ -583,7 +603,8 @@ impl AgentMemory {
         max_depth: Option<usize>,
     ) -> Result<Option<memory::knowledge_graph::GraphPath>> {
         if let Some(ref kg) = self.knowledge_graph {
-            kg.find_path_between_memories(from_memory, to_memory, max_depth).await
+            kg.find_path_between_memories(from_memory, to_memory, max_depth)
+                .await
         } else {
             Ok(None)
         }
@@ -595,7 +616,9 @@ impl AgentMemory {
     }
 
     /// Perform inference to discover new relationships
-    pub async fn infer_relationships(&mut self) -> Result<Vec<memory::knowledge_graph::reasoning::InferenceResult>> {
+    pub async fn infer_relationships(
+        &mut self,
+    ) -> Result<Vec<memory::knowledge_graph::reasoning::InferenceResult>> {
         if let Some(ref mut kg) = self.knowledge_graph {
             kg.infer_relationships().await
         } else {
@@ -610,7 +633,11 @@ impl AgentMemory {
 
     /// Semantic search using embeddings (if enabled)
     #[cfg(feature = "embeddings")]
-    pub fn semantic_search(&mut self, query: &str, limit: Option<usize>) -> Result<Vec<memory::embeddings::SimilarMemory>> {
+    pub fn semantic_search(
+        &mut self,
+        query: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<memory::embeddings::SimilarMemory>> {
         if let Some(ref mut embedding_manager) = self.embedding_manager {
             embedding_manager.find_similar_to_query(query, limit)
         } else {
@@ -627,7 +654,9 @@ impl AgentMemory {
     /// Get analytics metrics (if enabled)
     #[cfg(feature = "analytics")]
     pub fn get_analytics_metrics(&self) -> Option<analytics::AnalyticsMetrics> {
-        self.analytics_engine.as_ref().map(|eng| eng.get_usage_stats())
+        self.analytics_engine
+            .as_ref()
+            .map(|eng| eng.get_usage_stats())
     }
 
     /// Get temporal usage statistics (if enabled)
@@ -641,11 +670,15 @@ impl AgentMemory {
 
     /// Get differential metrics from the temporal manager
     pub fn get_temporal_diff_metrics(&self) -> Option<memory::temporal::DiffMetrics> {
-        self.temporal_manager.as_ref().map(|tm| tm.get_diff_metrics())
+        self.temporal_manager
+            .as_ref()
+            .map(|tm| tm.get_diff_metrics())
     }
 
     /// Get global evolution metrics from the temporal manager
-    pub async fn get_global_evolution_metrics(&self) -> Option<memory::temporal::GlobalEvolutionMetrics> {
+    pub async fn get_global_evolution_metrics(
+        &self,
+    ) -> Option<memory::temporal::GlobalEvolutionMetrics> {
         if let Some(ref tm) = self.temporal_manager {
             tm.get_global_evolution_metrics().await.ok()
         } else {
@@ -766,9 +799,13 @@ impl Default for MemoryConfig {
 #[derive(Debug, Clone)]
 pub enum StorageBackend {
     Memory,
-    File { path: String },
+    File {
+        path: String,
+    },
     #[cfg(feature = "sql-storage")]
-    Sql { connection_string: String },
+    Sql {
+        connection_string: String,
+    },
 }
 
 #[cfg(test)]
@@ -798,8 +835,14 @@ mod tests {
         let config2 = config1.clone();
 
         assert_eq!(config1.checkpoint_interval, config2.checkpoint_interval);
-        assert_eq!(config1.max_short_term_memories, config2.max_short_term_memories);
-        assert_eq!(config1.max_long_term_memories, config2.max_long_term_memories);
+        assert_eq!(
+            config1.max_short_term_memories,
+            config2.max_short_term_memories
+        );
+        assert_eq!(
+            config1.max_long_term_memories,
+            config2.max_long_term_memories
+        );
         assert_eq!(config1.similarity_threshold, config2.similarity_threshold);
     }
 

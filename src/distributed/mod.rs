@@ -1,16 +1,16 @@
 //! Distributed architecture components for Synaptic
-//! 
+//!
 //! This module provides the foundation for distributed memory systems,
 //! including event-driven architecture, consensus, and real-time synchronization.
 
 use crate::error::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
-pub mod events;
 pub mod consensus;
+pub mod events;
 pub mod sharding;
 // pub mod realtime; // Temporarily disabled due to WebSocket dependencies
 pub mod coordination;
@@ -23,11 +23,11 @@ impl NodeId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
-    
+
     pub fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
     }
-    
+
     pub fn as_uuid(&self) -> Uuid {
         self.0
     }
@@ -53,7 +53,7 @@ impl ShardId {
     pub fn new(id: u64) -> Self {
         Self(id)
     }
-    
+
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -116,7 +116,7 @@ impl NodeAddress {
             is_leader: false,
         }
     }
-    
+
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
@@ -293,12 +293,12 @@ impl HealthCheck {
             metrics: HashMap::new(),
         }
     }
-    
+
     pub fn with_detail(mut self, key: &str, value: &str) -> Self {
         self.details.insert(key.to_string(), value.to_string());
         self
     }
-    
+
     pub fn with_metric(mut self, key: &str, value: f64) -> Self {
         self.metrics.insert(key.to_string(), value);
         self
@@ -313,7 +313,7 @@ mod tests {
     fn test_node_id_creation() {
         let node1 = NodeId::new();
         let node2 = NodeId::new();
-        
+
         assert_ne!(node1, node2);
         assert_ne!(node1.to_string(), node2.to_string());
     }
@@ -329,7 +329,7 @@ mod tests {
     fn test_node_address() {
         let node_id = NodeId::new();
         let addr = NodeAddress::new(node_id, "localhost".to_string(), 8080);
-        
+
         assert_eq!(addr.address(), "localhost:8080");
         assert!(!addr.is_leader);
     }
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn test_distributed_config_default() {
         let config = DistributedConfig::default();
-        
+
         assert_eq!(config.replication_factor, 3);
         assert_eq!(config.shard_count, 16);
         assert!(config.peers.is_empty());
@@ -349,7 +349,7 @@ mod tests {
         let health = HealthCheck::healthy(node_id)
             .with_detail("version", "1.0.0")
             .with_metric("cpu_usage", 0.25);
-        
+
         assert_eq!(health.status, HealthStatus::Healthy);
         assert_eq!(health.details.get("version"), Some(&"1.0.0".to_string()));
         assert_eq!(health.metrics.get("cpu_usage"), Some(&0.25));

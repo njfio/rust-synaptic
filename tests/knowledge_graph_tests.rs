@@ -3,11 +3,8 @@
 //! Tests knowledge graph integration with memory system,
 //! relationship management, and basic graph operations.
 
-use synaptic::{
-    AgentMemory, MemoryConfig,
-    memory::knowledge_graph::RelationshipType,
-};
 use std::error::Error;
+use synaptic::{memory::knowledge_graph::RelationshipType, AgentMemory, MemoryConfig};
 
 #[tokio::test]
 async fn test_memory_with_knowledge_graph() -> Result<(), Box<dyn Error>> {
@@ -19,9 +16,24 @@ async fn test_memory_with_knowledge_graph() -> Result<(), Box<dyn Error>> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Store related memories
-    memory.store("ai_definition", "Artificial Intelligence is the simulation of human intelligence").await?;
-    memory.store("ml_definition", "Machine Learning is a subset of AI that learns from data").await?;
-    memory.store("dl_definition", "Deep Learning is a subset of ML using neural networks").await?;
+    memory
+        .store(
+            "ai_definition",
+            "Artificial Intelligence is the simulation of human intelligence",
+        )
+        .await?;
+    memory
+        .store(
+            "ml_definition",
+            "Machine Learning is a subset of AI that learns from data",
+        )
+        .await?;
+    memory
+        .store(
+            "dl_definition",
+            "Deep Learning is a subset of ML using neural networks",
+        )
+        .await?;
 
     // Test basic retrieval
     let ai_memory = memory.retrieve("ai_definition").await?;
@@ -61,7 +73,7 @@ async fn test_relationship_types() -> Result<(), Box<dyn Error>> {
         match rel_type {
             RelationshipType::Custom(ref name) => {
                 assert_eq!(name, "implements");
-            },
+            }
             _ => {
                 // Other types should be valid
             }
@@ -81,10 +93,30 @@ async fn test_knowledge_graph_with_related_memories() -> Result<(), Box<dyn Erro
     let mut memory = AgentMemory::new(config).await?;
 
     // Store hierarchical concepts
-    memory.store("ai_concept", "Artificial Intelligence is the simulation of human intelligence").await?;
-    memory.store("ml_concept", "Machine Learning is a subset of AI that learns from data").await?;
-    memory.store("dl_concept", "Deep Learning is a subset of ML using neural networks").await?;
-    memory.store("nn_concept", "Neural Networks are computing systems inspired by biological neural networks").await?;
+    memory
+        .store(
+            "ai_concept",
+            "Artificial Intelligence is the simulation of human intelligence",
+        )
+        .await?;
+    memory
+        .store(
+            "ml_concept",
+            "Machine Learning is a subset of AI that learns from data",
+        )
+        .await?;
+    memory
+        .store(
+            "dl_concept",
+            "Deep Learning is a subset of ML using neural networks",
+        )
+        .await?;
+    memory
+        .store(
+            "nn_concept",
+            "Neural Networks are computing systems inspired by biological neural networks",
+        )
+        .await?;
 
     // Test that all memories are stored
     let ai_memory = memory.retrieve("ai_concept").await?;
@@ -117,9 +149,15 @@ async fn test_knowledge_graph_stats() -> Result<(), Box<dyn Error>> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Store some memories
-    memory.store("concept1", "First concept for testing").await?;
-    memory.store("concept2", "Second concept for testing").await?;
-    memory.store("concept3", "Third concept for testing").await?;
+    memory
+        .store("concept1", "First concept for testing")
+        .await?;
+    memory
+        .store("concept2", "Second concept for testing")
+        .await?;
+    memory
+        .store("concept3", "Third concept for testing")
+        .await?;
 
     // Test that stats reflect the stored memories
     let stats = memory.stats();
@@ -143,11 +181,30 @@ async fn test_memory_search_with_knowledge_graph() -> Result<(), Box<dyn Error>>
     let mut memory = AgentMemory::new(config).await?;
 
     // Store memories with semantic relationships
-    memory.store("programming_rust", "Rust is a systems programming language").await?;
-    memory.store("programming_python", "Python is a high-level programming language").await?;
-    memory.store("programming_javascript", "JavaScript is a web programming language").await?;
-    memory.store("data_science", "Data science uses programming for analysis").await?;
-    memory.store("web_development", "Web development uses JavaScript and other languages").await?;
+    memory
+        .store("programming_rust", "Rust is a systems programming language")
+        .await?;
+    memory
+        .store(
+            "programming_python",
+            "Python is a high-level programming language",
+        )
+        .await?;
+    memory
+        .store(
+            "programming_javascript",
+            "JavaScript is a web programming language",
+        )
+        .await?;
+    memory
+        .store("data_science", "Data science uses programming for analysis")
+        .await?;
+    memory
+        .store(
+            "web_development",
+            "Web development uses JavaScript and other languages",
+        )
+        .await?;
 
     // Test search for programming-related content
     let programming_results = memory.search("programming", 10).await?;
@@ -173,7 +230,9 @@ async fn test_knowledge_graph_enabled_vs_disabled() -> Result<(), Box<dyn Error>
     };
 
     let mut memory_enabled = AgentMemory::new(config_enabled).await?;
-    memory_enabled.store("test_key", "test content with knowledge graph").await?;
+    memory_enabled
+        .store("test_key", "test content with knowledge graph")
+        .await?;
 
     // Test with knowledge graph disabled
     let config_disabled = MemoryConfig {
@@ -182,7 +241,9 @@ async fn test_knowledge_graph_enabled_vs_disabled() -> Result<(), Box<dyn Error>
     };
 
     let mut memory_disabled = AgentMemory::new(config_disabled).await?;
-    memory_disabled.store("test_key", "test content without knowledge graph").await?;
+    memory_disabled
+        .store("test_key", "test content without knowledge graph")
+        .await?;
 
     // Both should work, but enabled version should have knowledge graph features
     let result_enabled = memory_enabled.retrieve("test_key").await?;

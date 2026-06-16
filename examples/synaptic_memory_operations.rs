@@ -9,10 +9,10 @@
 //! - Concurrent operations
 //! - Best practices for production use
 
-use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
-use synaptic::memory::{MemoryOperations, MemoryEntry, MemoryType};
-use synaptic::StorageBackend;
 use std::time::Duration;
+use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
+use synaptic::memory::{MemoryEntry, MemoryOperations, MemoryType};
+use synaptic::StorageBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -118,17 +118,17 @@ async fn store_and_retrieve() -> Result<(), Box<dyn std::error::Error>> {
     // Store multiple memories
     let memories = vec![
         ("user_name", "Alice", MemoryType::LongTerm),
-        ("current_task", "Writing documentation", MemoryType::ShortTerm),
+        (
+            "current_task",
+            "Writing documentation",
+            MemoryType::ShortTerm,
+        ),
         ("preference_theme", "dark", MemoryType::LongTerm),
         ("last_action", "saved file", MemoryType::ShortTerm),
     ];
 
     for (key, value, mem_type) in memories {
-        let entry = MemoryEntry::new(
-            key.to_string(),
-            value.to_string(),
-            mem_type,
-        );
+        let entry = MemoryEntry::new(key.to_string(), value.to_string(), mem_type);
         memory.store_memory(entry).await?;
         println!("  ✓ Stored: {} = {} ({:?})", key, value, mem_type);
     }
@@ -142,8 +142,12 @@ async fn store_and_retrieve() -> Result<(), Box<dyn std::error::Error>> {
         ("last_action", "", MemoryType::ShortTerm),
     ] {
         if let Some(entry) = memory.get_memory(key).await? {
-            println!("  ✓ {} = {} (accessed {} times)",
-                key, entry.value, entry.access_count());
+            println!(
+                "  ✓ {} = {} (accessed {} times)",
+                key,
+                entry.value,
+                entry.access_count()
+            );
         }
     }
 
@@ -179,8 +183,11 @@ async fn update_operations() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify final state
     if let Some(final_entry) = memory.get_memory("status").await? {
-        println!("  ✓ Final status: {} (accessed {} times)",
-            final_entry.value, final_entry.access_count());
+        println!(
+            "  ✓ Final status: {} (accessed {} times)",
+            final_entry.value,
+            final_entry.access_count()
+        );
     }
 
     // Try to update non-existent memory (should fail)
@@ -198,22 +205,39 @@ async fn search_operations() -> Result<(), Box<dyn std::error::Error>> {
 
     // Store a corpus of documents
     let documents = vec![
-        ("doc1", "Rust is a systems programming language focused on safety and performance"),
-        ("doc2", "Python is popular for data science and machine learning applications"),
-        ("doc3", "Rust provides memory safety without garbage collection"),
-        ("doc4", "JavaScript is the language of the web, running in all browsers"),
-        ("doc5", "Rust has excellent concurrency features with async/await"),
-        ("doc6", "TypeScript adds type safety to JavaScript development"),
-        ("doc7", "Rust's ownership system prevents data races at compile time"),
+        (
+            "doc1",
+            "Rust is a systems programming language focused on safety and performance",
+        ),
+        (
+            "doc2",
+            "Python is popular for data science and machine learning applications",
+        ),
+        (
+            "doc3",
+            "Rust provides memory safety without garbage collection",
+        ),
+        (
+            "doc4",
+            "JavaScript is the language of the web, running in all browsers",
+        ),
+        (
+            "doc5",
+            "Rust has excellent concurrency features with async/await",
+        ),
+        (
+            "doc6",
+            "TypeScript adds type safety to JavaScript development",
+        ),
+        (
+            "doc7",
+            "Rust's ownership system prevents data races at compile time",
+        ),
     ];
 
     println!("  Storing document corpus...");
     for (key, content) in documents {
-        let entry = MemoryEntry::new(
-            key.to_string(),
-            content.to_string(),
-            MemoryType::LongTerm,
-        );
+        let entry = MemoryEntry::new(key.to_string(), content.to_string(), MemoryType::LongTerm);
         memory.store_memory(entry).await?;
     }
     println!("  ✓ Stored {} documents", 7);
@@ -222,7 +246,8 @@ async fn search_operations() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n  Searching for 'Rust':");
     let rust_results = memory.search_memories("Rust", 10).await?;
     for (i, fragment) in rust_results.iter().enumerate() {
-        println!("    {}. [Score: {:.2}] {}",
+        println!(
+            "    {}. [Score: {:.2}] {}",
             i + 1,
             fragment.relevance_score,
             fragment.entry.value.chars().take(60).collect::<String>()
@@ -237,7 +262,10 @@ async fn search_operations() -> Result<(), Box<dyn std::error::Error>> {
     // Search for safety features
     println!("\n  Searching for 'safety':");
     let safety_results = memory.search_memories("safety", 10).await?;
-    println!("  ✓ Found {} results related to safety", safety_results.len());
+    println!(
+        "  ✓ Found {} results related to safety",
+        safety_results.len()
+    );
 
     Ok(())
 }
@@ -314,7 +342,9 @@ async fn concurrent_operations() -> Result<(), Box<dyn std::error::Error>> {
     // Verify all writes succeeded
     println!("\n  Verifying concurrent writes:");
     for i in 0..10 {
-        let retrieved = memory.lock().await
+        let retrieved = memory
+            .lock()
+            .await
             .get_memory(&format!("concurrent_{}", i))
             .await?;
         if retrieved.is_some() {

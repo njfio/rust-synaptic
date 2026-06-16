@@ -1,15 +1,15 @@
 //! Adaptive Replay Mechanisms Implementation
-//! 
+//!
 //! Implements sophisticated adaptive replay mechanisms that dynamically adjust
 //! replay strategies, scheduling, and selection based on performance feedback,
 //! memory characteristics, and learning objectives.
 
+use super::{ConsolidationConfig, MemoryImportance};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance};
-use chrono::{DateTime, Utc, Duration};
-use std::collections::{HashMap, VecDeque};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 
 /// Adaptive replay strategy that evolves based on performance
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -257,19 +257,29 @@ impl AdaptiveReplayMechanisms {
         }
 
         // Select optimal strategy based on current context
-        let selected_strategy = self.select_optimal_strategy(memory, importance, context).await?;
+        let selected_strategy = self
+            .select_optimal_strategy(memory, importance, context)
+            .await?;
 
         // Calculate adaptive replay priority
-        let replay_priority = self.calculate_adaptive_priority(memory, importance, context, &selected_strategy).await?;
+        let replay_priority = self
+            .calculate_adaptive_priority(memory, importance, context, &selected_strategy)
+            .await?;
 
         // Calculate scheduled time using adaptive scheduling
-        let scheduled_time = self.calculate_adaptive_schedule(memory, importance, context, &selected_strategy).await?;
+        let scheduled_time = self
+            .calculate_adaptive_schedule(memory, importance, context, &selected_strategy)
+            .await?;
 
         // Estimate effectiveness
-        let expected_effectiveness = self.estimate_effectiveness(&selected_strategy, memory, importance, context).await?;
+        let expected_effectiveness = self
+            .estimate_effectiveness(&selected_strategy, memory, importance, context)
+            .await?;
 
         // Calculate adaptation confidence
-        let adaptation_confidence = self.calculate_adaptation_confidence(&selected_strategy).await?;
+        let adaptation_confidence = self
+            .calculate_adaptation_confidence(&selected_strategy)
+            .await?;
 
         // Extract context factors
         let context_factors = self.extract_context_factors(context).await?;
@@ -298,7 +308,10 @@ impl AdaptiveReplayMechanisms {
 
     /// Provide performance feedback for adaptation
     pub async fn provide_feedback(&mut self, feedback: ReplayPerformanceFeedback) -> Result<()> {
-        tracing::debug!("Receiving performance feedback for memory: {}", feedback.memory_key);
+        tracing::debug!(
+            "Receiving performance feedback for memory: {}",
+            feedback.memory_key
+        );
 
         // Store feedback
         self.performance_feedback.push_back(feedback.clone());
@@ -316,7 +329,10 @@ impl AdaptiveReplayMechanisms {
         // Update metrics
         self.update_performance_metrics().await?;
 
-        tracing::debug!("Performance feedback processed for strategy: {}", strategy_key);
+        tracing::debug!(
+            "Performance feedback processed for strategy: {}",
+            strategy_key
+        );
 
         Ok(())
     }
@@ -344,17 +360,21 @@ impl AdaptiveReplayMechanisms {
             return Ok(false);
         }
 
-        let recent_performance: f64 = self.performance_feedback
+        let recent_performance: f64 = self
+            .performance_feedback
             .iter()
             .rev()
             .take(10)
             .map(|f| f.success_rate)
-            .sum::<f64>() / 10.0;
+            .sum::<f64>()
+            / 10.0;
 
-        let overall_performance: f64 = self.performance_feedback
+        let overall_performance: f64 = self
+            .performance_feedback
             .iter()
             .map(|f| f.success_rate)
-            .sum::<f64>() / self.performance_feedback.len() as f64;
+            .sum::<f64>()
+            / self.performance_feedback.len() as f64;
 
         let performance_decline = overall_performance - recent_performance;
         Ok(performance_decline > self.config.min_adaptation_threshold)
@@ -368,21 +388,41 @@ impl AdaptiveReplayMechanisms {
         let current_strategy = self.current_strategy.clone();
 
         match current_strategy {
-            AdaptiveReplayStrategy::PerformanceDriven { success_threshold, adaptation_rate } => {
-                self.adapt_performance_driven(success_threshold, adaptation_rate).await?;
-            },
-            AdaptiveReplayStrategy::ContextAware { context_weights, adaptation_window } => {
-                self.adapt_context_aware(&context_weights, adaptation_window, context).await?;
-            },
-            AdaptiveReplayStrategy::MultiObjective { objectives, weights } => {
+            AdaptiveReplayStrategy::PerformanceDriven {
+                success_threshold,
+                adaptation_rate,
+            } => {
+                self.adapt_performance_driven(success_threshold, adaptation_rate)
+                    .await?;
+            }
+            AdaptiveReplayStrategy::ContextAware {
+                context_weights,
+                adaptation_window,
+            } => {
+                self.adapt_context_aware(&context_weights, adaptation_window, context)
+                    .await?;
+            }
+            AdaptiveReplayStrategy::MultiObjective {
+                objectives,
+                weights,
+            } => {
                 self.adapt_multi_objective(&objectives, &weights).await?;
-            },
-            AdaptiveReplayStrategy::ReinforcementLearning { exploration_rate, learning_rate, discount_factor } => {
-                self.adapt_reinforcement_learning(exploration_rate, learning_rate, discount_factor).await?;
-            },
-            AdaptiveReplayStrategy::Hybrid { strategies, selection_policy } => {
-                self.adapt_hybrid_strategy(&strategies, &selection_policy).await?;
-            },
+            }
+            AdaptiveReplayStrategy::ReinforcementLearning {
+                exploration_rate,
+                learning_rate,
+                discount_factor,
+            } => {
+                self.adapt_reinforcement_learning(exploration_rate, learning_rate, discount_factor)
+                    .await?;
+            }
+            AdaptiveReplayStrategy::Hybrid {
+                strategies,
+                selection_policy,
+            } => {
+                self.adapt_hybrid_strategy(&strategies, &selection_policy)
+                    .await?;
+            }
         }
 
         self.metrics.adaptation_count += 1;
@@ -430,7 +470,9 @@ impl AdaptiveReplayMechanisms {
         ];
 
         for strategy in candidate_strategies {
-            let score = self.evaluate_strategy_fitness(&strategy, memory, importance, context).await?;
+            let score = self
+                .evaluate_strategy_fitness(&strategy, memory, importance, context)
+                .await?;
             strategy_scores.insert(self.get_strategy_key(&strategy), (strategy, score));
         }
 
@@ -482,19 +524,26 @@ impl AdaptiveReplayMechanisms {
 
         // Strategy-specific adjustments
         let strategy_factor = match strategy {
-            AdaptiveReplayStrategy::PerformanceDriven { success_threshold, .. } => {
-                if importance.importance_score > *success_threshold { 1.2 } else { 0.8 }
-            },
+            AdaptiveReplayStrategy::PerformanceDriven {
+                success_threshold, ..
+            } => {
+                if importance.importance_score > *success_threshold {
+                    1.2
+                } else {
+                    0.8
+                }
+            }
             AdaptiveReplayStrategy::ContextAware { .. } => {
                 context.performance_trends.last().copied().unwrap_or(0.5)
-            },
+            }
             _ => 1.0,
         };
         priority_factors.push(strategy_factor);
 
         // Calculate weighted priority
         let weights = [0.3, 0.2, 0.2, 0.15, 0.15];
-        let priority: f64 = priority_factors.iter()
+        let priority: f64 = priority_factors
+            .iter()
             .zip(weights.iter())
             .map(|(factor, weight)| factor * weight)
             .sum();
@@ -516,11 +565,15 @@ impl AdaptiveReplayMechanisms {
             AdaptiveReplayStrategy::PerformanceDriven { .. } => {
                 // Higher importance = shorter delay
                 2.0 - importance.importance_score
-            },
+            }
             AdaptiveReplayStrategy::ContextAware { .. } => {
                 // Adjust based on context
-                if context.activity_level > 0.7 { 0.5 } else { 1.5 }
-            },
+                if context.activity_level > 0.7 {
+                    0.5
+                } else {
+                    1.5
+                }
+            }
             _ => 1.0,
         };
 
@@ -537,13 +590,12 @@ impl AdaptiveReplayMechanisms {
         context: &ReplayContext,
     ) -> Result<f64> {
         let strategy_key = self.get_strategy_key(strategy);
-        
+
         // Get historical performance for this strategy
-        let historical_performance = self.strategy_performance
+        let historical_performance = self
+            .strategy_performance
             .get(&strategy_key)
-            .map(|performances| {
-                performances.iter().sum::<f64>() / performances.len() as f64
-            })
+            .map(|performances| performances.iter().sum::<f64>() / performances.len() as f64)
             .unwrap_or(0.5);
 
         // Adjust based on current context and importance
@@ -554,11 +606,15 @@ impl AdaptiveReplayMechanisms {
     }
 
     /// Calculate adaptation confidence
-    async fn calculate_adaptation_confidence(&self, strategy: &AdaptiveReplayStrategy) -> Result<f64> {
+    async fn calculate_adaptation_confidence(
+        &self,
+        strategy: &AdaptiveReplayStrategy,
+    ) -> Result<f64> {
         let strategy_key = self.get_strategy_key(strategy);
-        
+
         // Confidence based on amount of historical data
-        let data_points = self.strategy_performance
+        let data_points = self
+            .strategy_performance
             .get(&strategy_key)
             .map(|performances| performances.len())
             .unwrap_or(0);
@@ -568,12 +624,15 @@ impl AdaptiveReplayMechanisms {
     }
 
     /// Extract context factors for decision
-    async fn extract_context_factors(&self, context: &ReplayContext) -> Result<HashMap<String, f64>> {
+    async fn extract_context_factors(
+        &self,
+        context: &ReplayContext,
+    ) -> Result<HashMap<String, f64>> {
         let mut factors = HashMap::new();
         factors.insert("activity_level".to_string(), context.activity_level);
         factors.insert("system_load".to_string(), context.system_load);
         factors.insert("time_of_day_factor".to_string(), context.time_of_day_factor);
-        
+
         if let Some(trend) = context.performance_trends.last() {
             factors.insert("performance_trend".to_string(), *trend);
         }
@@ -587,7 +646,9 @@ impl AdaptiveReplayMechanisms {
             AdaptiveReplayStrategy::PerformanceDriven { .. } => "performance_driven".to_string(),
             AdaptiveReplayStrategy::ContextAware { .. } => "context_aware".to_string(),
             AdaptiveReplayStrategy::MultiObjective { .. } => "multi_objective".to_string(),
-            AdaptiveReplayStrategy::ReinforcementLearning { .. } => "reinforcement_learning".to_string(),
+            AdaptiveReplayStrategy::ReinforcementLearning { .. } => {
+                "reinforcement_learning".to_string()
+            }
             AdaptiveReplayStrategy::Hybrid { .. } => "hybrid".to_string(),
         }
     }
@@ -601,10 +662,20 @@ impl AdaptiveReplayMechanisms {
         // Calculate average performance improvement
         let recent_feedback: Vec<_> = self.performance_feedback.iter().rev().take(20).collect();
         if recent_feedback.len() >= 20 {
-            let recent_avg = recent_feedback.iter().take(10).map(|f| f.success_rate).sum::<f64>() / 10.0;
+            let recent_avg = recent_feedback
+                .iter()
+                .take(10)
+                .map(|f| f.success_rate)
+                .sum::<f64>()
+                / 10.0;
             let older_count = recent_feedback.len().saturating_sub(10);
             if older_count > 0 {
-                let older_avg = recent_feedback.iter().skip(10).map(|f| f.success_rate).sum::<f64>() / older_count as f64;
+                let older_avg = recent_feedback
+                    .iter()
+                    .skip(10)
+                    .map(|f| f.success_rate)
+                    .sum::<f64>()
+                    / older_count as f64;
                 self.metrics.avg_performance_improvement = recent_avg - older_avg;
             }
         }
@@ -613,7 +684,9 @@ impl AdaptiveReplayMechanisms {
         for (strategy_key, performances) in &self.strategy_performance {
             if !performances.is_empty() {
                 let effectiveness = performances.iter().sum::<f64>() / performances.len() as f64;
-                self.metrics.strategy_effectiveness.insert(strategy_key.clone(), effectiveness);
+                self.metrics
+                    .strategy_effectiveness
+                    .insert(strategy_key.clone(), effectiveness);
             }
         }
 
@@ -623,52 +696,83 @@ impl AdaptiveReplayMechanisms {
 
             // Compare predicted vs actual effectiveness for recent decisions
             for decision in self.decision_history.iter().rev().take(10) {
-                if let Some(feedback) = self.performance_feedback.iter()
-                    .find(|f| f.memory_key == decision.memory_key) {
-                    let prediction_error = (decision.expected_effectiveness - feedback.success_rate).abs();
+                if let Some(feedback) = self
+                    .performance_feedback
+                    .iter()
+                    .find(|f| f.memory_key == decision.memory_key)
+                {
+                    let prediction_error =
+                        (decision.expected_effectiveness - feedback.success_rate).abs();
                     prediction_errors.push(prediction_error);
                 }
             }
 
             if !prediction_errors.is_empty() {
-                let mean_error = prediction_errors.iter().sum::<f64>() / prediction_errors.len() as f64;
+                let mean_error =
+                    prediction_errors.iter().sum::<f64>() / prediction_errors.len() as f64;
                 self.metrics.context_adaptation_accuracy = (1.0 - mean_error).max(0.0);
             }
         }
 
         // Calculate multi-objective optimization score
-        if let AdaptiveReplayStrategy::MultiObjective { objectives, weights } = &self.current_strategy {
+        if let AdaptiveReplayStrategy::MultiObjective {
+            objectives,
+            weights,
+        } = &self.current_strategy
+        {
             if self.performance_feedback.len() >= 5 {
-                let recent_feedback: Vec<_> = self.performance_feedback.iter().rev().take(5).collect();
+                let recent_feedback: Vec<_> =
+                    self.performance_feedback.iter().rev().take(5).collect();
                 let mut objective_scores = Vec::new();
 
                 for objective in objectives {
                     let score = match objective {
                         ReplayObjective::MaximizeRetention => {
-                            recent_feedback.iter().map(|f| f.retention_improvement).sum::<f64>() / recent_feedback.len() as f64
-                        },
+                            recent_feedback
+                                .iter()
+                                .map(|f| f.retention_improvement)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64
+                        }
                         ReplayObjective::MinimizeInterference => {
-                            1.0 - (recent_feedback.iter().map(|f| f.interference_level).sum::<f64>() / recent_feedback.len() as f64)
-                        },
+                            1.0 - (recent_feedback
+                                .iter()
+                                .map(|f| f.interference_level)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64)
+                        }
                         ReplayObjective::OptimizeLearningEfficiency => {
-                            recent_feedback.iter().map(|f| f.learning_efficiency).sum::<f64>() / recent_feedback.len() as f64
-                        },
+                            recent_feedback
+                                .iter()
+                                .map(|f| f.learning_efficiency)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64
+                        }
                         ReplayObjective::BalanceCoverageDepth => {
                             // Calculate balance between coverage and depth
                             let coverage_score = recent_feedback.len() as f64 / 10.0; // Normalize to expected feedback count
-                            let depth_score = recent_feedback.iter().map(|f| f.context_relevance).sum::<f64>() / recent_feedback.len() as f64;
+                            let depth_score = recent_feedback
+                                .iter()
+                                .map(|f| f.context_relevance)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64;
                             (coverage_score + depth_score) / 2.0
-                        },
+                        }
                         ReplayObjective::MinimizeComputationalCost => {
-                            1.0 - (recent_feedback.iter().map(|f| f.computational_cost).sum::<f64>() / recent_feedback.len() as f64)
-                        },
+                            1.0 - (recent_feedback
+                                .iter()
+                                .map(|f| f.computational_cost)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64)
+                        }
                     };
                     objective_scores.push(score);
                 }
 
                 // Calculate weighted multi-objective score
                 if objective_scores.len() == weights.len() {
-                    self.metrics.multi_objective_score = objective_scores.iter()
+                    self.metrics.multi_objective_score = objective_scores
+                        .iter()
                         .zip(weights.iter())
                         .map(|(score, weight)| score * weight)
                         .sum();
@@ -695,17 +799,23 @@ impl AdaptiveReplayMechanisms {
     }
 
     /// Adapt performance-driven strategy
-    async fn adapt_performance_driven(&mut self, success_threshold: f64, adaptation_rate: f64) -> Result<()> {
+    async fn adapt_performance_driven(
+        &mut self,
+        success_threshold: f64,
+        adaptation_rate: f64,
+    ) -> Result<()> {
         if self.performance_feedback.len() < 10 {
             return Ok(());
         }
 
-        let recent_success_rate: f64 = self.performance_feedback
+        let recent_success_rate: f64 = self
+            .performance_feedback
             .iter()
             .rev()
             .take(10)
             .map(|f| f.success_rate)
-            .sum::<f64>() / 10.0;
+            .sum::<f64>()
+            / 10.0;
 
         // Adjust threshold based on recent performance
         let new_threshold = if recent_success_rate < success_threshold {
@@ -722,8 +832,11 @@ impl AdaptiveReplayMechanisms {
 
         self.metrics.current_adaptation_rate = adaptation_rate;
 
-        tracing::debug!("Adapted performance-driven strategy: threshold {:.3} -> {:.3}",
-                       success_threshold, new_threshold);
+        tracing::debug!(
+            "Adapted performance-driven strategy: threshold {:.3} -> {:.3}",
+            success_threshold,
+            new_threshold
+        );
 
         Ok(())
     }
@@ -744,7 +857,9 @@ impl AdaptiveReplayMechanisms {
             // Adjust weights based on context effectiveness
             for context in recent_contexts {
                 if context.activity_level > 0.7 {
-                    *new_weights.entry("activity_level".to_string()).or_insert(0.5) += 0.1;
+                    *new_weights
+                        .entry("activity_level".to_string())
+                        .or_insert(0.5) += 0.1;
                 }
                 if context.system_load < 0.3 {
                     *new_weights.entry("system_load".to_string()).or_insert(0.5) += 0.1;
@@ -787,14 +902,26 @@ impl AdaptiveReplayMechanisms {
                 if i < new_weights.len() {
                     let objective_score = match objective {
                         ReplayObjective::MaximizeRetention => {
-                            recent_feedback.iter().map(|f| f.retention_improvement).sum::<f64>() / recent_feedback.len() as f64
-                        },
+                            recent_feedback
+                                .iter()
+                                .map(|f| f.retention_improvement)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64
+                        }
                         ReplayObjective::MinimizeInterference => {
-                            1.0 - (recent_feedback.iter().map(|f| f.interference_level).sum::<f64>() / recent_feedback.len() as f64)
-                        },
+                            1.0 - (recent_feedback
+                                .iter()
+                                .map(|f| f.interference_level)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64)
+                        }
                         ReplayObjective::OptimizeLearningEfficiency => {
-                            recent_feedback.iter().map(|f| f.learning_efficiency).sum::<f64>() / recent_feedback.len() as f64
-                        },
+                            recent_feedback
+                                .iter()
+                                .map(|f| f.learning_efficiency)
+                                .sum::<f64>()
+                                / recent_feedback.len() as f64
+                        }
                         _ => 0.5,
                     };
 
@@ -854,8 +981,13 @@ impl AdaptiveReplayMechanisms {
             discount_factor,
         };
 
-        tracing::debug!("Adapted RL strategy: exploration {:.3} -> {:.3}, learning {:.3} -> {:.3}",
-                       exploration_rate, new_exploration_rate, learning_rate, new_learning_rate);
+        tracing::debug!(
+            "Adapted RL strategy: exploration {:.3} -> {:.3}, learning {:.3} -> {:.3}",
+            exploration_rate,
+            new_exploration_rate,
+            learning_rate,
+            new_learning_rate
+        );
 
         Ok(())
     }
@@ -876,7 +1008,7 @@ impl AdaptiveReplayMechanisms {
                 } else {
                     selection_policy.clone()
                 }
-            },
+            }
             _ => selection_policy.clone(),
         };
 
@@ -896,7 +1028,8 @@ impl AdaptiveReplayMechanisms {
             return Ok(0.0);
         }
 
-        let recent_scores: Vec<f64> = self.performance_feedback
+        let recent_scores: Vec<f64> = self
+            .performance_feedback
             .iter()
             .rev()
             .take(10)
@@ -904,9 +1037,11 @@ impl AdaptiveReplayMechanisms {
             .collect();
 
         let mean = recent_scores.iter().sum::<f64>() / recent_scores.len() as f64;
-        let variance = recent_scores.iter()
+        let variance = recent_scores
+            .iter()
             .map(|score| (score - mean).powi(2))
-            .sum::<f64>() / recent_scores.len() as f64;
+            .sum::<f64>()
+            / recent_scores.len() as f64;
 
         Ok(variance)
     }
@@ -923,7 +1058,8 @@ impl AdaptiveReplayMechanisms {
 
         // Historical performance factor
         let strategy_key = self.get_strategy_key(strategy);
-        let historical_performance = self.strategy_performance
+        let historical_performance = self
+            .strategy_performance
             .get(&strategy_key)
             .map(|performances| {
                 if performances.is_empty() {
@@ -937,19 +1073,27 @@ impl AdaptiveReplayMechanisms {
 
         // Context compatibility factor
         let context_compatibility = match strategy {
-            AdaptiveReplayStrategy::PerformanceDriven { success_threshold, .. } => {
+            AdaptiveReplayStrategy::PerformanceDriven {
+                success_threshold, ..
+            } => {
                 // Good for high-importance memories with clear success metrics
-                if importance.importance_score > *success_threshold && context.performance_trends.len() >= 3 {
+                if importance.importance_score > *success_threshold
+                    && context.performance_trends.len() >= 3
+                {
                     0.9
                 } else {
                     0.6
                 }
-            },
+            }
             AdaptiveReplayStrategy::ContextAware { .. } => {
                 // Good for dynamic environments with varying context
                 let context_variance = self.calculate_context_variance(context).await?;
-                if context_variance > 0.1 { 0.8 } else { 0.5 }
-            },
+                if context_variance > 0.1 {
+                    0.8
+                } else {
+                    0.5
+                }
+            }
             AdaptiveReplayStrategy::MultiObjective { .. } => {
                 // Good for complex scenarios requiring balanced optimization
                 if importance.importance_score > 0.6 && context.activity_level > 0.5 {
@@ -957,20 +1101,26 @@ impl AdaptiveReplayMechanisms {
                 } else {
                     0.7
                 }
-            },
+            }
             AdaptiveReplayStrategy::ReinforcementLearning { .. } => {
                 // Good for learning scenarios with feedback
-                if self.performance_feedback.len() >= 10 { 0.8 } else { 0.4 }
-            },
+                if self.performance_feedback.len() >= 10 {
+                    0.8
+                } else {
+                    0.4
+                }
+            }
             AdaptiveReplayStrategy::Hybrid { .. } => {
                 // Generally good but with overhead
                 0.75
-            },
+            }
         };
         fitness_factors.push(context_compatibility);
 
         // Memory characteristics factor
-        let memory_factor = self.calculate_memory_fitness_factor(memory, importance).await?;
+        let memory_factor = self
+            .calculate_memory_fitness_factor(memory, importance)
+            .await?;
         fitness_factors.push(memory_factor);
 
         // System resource factor
@@ -983,7 +1133,8 @@ impl AdaptiveReplayMechanisms {
 
         // Calculate weighted fitness score
         let weights = [0.3, 0.25, 0.2, 0.15, 0.1];
-        let fitness_score: f64 = fitness_factors.iter()
+        let fitness_score: f64 = fitness_factors
+            .iter()
             .zip(weights.iter())
             .map(|(factor, weight)| factor * weight)
             .sum();
@@ -1002,16 +1153,20 @@ impl AdaptiveReplayMechanisms {
         // Calculate variance in activity level
         let activity_levels: Vec<f64> = recent_contexts.iter().map(|c| c.activity_level).collect();
         let activity_mean = activity_levels.iter().sum::<f64>() / activity_levels.len() as f64;
-        let activity_variance = activity_levels.iter()
+        let activity_variance = activity_levels
+            .iter()
             .map(|level| (level - activity_mean).powi(2))
-            .sum::<f64>() / activity_levels.len() as f64;
+            .sum::<f64>()
+            / activity_levels.len() as f64;
 
         // Calculate variance in system load
         let load_levels: Vec<f64> = recent_contexts.iter().map(|c| c.system_load).collect();
         let load_mean = load_levels.iter().sum::<f64>() / load_levels.len() as f64;
-        let load_variance = load_levels.iter()
+        let load_variance = load_levels
+            .iter()
             .map(|load| (load - load_mean).powi(2))
-            .sum::<f64>() / load_levels.len() as f64;
+            .sum::<f64>()
+            / load_levels.len() as f64;
 
         // Combined variance
         let combined_variance = (activity_variance + load_variance) / 2.0;
@@ -1030,8 +1185,8 @@ impl AdaptiveReplayMechanisms {
         factors.push(importance.importance_score);
 
         // Access pattern factor
-        let access_frequency = memory.access_count() as f64 /
-            (Utc::now() - memory.created_at()).num_days().max(1) as f64;
+        let access_frequency = memory.access_count() as f64
+            / (Utc::now() - memory.created_at()).num_days().max(1) as f64;
         let access_factor = (access_frequency / 5.0).min(1.0); // Normalize to daily access
         factors.push(access_factor);
 
@@ -1057,7 +1212,8 @@ impl AdaptiveReplayMechanisms {
 
         // Calculate weighted average
         let weights = [0.4, 0.25, 0.2, 0.15];
-        let fitness_factor: f64 = factors.iter()
+        let fitness_factor: f64 = factors
+            .iter()
             .zip(weights.iter())
             .map(|(factor, weight)| factor * weight)
             .sum();
@@ -1126,18 +1282,25 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add performance feedback indicating poor performance
         for i in 0..15 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.4); // Low success rate
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let context = create_test_context();
 
         // Force adaptation
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms
+            .perform_adaptation(&context)
+            .await
+            .expect("await should be present");
 
         // Check that adaptation occurred
         assert!(mechanisms.metrics.adaptation_count > 0);
@@ -1159,16 +1322,23 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add context history
         for _ in 0..10 {
             let context = create_test_context();
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms
+                .update_context(context)
+                .await
+                .expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms
+            .perform_adaptation(&context)
+            .await
+            .expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1191,7 +1361,8 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add performance feedback
         for i in 0..15 {
@@ -1199,11 +1370,17 @@ mod tests {
             feedback.retention_improvement = 0.9; // High retention
             feedback.interference_level = 0.1; // Low interference
             feedback.learning_efficiency = 0.8; // Good efficiency
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms
+            .perform_adaptation(&context)
+            .await
+            .expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1220,17 +1397,24 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add performance feedback with high variance
         let success_rates = [0.2, 0.8, 0.3, 0.9, 0.1, 0.7, 0.4, 0.8, 0.2, 0.9];
         for (i, &rate) in success_rates.iter().enumerate() {
             let feedback = create_test_feedback(&format!("key_{}", i), rate);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms
+            .perform_adaptation(&context)
+            .await
+            .expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1240,9 +1424,14 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.8,
@@ -1256,7 +1445,10 @@ mod tests {
         };
         let context = create_test_context();
 
-        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.unwrap();
+        let decision = mechanisms
+            .make_adaptive_decision(&memory, &importance, &context)
+            .await
+            .expect("await should be present");
 
         assert_eq!(decision.memory_key, "test_key");
         assert!(decision.replay_priority >= 0.0);
@@ -1273,12 +1465,16 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add multiple feedback entries
         for i in 0..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.7 + (i as f64 * 0.01));
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let metrics = mechanisms.get_metrics();
@@ -1294,10 +1490,14 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         let context = create_test_context();
-        let factors = mechanisms.extract_context_factors(&context).await.unwrap();
+        let factors = mechanisms
+            .extract_context_factors(&context)
+            .await
+            .expect("await should be present");
 
         assert!(factors.contains_key("activity_level"));
         assert!(factors.contains_key("system_load"));
@@ -1317,20 +1517,30 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add feedback showing performance decline
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8); // Good performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         for i in 10..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.5); // Poor performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
-        let should_adapt = mechanisms.should_adapt().await.unwrap();
+        let should_adapt = mechanisms
+            .should_adapt()
+            .await
+            .expect("await should be present");
         assert!(should_adapt);
     }
 
@@ -1339,12 +1549,16 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add feedback for current strategy
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let strategy_key = mechanisms.get_strategy_key(&mechanisms.current_strategy);
@@ -1360,16 +1574,23 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add feedback with known variance
         let success_rates = [0.5, 0.6, 0.7, 0.8, 0.9]; // Low variance
         for (i, &rate) in success_rates.iter().enumerate() {
             let feedback = create_test_feedback(&format!("key_{}", i), rate);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
-        let variance = mechanisms.calculate_performance_variance().await.unwrap();
+        let variance = mechanisms
+            .calculate_performance_variance()
+            .await
+            .expect("await should be present");
         assert!(variance >= 0.0);
         assert!(variance < 0.1); // Should be low variance
     }
@@ -1378,12 +1599,16 @@ mod tests {
     async fn test_strategy_fitness_evaluation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add some performance history
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1416,8 +1641,14 @@ mod tests {
             adaptation_window: 24,
         };
 
-        let performance_fitness = mechanisms.evaluate_strategy_fitness(&performance_strategy, &memory, &importance, &context).await.unwrap();
-        let context_fitness = mechanisms.evaluate_strategy_fitness(&context_strategy, &memory, &importance, &context).await.unwrap();
+        let performance_fitness = mechanisms
+            .evaluate_strategy_fitness(&performance_strategy, &memory, &importance, &context)
+            .await
+            .expect("await should be present");
+        let context_fitness = mechanisms
+            .evaluate_strategy_fitness(&context_strategy, &memory, &importance, &context)
+            .await
+            .expect("await should be present");
 
         assert!(performance_fitness >= 0.0 && performance_fitness <= 1.0);
         assert!(context_fitness >= 0.0 && context_fitness <= 1.0);
@@ -1431,7 +1662,8 @@ mod tests {
     async fn test_memory_fitness_factor_calculation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Create memory with different characteristics
         let mut recent_memory = MemoryEntry::new(
@@ -1471,8 +1703,14 @@ mod tests {
             fisher_information: None,
         };
 
-        let recent_high_fitness = mechanisms.calculate_memory_fitness_factor(&recent_memory, &high_importance).await.unwrap();
-        let old_low_fitness = mechanisms.calculate_memory_fitness_factor(&old_memory, &low_importance).await.unwrap();
+        let recent_high_fitness = mechanisms
+            .calculate_memory_fitness_factor(&recent_memory, &high_importance)
+            .await
+            .expect("await should be present");
+        let old_low_fitness = mechanisms
+            .calculate_memory_fitness_factor(&old_memory, &low_importance)
+            .await
+            .expect("await should be present");
 
         assert!(recent_high_fitness > old_low_fitness);
         assert!(recent_high_fitness >= 0.0 && recent_high_fitness <= 1.0);
@@ -1483,18 +1721,25 @@ mod tests {
     async fn test_context_variance_with_stable_context() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add stable contexts (low variance)
         for _ in 0..10 {
             let mut context = create_test_context();
             context.activity_level = 0.7; // Stable activity
             context.system_load = 0.3; // Stable load
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms
+                .update_context(context)
+                .await
+                .expect("await should be present");
         }
 
         let current_context = create_test_context();
-        let variance = mechanisms.calculate_context_variance(&current_context).await.unwrap();
+        let variance = mechanisms
+            .calculate_context_variance(&current_context)
+            .await
+            .expect("await should be present");
 
         assert!(variance < 0.01); // Should be very low variance
     }
@@ -1503,12 +1748,16 @@ mod tests {
     async fn test_hybrid_strategy_selection() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Add performance history that makes multiple strategies viable
         for i in 0..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.75); // Good performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1531,13 +1780,16 @@ mod tests {
 
         let context = create_test_context();
 
-        let selected_strategy = mechanisms.select_optimal_strategy(&memory, &importance, &context).await.unwrap();
+        let selected_strategy = mechanisms
+            .select_optimal_strategy(&memory, &importance, &context)
+            .await
+            .expect("await should be present");
 
         // With good performance across strategies, might select hybrid
         match selected_strategy {
             AdaptiveReplayStrategy::Hybrid { strategies, .. } => {
                 assert!(strategies.len() >= 2);
-            },
+            }
             _ => {
                 // Single strategy is also valid if it has clearly superior fitness
             }
@@ -1548,7 +1800,8 @@ mod tests {
     async fn test_adaptation_confidence_calculation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         let strategy = AdaptiveReplayStrategy::PerformanceDriven {
             success_threshold: 0.7,
@@ -1556,16 +1809,25 @@ mod tests {
         };
 
         // Test with no historical data
-        let confidence_no_data = mechanisms.calculate_adaptation_confidence(&strategy).await.unwrap();
+        let confidence_no_data = mechanisms
+            .calculate_adaptation_confidence(&strategy)
+            .await
+            .expect("await should be present");
         assert_eq!(confidence_no_data, 0.0);
 
         // Add some performance data
         for i in 0..50 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
-        let confidence_with_data = mechanisms.calculate_adaptation_confidence(&strategy).await.unwrap();
+        let confidence_with_data = mechanisms
+            .calculate_adaptation_confidence(&strategy)
+            .await
+            .expect("await should be present");
         assert!(confidence_with_data > confidence_no_data);
         assert!(confidence_with_data <= 1.0);
     }
@@ -1574,18 +1836,25 @@ mod tests {
     async fn test_comprehensive_adaptive_decision_flow() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config)
+            .expect("value should be available");
 
         // Build up comprehensive history
         for i in 0..30 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.7 + (i as f64 * 0.01));
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms
+                .provide_feedback(feedback)
+                .await
+                .expect("await should be present");
         }
 
         for i in 0..10 {
             let mut context = create_test_context();
             context.activity_level = 0.5 + (i as f64 * 0.05);
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms
+                .update_context(context)
+                .await
+                .expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1609,7 +1878,10 @@ mod tests {
         let context = create_test_context();
 
         // Make adaptive decision
-        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.unwrap();
+        let decision = mechanisms
+            .make_adaptive_decision(&memory, &importance, &context)
+            .await
+            .expect("await should be present");
 
         // Verify decision quality
         assert!(decision.replay_priority > 0.5); // Should be high priority

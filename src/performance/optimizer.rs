@@ -3,16 +3,16 @@
 // Provides intelligent performance optimization strategies based on
 // real-time metrics and machine learning algorithms.
 
+use chrono::{DateTime, Timelike, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc, Timelike};
 use uuid::Uuid;
 
-use crate::error::{Result, MemoryError};
-use super::{PerformanceConfig, metrics::PerformanceMetrics};
+use super::{metrics::PerformanceMetrics, PerformanceConfig};
+use crate::error::{MemoryError, Result};
 
 /// Performance optimizer with intelligent optimization strategies
 #[derive(Debug)]
@@ -54,7 +54,7 @@ impl PerformanceOptimizer {
                 0.5,
             ),
         ];
-        
+
         Ok(Self {
             config,
             _optimization_strategies: Arc::new(RwLock::new(strategies)),
@@ -63,29 +63,32 @@ impl PerformanceOptimizer {
             adaptive_tuner: Arc::new(RwLock::new(AdaptiveTuner::new())),
         })
     }
-    
+
     /// Optimize performance based on current metrics
     pub async fn optimize(&mut self, metrics: &PerformanceMetrics) -> Result<OptimizationPlan> {
         // Analyze current performance
         let analysis = self.analyze_performance(metrics).await?;
-        
+
         // Generate optimization plan
         let plan = self.generate_optimization_plan(&analysis).await?;
-        
+
         // Apply machine learning predictions
         self.apply_ml_predictions(&plan).await?;
-        
+
         // Store in history
         self.optimization_history.write().await.push(plan.clone());
-        
+
         Ok(plan)
     }
-    
+
     /// Analyze current performance metrics
-    async fn analyze_performance(&self, metrics: &PerformanceMetrics) -> Result<PerformanceAnalysis> {
+    async fn analyze_performance(
+        &self,
+        metrics: &PerformanceMetrics,
+    ) -> Result<PerformanceAnalysis> {
         let mut bottlenecks = Vec::new();
         let mut opportunities = Vec::new();
-        
+
         // Analyze latency
         if metrics.avg_latency_ms > self.config.target_latency_ms {
             bottlenecks.push(PerformanceBottleneck {
@@ -95,11 +98,14 @@ impl PerformanceOptimizer {
                 } else {
                     BottleneckSeverity::Medium
                 },
-                impact: (metrics.avg_latency_ms - self.config.target_latency_ms) / self.config.target_latency_ms,
-                description: format!("Latency {:.2}ms exceeds target {:.2}ms", 
-                    metrics.avg_latency_ms, self.config.target_latency_ms),
+                impact: (metrics.avg_latency_ms - self.config.target_latency_ms)
+                    / self.config.target_latency_ms,
+                description: format!(
+                    "Latency {:.2}ms exceeds target {:.2}ms",
+                    metrics.avg_latency_ms, self.config.target_latency_ms
+                ),
             });
-            
+
             opportunities.push(OptimizationOpportunity {
                 optimization_type: OptimizationType::CacheOptimization,
                 potential_improvement: 0.3,
@@ -107,18 +113,21 @@ impl PerformanceOptimizer {
                 description: "Cache optimization can reduce latency".to_string(),
             });
         }
-        
+
         // Analyze throughput
         if metrics.throughput_ops_per_sec < self.config.target_throughput_ops_per_sec {
             bottlenecks.push(PerformanceBottleneck {
                 component: "Throughput".to_string(),
                 severity: BottleneckSeverity::Medium,
-                impact: (self.config.target_throughput_ops_per_sec - metrics.throughput_ops_per_sec) 
+                impact: (self.config.target_throughput_ops_per_sec
+                    - metrics.throughput_ops_per_sec)
                     / self.config.target_throughput_ops_per_sec,
-                description: format!("Throughput {:.2} ops/sec below target {:.2} ops/sec",
-                    metrics.throughput_ops_per_sec, self.config.target_throughput_ops_per_sec),
+                description: format!(
+                    "Throughput {:.2} ops/sec below target {:.2} ops/sec",
+                    metrics.throughput_ops_per_sec, self.config.target_throughput_ops_per_sec
+                ),
             });
-            
+
             opportunities.push(OptimizationOpportunity {
                 optimization_type: OptimizationType::ExecutorOptimization,
                 potential_improvement: 0.4,
@@ -126,18 +135,20 @@ impl PerformanceOptimizer {
                 description: "Executor optimization can improve throughput".to_string(),
             });
         }
-        
+
         // Analyze memory usage
         if metrics.memory_usage_mb > self.config.target_memory_usage_mb {
             bottlenecks.push(PerformanceBottleneck {
                 component: "Memory".to_string(),
                 severity: BottleneckSeverity::Medium,
-                impact: (metrics.memory_usage_mb - self.config.target_memory_usage_mb) 
+                impact: (metrics.memory_usage_mb - self.config.target_memory_usage_mb)
                     / self.config.target_memory_usage_mb,
-                description: format!("Memory usage {:.2}MB exceeds target {:.2}MB",
-                    metrics.memory_usage_mb, self.config.target_memory_usage_mb),
+                description: format!(
+                    "Memory usage {:.2}MB exceeds target {:.2}MB",
+                    metrics.memory_usage_mb, self.config.target_memory_usage_mb
+                ),
             });
-            
+
             opportunities.push(OptimizationOpportunity {
                 optimization_type: OptimizationType::CompressionOptimization,
                 potential_improvement: 0.25,
@@ -145,7 +156,7 @@ impl PerformanceOptimizer {
                 description: "Compression can reduce memory usage".to_string(),
             });
         }
-        
+
         Ok(PerformanceAnalysis {
             timestamp: Utc::now(),
             metrics: metrics.clone(),
@@ -154,29 +165,35 @@ impl PerformanceOptimizer {
             overall_score: self.calculate_performance_score(metrics).await?,
         })
     }
-    
+
     /// Generate optimization plan
-    async fn generate_optimization_plan(&self, analysis: &PerformanceAnalysis) -> Result<OptimizationPlan> {
+    async fn generate_optimization_plan(
+        &self,
+        analysis: &PerformanceAnalysis,
+    ) -> Result<OptimizationPlan> {
         let mut optimizations = Vec::new();
-        
+
         // Sort opportunities by potential improvement
         use crate::error_handling::SafeCompare;
         let mut sorted_opportunities = analysis.opportunities.clone();
-        sorted_opportunities.sort_by(|a, b|
-            b.potential_improvement.safe_partial_cmp(&a.potential_improvement)
-        );
-        
+        sorted_opportunities.sort_by(|a, b| {
+            b.potential_improvement
+                .safe_partial_cmp(&a.potential_improvement)
+        });
+
         // Generate optimizations for top opportunities
         for opportunity in sorted_opportunities.iter().take(3) {
             let optimization = self.create_optimization(opportunity).await?;
             optimizations.push(optimization);
         }
-        
+
         // Calculate expected improvement
-        let expected_improvement = optimizations.iter()
+        let expected_improvement = optimizations
+            .iter()
             .map(|opt| opt.expected_improvement)
-            .sum::<f64>() / optimizations.len() as f64;
-        
+            .sum::<f64>()
+            / optimizations.len() as f64;
+
         Ok(OptimizationPlan {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -186,26 +203,47 @@ impl PerformanceOptimizer {
             estimated_duration: Duration::from_secs(30), // Estimated optimization time
         })
     }
-    
+
     /// Create optimization from opportunity
-    async fn create_optimization(&self, opportunity: &OptimizationOpportunity) -> Result<Optimization> {
+    async fn create_optimization(
+        &self,
+        opportunity: &OptimizationOpportunity,
+    ) -> Result<Optimization> {
         let parameters = match opportunity.optimization_type {
             OptimizationType::CacheOptimization => {
                 let mut params = HashMap::new();
-                params.insert("cache_size_mb".to_string(), (self.config.cache_size_mb * 2).to_string());
-                params.insert("ttl_seconds".to_string(), (self.config.cache_ttl_seconds / 2).to_string());
+                params.insert(
+                    "cache_size_mb".to_string(),
+                    (self.config.cache_size_mb * 2).to_string(),
+                );
+                params.insert(
+                    "ttl_seconds".to_string(),
+                    (self.config.cache_ttl_seconds / 2).to_string(),
+                );
                 params
             }
             OptimizationType::MemoryPoolOptimization => {
                 let mut params = HashMap::new();
-                params.insert("pool_size_mb".to_string(), (self.config.memory_pool_size_mb * 2).to_string());
-                params.insert("chunk_size_kb".to_string(), (self.config.memory_pool_chunk_size_kb * 2).to_string());
+                params.insert(
+                    "pool_size_mb".to_string(),
+                    (self.config.memory_pool_size_mb * 2).to_string(),
+                );
+                params.insert(
+                    "chunk_size_kb".to_string(),
+                    (self.config.memory_pool_chunk_size_kb * 2).to_string(),
+                );
                 params
             }
             OptimizationType::ExecutorOptimization => {
                 let mut params = HashMap::new();
-                params.insert("worker_threads".to_string(), (self.config.worker_threads + 2).to_string());
-                params.insert("max_blocking_threads".to_string(), (self.config.max_blocking_threads + 100).to_string());
+                params.insert(
+                    "worker_threads".to_string(),
+                    (self.config.worker_threads + 2).to_string(),
+                );
+                params.insert(
+                    "max_blocking_threads".to_string(),
+                    (self.config.max_blocking_threads + 100).to_string(),
+                );
                 params
             }
             OptimizationType::IndexOptimization => {
@@ -221,7 +259,7 @@ impl PerformanceOptimizer {
                 params
             }
         };
-        
+
         Ok(Optimization {
             id: Uuid::new_v4(),
             optimization_type: opportunity.optimization_type.clone(),
@@ -232,27 +270,33 @@ impl PerformanceOptimizer {
             estimated_duration: Duration::from_secs(10),
         })
     }
-    
+
     /// Apply machine learning predictions
     async fn apply_ml_predictions(&self, plan: &OptimizationPlan) -> Result<()> {
         let mut predictor = self.ml_predictor.write().await;
         predictor.train_on_plan(plan).await?;
-        
+
         let mut tuner = self.adaptive_tuner.write().await;
         tuner.adjust_parameters(plan).await?;
-        
+
         Ok(())
     }
-    
+
     /// Calculate performance score
     async fn calculate_performance_score(&self, metrics: &PerformanceMetrics) -> Result<f64> {
-        let latency_score = (self.config.target_latency_ms / metrics.avg_latency_ms.max(0.1)).min(1.0);
-        let throughput_score = (metrics.throughput_ops_per_sec / self.config.target_throughput_ops_per_sec).min(1.0);
-        let memory_score = (self.config.target_memory_usage_mb / metrics.memory_usage_mb.max(1.0)).min(1.0);
-        let cpu_score = (self.config.target_cpu_usage_percent / metrics.cpu_usage_percent.max(1.0)).min(1.0);
-        
+        let latency_score =
+            (self.config.target_latency_ms / metrics.avg_latency_ms.max(0.1)).min(1.0);
+        let throughput_score =
+            (metrics.throughput_ops_per_sec / self.config.target_throughput_ops_per_sec).min(1.0);
+        let memory_score =
+            (self.config.target_memory_usage_mb / metrics.memory_usage_mb.max(1.0)).min(1.0);
+        let cpu_score =
+            (self.config.target_cpu_usage_percent / metrics.cpu_usage_percent.max(1.0)).min(1.0);
+
         // Weighted average
-        let score = (latency_score * 0.3 + throughput_score * 0.3 + memory_score * 0.2 + cpu_score * 0.2) * 100.0;
+        let score =
+            (latency_score * 0.3 + throughput_score * 0.3 + memory_score * 0.2 + cpu_score * 0.2)
+                * 100.0;
         Ok(score.max(0.0).min(100.0))
     }
 }
@@ -428,9 +472,9 @@ impl MLPredictor {
         let online_prediction = self.online_learner.predict(&features)?;
 
         // Weighted ensemble
-        let ensemble_prediction = (linear_prediction * 0.4 +
-                                 similarity_prediction * 0.3 +
-                                 online_prediction * 0.3).clamp(0.0, 1.0);
+        let ensemble_prediction =
+            (linear_prediction * 0.4 + similarity_prediction * 0.3 + online_prediction * 0.3)
+                .clamp(0.0, 1.0);
 
         Ok(ensemble_prediction)
     }
@@ -476,31 +520,31 @@ impl MLPredictor {
                 features[0] = 1.0;
                 features[1] = 0.8; // Memory impact
                 features[2] = 0.3; // CPU impact
-            },
+            }
             OptimizationType::CacheOptimization => {
                 features[0] = 0.0;
                 features[1] = 0.7; // Memory impact
                 features[2] = 0.4; // CPU impact
                 features[4] = 1.0; // Cache impact
-            },
+            }
             OptimizationType::IndexOptimization => {
                 features[0] = 0.0;
                 features[1] = 0.4; // Memory impact
                 features[2] = 0.6; // CPU impact
                 features[3] = 1.0; // IO impact
-            },
+            }
             OptimizationType::ExecutorOptimization => {
                 features[0] = 0.0;
                 features[1] = 0.3; // Memory impact
                 features[2] = 0.5; // CPU impact
                 features[5] = 1.0; // Network impact
-            },
+            }
             OptimizationType::CompressionOptimization => {
                 features[0] = 0.0;
                 features[1] = 0.5; // Memory impact
                 features[2] = 0.7; // CPU impact
                 features[6] = 1.0; // Compression impact
-            },
+            }
         }
 
         // Add contextual features
@@ -530,9 +574,15 @@ impl MLPredictor {
 
     /// Similarity-based prediction using historical data
     fn similarity_based_predict(&self, optimization_type: &OptimizationType) -> Result<f64> {
-        let relevant_plans: Vec<_> = self.training_data.iter()
-            .filter(|plan| plan.optimizations.iter()
-                .any(|opt| std::mem::discriminant(&opt.optimization_type) == std::mem::discriminant(optimization_type)))
+        let relevant_plans: Vec<_> = self
+            .training_data
+            .iter()
+            .filter(|plan| {
+                plan.optimizations.iter().any(|opt| {
+                    std::mem::discriminant(&opt.optimization_type)
+                        == std::mem::discriminant(optimization_type)
+                })
+            })
             .collect();
 
         if relevant_plans.is_empty() {
@@ -617,7 +667,9 @@ impl MLPredictor {
 
         for plan in validation_data {
             for optimization in &plan.optimizations {
-                let prediction = self.predict_effectiveness(&optimization.optimization_type).await?;
+                let prediction = self
+                    .predict_effectiveness(&optimization.optimization_type)
+                    .await?;
                 let actual = optimization.expected_improvement;
                 total_error += (prediction - actual).abs();
                 count += 1;
@@ -671,7 +723,9 @@ impl AdaptiveTuner {
         for optimization in &plan.optimizations {
             for (param_name, param_value) in &optimization.parameters {
                 if let Ok(value) = param_value.parse::<f64>() {
-                    let history = self.parameter_history.entry(param_name.clone())
+                    let history = self
+                        .parameter_history
+                        .entry(param_name.clone())
                         .or_insert_with(Vec::new);
 
                     history.push(value);
@@ -750,7 +804,8 @@ impl AdaptiveTuner {
         }
 
         // Update Bayesian optimizer
-        self.bayesian_optimizer.update_observations(&parameter_vectors, &performance_scores)?;
+        self.bayesian_optimizer
+            .update_observations(&parameter_vectors, &performance_scores)?;
 
         // Get next parameter suggestion
         let suggested_params = self.bayesian_optimizer.suggest_next_parameters()?;
@@ -783,10 +838,16 @@ impl AdaptiveTuner {
         let search_space = self.define_hyperparameter_search_space();
 
         // Perform grid search for critical parameters
-        let grid_results = self.hyperparameter_tuner.grid_search(&search_space, 3).await?;
+        let grid_results = self
+            .hyperparameter_tuner
+            .grid_search(&search_space, 3)
+            .await?;
 
         // Perform random search for exploration
-        let random_results = self.hyperparameter_tuner.random_search(&search_space, 20).await?;
+        let random_results = self
+            .hyperparameter_tuner
+            .random_search(&search_space, 20)
+            .await?;
 
         // Combine and select best hyperparameters
         let best_hyperparams = self.select_best_hyperparameters(&grid_results, &random_results)?;
@@ -804,7 +865,9 @@ impl AdaptiveTuner {
                 if let Some((min_val, max_val)) = self.parameter_bounds.get(param_name) {
                     let clamped_value = value.clamp(*min_val, *max_val);
 
-                    let history = self.parameter_history.entry(param_name.clone())
+                    let history = self
+                        .parameter_history
+                        .entry(param_name.clone())
                         .or_insert_with(Vec::new);
                     history.push(clamped_value);
                 }
@@ -855,7 +918,9 @@ impl AdaptiveTuner {
 
         for (i, &gene_value) in individual.genes.iter().enumerate() {
             if let Some(param_name) = param_names.get(i) {
-                let history = self.parameter_history.entry(param_name.clone())
+                let history = self
+                    .parameter_history
+                    .entry(param_name.clone())
                     .or_insert_with(Vec::new);
                 history.push(gene_value);
             }
@@ -877,7 +942,10 @@ impl AdaptiveTuner {
 
         // Model complexity parameters
         search_space.insert("hidden_layers".to_string(), vec![1.0, 2.0, 3.0, 4.0]);
-        search_space.insert("neurons_per_layer".to_string(), vec![16.0, 32.0, 64.0, 128.0]);
+        search_space.insert(
+            "neurons_per_layer".to_string(),
+            vec![16.0, 32.0, 64.0, 128.0],
+        );
 
         // Optimization parameters
         search_space.insert("momentum".to_string(), vec![0.0, 0.5, 0.9, 0.99]);
@@ -887,13 +955,21 @@ impl AdaptiveTuner {
     }
 
     /// Select best hyperparameters from search results
-    fn select_best_hyperparameters(&self, grid_results: &[HyperparameterResult], random_results: &[HyperparameterResult]) -> Result<HashMap<String, f64>> {
+    fn select_best_hyperparameters(
+        &self,
+        grid_results: &[HyperparameterResult],
+        random_results: &[HyperparameterResult],
+    ) -> Result<HashMap<String, f64>> {
         let mut all_results = Vec::new();
         all_results.extend_from_slice(grid_results);
         all_results.extend_from_slice(random_results);
 
         // Sort by performance score
-        all_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         if let Some(best_result) = all_results.first() {
             Ok(best_result.hyperparameters.clone())
@@ -905,7 +981,9 @@ impl AdaptiveTuner {
     /// Apply selected hyperparameters
     async fn apply_hyperparameters(&mut self, hyperparams: &HashMap<String, f64>) -> Result<()> {
         for (param_name, &value) in hyperparams {
-            let history = self.parameter_history.entry(param_name.clone())
+            let history = self
+                .parameter_history
+                .entry(param_name.clone())
                 .or_insert_with(Vec::new);
             history.push(value);
         }
@@ -978,7 +1056,8 @@ impl OnlineLearner {
             return Ok(0.5); // Default prediction
         }
 
-        let prediction = features.iter()
+        let prediction = features
+            .iter()
             .zip(self.weights.iter())
             .map(|(f, w)| f * w)
             .sum::<f64>();
@@ -1079,7 +1158,9 @@ impl BayesianOptimizer {
 
         match self.acquisition_function {
             AcquisitionFunction::ExpectedImprovement => {
-                let best_observed = self.observations.iter()
+                let best_observed = self
+                    .observations
+                    .iter()
                     .map(|(_, score)| *score)
                     .fold(f64::NEG_INFINITY, f64::max);
 
@@ -1175,7 +1256,8 @@ impl GaussianProcess {
         let length_scale = self.kernel_params[0];
         let signal_variance = self.kernel_params[1];
 
-        let squared_distance = x1.iter()
+        let squared_distance = x1
+            .iter()
             .zip(x2.iter())
             .map(|(a, b)| (a - b).powi(2))
             .sum::<f64>();
@@ -1262,13 +1344,21 @@ impl GeneticAlgorithm {
         }
     }
 
-    pub async fn evolve(&mut self, mut population: Vec<Individual>, generations: usize) -> Result<Individual> {
+    pub async fn evolve(
+        &mut self,
+        mut population: Vec<Individual>,
+        generations: usize,
+    ) -> Result<Individual> {
         for generation in 0..generations {
             // Evaluate fitness
             self.evaluate_fitness(&mut population).await?;
 
             // Sort by fitness
-            population.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
+            population.sort_by(|a, b| {
+                b.fitness
+                    .partial_cmp(&a.fitness)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             // Create next generation
             let mut next_generation = Vec::new();
@@ -1306,7 +1396,11 @@ impl GeneticAlgorithm {
 
         // Return best individual
         self.evaluate_fitness(&mut population).await?;
-        population.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
+        population.sort_by(|a, b| {
+            b.fitness
+                .partial_cmp(&a.fitness)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(population.into_iter().next().unwrap_or(Individual {
             genes: vec![0.5; 10],
@@ -1348,9 +1442,7 @@ impl GeneticAlgorithm {
         }
 
         let mean = genes.iter().sum::<f64>() / genes.len() as f64;
-        let variance = genes.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / genes.len() as f64;
+        let variance = genes.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / genes.len() as f64;
 
         variance
     }
@@ -1361,7 +1453,9 @@ impl GeneticAlgorithm {
 
         for _ in 0..tournament_size {
             let candidate = &population[fastrand::usize(..population.len())];
-            if best.is_none() || candidate.fitness > best.as_ref().unwrap().fitness {
+            if best.is_none()
+                || candidate.fitness > best.as_ref().expect("as_ref() should succeed").fitness
+            {
                 best = Some(candidate.clone());
             }
         }
@@ -1388,7 +1482,8 @@ impl GeneticAlgorithm {
 
     fn mutate(&self, individual: &mut Individual) -> Result<()> {
         for gene in &mut individual.genes {
-            if fastrand::f64() < 0.1 { // Gene mutation probability
+            if fastrand::f64() < 0.1 {
+                // Gene mutation probability
                 let mutation_strength = 0.1;
                 let mutation = (fastrand::f64() - 0.5) * mutation_strength;
                 *gene = (*gene + mutation).clamp(0.0, 1.0);
@@ -1428,7 +1523,11 @@ impl HyperparameterTuner {
         }
     }
 
-    pub async fn grid_search(&mut self, search_space: &HashMap<String, Vec<f64>>, max_combinations: usize) -> Result<Vec<HyperparameterResult>> {
+    pub async fn grid_search(
+        &mut self,
+        search_space: &HashMap<String, Vec<f64>>,
+        max_combinations: usize,
+    ) -> Result<Vec<HyperparameterResult>> {
         let mut results = Vec::new();
         let param_names: Vec<_> = search_space.keys().cloned().collect();
 
@@ -1457,7 +1556,11 @@ impl HyperparameterTuner {
         Ok(results)
     }
 
-    pub async fn random_search(&mut self, search_space: &HashMap<String, Vec<f64>>, num_samples: usize) -> Result<Vec<HyperparameterResult>> {
+    pub async fn random_search(
+        &mut self,
+        search_space: &HashMap<String, Vec<f64>>,
+        num_samples: usize,
+    ) -> Result<Vec<HyperparameterResult>> {
         let mut results = Vec::new();
 
         for _ in 0..num_samples {
@@ -1482,7 +1585,11 @@ impl HyperparameterTuner {
         Ok(results)
     }
 
-    fn generate_grid_combinations(&self, search_space: &HashMap<String, Vec<f64>>, max_combinations: usize) -> Result<Vec<Vec<f64>>> {
+    fn generate_grid_combinations(
+        &self,
+        search_space: &HashMap<String, Vec<f64>>,
+        max_combinations: usize,
+    ) -> Result<Vec<Vec<f64>>> {
         let param_names: Vec<_> = search_space.keys().collect();
         let mut combinations = Vec::new();
 
@@ -1492,12 +1599,14 @@ impl HyperparameterTuner {
 
         // Simple grid generation (could be optimized for large spaces)
         let mut indices = vec![0; param_names.len()];
-        let max_indices: Vec<_> = param_names.iter()
+        let max_indices: Vec<_> = param_names
+            .iter()
             .map(|name| search_space[*name].len())
             .collect();
 
         loop {
-            let combination: Vec<f64> = indices.iter()
+            let combination: Vec<f64> = indices
+                .iter()
                 .enumerate()
                 .map(|(i, &idx)| search_space[param_names[i]][idx])
                 .collect();
@@ -1549,7 +1658,11 @@ impl HyperparameterTuner {
 
         // Evaluate model complexity
         if let Some(&layers) = hyperparams.get("hidden_layers") {
-            score += if layers >= 1.0 && layers <= 3.0 { 1.0 } else { 0.5 };
+            score += if layers >= 1.0 && layers <= 3.0 {
+                1.0
+            } else {
+                0.5
+            };
         }
 
         // Add some randomness to simulate real evaluation

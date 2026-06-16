@@ -1,8 +1,8 @@
 //! Memory versioning and change tracking system
 
 use crate::error::{MemoryError, Result};
-use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::{TemporalConfig, TimeRange};
+use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -80,14 +80,10 @@ pub struct MemoryVersion {
 
 impl MemoryVersion {
     /// Create a new memory version
-    pub fn new(
-        memory: MemoryEntry,
-        change_type: ChangeType,
-        version_number: u64,
-    ) -> Self {
+    pub fn new(memory: MemoryEntry, change_type: ChangeType, version_number: u64) -> Self {
         let size_bytes = memory.estimated_size();
         let checksum = Self::calculate_checksum(&memory);
-        
+
         Self {
             id: Uuid::new_v4(),
             memory,
@@ -166,7 +162,7 @@ impl VersionHistory {
             self.first_version_at = Some(version.created_at);
         }
         self.last_version_at = Some(version.created_at);
-        
+
         self.versions.push(version);
         self.total_changes += 1;
         self.update_most_common_change();
@@ -179,7 +175,9 @@ impl VersionHistory {
 
     /// Get a specific version by number
     pub fn get_version(&self, version_number: u64) -> Option<&MemoryVersion> {
-        self.versions.iter().find(|v| v.version_number == version_number)
+        self.versions
+            .iter()
+            .find(|v| v.version_number == version_number)
     }
 
     /// Get versions within a time range
@@ -208,9 +206,11 @@ impl VersionHistory {
     fn update_most_common_change(&mut self) {
         let mut change_counts: HashMap<ChangeType, usize> = HashMap::new();
         for version in &self.versions {
-            *change_counts.entry(version.change_type.clone()).or_insert(0) += 1;
+            *change_counts
+                .entry(version.change_type.clone())
+                .or_insert(0) += 1;
         }
-        
+
         self.most_common_change = change_counts
             .into_iter()
             .max_by_key(|(_, count)| *count)
@@ -219,7 +219,10 @@ impl VersionHistory {
 
     /// Get significant versions only (excluding access-only changes)
     pub fn significant_versions(&self) -> Vec<&MemoryVersion> {
-        self.versions.iter().filter(|v| v.is_significant()).collect()
+        self.versions
+            .iter()
+            .filter(|v| v.is_significant())
+            .collect()
     }
 
     /// Calculate total size of all versions
@@ -255,11 +258,15 @@ impl VersionManager {
         change_type: &ChangeType,
     ) -> Result<Uuid> {
         // Check if enough time has passed since last version (for non-significant changes)
-        if !matches!(change_type, ChangeType::Created | ChangeType::Updated | ChangeType::Deleted) {
+        if !matches!(
+            change_type,
+            ChangeType::Created | ChangeType::Updated | ChangeType::Deleted
+        ) {
             if let Some(history) = self.histories.get(&memory.key) {
                 if let Some(last_version) = history.latest_version() {
                     let time_since_last = Utc::now() - last_version.created_at;
-                    let min_interval = chrono::Duration::minutes(self.config.min_version_interval_minutes as i64);
+                    let min_interval =
+                        chrono::Duration::minutes(self.config.min_version_interval_minutes as i64);
                     if time_since_last < min_interval {
                         // Skip creating a new version if too recent
                         return Ok(last_version.id);
@@ -269,7 +276,8 @@ impl VersionManager {
         }
 
         // Get or create version counter for this memory
-        let version_number = self.version_counters
+        let version_number = self
+            .version_counters
             .entry(memory.key.clone())
             .and_modify(|counter| *counter += 1)
             .or_insert(1);
@@ -279,10 +287,11 @@ impl VersionManager {
         let version_id = version.id;
 
         // Add to history
-        let history = self.histories
+        let history = self
+            .histories
             .entry(memory.key.clone())
             .or_insert_with(|| VersionHistory::new(memory.key.clone()));
-        
+
         history.add_version(version);
 
         // Cleanup old versions if necessary
@@ -318,7 +327,8 @@ impl VersionManager {
         time_range: &TimeRange,
     ) -> Result<Vec<MemoryVersion>> {
         if let Some(history) = self.histories.get(memory_key) {
-            Ok(history.get_versions_in_range(time_range)
+            Ok(history
+                .get_versions_in_range(time_range)
                 .into_iter()
                 .cloned()
                 .collect())
@@ -333,18 +343,19 @@ impl VersionManager {
         time_range: &TimeRange,
     ) -> Result<Vec<MemoryVersion>> {
         let mut all_versions = Vec::new();
-        
+
         for history in self.histories.values() {
             all_versions.extend(
-                history.get_versions_in_range(time_range)
+                history
+                    .get_versions_in_range(time_range)
                     .into_iter()
-                    .cloned()
+                    .cloned(),
             );
         }
-        
+
         // Sort by creation time
         all_versions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-        
+
         Ok(all_versions)
     }
 
@@ -362,7 +373,7 @@ impl VersionManager {
                 }
             }
         }
-        
+
         Err(MemoryError::NotFound {
             key: format!("version_{}", version_id),
         })
@@ -374,38 +385,39 @@ impl VersionManager {
         time_range: &TimeRange,
     ) -> Result<Vec<String>> {
         let mut changed_memories = Vec::new();
-        
+
         for (memory_key, history) in &self.histories {
             if !history.get_versions_in_range(time_range).is_empty() {
                 changed_memories.push(memory_key.clone());
             }
         }
-        
+
         Ok(changed_memories)
     }
 
     /// Get the most active memories (most frequently changed)
     pub async fn get_most_active_memories(&self, limit: usize) -> Result<Vec<(String, usize)>> {
-        let mut activity_scores: Vec<(String, usize)> = self.histories
+        let mut activity_scores: Vec<(String, usize)> = self
+            .histories
             .iter()
             .map(|(key, history)| (key.clone(), history.total_changes))
             .collect();
-        
+
         activity_scores.sort_by(|a, b| b.1.cmp(&a.1));
         activity_scores.truncate(limit);
-        
+
         Ok(activity_scores)
     }
 
     /// Cleanup old versions based on configuration
     pub async fn cleanup_versions_before(&mut self, cutoff_date: DateTime<Utc>) -> Result<usize> {
         let mut total_removed = 0;
-        
+
         for history in self.histories.values_mut() {
             let original_count = history.versions.len();
             history.versions.retain(|v| v.created_at >= cutoff_date);
             total_removed += original_count - history.versions.len();
-            
+
             // Update history metadata
             if !history.versions.is_empty() {
                 history.total_changes = history.versions.len();
@@ -414,7 +426,7 @@ impl VersionManager {
                 history.update_most_common_change();
             }
         }
-        
+
         Ok(total_removed)
     }
 
@@ -426,14 +438,14 @@ impl VersionManager {
                 let excess = history.versions.len() - self.config.max_versions_per_memory;
                 history.versions.drain(0..excess);
                 history.total_changes = history.versions.len();
-                
+
                 if !history.versions.is_empty() {
                     history.first_version_at = history.versions.first().map(|v| v.created_at);
                     history.update_most_common_change();
                 }
             }
         }
-        
+
         Ok(())
     }
 

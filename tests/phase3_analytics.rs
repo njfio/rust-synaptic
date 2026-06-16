@@ -1,8 +1,10 @@
 #[cfg(feature = "analytics")]
-use synaptic::analytics::{behavioral::BehavioralAnalyzer, AnalyticsConfig, AnalyticsEvent, AccessType};
+use chrono::Utc;
 use synaptic::analytics::behavioral::RecommendationType;
 #[cfg(feature = "analytics")]
-use chrono::Utc;
+use synaptic::analytics::{
+    behavioral::BehavioralAnalyzer, AccessType, AnalyticsConfig, AnalyticsEvent,
+};
 
 #[cfg(feature = "analytics")]
 #[tokio::test]
@@ -36,8 +38,14 @@ async fn test_collaboration_recommendation() {
 
     // Generate recommendations for user_a
     let recs = analyzer.generate_recommendations("user_a").await.unwrap();
-    let found = recs.iter().any(|r| r.recommendation_type == RecommendationType::CollaborationSuggestion && r.target == "project_design");
-    assert!(found, "expected collaboration suggestion for project_design");
+    let found = recs.iter().any(|r| {
+        r.recommendation_type == RecommendationType::CollaborationSuggestion
+            && r.target == "project_design"
+    });
+    assert!(
+        found,
+        "expected collaboration suggestion for project_design"
+    );
 }
 
 #[cfg(feature = "analytics")]
@@ -66,6 +74,8 @@ async fn test_no_collaboration_suggestion() {
     analyzer.process_event(&event2).await.unwrap();
 
     let recs = analyzer.generate_recommendations("user_a").await.unwrap();
-    let collab = recs.iter().any(|r| r.recommendation_type == RecommendationType::CollaborationSuggestion);
+    let collab = recs
+        .iter()
+        .any(|r| r.recommendation_type == RecommendationType::CollaborationSuggestion);
     assert!(!collab, "no collaboration suggestions expected");
 }

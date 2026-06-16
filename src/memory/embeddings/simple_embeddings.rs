@@ -1,5 +1,5 @@
 //! Simple TF-IDF based embeddings implementation
-//! 
+//!
 //! This provides a working baseline for semantic embeddings using
 //! Term Frequency-Inverse Document Frequency (TF-IDF) vectors.
 
@@ -33,14 +33,14 @@ impl SimpleEmbedder {
 
         let tokens = self.tokenize(text);
         let tf_scores = self.calculate_tf(&tokens);
-        
+
         // Create embedding vector
         let mut embedding = vec![0.0; self.embedding_dim];
-        
+
         for (token, tf) in tf_scores {
             let idf = self.idf_scores.get(&token).unwrap_or(&1.0);
             let tfidf = tf * idf;
-            
+
             // Hash token to embedding dimension
             let index = self.hash_to_index(&token);
             embedding[index] += tfidf;
@@ -48,7 +48,7 @@ impl SimpleEmbedder {
 
         // Normalize the vector
         self.normalize_vector(&mut embedding);
-        
+
         Ok(embedding)
     }
 
@@ -56,13 +56,13 @@ impl SimpleEmbedder {
     pub fn update_vocabulary(&mut self, text: &str) {
         let tokens = self.tokenize(text);
         let unique_tokens: std::collections::HashSet<_> = tokens.into_iter().collect();
-        
+
         self.document_count += 1;
-        
+
         for token in unique_tokens {
             *self.vocabulary.entry(token.clone()).or_insert(0) += 1;
         }
-        
+
         // Recalculate IDF scores
         self.calculate_idf_scores();
     }
@@ -86,23 +86,23 @@ impl SimpleEmbedder {
     fn calculate_tf(&self, tokens: &[String]) -> HashMap<String, f64> {
         let mut tf_scores = HashMap::new();
         let total_tokens = tokens.len() as f64;
-        
+
         for token in tokens {
             *tf_scores.entry(token.clone()).or_insert(0.0) += 1.0;
         }
-        
+
         // Normalize by total token count
         for score in tf_scores.values_mut() {
             *score /= total_tokens;
         }
-        
+
         tf_scores
     }
 
     /// Calculate IDF scores for all vocabulary
     fn calculate_idf_scores(&mut self) {
         self.idf_scores.clear();
-        
+
         for (token, doc_freq) in &self.vocabulary {
             let idf = (self.document_count as f64 / *doc_freq as f64).ln();
             self.idf_scores.insert(token.clone(), idf);
@@ -119,7 +119,7 @@ impl SimpleEmbedder {
     /// Normalize a vector to unit length
     fn normalize_vector(&self, vector: &mut [f64]) {
         let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
-        
+
         if magnitude > 0.0 {
             for value in vector.iter_mut() {
                 *value /= magnitude;
@@ -141,7 +141,8 @@ impl SimpleEmbedder {
     fn get_most_frequent_terms(&self, limit: usize) -> Vec<(String, usize)> {
         let mut terms: Vec<_> = self.vocabulary.iter().collect();
         terms.sort_by(|a, b| b.1.cmp(a.1));
-        terms.into_iter()
+        terms
+            .into_iter()
             .take(limit)
             .map(|(term, freq)| (term.clone(), *freq))
             .collect()
@@ -165,7 +166,7 @@ mod tests {
     fn test_simple_embedder_creation() {
         let embedder = SimpleEmbedder::new(100);
         let stats = embedder.get_vocab_stats();
-        
+
         assert_eq!(stats.vocabulary_size, 0);
         assert_eq!(stats.document_count, 0);
         assert_eq!(stats.embedding_dimension, 100);
@@ -175,7 +176,7 @@ mod tests {
     fn test_tokenization() {
         let embedder = SimpleEmbedder::new(100);
         let tokens = embedder.tokenize("Hello, world! This is a test.");
-        
+
         assert!(tokens.contains(&"hello".to_string()));
         assert!(tokens.contains(&"world".to_string()));
         assert!(tokens.contains(&"test".to_string()));
@@ -187,14 +188,14 @@ mod tests {
     #[test]
     fn test_vocabulary_update() {
         let mut embedder = SimpleEmbedder::new(100);
-        
+
         embedder.update_vocabulary("artificial intelligence machine learning");
         embedder.update_vocabulary("machine learning algorithms");
-        
+
         let stats = embedder.get_vocab_stats();
         assert_eq!(stats.document_count, 2);
         assert!(stats.vocabulary_size > 0);
-        
+
         // "machine" and "learning" should appear in both documents
         assert_eq!(embedder.vocabulary.get("machine"), Some(&2));
         assert_eq!(embedder.vocabulary.get("learning"), Some(&2));
@@ -203,15 +204,17 @@ mod tests {
     #[test]
     fn test_embedding_generation() {
         let mut embedder = SimpleEmbedder::new(100);
-        
+
         // Update vocabulary first
         embedder.update_vocabulary("artificial intelligence");
         embedder.update_vocabulary("machine learning");
-        
-        let embedding = embedder.embed_text("artificial intelligence").unwrap();
-        
+
+        let embedding = embedder
+            .embed_text("artificial intelligence")
+            .expect("value should be available");
+
         assert_eq!(embedding.len(), 100);
-        
+
         // Check that the vector is normalized (magnitude should be close to 1)
         let magnitude: f64 = embedding.iter().map(|x| x * x).sum::<f64>().sqrt();
         assert!((magnitude - 1.0).abs() < 0.001);
@@ -220,16 +223,22 @@ mod tests {
     #[test]
     fn test_similar_texts_have_similar_embeddings() {
         let mut embedder = SimpleEmbedder::new(100);
-        
+
         // Build vocabulary
         embedder.update_vocabulary("artificial intelligence machine learning");
         embedder.update_vocabulary("deep learning neural networks");
         embedder.update_vocabulary("cooking recipes food");
-        
-        let ai_embedding1 = embedder.embed_text("artificial intelligence").unwrap();
-        let ai_embedding2 = embedder.embed_text("machine learning").unwrap();
-        let cooking_embedding = embedder.embed_text("cooking recipes").unwrap();
-        
+
+        let ai_embedding1 = embedder
+            .embed_text("artificial intelligence")
+            .expect("value should be available");
+        let ai_embedding2 = embedder
+            .embed_text("machine learning")
+            .expect("value should be available");
+        let cooking_embedding = embedder
+            .embed_text("cooking recipes")
+            .expect("value should be available");
+
         // Calculate cosine similarity
         let ai_similarity = cosine_similarity(&ai_embedding1, &ai_embedding2);
         let ai_cooking_similarity = cosine_similarity(&ai_embedding1, &cooking_embedding);
@@ -250,7 +259,7 @@ fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     let dot_product: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let magnitude_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
     let magnitude_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    
+
     if magnitude_a == 0.0 || magnitude_b == 0.0 {
         0.0
     } else {

@@ -112,7 +112,7 @@ impl WorkflowManager {
     pub fn create_workflow(&mut self, name: String, description: String, steps: Vec<WorkflowStep>) -> Result<String> {
         let workflow_id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         let workflow = Workflow {
             id: workflow_id.clone(),
             name,
@@ -122,10 +122,10 @@ impl WorkflowManager {
             created_at: now,
             updated_at: now,
         };
-        
+
         self.workflows.insert(workflow_id.clone(), workflow);
         info!("Created workflow: {}", workflow_id);
-        
+
         Ok(workflow_id)
     }
 
@@ -134,7 +134,7 @@ impl WorkflowManager {
         let workflow = self.workflows.get(workflow_id)
             .ok_or_else(|| SynapticError::NotFound(format!("Workflow not found: {}", workflow_id)))?
             .clone();
-        
+
         let execution_id = uuid::Uuid::new_v4().to_string();
         let mut execution = WorkflowExecution {
             id: execution_id.clone(),
@@ -145,18 +145,18 @@ impl WorkflowManager {
             step_results: HashMap::new(),
             error_message: None,
         };
-        
+
         info!("Starting workflow execution: {}", execution_id);
-        
+
         // Execute steps in dependency order
         let execution_order = self.resolve_step_dependencies(&workflow.steps)?;
         let mut step_outputs: HashMap<String, serde_json::Value> = HashMap::new();
-        
+
         for step_id in execution_order {
             let step = workflow.steps.iter()
                 .find(|s| s.id == step_id)
                 .ok_or_else(|| SynapticError::ValidationError(format!("Step not found: {}", step_id)))?;
-            
+
             match self.execute_step(step, &step_outputs, &parameters).await {
                 Ok(result) => {
                     if let Some(output) = &result.output_data {
@@ -174,11 +174,11 @@ impl WorkflowManager {
                 }
             }
         }
-        
+
         execution.status = ExecutionStatus::Completed;
         execution.completed_at = Some(chrono::Utc::now());
         self.execution_history.push(execution);
-        
+
         info!("Workflow execution completed: {}", execution_id);
         Ok(execution_id)
     }
@@ -187,9 +187,9 @@ impl WorkflowManager {
     async fn execute_step(&self, step: &WorkflowStep, step_outputs: &HashMap<String, serde_json::Value>, 
                          parameters: &HashMap<String, serde_json::Value>) -> Result<StepResult> {
         let start_time = std::time::Instant::now();
-        
+
         debug!("Executing step: {} ({})", step.name, step.id);
-        
+
         let result = match &step.step_type {
             WorkflowStepType::DataLoad => {
                 self.execute_data_load_step(step, parameters).await
@@ -216,9 +216,9 @@ impl WorkflowManager {
                 self.execute_custom_step(step, custom_type, step_outputs, parameters).await
             }
         };
-        
+
         let execution_time = start_time.elapsed().as_secs_f64();
-        
+
         match result {
             Ok((output_data, output_files)) => {
                 Ok(StepResult {
@@ -250,11 +250,11 @@ impl WorkflowManager {
             .or_else(|| parameters.get("data_path"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| SynapticError::ValidationError("Data path not specified".to_string()))?;
-        
+
         let format = step.parameters.get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("json");
-        
+
         let data = match format {
             "json" => {
                 let content = fs::read_to_string(data_path).await.map_err(|e| {
@@ -266,7 +266,7 @@ impl WorkflowManager {
             }
             _ => return Err(SynapticError::ValidationError(format!("Unsupported format: {}", format)))
         };
-        
+
         Ok((Some(data), vec![data_path.to_string()]))
     }
 
@@ -276,15 +276,15 @@ impl WorkflowManager {
                                         _parameters: &HashMap<String, serde_json::Value>) -> Result<(Option<serde_json::Value>, Vec<String>)> {
         let input_step = step.dependencies.first()
             .ok_or_else(|| SynapticError::ValidationError("Data transform step requires input dependency".to_string()))?;
-        
+
         let input_data = step_outputs.get(input_step)
             .ok_or_else(|| SynapticError::ValidationError("Input data not found".to_string()))?;
-        
+
         // Apply transformations based on step parameters
         let transform_type = step.parameters.get("transform_type")
             .and_then(|v| v.as_str())
             .unwrap_or("identity");
-        
+
         let transformed_data = match transform_type {
             "normalize" => {
                 // Implement normalization logic
@@ -300,7 +300,7 @@ impl WorkflowManager {
             }
             _ => input_data.clone()
         };
-        
+
         Ok((Some(transformed_data), Vec::new()))
     }
 
@@ -310,15 +310,15 @@ impl WorkflowManager {
                                              _parameters: &HashMap<String, serde_json::Value>) -> Result<(Option<serde_json::Value>, Vec<String>)> {
         let input_step = step.dependencies.first()
             .ok_or_else(|| SynapticError::ValidationError("Feature engineering step requires input dependency".to_string()))?;
-        
+
         let input_data = step_outputs.get(input_step)
             .ok_or_else(|| SynapticError::ValidationError("Input data not found".to_string()))?;
-        
+
         // Apply feature engineering based on step parameters
         let feature_type = step.parameters.get("feature_type")
             .and_then(|v| v.as_str())
             .unwrap_or("basic");
-        
+
         let engineered_data = match feature_type {
             "embeddings" => {
                 // Generate embeddings for text data
@@ -334,7 +334,7 @@ impl WorkflowManager {
             }
             _ => input_data.clone()
         };
-        
+
         Ok((Some(engineered_data), Vec::new()))
     }
 
@@ -348,7 +348,7 @@ impl WorkflowManager {
             "accuracy": 0.85,
             "training_time": 120.5
         });
-        
+
         Ok((Some(model_results), Vec::new()))
     }
 
@@ -363,7 +363,7 @@ impl WorkflowManager {
             "recall": 0.88,
             "f1_score": 0.85
         });
-        
+
         Ok((Some(evaluation_results), Vec::new()))
     }
 
@@ -376,7 +376,7 @@ impl WorkflowManager {
             "visualization_type": "scatter_plot",
             "output_path": "/tmp/visualization.png"
         });
-        
+
         Ok((Some(viz_results), vec!["/tmp/visualization.png".to_string()]))
     }
 
@@ -386,18 +386,18 @@ impl WorkflowManager {
                                 _parameters: &HashMap<String, serde_json::Value>) -> Result<(Option<serde_json::Value>, Vec<String>)> {
         let input_step = step.dependencies.first()
             .ok_or_else(|| SynapticError::ValidationError("Export step requires input dependency".to_string()))?;
-        
+
         let input_data = step_outputs.get(input_step)
             .ok_or_else(|| SynapticError::ValidationError("Input data not found".to_string()))?;
-        
+
         let output_path = step.parameters.get("output_path")
             .and_then(|v| v.as_str())
             .unwrap_or("/tmp/export.json");
-        
+
         let format = step.parameters.get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("json");
-        
+
         match format {
             "json" => {
                 let json_str = serde_json::to_string_pretty(input_data).map_err(|e| {
@@ -409,7 +409,7 @@ impl WorkflowManager {
             }
             _ => return Err(SynapticError::ValidationError(format!("Unsupported export format: {}", format)))
         }
-        
+
         Ok((None, vec![output_path.to_string()]))
     }
 
@@ -426,14 +426,14 @@ impl WorkflowManager {
     fn resolve_step_dependencies(&self, steps: &[WorkflowStep]) -> Result<Vec<String>> {
         let mut resolved = Vec::new();
         let mut remaining: Vec<_> = steps.iter().collect();
-        
+
         while !remaining.is_empty() {
             let mut progress = false;
-            
+
             remaining.retain(|step| {
                 let dependencies_met = step.dependencies.iter()
                     .all(|dep| resolved.contains(dep));
-                
+
                 if dependencies_met {
                     resolved.push(step.id.clone());
                     progress = true;
@@ -442,14 +442,14 @@ impl WorkflowManager {
                     true // Keep in remaining
                 }
             });
-            
+
             if !progress {
                 return Err(SynapticError::ValidationError(
                     "Circular dependency detected in workflow steps".to_string()
                 ));
             }
         }
-        
+
         Ok(resolved)
     }
 
@@ -458,11 +458,11 @@ impl WorkflowManager {
         let json_str = serde_json::to_string_pretty(data).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to serialize data: {}", e))
         })?;
-        
+
         fs::write(path, json_str).await.map_err(|e| {
             SynapticError::IoError(format!("Failed to write JSON file: {}", e))
         })?;
-        
+
         info!("Exported data to JSON: {}", path.display());
         Ok(())
     }
@@ -472,7 +472,7 @@ impl WorkflowManager {
         let content = fs::read_to_string(path).await.map_err(|e| {
             SynapticError::IoError(format!("Failed to read JSON file: {}", e))
         })?;
-        
+
         serde_json::from_str(&content).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to parse JSON: {}", e))
         })

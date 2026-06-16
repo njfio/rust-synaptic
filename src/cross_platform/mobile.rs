@@ -4,25 +4,25 @@
 //! battery management, and native storage integration.
 
 use super::{
-    CrossPlatformAdapter, PlatformConfig, PlatformFeature, PlatformInfo, Platform,
-    PerformanceProfile, StorageBackend, StorageStats,
+    CrossPlatformAdapter, PerformanceProfile, Platform, PlatformConfig, PlatformFeature,
+    PlatformInfo, StorageBackend, StorageStats,
 };
 use crate::error::MemoryError as SynapticError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH, Duration, Instant};
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // Platform-specific imports
-#[cfg(feature = "mobile")]
-use {
-    #[cfg(target_os = "ios")]
-    swift_bridge,
-    #[cfg(target_os = "android")]
-    jni::{JNIEnv, JavaVM, objects::{JClass, JString, JObject}},
+#[cfg(all(feature = "mobile", target_os = "android"))]
+use jni::{
+    objects::{JClass, JObject, JString},
+    JNIEnv, JavaVM,
 };
+#[cfg(all(feature = "mobile", target_os = "ios"))]
+use swift_bridge;
 
 /// Mobile-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,31 +88,31 @@ pub struct MobileStorage {
 
 impl MobileStorage {
     pub fn new(config: MobileConfig) -> Result<Self, SynapticError> {
-        let storage_path = config.data_directory.clone()
-            .unwrap_or_else(|| {
-                #[cfg(target_os = "ios")]
-                {
-                    // iOS Documents directory
-                    dirs::document_dir()
-                        .unwrap_or_else(|| PathBuf::from("/tmp"))
-                        .join("synaptic")
-                }
-                #[cfg(target_os = "android")]
-                {
-                    // Android internal storage
-                    PathBuf::from("/data/data/com.synaptic.memory/files")
-                }
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                {
-                    dirs::data_dir()
-                        .unwrap_or_else(|| PathBuf::from("/tmp"))
-                        .join("synaptic")
-                }
-            });
+        let storage_path = config.data_directory.clone().unwrap_or_else(|| {
+            #[cfg(target_os = "ios")]
+            {
+                // iOS Documents directory
+                dirs::document_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join("synaptic")
+            }
+            #[cfg(target_os = "android")]
+            {
+                // Android internal storage
+                PathBuf::from("/data/data/com.synaptic.memory/files")
+            }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                dirs::data_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join("synaptic")
+            }
+        });
 
         // Create storage directory
-        fs::create_dir_all(&storage_path)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to create storage directory: {}", e)))?;
+        fs::create_dir_all(&storage_path).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to create storage directory: {}", e))
+        })?;
 
         Ok(Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
@@ -134,8 +134,9 @@ impl MobileStorage {
 
         // Store to persistent storage
         let file_path = self.storage_path.join(format!("{}.dat", key));
-        fs::write(&file_path, &stored_data)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to write to storage: {}", e)))?;
+        fs::write(&file_path, &stored_data).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to write to storage: {}", e))
+        })?;
 
         // Update cache
         self.update_cache(key, data)?;
@@ -150,8 +151,9 @@ impl MobileStorage {
     pub fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
         // Check cache first
         {
-            let cache = self.cache.read()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e)))?;
+            let cache = self.cache.read().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e))
+            })?;
 
             if let Some((data, _)) = cache.get(key) {
                 return Ok(Some(data.clone()));
@@ -164,8 +166,9 @@ impl MobileStorage {
             return Ok(None);
         }
 
-        let stored_data = fs::read(&file_path)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to read from storage: {}", e)))?;
+        let stored_data = fs::read(&file_path).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to read from storage: {}", e))
+        })?;
 
         // Decompress if needed
         let data = if self.config.enable_compression {
@@ -184,16 +187,18 @@ impl MobileStorage {
     pub fn delete(&self, key: &str) -> Result<bool, SynapticError> {
         // Remove from cache
         let cache_existed = {
-            let mut cache = self.cache.write()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e)))?;
+            let mut cache = self.cache.write().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e))
+            })?;
             cache.remove(key).is_some()
         };
 
         // Remove from persistent storage
         let file_path = self.storage_path.join(format!("{}.dat", key));
         let storage_existed = if file_path.exists() {
-            fs::remove_file(&file_path)
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to delete from storage: {}", e)))?;
+            fs::remove_file(&file_path).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to delete from storage: {}", e))
+            })?;
             true
         } else {
             false
@@ -207,12 +212,14 @@ impl MobileStorage {
         let mut keys = Vec::new();
 
         // Get keys from storage directory
-        let entries = fs::read_dir(&self.storage_path)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to read storage directory: {}", e)))?;
+        let entries = fs::read_dir(&self.storage_path).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to read storage directory: {}", e))
+        })?;
 
         for entry in entries {
-            let entry = entry
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to read directory entry: {}", e)))?;
+            let entry = entry.map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to read directory entry: {}", e))
+            })?;
 
             if let Some(file_name) = entry.file_name().to_str() {
                 if let Some(key) = file_name.strip_suffix(".dat") {
@@ -227,14 +234,18 @@ impl MobileStorage {
 
     /// Update cache with size and time limits
     fn update_cache(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
-        let mut cache = self.cache.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e)))?;
+        let mut cache = self.cache.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e))
+        })?;
 
         // Check cache size limit
         let current_size: usize = cache.values().map(|(data, _)| data.len()).sum();
         if current_size + data.len() > self.config.cache_size_limit {
             // Remove oldest entries
-            let mut entries: Vec<_> = cache.iter().map(|(k, (_, time))| (k.clone(), *time)).collect();
+            let mut entries: Vec<_> = cache
+                .iter()
+                .map(|(k, (_, time))| (k.clone(), *time))
+                .collect();
             entries.sort_by_key(|(_, time)| *time);
 
             let mut removed_size = 0;
@@ -256,10 +267,12 @@ impl MobileStorage {
     fn compress_data(&self, data: &[u8]) -> Result<Vec<u8>, SynapticError> {
         use std::io::Write;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(data)
+        encoder
+            .write_all(data)
             .map_err(|e| SynapticError::ProcessingError(format!("Compression failed: {}", e)))?;
-        encoder.finish()
-            .map_err(|e| SynapticError::ProcessingError(format!("Compression finalization failed: {}", e)))
+        encoder.finish().map_err(|e| {
+            SynapticError::ProcessingError(format!("Compression finalization failed: {}", e))
+        })
     }
 
     /// Simple decompression using flate2
@@ -267,7 +280,8 @@ impl MobileStorage {
         use std::io::Read;
         let mut decoder = flate2::read::GzDecoder::new(data);
         let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed)
+        decoder
+            .read_to_end(&mut decompressed)
             .map_err(|e| SynapticError::ProcessingError(format!("Decompression failed: {}", e)))?;
         Ok(decompressed)
     }
@@ -277,8 +291,9 @@ impl MobileStorage {
         let current_pressure = self.get_memory_pressure();
 
         {
-            let mut pressure = self.memory_pressure.lock()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire pressure lock: {}", e)))?;
+            let mut pressure = self.memory_pressure.lock().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to acquire pressure lock: {}", e))
+            })?;
             *pressure = current_pressure;
         }
 
@@ -305,19 +320,24 @@ impl MobileStorage {
 
     /// Cleanup cache to reduce memory pressure
     fn cleanup_cache(&self) -> Result<(), SynapticError> {
-        let mut last_cleanup = self.last_cleanup.lock()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cleanup lock: {}", e)))?;
+        let mut last_cleanup = self.last_cleanup.lock().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire cleanup lock: {}", e))
+        })?;
 
         // Only cleanup if enough time has passed
         if last_cleanup.elapsed() < Duration::from_secs(60) {
             return Ok(());
         }
 
-        let mut cache = self.cache.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e)))?;
+        let mut cache = self.cache.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e))
+        })?;
 
         // Remove oldest 50% of entries
-        let mut entries: Vec<_> = cache.iter().map(|(k, (_, time))| (k.clone(), *time)).collect();
+        let mut entries: Vec<_> = cache
+            .iter()
+            .map(|(k, (_, time))| (k.clone(), *time))
+            .collect();
         entries.sort_by_key(|(_, time)| *time);
 
         let remove_count = entries.len() / 2;
@@ -345,8 +365,9 @@ impl MobileStorage {
         }
 
         let cache_size = {
-            let cache = self.cache.read()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e)))?;
+            let cache = self.cache.read().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to acquire cache lock: {}", e))
+            })?;
             cache.len()
         };
 
@@ -475,8 +496,10 @@ impl iOSAdapter {
         // In a real implementation, this would register for background refresh notifications
 
         if self.mobile_config.enable_background_sync {
-            tracing::info!("iOS background refresh configured for sync interval: {}s",
-                         self.mobile_config.sync_interval_seconds);
+            tracing::info!(
+                "iOS background refresh configured for sync interval: {}s",
+                self.mobile_config.sync_interval_seconds
+            );
         }
 
         Ok(())
@@ -486,8 +509,10 @@ impl iOSAdapter {
         // Setup iOS memory pressure notifications
         // In a real implementation, this would register for memory pressure notifications
 
-        tracing::info!("iOS memory pressure handling configured with threshold: {}",
-                     self.mobile_config.memory_pressure_threshold);
+        tracing::info!(
+            "iOS memory pressure handling configured with threshold: {}",
+            self.mobile_config.memory_pressure_threshold
+        );
         Ok(())
     }
 
@@ -510,8 +535,8 @@ impl iOSAdapter {
     fn get_ios_performance_profile(&self) -> PerformanceProfile {
         // iOS-specific performance characteristics
         PerformanceProfile {
-            cpu_score: 0.9, // iOS devices generally have good CPUs
-            memory_score: 0.7, // Memory is more constrained
+            cpu_score: 0.9,     // iOS devices generally have good CPUs
+            memory_score: 0.7,  // Memory is more constrained
             storage_score: 0.8, // Good storage performance
             network_score: 0.9, // Excellent network capabilities
             battery_optimization: true,
@@ -602,8 +627,10 @@ impl AndroidAdapter {
         // Setup Android-specific memory management
         // In a real implementation, this would register for memory trim callbacks
 
-        tracing::info!("Android memory management configured with cache limit: {} MB",
-                     self.mobile_config.cache_size_limit / (1024 * 1024));
+        tracing::info!(
+            "Android memory management configured with cache limit: {} MB",
+            self.mobile_config.cache_size_limit / (1024 * 1024)
+        );
         Ok(())
     }
 
@@ -644,8 +671,8 @@ impl AndroidAdapter {
     fn get_android_performance_profile(&self) -> PerformanceProfile {
         // Android-specific performance characteristics
         PerformanceProfile {
-            cpu_score: 0.8, // Varies widely across Android devices
-            memory_score: 0.6, // Often more constrained than iOS
+            cpu_score: 0.8,     // Varies widely across Android devices
+            memory_score: 0.6,  // Often more constrained than iOS
             storage_score: 0.7, // Variable storage performance
             network_score: 0.9, // Good network capabilities
             battery_optimization: true,
@@ -697,15 +724,19 @@ impl MobileOptimizations for GenericMobileAdapter {
 
     fn handle_memory_pressure(&mut self) -> Result<(), SynapticError> {
         // Clear non-essential cached data
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         // In a real implementation, this would clear caches and temporary data
         let initial_size = storage.len();
         storage.retain(|key, _| !key.starts_with("cache_"));
         let cleared = initial_size - storage.len();
-        
-        tracing::info!("Memory pressure handled: cleared {} cached entries", cleared);
+
+        tracing::info!(
+            "Memory pressure handled: cleared {} cached entries",
+            cleared
+        );
         Ok(())
     }
 
@@ -847,56 +878,71 @@ impl CrossPlatformAdapter for GenericMobileAdapter {
     }
 
     fn store(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
 
         storage.insert(key.to_string(), data.to_vec());
 
         // Update stats
-        let mut stats = self.stats.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e)))?;
+        let mut stats = self.stats.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e))
+        })?;
         stats.item_count = storage.len();
         stats.used_storage = storage.values().map(|v| v.len()).sum();
-        stats.average_item_size = if stats.item_count > 0 { stats.used_storage / stats.item_count } else { 0 };
+        stats.average_item_size = if stats.item_count > 0 {
+            stats.used_storage / stats.item_count
+        } else {
+            0
+        };
 
         Ok(())
     }
 
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
-        let storage = self.storage.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+        let storage = self.storage.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
 
         Ok(storage.get(key).cloned())
     }
 
     fn delete(&self, key: &str) -> Result<bool, SynapticError> {
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
 
         let existed = storage.remove(key).is_some();
 
         if existed {
             // Update stats
-            let mut stats = self.stats.write()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e)))?;
+            let mut stats = self.stats.write().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e))
+            })?;
             stats.item_count = storage.len();
             stats.used_storage = storage.values().map(|v| v.len()).sum();
-            stats.average_item_size = if stats.item_count > 0 { stats.used_storage / stats.item_count } else { 0 };
+            stats.average_item_size = if stats.item_count > 0 {
+                stats.used_storage / stats.item_count
+            } else {
+                0
+            };
         }
 
         Ok(existed)
     }
 
     fn list_keys(&self) -> Result<Vec<String>, SynapticError> {
-        let storage = self.storage.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+        let storage = self.storage.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
 
         Ok(storage.keys().cloned().collect())
     }
 
     fn get_stats(&self) -> Result<StorageStats, SynapticError> {
-        let stats = self.stats.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e)))?;
+        let stats = self.stats.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire stats lock: {}", e))
+        })?;
 
         Ok(stats.clone())
     }

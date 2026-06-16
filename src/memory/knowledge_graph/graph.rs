@@ -1,14 +1,14 @@
 //! Core knowledge graph implementation
 
-use super::types::{Node, Edge, GraphPath, KnowledgeGraphMetadata, RelationshipType};
-use super::query::{GraphQuery, QueryResult, TraversalOptions, TraversalDirection};
+use super::query::{GraphQuery, QueryResult, TraversalDirection, TraversalOptions};
+use super::types::{Edge, GraphPath, KnowledgeGraphMetadata, Node, RelationshipType};
 use crate::error::{MemoryError, Result};
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
-use dashmap::DashMap;
-use parking_lot::RwLock;
 
 /// Configuration for the knowledge graph
 #[derive(Debug, Clone)]
@@ -117,8 +117,8 @@ impl KnowledgeGraph {
     /// Add a node to the graph
     pub async fn add_node(&self, node: Node) -> Result<Uuid> {
         if self.nodes.len() >= self.config.max_nodes {
-            return Err(MemoryError::MemoryLimitExceeded { 
-                limit: self.config.max_nodes 
+            return Err(MemoryError::MemoryLimitExceeded {
+                limit: self.config.max_nodes,
             });
         }
 
@@ -126,49 +126,51 @@ impl KnowledgeGraph {
         self.nodes.insert(node_id, node);
         self.adjacency.insert(node_id, HashSet::new());
         self.reverse_adjacency.insert(node_id, HashSet::new());
-        
+
         self.invalidate_stats_cache();
         self.mark_modified();
-        
+
         Ok(node_id)
     }
 
     /// Add an edge to the graph
     pub async fn add_edge(&self, edge: Edge) -> Result<Uuid> {
         if self.edges.len() >= self.config.max_edges {
-            return Err(MemoryError::MemoryLimitExceeded { 
-                limit: self.config.max_edges 
+            return Err(MemoryError::MemoryLimitExceeded {
+                limit: self.config.max_edges,
             });
         }
 
         // Verify that both nodes exist
         if !self.nodes.contains_key(&edge.from_node) {
-            return Err(MemoryError::NotFound { 
-                key: format!("node_{}", edge.from_node) 
+            return Err(MemoryError::NotFound {
+                key: format!("node_{}", edge.from_node),
             });
         }
         if !self.nodes.contains_key(&edge.to_node) {
-            return Err(MemoryError::NotFound { 
-                key: format!("node_{}", edge.to_node) 
+            return Err(MemoryError::NotFound {
+                key: format!("node_{}", edge.to_node),
             });
         }
 
         let edge_id = edge.id;
-        
+
         // Update adjacency lists
-        self.adjacency.entry(edge.from_node)
+        self.adjacency
+            .entry(edge.from_node)
             .or_insert_with(HashSet::new)
             .insert(edge_id);
-        
-        self.reverse_adjacency.entry(edge.to_node)
+
+        self.reverse_adjacency
+            .entry(edge.to_node)
             .or_insert_with(HashSet::new)
             .insert(edge_id);
 
         self.edges.insert(edge_id, edge);
-        
+
         self.invalidate_stats_cache();
         self.mark_modified();
-        
+
         Ok(edge_id)
     }
 
@@ -187,22 +189,22 @@ impl KnowledgeGraph {
         if let Some((_, _node)) = self.nodes.remove(&node_id) {
             // Remove all edges connected to this node
             let mut edges_to_remove = Vec::new();
-            
+
             // Collect outgoing edges
             if let Some((_, outgoing)) = self.adjacency.remove(&node_id) {
                 edges_to_remove.extend(outgoing);
             }
-            
+
             // Collect incoming edges
             if let Some((_, incoming)) = self.reverse_adjacency.remove(&node_id) {
                 edges_to_remove.extend(incoming);
             }
-            
+
             // Remove the edges
             for edge_id in edges_to_remove {
                 self.remove_edge(edge_id).await?;
             }
-            
+
             self.invalidate_stats_cache();
             self.mark_modified();
             Ok(true)
@@ -218,11 +220,11 @@ impl KnowledgeGraph {
             if let Some(mut outgoing) = self.adjacency.get_mut(&edge.from_node) {
                 outgoing.remove(&edge_id);
             }
-            
+
             if let Some(mut incoming) = self.reverse_adjacency.get_mut(&edge.to_node) {
                 incoming.remove(&edge_id);
             }
-            
+
             self.invalidate_stats_cache();
             self.mark_modified();
             Ok(true)
@@ -234,7 +236,7 @@ impl KnowledgeGraph {
     /// Get all neighbors of a node
     pub async fn get_neighbors(&self, node_id: Uuid) -> Result<Vec<Uuid>> {
         let mut neighbors = HashSet::new();
-        
+
         // Add outgoing neighbors
         if let Some(outgoing_edges) = self.adjacency.get(&node_id) {
             for edge_id in outgoing_edges.iter() {
@@ -243,7 +245,7 @@ impl KnowledgeGraph {
                 }
             }
         }
-        
+
         // Add incoming neighbors
         if let Some(incoming_edges) = self.reverse_adjacency.get(&node_id) {
             for edge_id in incoming_edges.iter() {
@@ -252,7 +254,7 @@ impl KnowledgeGraph {
                 }
             }
         }
-        
+
         Ok(neighbors.into_iter().collect())
     }
 
@@ -265,42 +267,44 @@ impl KnowledgeGraph {
         let mut visited = HashSet::new();
         let mut results = Vec::new();
         let mut queue = VecDeque::new();
-        
+
         // Initialize with start node
         let mut start_path = GraphPath::new();
         start_path.add_step(start_node, None);
         queue.push_back((start_node, start_path, 0));
         visited.insert(start_node);
-        
+
         while let Some((current_node, current_path, depth)) = queue.pop_front() {
             if depth >= options.max_depth {
                 continue;
             }
-            
+
             // Get edges based on traversal direction
             let edge_ids = match options.direction {
-                TraversalDirection::Outgoing => {
-                    self.adjacency.get(&current_node)
-                        .map(|edges| edges.clone())
-                        .unwrap_or_default()
-                }
-                TraversalDirection::Incoming => {
-                    self.reverse_adjacency.get(&current_node)
-                        .map(|edges| edges.clone())
-                        .unwrap_or_default()
-                }
+                TraversalDirection::Outgoing => self
+                    .adjacency
+                    .get(&current_node)
+                    .map(|edges| edges.clone())
+                    .unwrap_or_default(),
+                TraversalDirection::Incoming => self
+                    .reverse_adjacency
+                    .get(&current_node)
+                    .map(|edges| edges.clone())
+                    .unwrap_or_default(),
                 TraversalDirection::Both => {
-                    let mut all_edges = self.adjacency.get(&current_node)
+                    let mut all_edges = self
+                        .adjacency
+                        .get(&current_node)
                         .map(|edges| edges.clone())
                         .unwrap_or_default();
-                    
+
                     if let Some(incoming) = self.reverse_adjacency.get(&current_node) {
                         all_edges.extend(incoming.iter());
                     }
                     all_edges
                 }
             };
-            
+
             for edge_id in edge_ids {
                 if let Some(edge) = self.edges.get(&edge_id) {
                     // Check relationship type filter
@@ -309,20 +313,20 @@ impl KnowledgeGraph {
                             continue;
                         }
                     }
-                    
+
                     // Determine next node
                     let next_node = if edge.from_node == current_node {
                         edge.to_node
                     } else {
                         edge.from_node
                     };
-                    
+
                     if !visited.contains(&next_node) || options.allow_cycles {
                         let mut new_path = current_path.clone();
                         new_path.add_step(next_node, Some(edge_id));
-                        
+
                         results.push((next_node, new_path.clone()));
-                        
+
                         if !visited.contains(&next_node) {
                             visited.insert(next_node);
                             queue.push_back((next_node, new_path, depth + 1));
@@ -331,17 +335,17 @@ impl KnowledgeGraph {
                 }
             }
         }
-        
+
         // Sort by path length if requested
         if options.sort_by_distance {
             results.sort_by_key(|(_, path)| path.length);
         }
-        
+
         // Limit results
         if let Some(limit) = options.limit {
             results.truncate(limit);
         }
-        
+
         Ok(results)
     }
 
@@ -357,41 +361,45 @@ impl KnowledgeGraph {
             path.add_step(from_node, None);
             return Ok(Some(path));
         }
-        
+
         let max_depth = max_depth.unwrap_or(self.config.max_traversal_depth);
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         let mut parent_map: HashMap<Uuid, (Uuid, Uuid)> = HashMap::new(); // node -> (parent_node, edge_id)
-        
+
         queue.push_back((from_node, 0));
         visited.insert(from_node);
-        
+
         while let Some((current_node, depth)) = queue.pop_front() {
             if depth >= max_depth {
                 continue;
             }
-            
+
             // Check all neighbors
             let neighbors = self.get_neighbors(current_node).await?;
             for neighbor in neighbors {
                 if !visited.contains(&neighbor) {
                     visited.insert(neighbor);
-                    
+
                     // Find the edge connecting current_node to neighbor
                     if let Some(edge_id) = self.find_edge_between(current_node, neighbor).await? {
                         parent_map.insert(neighbor, (current_node, edge_id));
-                        
+
                         if neighbor == to_node {
                             // Reconstruct path
-                            return Ok(Some(self.reconstruct_path(from_node, to_node, &parent_map)));
+                            return Ok(Some(self.reconstruct_path(
+                                from_node,
+                                to_node,
+                                &parent_map,
+                            )));
                         }
-                        
+
                         queue.push_back((neighbor, depth + 1));
                     }
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -400,19 +408,19 @@ impl KnowledgeGraph {
         // This is a simplified implementation
         // A full implementation would include a proper query engine
         let mut results = Vec::new();
-        
+
         // For now, just return all nodes that match basic criteria
         for node_ref in self.nodes.iter() {
             let node = node_ref.value();
             let mut matches = true;
-            
+
             // Check node type filter
             if let Some(ref node_type) = query.node_type_filter {
                 if &node.node_type != node_type {
                     matches = false;
                 }
             }
-            
+
             // Check property filters
             for (key, value) in &query.property_filters {
                 if node.get_property(key) != Some(value) {
@@ -420,7 +428,7 @@ impl KnowledgeGraph {
                     break;
                 }
             }
-            
+
             if matches {
                 results.push(QueryResult {
                     nodes: vec![node.id],
@@ -430,7 +438,7 @@ impl KnowledgeGraph {
                 });
             }
         }
-        
+
         Ok(results)
     }
 
@@ -441,26 +449,30 @@ impl KnowledgeGraph {
             let cache = self.stats_cache.read();
             if let Some((stats, cached_at)) = cache.as_ref() {
                 let age = Utc::now() - *cached_at;
-                if age.num_seconds() < 60 { // 1 minute cache
+                if age.num_seconds() < 60 {
+                    // 1 minute cache
                     return stats.clone();
                 }
             }
         }
-        
+
         // Calculate fresh statistics
         let stats = self.calculate_stats();
-        
+
         // Update cache
         {
             let mut cache = self.stats_cache.write();
             *cache = Some((stats.clone(), Utc::now()));
         }
-        
+
         stats
     }
 
     /// Get all connected nodes with their relationship types and strengths
-    pub async fn get_connected_nodes(&self, node_id: Uuid) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
+    pub async fn get_connected_nodes(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<(Uuid, RelationshipType, f64)>> {
         let mut connected_nodes = Vec::new();
 
         // Get outgoing edges
@@ -499,7 +511,7 @@ impl KnowledgeGraph {
                 }
             }
         }
-        
+
         if let Some(outgoing_edges) = self.adjacency.get(&node2) {
             for edge_id in outgoing_edges.iter() {
                 if let Some(edge) = self.edges.get(edge_id) {
@@ -509,7 +521,7 @@ impl KnowledgeGraph {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -524,7 +536,7 @@ impl KnowledgeGraph {
         let mut current = end;
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
-        
+
         // Trace back from end to start
         while current != start {
             nodes.push(current);
@@ -536,15 +548,15 @@ impl KnowledgeGraph {
             }
         }
         nodes.push(start);
-        
+
         // Reverse to get correct order
         nodes.reverse();
         edges.reverse();
-        
+
         path.nodes = nodes;
         path.edges = edges;
         path.length = path.nodes.len();
-        
+
         path
     }
 
@@ -553,39 +565,43 @@ impl KnowledgeGraph {
         let mut stats = GraphStats::new();
         stats.node_count = self.nodes.len();
         stats.edge_count = self.edges.len();
-        
+
         if stats.node_count > 0 {
             stats.average_degree = (stats.edge_count * 2) as f64 / stats.node_count as f64;
-            
+
             let max_possible_edges = stats.node_count * (stats.node_count - 1) / 2;
             if max_possible_edges > 0 {
                 stats.density = stats.edge_count as f64 / max_possible_edges as f64;
             }
-            
+
             // Find most connected node
             let mut max_degree = 0;
             let mut most_connected = None;
-            
+
             for node_ref in self.nodes.iter() {
                 let node_id = *node_ref.key();
-                let outgoing = self.adjacency.get(&node_id)
+                let outgoing = self
+                    .adjacency
+                    .get(&node_id)
                     .map(|edges| edges.len())
                     .unwrap_or(0);
-                let incoming = self.reverse_adjacency.get(&node_id)
+                let incoming = self
+                    .reverse_adjacency
+                    .get(&node_id)
                     .map(|edges| edges.len())
                     .unwrap_or(0);
                 let degree = outgoing + incoming;
-                
+
                 if degree > max_degree {
                     max_degree = degree;
                     most_connected = Some(node_id);
                 }
             }
-            
+
             stats.max_degree = max_degree;
             stats.most_connected_node = most_connected;
         }
-        
+
         stats.last_updated = Utc::now();
         stats
     }

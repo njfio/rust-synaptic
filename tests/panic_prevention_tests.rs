@@ -1,11 +1,11 @@
 //! Panic prevention tests to ensure no unwrap() calls cause panics in production scenarios
 
-use synaptic::{
-    AgentMemory, MemoryConfig, StorageBackend,
-    memory::types::{MemoryEntry, MemoryType},
-    error::Result,
-};
 use std::sync::Arc;
+use synaptic::{
+    error::Result,
+    memory::types::{MemoryEntry, MemoryType},
+    AgentMemory, MemoryConfig, StorageBackend,
+};
 use tokio::time::{timeout, Duration};
 
 /// Test that memory operations handle edge cases without panicking
@@ -63,12 +63,12 @@ fn test_comparison_operations_no_panic() {
 
     // Test all combinations of special float values
     let values = [normal_value, nan_value, infinity, neg_infinity];
-    
+
     for &a in &values {
         for &b in &values {
             // These should never panic, even with NaN
             let _result = a.safe_partial_cmp(&b);
-            
+
             // Test with f32 as well
             let a32 = a as f32;
             let b32 = b as f32;
@@ -205,9 +205,9 @@ fn test_parsing_operations_no_panic() -> Result<()> {
 /// Test that lock operations handle poisoned locks without panicking
 #[test]
 fn test_lock_operations_no_panic() -> Result<()> {
-    use synaptic::error_handling::{SafeLock, SafeMutex};
     use std::sync::{Arc, Mutex, RwLock};
     use std::thread;
+    use synaptic::error_handling::{SafeLock, SafeMutex};
 
     // Create a mutex and poison it
     let mutex = Arc::new(Mutex::new(42));
@@ -254,20 +254,20 @@ async fn test_concurrent_operations_no_panic() -> Result<()> {
         let memory_clone = memory.clone();
         let handle = tokio::spawn(async move {
             let mut mem = memory_clone.lock().await;
-            
+
             // Mix of operations that might conflict
             let key = format!("concurrent_key_{}", i % 10); // Some overlap
             let value = format!("value_{}", i);
-            
+
             // Store
             let _ = mem.store(&key, &value).await;
-            
+
             // Retrieve
             let _ = mem.retrieve(&key).await;
-            
+
             // Search
             let _ = mem.search(&value, 5).await;
-            
+
             // Try to retrieve again (might fail if key doesn't exist)
             let _ = mem.retrieve(&key).await;
         });
@@ -294,8 +294,9 @@ async fn test_timeout_operations_no_panic() -> Result<()> {
             Ok(42)
         },
         Duration::from_millis(100),
-        "quick operation"
-    ).await;
+        "quick operation",
+    )
+    .await;
     assert!(result.is_ok());
 
     // Test operation that times out
@@ -305,20 +306,20 @@ async fn test_timeout_operations_no_panic() -> Result<()> {
             Ok(42)
         },
         Duration::from_millis(50),
-        "slow operation"
-    ).await;
+        "slow operation",
+    )
+    .await;
     assert!(result.is_err());
 
     // Test operation that panics (should be caught by timeout)
-    let result = timeout(
-        Duration::from_millis(100),
-        async {
-            // This would panic, but timeout should prevent it from affecting the test
-            tokio::spawn(async {
-                panic!("This panic should be contained");
-            }).await
-        }
-    ).await;
+    let result = timeout(Duration::from_millis(100), async {
+        // This would panic, but timeout should prevent it from affecting the test
+        tokio::spawn(async {
+            panic!("This panic should be contained");
+        })
+        .await
+    })
+    .await;
     // The timeout should complete, and the panic should be contained in the spawned task
     assert!(result.is_err()); // Timeout or join error, but no panic
 
@@ -329,7 +330,7 @@ async fn test_timeout_operations_no_panic() -> Result<()> {
 #[test]
 fn test_validation_operations_no_panic() -> Result<()> {
     use synaptic::error_handling::utils::{
-        validate_non_empty_string, validate_range, validate_collection_size
+        validate_collection_size, validate_non_empty_string, validate_range,
     };
 
     // Test string validation with extreme inputs
@@ -339,15 +340,18 @@ fn test_validation_operations_no_panic() -> Result<()> {
         "\0",
         "\n\r\t",
         &"a".repeat(1_000_000), // Very long string
-        "🦀🚀💻", // Unicode
+        "🦀🚀💻",               // Unicode
     ];
 
     for s in &extreme_strings {
         let result = validate_non_empty_string(s, "extreme string test");
         // Should either pass or fail gracefully, not panic
         match result {
-            Ok(_) => println!("String '{}' (len={}) validated successfully", 
-                            s.chars().take(10).collect::<String>(), s.len()),
+            Ok(_) => println!(
+                "String '{}' (len={}) validated successfully",
+                s.chars().take(10).collect::<String>(),
+                s.len()
+            ),
             Err(_) => println!("String validation failed gracefully"),
         }
     }
@@ -357,14 +361,17 @@ fn test_validation_operations_no_panic() -> Result<()> {
         (i64::MIN, i64::MIN, i64::MAX),
         (i64::MAX, i64::MIN, i64::MAX),
         (0, i64::MAX, i64::MIN), // Invalid range
-        (100, 200, 50), // Value outside range
+        (100, 200, 50),          // Value outside range
     ];
 
     for (value, min, max) in &extreme_ranges {
         let result = validate_range(*value, *min, *max, "extreme range test");
         // Should either pass or fail gracefully, not panic
         match result {
-            Ok(_) => println!("Range validation passed for {} in [{}, {}]", value, min, max),
+            Ok(_) => println!(
+                "Range validation passed for {} in [{}, {}]",
+                value, min, max
+            ),
             Err(_) => println!("Range validation failed gracefully"),
         }
     }
@@ -388,10 +395,26 @@ async fn test_memory_entry_corruption_no_panic() -> Result<()> {
 
     // Test with entries containing problematic data
     let problematic_entries = vec![
-        MemoryEntry::new("null_bytes".to_string(), "value\0with\0nulls".to_string(), MemoryType::ShortTerm),
-        MemoryEntry::new("unicode".to_string(), "🦀🚀💻🌟".to_string(), MemoryType::ShortTerm),
-        MemoryEntry::new("control_chars".to_string(), "value\n\r\t\x08".to_string(), MemoryType::ShortTerm),
-        MemoryEntry::new("very_long".to_string(), "x".repeat(100_000), MemoryType::ShortTerm),
+        MemoryEntry::new(
+            "null_bytes".to_string(),
+            "value\0with\0nulls".to_string(),
+            MemoryType::ShortTerm,
+        ),
+        MemoryEntry::new(
+            "unicode".to_string(),
+            "🦀🚀💻🌟".to_string(),
+            MemoryType::ShortTerm,
+        ),
+        MemoryEntry::new(
+            "control_chars".to_string(),
+            "value\n\r\t\x08".to_string(),
+            MemoryType::ShortTerm,
+        ),
+        MemoryEntry::new(
+            "very_long".to_string(),
+            "x".repeat(100_000),
+            MemoryType::ShortTerm,
+        ),
     ];
 
     for entry in problematic_entries {

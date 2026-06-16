@@ -5,8 +5,8 @@
 
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,13 +193,13 @@ impl CliConfig {
         } else {
             // Try to load from default locations
             let default_paths = Self::get_default_config_paths();
-            
+
             for path in default_paths {
                 if path.exists() {
                     return Self::load_from_file(&path).await;
                 }
             }
-            
+
             // No config file found, use defaults
             Ok(Self::default())
         }
@@ -208,7 +208,7 @@ impl CliConfig {
     /// Load configuration from a specific file
     pub async fn load_from_file(path: &Path) -> Result<Self> {
         let content = tokio::fs::read_to_string(path).await?;
-        
+
         let config = match path.extension().and_then(|ext| ext.to_str()) {
             Some("toml") => toml::from_str(&content)?,
             Some("yaml") | Some("yml") => serde_yaml::from_str(&content)?,
@@ -296,7 +296,7 @@ impl CliConfig {
     /// Set configuration value by key path
     pub fn set(&mut self, key_path: &str, value: serde_json::Value) -> Result<()> {
         let keys: Vec<&str> = key_path.split('.').collect();
-        
+
         if keys.is_empty() {
             return Err(crate::error::MemoryError::InvalidConfiguration {
                 message: "Empty key path".to_string(),
@@ -305,7 +305,7 @@ impl CliConfig {
 
         // Convert config to JSON for manipulation
         let mut json_config = serde_json::to_value(&*self)?;
-        
+
         // Navigate to the parent of the target key
         let mut current = &mut json_config;
         for key in &keys[..keys.len() - 1] {
@@ -315,14 +315,14 @@ impl CliConfig {
                 }
             })?;
         }
-        
+
         // Set the value
         let last_key = keys[keys.len() - 1];
         current[last_key] = value;
-        
+
         // Convert back to config
         *self = serde_json::from_value(json_config)?;
-        
+
         Ok(())
     }
 
@@ -336,7 +336,8 @@ impl CliConfig {
         }
 
         if self.database.max_connections == 0 {
-            warnings.push("Maximum connections is 0, which will prevent database access".to_string());
+            warnings
+                .push("Maximum connections is 0, which will prevent database access".to_string());
         }
 
         // Validate shell configuration
@@ -346,7 +347,8 @@ impl CliConfig {
 
         // Validate output configuration
         if self.output.max_column_width < 10 {
-            warnings.push("Maximum column width is very small, output may be truncated".to_string());
+            warnings
+                .push("Maximum column width is very small, output may be truncated".to_string());
         }
 
         // Validate performance configuration
@@ -356,7 +358,9 @@ impl CliConfig {
 
         if let Some(threads) = self.performance.worker_threads {
             if threads == 0 {
-                warnings.push("Worker thread count is 0, parallel execution will be disabled".to_string());
+                warnings.push(
+                    "Worker thread count is 0, parallel execution will be disabled".to_string(),
+                );
             }
         }
 
@@ -365,8 +369,11 @@ impl CliConfig {
             warnings.push("Authentication is enabled but no API key is configured".to_string());
         }
 
-        if self.security.enable_tls && (self.security.cert_path.is_none() || self.security.key_path.is_none()) {
-            warnings.push("TLS is enabled but certificate or key path is not configured".to_string());
+        if self.security.enable_tls
+            && (self.security.cert_path.is_none() || self.security.key_path.is_none())
+        {
+            warnings
+                .push("TLS is enabled but certificate or key path is not configured".to_string());
         }
 
         Ok(warnings)
@@ -378,14 +385,14 @@ impl CliConfig {
         if other.database.url.is_some() {
             self.database.url = other.database.url.clone();
         }
-        
+
         if other.database.connection_timeout != DatabaseConfig::default().connection_timeout {
             self.database.connection_timeout = other.database.connection_timeout;
         }
-        
+
         // Continue for other fields...
         // For brevity, only showing a few examples
-        
+
         // Merge custom settings
         for (key, value) in &other.custom {
             self.custom.insert(key.clone(), value.clone());
@@ -411,6 +418,7 @@ impl CliConfig {
     /// Create example configuration file
     pub fn create_example_config() -> String {
         let example_config = Self::default();
-        toml::to_string_pretty(&example_config).unwrap_or_else(|_| "# Failed to generate example config".to_string())
+        toml::to_string_pretty(&example_config)
+            .unwrap_or_else(|_| "# Failed to generate example config".to_string())
     }
 }

@@ -32,7 +32,7 @@ pub struct AccessPattern {
     pub key: String,
     pub access_count: u64,
     pub last_access: DateTime<Utc>,
-    pub access_frequency: f64, // accesses per hour
+    pub access_frequency: f64,       // accesses per hour
     pub average_session_length: f64, // in minutes
 }
 
@@ -74,13 +74,15 @@ impl AgentState {
     /// Add a memory entry to the appropriate memory store
     pub fn add_memory(&mut self, mut entry: MemoryEntry) {
         entry.mark_accessed();
-        
+
         match entry.memory_type {
             MemoryType::ShortTerm => {
-                self.short_term_memories.insert(entry.key.clone(), entry.clone());
+                self.short_term_memories
+                    .insert(entry.key.clone(), entry.clone());
             }
             MemoryType::LongTerm => {
-                self.long_term_memories.insert(entry.key.clone(), entry.clone());
+                self.long_term_memories
+                    .insert(entry.key.clone(), entry.clone());
             }
         }
 
@@ -138,7 +140,9 @@ impl AgentState {
 
     /// Remove a memory entry
     pub fn remove_memory(&mut self, key: &str) -> Option<MemoryEntry> {
-        let removed = self.short_term_memories.remove(key)
+        let removed = self
+            .short_term_memories
+            .remove(key)
             .or_else(|| self.long_term_memories.remove(key));
 
         if removed.is_some() {
@@ -178,12 +182,14 @@ impl AgentState {
 
     /// Get total memory size estimation
     pub fn total_memory_size(&self) -> usize {
-        let short_term_size: usize = self.short_term_memories
+        let short_term_size: usize = self
+            .short_term_memories
             .values()
             .map(|entry| entry.estimated_size())
             .sum();
 
-        let long_term_size: usize = self.long_term_memories
+        let long_term_size: usize = self
+            .long_term_memories
             .values()
             .map(|entry| entry.estimated_size())
             .sum();
@@ -229,25 +235,27 @@ impl AgentState {
         F: Fn(&MemoryEntry) -> bool,
     {
         let mut results = Vec::new();
-        
+
         for entry in self.short_term_memories.values() {
             if predicate(entry) {
                 results.push(entry);
             }
         }
-        
+
         for entry in self.long_term_memories.values() {
             if predicate(entry) {
                 results.push(entry);
             }
         }
-        
+
         results
     }
 
     /// Get the most frequently accessed memories
     pub fn get_most_accessed(&self, limit: usize) -> Vec<&MemoryEntry> {
-        let mut all_memories: Vec<&MemoryEntry> = self.short_term_memories.values()
+        let mut all_memories: Vec<&MemoryEntry> = self
+            .short_term_memories
+            .values()
             .chain(self.long_term_memories.values())
             .collect();
 
@@ -257,7 +265,9 @@ impl AgentState {
 
     /// Get recently accessed memories
     pub fn get_recently_accessed(&self, limit: usize) -> Vec<&MemoryEntry> {
-        let mut all_memories: Vec<&MemoryEntry> = self.short_term_memories.values()
+        let mut all_memories: Vec<&MemoryEntry> = self
+            .short_term_memories
+            .values()
             .chain(self.long_term_memories.values())
             .collect();
 
@@ -268,8 +278,10 @@ impl AgentState {
     /// Update access pattern for a memory key
     fn update_access_pattern(&mut self, key: &str) {
         let now = Utc::now();
-        
-        let pattern = self.access_patterns.entry(key.to_string())
+
+        let pattern = self
+            .access_patterns
+            .entry(key.to_string())
             .or_insert_with(|| AccessPattern {
                 key: key.to_string(),
                 access_count: 0,
@@ -279,13 +291,13 @@ impl AgentState {
             });
 
         pattern.access_count += 1;
-        
+
         // Calculate frequency (accesses per hour)
         let hours_since_creation = (now - self.created_at).num_seconds() as f64 / 3600.0;
         if hours_since_creation > 0.0 {
             pattern.access_frequency = pattern.access_count as f64 / hours_since_creation;
         }
-        
+
         pattern.last_access = now;
     }
 
@@ -355,7 +367,10 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().key, "test_key");
+        assert_eq!(
+            retrieved.expect("retrieved should be valid").key,
+            "test_key"
+        );
     }
 
     #[test]
@@ -387,7 +402,10 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().value, "Updated value");
+        assert_eq!(
+            retrieved.expect("retrieved should be valid").value,
+            "Updated value"
+        );
     }
 
     #[test]
@@ -477,7 +495,10 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert!(matches!(retrieved.unwrap().memory_type, MemoryType::LongTerm));
+        assert!(matches!(
+            retrieved.expect("retrieved should be valid").memory_type,
+            MemoryType::LongTerm
+        ));
     }
 
     #[test]
@@ -495,9 +516,8 @@ mod tests {
         state.add_memory(create_test_memory_entry("short2", MemoryType::ShortTerm));
         state.add_memory(create_test_memory_entry("long1", MemoryType::LongTerm));
 
-        let short_term_only = state.filter_memories(|entry| {
-            matches!(entry.memory_type, MemoryType::ShortTerm)
-        });
+        let short_term_only =
+            state.filter_memories(|entry| matches!(entry.memory_type, MemoryType::ShortTerm));
 
         assert_eq!(short_term_only.len(), 2);
     }
@@ -521,7 +541,9 @@ mod tests {
         state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
         assert_eq!(state.version(), 2);
 
-        state.update_memory("key1", "Updated".to_string()).unwrap();
+        state
+            .update_memory("key1", "Updated".to_string())
+            .expect("value should be available");
         assert_eq!(state.version(), 3);
 
         state.remove_memory("key1");
@@ -574,7 +596,10 @@ mod tests {
 
         assert_eq!(state.session_id(), cloned.session_id());
         assert_eq!(state.version(), cloned.version());
-        assert_eq!(state.short_term_memory_count(), cloned.short_term_memory_count());
+        assert_eq!(
+            state.short_term_memory_count(),
+            cloned.short_term_memory_count()
+        );
     }
 
     #[test]
@@ -629,7 +654,10 @@ mod tests {
 
         // Access patterns should be tracked
         assert!(state.access_patterns.contains_key("key1"));
-        let pattern = state.access_patterns.get("key1").unwrap();
+        let pattern = state
+            .access_patterns
+            .get("key1")
+            .expect("value should be available");
         assert!(pattern.access_count > 0);
     }
 }

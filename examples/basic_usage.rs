@@ -1,9 +1,9 @@
 //! Basic usage example for the AI Agent Memory system
 
 use synaptic::{
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
-    memory::retrieval::{SearchQuery, SortBy},
     error::Result,
+    memory::retrieval::{SearchQuery, SortBy},
+    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
 };
 use uuid::Uuid;
 
@@ -42,9 +42,13 @@ async fn basic_memory_operations() -> Result<()> {
 
     // Store some memories
     memory.store("user_name", "Alice").await?;
-    memory.store("user_preference", "prefers coffee over tea").await?;
-    memory.store("last_conversation", "discussed project timeline").await?;
-    
+    memory
+        .store("user_preference", "prefers coffee over tea")
+        .await?;
+    memory
+        .store("last_conversation", "discussed project timeline")
+        .await?;
+
     println!("✓ Stored 3 memories");
 
     // Retrieve a specific memory
@@ -56,13 +60,18 @@ async fn basic_memory_operations() -> Result<()> {
     let results = memory.search("coffee", 5).await?;
     println!("✓ Found {} memories containing 'coffee'", results.len());
     for result in results {
-        println!("  - {} (score: {:.3})", result.entry.value, result.relevance_score);
+        println!(
+            "  - {} (score: {:.3})",
+            result.entry.value, result.relevance_score
+        );
     }
 
     // Get memory statistics
     let stats = memory.stats();
-    println!("✓ Memory stats: {} short-term, {} long-term, {} bytes total",
-        stats.short_term_count, stats.long_term_count, stats.total_size);
+    println!(
+        "✓ Memory stats: {} short-term, {} long-term, {} bytes total",
+        stats.short_term_count, stats.long_term_count, stats.total_size
+    );
 
     println!();
     Ok(())
@@ -88,16 +97,22 @@ async fn advanced_search_example() -> Result<()> {
         "Project Alpha is 75% complete, on track for Q4 delivery".to_string(),
         MemoryType::LongTerm,
     );
-    entry1.metadata = entry1.metadata
-        .with_tags(vec!["project".to_string(), "status".to_string(), "alpha".to_string()])
+    entry1.metadata = entry1
+        .metadata
+        .with_tags(vec![
+            "project".to_string(),
+            "status".to_string(),
+            "alpha".to_string(),
+        ])
         .with_importance(0.9);
-    
+
     let mut entry2 = MemoryEntry::new(
         "team_meeting".to_string(),
         "Weekly team meeting scheduled for Friday at 2 PM".to_string(),
         MemoryType::ShortTerm,
     );
-    entry2.metadata = entry2.metadata
+    entry2.metadata = entry2
+        .metadata
         .with_tags(vec!["meeting".to_string(), "schedule".to_string()])
         .with_importance(0.6);
 
@@ -129,7 +144,9 @@ async fn checkpointing_example() -> Result<()> {
 
     // Store some initial state
     memory.store("session_start", "2024-01-15 10:00:00").await?;
-    memory.store("user_goal", "learn about AI memory systems").await?;
+    memory
+        .store("user_goal", "learn about AI memory systems")
+        .await?;
     memory.store("progress", "completed basic examples").await?;
 
     println!("✓ Created initial memory state");
@@ -139,8 +156,12 @@ async fn checkpointing_example() -> Result<()> {
     println!("✓ Created checkpoint: {}", checkpoint_id);
 
     // Modify the state
-    memory.store("progress", "completed advanced examples").await?;
-    memory.store("new_insight", "checkpointing is powerful").await?;
+    memory
+        .store("progress", "completed advanced examples")
+        .await?;
+    memory
+        .store("new_insight", "checkpointing is powerful")
+        .await?;
 
     println!("✓ Modified memory state");
 
@@ -187,8 +208,10 @@ async fn storage_backends_example() -> Result<()> {
         ..Default::default()
     };
     let mut file_storage = AgentMemory::new(file_config).await?;
-    file_storage.store("persistent_key", "persistent_value").await?;
-    
+    file_storage
+        .store("persistent_key", "persistent_value")
+        .await?;
+
     // Verify persistence by creating a new instance
     let file_config2 = MemoryConfig {
         storage_backend: StorageBackend::File {
@@ -206,7 +229,3 @@ async fn storage_backends_example() -> Result<()> {
     println!();
     Ok(())
 }
-
-
-
-
