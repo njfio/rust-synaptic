@@ -301,6 +301,34 @@ required-features = ["security"]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
 
+# Feature-gated tests: these reference modules/types that only exist under
+# specific (non-default) feature flags, so they are excluded from the default
+# `cargo test` build and only compiled when their feature is enabled.
+[[test]]
+name = "cross_platform_integration_tests"
+path = "tests/cross_platform_integration_tests.rs"
+required-features = ["cross-platform"]
+
+[[test]]
+name = "wasm_adapter_tests"
+path = "tests/wasm_adapter_tests.rs"
+required-features = ["cross-platform"]
+
+[[test]]
+name = "zero_knowledge_tests"
+path = "tests/zero_knowledge_tests.rs"
+required-features = ["security"]
+
+[[test]]
+name = "storage_capability_tests"
+path = "tests/storage_capability_tests.rs"
+required-features = ["external-integrations"]
+
+[[test]]
+name = "logging_standards_tests"
+path = "tests/logging_standards_tests.rs"
+required-features = ["observability"]
+
 [[test]]
 name = "security_suite"
 path = "tests/phase4_security_tests.rs"
