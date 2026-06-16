@@ -211,10 +211,10 @@ impl PrototypicalLearner {
 
     /// Compute embeddings using the embedding network
     fn compute_embeddings(&self, features: &Array2<f64>) -> Result<Array2<f64>> {
-        let w1 = self.embedding_params.get("w1").unwrap();
-        let b1 = self.embedding_params.get("b1").unwrap();
-        let w2 = self.embedding_params.get("w2").unwrap();
-        let b2 = self.embedding_params.get("b2").unwrap();
+        let w1 = self.embedding_params.get("w1").expect("value should be available");
+        let b1 = self.embedding_params.get("b1").expect("value should be available");
+        let w2 = self.embedding_params.get("w2").expect("value should be available");
+        let b2 = self.embedding_params.get("b2").expect("value should be available");
         
         let input_dim = 256;
         let hidden_dim = self.embedding_dim;

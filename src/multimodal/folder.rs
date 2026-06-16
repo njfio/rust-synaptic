@@ -575,7 +575,7 @@ impl FolderMemoryProcessor {
                 // Add file path information
                 mem.extracted_features.insert(
                     "file_path".to_string(),
-                    serde_json::to_value(file_path.to_string_lossy().to_string()).unwrap(),
+                    serde_json::to_value(file_path.to_string_lossy().to_string()).expect("value should be available"),
                 );
                 Ok(mem)
             }

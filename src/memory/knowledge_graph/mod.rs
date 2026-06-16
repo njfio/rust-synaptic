@@ -1034,7 +1034,7 @@ mod tests {
 
         let result = graph.get_node_for_memory("nonexistent").await;
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        assert!(result.expect("result should be valid").is_none());
     }
 
     #[tokio::test]
@@ -1044,7 +1044,7 @@ mod tests {
 
         let result = graph.get_memory_for_node(Uuid::new_v4()).await;
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        assert!(result.expect("result should be valid").is_none());
     }
 
     #[test]
@@ -1096,8 +1096,8 @@ mod tests {
         };
 
         // Test that it can be serialized and deserialized
-        let serialized = serde_json::to_string(&related_memory).unwrap();
-        let deserialized: RelatedMemory = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&related_memory).expect("value should be available");
+        let deserialized: RelatedMemory = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(related_memory.memory_key, deserialized.memory_key);
         assert_eq!(related_memory.node_id, deserialized.node_id);
@@ -1114,8 +1114,8 @@ mod tests {
             reasoning: "High semantic overlap".to_string(),
         };
 
-        let serialized = serde_json::to_string(&inferred).unwrap();
-        let deserialized: InferredRelationship = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&inferred).expect("value should be available");
+        let deserialized: InferredRelationship = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(inferred.from_node, deserialized.from_node);
         assert_eq!(inferred.to_node, deserialized.to_node);

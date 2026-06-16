@@ -210,7 +210,7 @@ impl RelationshipStrategy for SemanticSimilarityStrategy {
                     metadata: {
                         let mut meta = HashMap::new();
                         meta.insert("similarity_score".to_string(), serde_json::Value::Number(
-                            serde_json::Number::from_f64(similarity as f64).unwrap()
+                            serde_json::Number::from_f64(similarity as f64).expect("value should be available")
                         ));
                         meta.insert("comparison_method".to_string(), serde_json::Value::String("text_overlap".to_string()));
                         meta
@@ -521,7 +521,7 @@ mod tests {
             confidence: 0.8,
         });
 
-        let relationships = strategy.detect_relationships(&source, &target).unwrap();
+        let relationships = strategy.detect_relationships(&source, &target).expect("value should be available");
         assert_eq!(relationships.len(), 1);
         assert_eq!(relationships[0].relationship_type, CrossModalRelationship::ExtractedFrom);
     }

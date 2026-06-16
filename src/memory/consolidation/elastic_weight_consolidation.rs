@@ -417,7 +417,7 @@ mod tests {
     #[tokio::test]
     async fn test_fisher_information_update() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
         let importance_scores = vec![
             MemoryImportance {
@@ -441,7 +441,7 @@ mod tests {
     #[tokio::test]
     async fn test_regularization_penalty() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
         // Add some protected parameters
         ewc.protected_parameters.insert("param1".to_string(), ParameterProtection {
@@ -455,14 +455,14 @@ mod tests {
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.7); // Deviation of 0.2
 
-        let penalty = ewc.calculate_regularization_penalty(&parameter_updates).await.unwrap();
+        let penalty = ewc.calculate_regularization_penalty(&parameter_updates).await.expect("await should be present");
         assert!(penalty > 0.0);
     }
 
     #[tokio::test]
     async fn test_task_consolidation() {
         let config = ConsolidationConfig::default();
-        let mut ewc = ElasticWeightConsolidation::new(&config).unwrap();
+        let mut ewc = ElasticWeightConsolidation::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),

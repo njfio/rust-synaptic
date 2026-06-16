@@ -617,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn test_path_integral_updates() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.5);
@@ -635,7 +635,7 @@ mod tests {
     #[tokio::test]
     async fn test_parameter_importance_calculation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add some path integrals first
         let mut parameter_updates = HashMap::new();
@@ -644,7 +644,7 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 0.1);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
         
         let result = si.calculate_parameter_importance().await;
         assert!(result.is_ok());
@@ -654,7 +654,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_consolidation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
@@ -671,26 +671,26 @@ mod tests {
     #[tokio::test]
     async fn test_regularization_penalty_calculation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // First consolidate a task
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
         // Now calculate penalty for parameter updates
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("task_task1_key1".to_string(), 0.8);
 
-        let penalty = si.calculate_regularization_penalty(&parameter_updates).await.unwrap();
+        let penalty = si.calculate_regularization_penalty(&parameter_updates).await.expect("await should be present");
         assert!(penalty >= 0.0);
     }
 
     #[tokio::test]
     async fn test_path_integral_accumulation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.5);
@@ -699,15 +699,15 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
 
         // First update
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
 
         // Second update with different values
         parameter_updates.insert("param1".to_string(), 0.7);
         gradients.insert("param1".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
 
-        let path_integral = si.path_integrals.get("param1").unwrap();
+        let path_integral = si.path_integrals.get("param1").expect("value should be available");
         assert!(path_integral.update_count == 2);
         assert!(path_integral.gradient_accumulator > 0.0);
     }
@@ -715,7 +715,7 @@ mod tests {
     #[tokio::test]
     async fn test_importance_score_normalization() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add path integrals with different magnitudes
         let mut parameter_updates = HashMap::new();
@@ -726,8 +726,8 @@ mod tests {
         gradients.insert("param1".to_string(), 1.0);
         gradients.insert("param2".to_string(), 0.01);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         for importance in si.parameter_importance.values() {
             assert!(importance.importance_score >= 0.0);
@@ -738,14 +738,14 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_task_consolidation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Consolidate multiple tasks
         for i in 1..=3 {
             let memories = vec![
                 MemoryEntry::new(format!("key{}", i), format!("Content {}", i), MemoryType::LongTerm),
             ];
-            si.consolidate_task(&format!("task{}", i), &memories).await.unwrap();
+            si.consolidate_task(&format!("task{}", i), &memories).await.expect("await should be present");
         }
 
         assert_eq!(si.metrics.task_count, 3);
@@ -757,7 +757,7 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_updates() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.5);
@@ -767,7 +767,7 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
         gradients.insert("param2".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
 
         let metrics = si.get_metrics();
         assert_eq!(metrics.tracked_parameters, 2);
@@ -777,8 +777,8 @@ mod tests {
     #[tokio::test]
     async fn test_damping_factor_effect() {
         let config = ConsolidationConfig::default();
-        let mut si1 = SynapticIntelligence::new(&config).unwrap();
-        let mut si2 = SynapticIntelligence::new(&config).unwrap();
+        let mut si1 = SynapticIntelligence::new(&config).expect("value should be available");
+        let mut si2 = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Set different damping factors
         si1.damping_factor = 0.01;
@@ -791,14 +791,14 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
 
         // Same updates for both
-        si1.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si2.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si1.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si2.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
 
-        si1.calculate_parameter_importance().await.unwrap();
-        si2.calculate_parameter_importance().await.unwrap();
+        si1.calculate_parameter_importance().await.expect("await should be present");
+        si2.calculate_parameter_importance().await.expect("await should be present");
 
-        let importance1 = si1.parameter_importance.get("param1").unwrap();
-        let importance2 = si2.parameter_importance.get("param1").unwrap();
+        let importance1 = si1.parameter_importance.get("param1").expect("value should be available");
+        let importance2 = si2.parameter_importance.get("param1").expect("value should be available");
 
         // Lower damping factor should result in higher importance scores
         assert!(importance1.importance_score >= importance2.importance_score);
@@ -807,7 +807,7 @@ mod tests {
     #[tokio::test]
     async fn test_catastrophic_forgetting_detection() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add path integrals first to create importance
         let mut parameter_updates = HashMap::new();
@@ -816,20 +816,20 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("key1".to_string(), 1.0); // High gradient for importance
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Consolidate a task
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
         // Create parameter updates that would cause forgetting
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_key1".to_string(), 10.0); // Large deviation
 
-        let _at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
+        let _at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.expect("await should be present");
 
         // Should detect the parameter as at risk if there's sufficient importance
         // The test is valid whether or not parameters are detected as at risk
@@ -839,7 +839,7 @@ mod tests {
     #[tokio::test]
     async fn test_forgetting_resistance_calculation() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add path integrals and importance
         let mut parameter_updates = HashMap::new();
@@ -848,16 +848,16 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 0.8); // High gradient = high importance
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Consolidate task
         let memories = vec![
             MemoryEntry::new("param1".to_string(), "Content".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
-        let resistance = si.calculate_forgetting_resistance("task_task1_param1").await.unwrap();
+        let resistance = si.calculate_forgetting_resistance("task_task1_param1").await.expect("await should be present");
 
         assert!(resistance >= 0.0);
         assert!(resistance <= 1.0);
@@ -866,7 +866,7 @@ mod tests {
     #[tokio::test]
     async fn test_adaptive_damping() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Create high importance parameter
         let mut parameter_updates = HashMap::new();
@@ -875,12 +875,12 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 1.0); // High gradient
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         let original_damping = si.damping_factor;
 
-        si.apply_adaptive_damping("param1").await.unwrap();
+        si.apply_adaptive_damping("param1").await.expect("await should be present");
 
         // Damping should be adjusted for high importance parameters
         assert!(si.damping_factor <= original_damping);
@@ -889,7 +889,7 @@ mod tests {
     #[tokio::test]
     async fn test_cross_task_interference() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add path integrals first to create importance
         let mut parameter_updates = HashMap::new();
@@ -898,26 +898,26 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("shared_param".to_string(), 0.8);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Consolidate first task
         let memories1 = vec![
             MemoryEntry::new("shared_param".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories1).await.unwrap();
+        si.consolidate_task("task1", &memories1).await.expect("await should be present");
 
         // Consolidate second task
         let memories2 = vec![
             MemoryEntry::new("shared_param".to_string(), "Content 2".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task2", &memories2).await.unwrap();
+        si.consolidate_task("task2", &memories2).await.expect("await should be present");
 
         // Calculate interference for new task with different parameter values
         let mut new_task_params = HashMap::new();
         new_task_params.insert("task_task1_shared_param".to_string(), 5.0); // Very different value
 
-        let interference = si.calculate_cross_task_interference(&new_task_params).await.unwrap();
+        let interference = si.calculate_cross_task_interference(&new_task_params).await.expect("await should be present");
 
         assert!(interference >= 0.0);
         // Interference may be 0 if no matching parameters found, which is valid
@@ -926,7 +926,7 @@ mod tests {
     #[tokio::test]
     async fn test_protection_recommendations() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Set up scenario with high importance parameters
         let mut parameter_updates = HashMap::new();
@@ -935,20 +935,20 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("critical_param".to_string(), 1.0);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Consolidate task
         let memories = vec![
             MemoryEntry::new("critical_param".to_string(), "Critical content".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
         // Create updates that would cause forgetting
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_critical_param".to_string(), 10.0);
 
-        let recommendations = si.generate_protection_recommendations(&risky_updates).await.unwrap();
+        let recommendations = si.generate_protection_recommendations(&risky_updates).await.expect("await should be present");
 
         // Should generate recommendations for at-risk parameters
         if !recommendations.is_empty() {
@@ -962,11 +962,11 @@ mod tests {
     #[tokio::test]
     async fn test_memory_based_parameter_calculation() {
         let config = ConsolidationConfig::default();
-        let si = SynapticIntelligence::new(&config).unwrap();
+        let si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Test consistent parameter generation for same memory key
-        let param1 = si.calculate_memory_based_parameter("test_key").await.unwrap();
-        let param2 = si.calculate_memory_based_parameter("test_key").await.unwrap();
+        let param1 = si.calculate_memory_based_parameter("test_key").await.expect("await should be present");
+        let param2 = si.calculate_memory_based_parameter("test_key").await.expect("await should be present");
 
         // Should be deterministic
         assert_eq!(param1, param2);
@@ -976,14 +976,14 @@ mod tests {
         assert!(param1 <= 1.0);
 
         // Different keys should produce different values
-        let param3 = si.calculate_memory_based_parameter("different_key").await.unwrap();
+        let param3 = si.calculate_memory_based_parameter("different_key").await.expect("await should be present");
         assert_ne!(param1, param3);
     }
 
     #[tokio::test]
     async fn test_task_specific_adjustments() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Add path integrals first
         let mut parameter_updates = HashMap::new();
@@ -992,17 +992,17 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("test_param".to_string(), 0.5);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
-        si.calculate_parameter_importance().await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Consolidate a task with known parameter value
         let memories = vec![
             MemoryEntry::new("test_param".to_string(), "Content".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
         let base_value = 0.5;
-        let adjusted = si.apply_task_specific_adjustments("task_task1_test_param", base_value).await.unwrap();
+        let adjusted = si.apply_task_specific_adjustments("task_task1_test_param", base_value).await.expect("await should be present");
 
         // Should return a valid adjusted value
         assert!(adjusted >= -1.0 && adjusted <= 1.0);
@@ -1011,10 +1011,10 @@ mod tests {
     #[tokio::test]
     async fn test_temporal_decay() {
         let config = ConsolidationConfig::default();
-        let si = SynapticIntelligence::new(&config).unwrap();
+        let si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let original_value = 1.0;
-        let decayed = si.apply_temporal_decay(original_value).await.unwrap();
+        let decayed = si.apply_temporal_decay(original_value).await.expect("await should be present");
 
         // Should apply some decay
         assert!(decayed <= original_value);
@@ -1024,7 +1024,7 @@ mod tests {
     #[tokio::test]
     async fn test_comprehensive_si_workflow() {
         let config = ConsolidationConfig::default();
-        let mut si = SynapticIntelligence::new(&config).unwrap();
+        let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Step 1: Update path integrals
         let mut parameter_updates = HashMap::new();
@@ -1035,29 +1035,29 @@ mod tests {
         gradients.insert("param1".to_string(), 0.8);
         gradients.insert("param2".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.unwrap();
+        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
 
         // Step 2: Calculate importance
-        si.calculate_parameter_importance().await.unwrap();
+        si.calculate_parameter_importance().await.expect("await should be present");
 
         // Step 3: Consolidate task
         let memories = vec![
             MemoryEntry::new("param1".to_string(), "Important content".to_string(), MemoryType::LongTerm),
             MemoryEntry::new("param2".to_string(), "Less important".to_string(), MemoryType::LongTerm),
         ];
-        si.consolidate_task("task1", &memories).await.unwrap();
+        si.consolidate_task("task1", &memories).await.expect("await should be present");
 
         // Step 4: Test forgetting detection
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_param1".to_string(), 5.0);
 
-        let at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.unwrap();
+        let at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.expect("await should be present");
 
         // Step 5: Calculate regularization penalty
-        let penalty = si.calculate_regularization_penalty(&risky_updates).await.unwrap();
+        let penalty = si.calculate_regularization_penalty(&risky_updates).await.expect("await should be present");
 
         // Step 6: Generate recommendations
-        let _recommendations = si.generate_protection_recommendations(&risky_updates).await.unwrap();
+        let _recommendations = si.generate_protection_recommendations(&risky_updates).await.expect("await should be present");
 
         // Verify the complete workflow
         assert!(si.metrics.tracked_parameters > 0);

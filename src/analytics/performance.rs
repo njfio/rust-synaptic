@@ -651,7 +651,7 @@ mod tests {
     #[tokio::test]
     async fn test_snapshot_recording() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = PerformanceAnalyzer::new(&config).expect("value should be available");
 
         let snapshot = PerformanceSnapshot {
             timestamp: Utc::now(),
@@ -672,7 +672,7 @@ mod tests {
     #[tokio::test]
     async fn test_trend_calculation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = PerformanceAnalyzer::new(&config).expect("value should be available");
 
         // Add multiple snapshots to establish a trend
         for i in 0..15 {
@@ -686,7 +686,7 @@ mod tests {
                 cache_hit_rate: 0.85,
                 error_rate: 0.001,
             };
-            analyzer.record_snapshot(snapshot).await.unwrap();
+            analyzer.record_snapshot(snapshot).await.expect("await should be present");
         }
 
         // Should have calculated trends
@@ -700,7 +700,7 @@ mod tests {
     #[tokio::test]
     async fn test_bottleneck_detection() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = PerformanceAnalyzer::new(&config).expect("value should be available");
 
         // Create a snapshot with high CPU usage
         let snapshot = PerformanceSnapshot {
@@ -714,7 +714,7 @@ mod tests {
             error_rate: 0.001,
         };
 
-        analyzer.record_snapshot(snapshot).await.unwrap();
+        analyzer.record_snapshot(snapshot).await.expect("await should be present");
 
         // Should detect CPU bottleneck
         assert!(!analyzer.bottlenecks.is_empty());
@@ -724,7 +724,7 @@ mod tests {
     #[tokio::test]
     async fn test_recommendation_generation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = PerformanceAnalyzer::new(&config).expect("value should be available");
 
         // Add a degrading trend
         let trend = PerformanceTrend {
@@ -737,14 +737,14 @@ mod tests {
         };
         analyzer.trends.insert("avg_response_time_ms".to_string(), trend);
 
-        let recommendations = analyzer.generate_recommendations().await.unwrap();
+        let recommendations = analyzer.generate_recommendations().await.expect("await should be present");
         assert!(!recommendations.is_empty());
     }
 
     #[tokio::test]
     async fn test_insight_generation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = PerformanceAnalyzer::new(&config).expect("value should be available");
 
         // Add a high-confidence trend
         let trend = PerformanceTrend {
@@ -757,7 +757,7 @@ mod tests {
         };
         analyzer.trends.insert("ops_per_second".to_string(), trend);
 
-        let insights = analyzer.generate_insights().await.unwrap();
+        let insights = analyzer.generate_insights().await.expect("await should be present");
         assert!(!insights.is_empty());
     }
 }

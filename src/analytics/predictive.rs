@@ -201,7 +201,7 @@ impl AccessPattern {
                 return None;
             }
 
-            let last_access = *self.access_times.back().unwrap();
+            let last_access = *self.access_times.back().expect("back() should succeed");
             let predicted_time = last_access + avg_interval;
 
             // Calculate confidence based on pattern consistency
@@ -443,7 +443,7 @@ impl PredictiveAnalytics {
         }
 
         // Calculate access frequency
-        let time_span = *pattern.access_times.back().unwrap() - *pattern.access_times.front().unwrap();
+        let time_span = *pattern.access_times.back().expect("back() should succeed") - *pattern.access_times.front().expect("front() should succeed");
         let access_frequency = if time_span.num_hours() > 0 {
             pattern.access_times.len() as f64 / time_span.num_hours() as f64
         } else {
@@ -587,7 +587,7 @@ mod tests {
     #[tokio::test]
     async fn test_access_pattern_tracking() {
         let config = AnalyticsConfig::default();
-        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = PredictiveAnalytics::new(&config).expect("value should be available");
 
         let event = AnalyticsEvent::MemoryAccess {
             memory_key: "test_key".to_string(),
@@ -604,7 +604,7 @@ mod tests {
     #[tokio::test]
     async fn test_prediction_generation() {
         let config = AnalyticsConfig::default();
-        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = PredictiveAnalytics::new(&config).expect("value should be available");
 
         // Add multiple accesses to establish a pattern
         let base_time = Utc::now();
@@ -615,7 +615,7 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 user_context: None,
             };
-            analytics.process_event(&event).await.unwrap();
+            analytics.process_event(&event).await.expect("await should be present");
         }
 
         // Should have generated some predictions
@@ -625,7 +625,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_prediction_generation() {
         let config = AnalyticsConfig::default();
-        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = PredictiveAnalytics::new(&config).expect("value should be available");
 
         let base_time = Utc::now();
         for i in 0..5 {
@@ -635,7 +635,7 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 response_time_ms: 20,
             };
-            analytics.process_event(&event).await.unwrap();
+            analytics.process_event(&event).await.expect("await should be present");
         }
 
         assert!(!analytics.get_search_predictions().is_empty());
@@ -644,7 +644,7 @@ mod tests {
     #[tokio::test]
     async fn test_caching_recommendations() {
         let config = AnalyticsConfig::default();
-        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = PredictiveAnalytics::new(&config).expect("value should be available");
 
         // Create a high-frequency access pattern
         let base_time = Utc::now();
@@ -655,10 +655,10 @@ mod tests {
                 timestamp: base_time + Duration::minutes(i * 10),
                 user_context: None,
             };
-            analytics.process_event(&event).await.unwrap();
+            analytics.process_event(&event).await.expect("await should be present");
         }
 
-        let _recommendations = analytics.generate_caching_recommendations().await.unwrap();
+        let _recommendations = analytics.generate_caching_recommendations().await.expect("await should be present");
         // Should generate recommendations for frequently accessed memory
         // Function works correctly regardless of result count
     }
@@ -666,7 +666,7 @@ mod tests {
     #[tokio::test]
     async fn test_insight_generation() {
         let config = AnalyticsConfig::default();
-        let mut analytics = PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = PredictiveAnalytics::new(&config).expect("value should be available");
 
         // Add some access patterns
         let base_time = Utc::now();
@@ -677,10 +677,10 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 user_context: None,
             };
-            analytics.process_event(&event).await.unwrap();
+            analytics.process_event(&event).await.expect("await should be present");
         }
 
-        let _insights = analytics.generate_insights().await.unwrap();
+        let _insights = analytics.generate_insights().await.expect("await should be present");
         // Should generate insights based on patterns
         // Function works correctly regardless of result count
     }

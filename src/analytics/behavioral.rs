@@ -674,7 +674,7 @@ mod tests {
     #[tokio::test]
     async fn test_user_profile_creation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = BehavioralAnalyzer::new(&config).unwrap();
+        let mut analyzer = BehavioralAnalyzer::new(&config).expect("value should be available");
 
         let event = AnalyticsEvent::MemoryAccess {
             memory_key: "test_key".to_string(),
@@ -683,14 +683,14 @@ mod tests {
             user_context: Some("test_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.unwrap();
+        analyzer.process_event(&event).await.expect("await should be present");
         assert!(analyzer.user_profiles.contains_key("test_user"));
     }
 
     #[tokio::test]
     async fn test_session_tracking() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = BehavioralAnalyzer::new(&config).unwrap();
+        let mut analyzer = BehavioralAnalyzer::new(&config).expect("value should be available");
 
         let event = AnalyticsEvent::MemoryAccess {
             memory_key: "test_key".to_string(),
@@ -699,14 +699,14 @@ mod tests {
             user_context: Some("session_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.unwrap();
+        analyzer.process_event(&event).await.expect("await should be present");
         assert!(analyzer.active_sessions.contains_key("session_user"));
     }
 
     #[tokio::test]
     async fn test_recommendation_generation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = BehavioralAnalyzer::new(&config).unwrap();
+        let mut analyzer = BehavioralAnalyzer::new(&config).expect("value should be available");
 
         // Create a user profile first
         let event = AnalyticsEvent::MemoryAccess {
@@ -716,9 +716,9 @@ mod tests {
             user_context: Some("rec_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.unwrap();
+        analyzer.process_event(&event).await.expect("await should be present");
 
-        let _recommendations = analyzer.generate_recommendations("rec_user").await.unwrap();
+        let _recommendations = analyzer.generate_recommendations("rec_user").await.expect("await should be present");
         // Should not error, recommendations may be empty initially
         // Recommendations should be generated (empty is valid initially)
     }
@@ -726,7 +726,7 @@ mod tests {
     #[tokio::test]
     async fn test_insight_generation() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = BehavioralAnalyzer::new(&config).unwrap();
+        let mut analyzer = BehavioralAnalyzer::new(&config).expect("value should be available");
 
         // Add some user activity
         for i in 0..10 {
@@ -736,10 +736,10 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("insight_user".to_string()),
             };
-            analyzer.process_event(&event).await.unwrap();
+            analyzer.process_event(&event).await.expect("await should be present");
         }
 
-        let _insights = analyzer.generate_insights().await.unwrap();
+        let _insights = analyzer.generate_insights().await.expect("await should be present");
         // Should generate insights based on user behavior
         // Insights should be generated based on user behavior
     }

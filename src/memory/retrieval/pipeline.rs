@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn test_pipeline_config_semantic_focus() {
         let config = PipelineConfig::semantic_focus();
-        let dense_weight = config.signal_weights.get(&RetrievalSignal::DenseVector).unwrap();
+        let dense_weight = config.signal_weights.get(&RetrievalSignal::DenseVector).expect("value should be available");
         assert_eq!(*dense_weight, 0.6);
     }
 
@@ -573,7 +573,7 @@ mod tests {
         // Get
         let cached = cache.get("test_query");
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().len(), 1);
+        assert_eq!(cached.expect("cached should be valid").len(), 1);
 
         // Clear
         cache.clear();

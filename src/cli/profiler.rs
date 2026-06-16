@@ -942,12 +942,12 @@ struct ObjectPool<T> {
 
 impl<T> ObjectPool<T> {
     fn get(&self) -> T {
-        self.objects.lock().unwrap().pop_front()
+        self.objects.lock().expect("lock() should succeed").pop_front()
             .unwrap_or_else(|| (self.factory)())
     }
 
     fn return_object(&self, obj: T) {
-        self.objects.lock().unwrap().push_back(obj);
+        self.objects.lock().expect("lock() should succeed").push_back(obj);
     }
 }"#.to_string(),
                                 explanation: "Reuse objects to reduce allocation overhead".to_string(),
@@ -1177,7 +1177,7 @@ impl CachedService {
         }
 
         let mut sorted_latencies = latencies.to_vec();
-        sorted_latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_latencies.sort_by(|a, b| a.partial_cmp(b).expect("value should be available"));
 
         // Calculate percentiles
         let mut percentiles = HashMap::new();

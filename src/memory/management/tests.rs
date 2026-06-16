@@ -351,7 +351,7 @@ mod tests {
 
         // Should trigger because our placeholder returns 5 related memories, which exceeds threshold of 3
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
+        let trigger = trigger_result.expect("trigger_result should be valid");
         assert_eq!(trigger.trigger_type, SummarizationTriggerType::RelatedMemoryThreshold);
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Related memory count"));
@@ -378,7 +378,7 @@ mod tests {
 
         // Should trigger due to content complexity
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
+        let trigger = trigger_result.expect("trigger_result should be valid");
         assert_eq!(trigger.trigger_type, SummarizationTriggerType::ContentComplexity);
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Content complexity score"));
@@ -434,7 +434,7 @@ mod tests {
 
         // Should trigger due to high semantic density
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
+        let trigger = trigger_result.expect("trigger_result should be valid");
         assert_eq!(trigger.trigger_type, SummarizationTriggerType::SemanticDensity);
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Semantic density"));
@@ -461,7 +461,7 @@ mod tests {
 
         // Should trigger due to large size
         assert!(trigger_result.is_some());
-        let trigger = trigger_result.unwrap();
+        let trigger = trigger_result.expect("trigger_result should be valid");
         assert_eq!(trigger.trigger_type, SummarizationTriggerType::StorageOptimization);
         assert!(trigger.confidence > 0.0);
         assert!(trigger.reason.contains("Memory size"));

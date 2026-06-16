@@ -125,7 +125,7 @@ impl WebWorkerManager {
         let pending_requests = self.pending_requests.clone();
         let onmessage_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
             if let Ok(response_data) = event.data().into_serde::<WorkerResponse>() {
-                let mut requests = pending_requests.lock().unwrap();
+                let mut requests = pending_requests.lock().expect("lock() should succeed");
                 match &response_data {
                     WorkerResponse::Success { request_id, .. } |
                     WorkerResponse::Error { request_id, .. } |
@@ -154,7 +154,7 @@ impl WebWorkerManager {
 
         // Generate unique request ID
         let request_id = {
-            let mut counter = self.request_counter.lock().unwrap();
+            let mut counter = self.request_counter.lock().expect("lock() should succeed");
             *counter += 1;
             format!("req_{}", *counter)
         };
@@ -162,7 +162,7 @@ impl WebWorkerManager {
         // Create response channel
         let (sender, receiver) = tokio::sync::oneshot::channel();
         {
-            let mut requests = self.pending_requests.lock().unwrap();
+            let mut requests = self.pending_requests.lock().expect("lock() should succeed");
             requests.insert(request_id.clone(), sender);
         }
 
@@ -325,7 +325,7 @@ impl WebWorkerManager {
         }
         
         // Clear pending requests
-        let mut requests = self.pending_requests.lock().unwrap();
+        let mut requests = self.pending_requests.lock().expect("lock() should succeed");
         requests.clear();
     }
 }

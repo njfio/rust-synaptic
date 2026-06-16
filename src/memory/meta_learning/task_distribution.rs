@@ -280,7 +280,7 @@ impl TaskDistribution {
                     .enumerate()
                     .map(|(i, task)| (i, *self.difficulty_scores.get(&task.id).unwrap_or(&0.5)))
                     .collect();
-                indexed_tasks.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                indexed_tasks.sort_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"));
                 
                 for i in 0..count.min(indexed_tasks.len()) {
                     sampled_tasks.push(self.tasks[indexed_tasks[i].0].clone());
@@ -293,7 +293,7 @@ impl TaskDistribution {
                     .enumerate()
                     .map(|(i, task)| (i, *self.difficulty_scores.get(&task.id).unwrap_or(&0.5)))
                     .collect();
-                indexed_tasks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                indexed_tasks.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("value should be available"));
                 
                 for i in 0..count.min(indexed_tasks.len()) {
                     sampled_tasks.push(self.tasks[indexed_tasks[i].0].clone());

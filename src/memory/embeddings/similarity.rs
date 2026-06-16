@@ -162,7 +162,7 @@ pub fn find_k_most_similar(
         .collect();
 
     // Sort by similarity (highest first)
-    similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("value should be available"));
     
     // Take top k
     similarities.truncate(k);

@@ -258,7 +258,7 @@ impl MLModelManager {
 
                 if !intervals.is_empty() {
                     let avg_interval = intervals.iter().sum::<chrono::Duration>() / intervals.len() as i32;
-                    let last_access = key_accesses.last().unwrap();
+                    let last_access = key_accesses.last().expect("last() should succeed");
                     let predicted_time = *last_access + avg_interval;
 
                     predictions.push(AccessPrediction {

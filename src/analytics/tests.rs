@@ -11,7 +11,7 @@ mod phase3_analytics_tests {
     #[tokio::test]
     async fn test_analytics_engine_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut engine = AnalyticsEngine::new(config).unwrap();
+        let mut engine = AnalyticsEngine::new(config).expect("value should be available");
 
         // Test event recording
         let event = AnalyticsEvent::MemoryAccess {
@@ -21,18 +21,18 @@ mod phase3_analytics_tests {
             user_context: Some("test_user".to_string()),
         };
 
-        engine.record_event(event).await.unwrap();
+        engine.record_event(event).await.expect("await should be present");
         assert_eq!(engine.get_metrics().events_processed, 1);
 
         // Test insight generation
-        let _insights = engine.generate_insights().await.unwrap();
+        let _insights = engine.generate_insights().await.expect("await should be present");
         // Function works correctly regardless of result count
     }
 
     #[tokio::test]
     async fn test_predictive_analytics_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut analytics = predictive::PredictiveAnalytics::new(&config).unwrap();
+        let mut analytics = predictive::PredictiveAnalytics::new(&config).expect("value should be available");
 
         // Create a pattern of access events
         let base_time = Utc::now();
@@ -43,7 +43,7 @@ mod phase3_analytics_tests {
                 timestamp: base_time + Duration::hours(i),
                 user_context: Some("pattern_user".to_string()),
             };
-            analytics.process_event(&event).await.unwrap();
+            analytics.process_event(&event).await.expect("await should be present");
         }
 
         // Test prediction generation
@@ -51,18 +51,18 @@ mod phase3_analytics_tests {
         // Function works correctly regardless of result count
 
         // Test caching recommendations
-        let _cache_recs = analytics.generate_caching_recommendations().await.unwrap();
+        let _cache_recs = analytics.generate_caching_recommendations().await.expect("await should be present");
         // Function works correctly regardless of result count
 
         // Test insights
-        let _insights = analytics.generate_insights().await.unwrap();
+        let _insights = analytics.generate_insights().await.expect("await should be present");
         // Function works correctly regardless of result count
     }
 
     #[tokio::test]
     async fn test_behavioral_analysis_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = behavioral::BehavioralAnalyzer::new(&config).unwrap();
+        let mut analyzer = behavioral::BehavioralAnalyzer::new(&config).expect("value should be available");
 
         // Create user behavior pattern
         for i in 0..15 {
@@ -72,29 +72,29 @@ mod phase3_analytics_tests {
                 timestamp: Utc::now() + Duration::minutes(i * 10),
                 user_context: Some("behavior_user".to_string()),
             };
-            analyzer.process_event(&event).await.unwrap();
+            analyzer.process_event(&event).await.expect("await should be present");
         }
 
         // Test user profile creation
         assert!(analyzer.get_user_profiles().contains_key("behavior_user"));
 
         // Test recommendation generation
-        let _recommendations = analyzer.generate_recommendations("behavior_user").await.unwrap();
+        let _recommendations = analyzer.generate_recommendations("behavior_user").await.expect("await should be present");
         // Function works correctly regardless of result count
 
         // Test insights
-        let _insights = analyzer.generate_insights().await.unwrap();
+        let _insights = analyzer.generate_insights().await.expect("await should be present");
         // Function works correctly regardless of result count
     }
 
     #[tokio::test]
     async fn test_visualization_engine_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut engine = visualization::VisualizationEngine::new(&config).unwrap();
+        let mut engine = visualization::VisualizationEngine::new(&config).expect("value should be available");
 
         // Test visual node creation
         let memory_entry = MemoryEntry::new("viz_memory".to_string(), "Test visualization content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let node_id = engine.create_visual_node("viz_memory", &memory_entry).await.unwrap();
+        let node_id = engine.create_visual_node("viz_memory", &memory_entry).await.expect("await should be present");
         assert!(!node_id.is_empty());
 
         // Test temporal timeline creation
@@ -112,11 +112,11 @@ mod phase3_analytics_tests {
             "Test Timeline",
             data_points,
             visualization::TimelineVisualizationType::LineChart
-        ).await.unwrap();
+        ).await.expect("await should be present");
         assert!(!timeline_id.is_empty());
 
         // Test visualization export
-        let export = engine.export_visualization_data().await.unwrap();
+        let export = engine.export_visualization_data().await.expect("await should be present");
         assert!(export.nodes.len() > 0);
         assert!(export.timelines.len() > 0);
 
@@ -129,7 +129,7 @@ mod phase3_analytics_tests {
     #[tokio::test]
     async fn test_memory_intelligence_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut engine = intelligence::MemoryIntelligenceEngine::new(&config).unwrap();
+        let mut engine = intelligence::MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         // Test memory intelligence analysis
         let memory_entry = MemoryEntry::new("intelligent_memory".to_string(), "Complex memory content for intelligence analysis with multiple concepts and relationships".to_string(), crate::memory::types::MemoryType::LongTerm);
@@ -142,7 +142,7 @@ mod phase3_analytics_tests {
             "intelligent_memory",
             &memory_entry,
             &relationships
-        ).await.unwrap();
+        ).await.expect("await should be present");
 
         assert!(intelligence.intelligence_score >= 0.0);
         assert!(intelligence.intelligence_score <= 1.0);
@@ -157,26 +157,26 @@ mod phase3_analytics_tests {
                 timestamp: Utc::now() + Duration::minutes(i * 5),
                 user_context: Some("intelligence_user".to_string()),
             };
-            engine.process_event(&event).await.unwrap();
+            engine.process_event(&event).await.expect("await should be present");
         }
 
-        let patterns = engine.recognize_patterns().await.unwrap();
+        let patterns = engine.recognize_patterns().await.expect("await should be present");
         assert!(!patterns.is_empty());
 
         // Test anomaly detection
-        engine.update_baseline_metrics().await.unwrap();
-        let anomalies = engine.detect_anomalies().await.unwrap();
+        engine.update_baseline_metrics().await.expect("await should be present");
+        let anomalies = engine.detect_anomalies().await.expect("await should be present");
         assert!(!anomalies.is_empty());
 
         // Test insights
-        let insights = engine.generate_insights().await.unwrap();
+        let insights = engine.generate_insights().await.expect("await should be present");
         assert!(!insights.is_empty());
     }
 
     #[tokio::test]
     async fn test_performance_analyzer_comprehensive() {
         let config = AnalyticsConfig::default();
-        let mut analyzer = performance::PerformanceAnalyzer::new(&config).unwrap();
+        let mut analyzer = performance::PerformanceAnalyzer::new(&config).expect("value should be available");
 
         // Test performance snapshot recording
         let snapshot = performance::PerformanceSnapshot {
@@ -190,7 +190,7 @@ mod phase3_analytics_tests {
             error_rate: 0.001,
         };
 
-        analyzer.record_snapshot(snapshot).await.unwrap();
+        analyzer.record_snapshot(snapshot).await.expect("await should be present");
 
         // Add more snapshots to establish trends
         for i in 1..15 {
@@ -204,7 +204,7 @@ mod phase3_analytics_tests {
                 cache_hit_rate: 0.92 - i as f64 * 0.01,
                 error_rate: 0.001 + i as f64 * 0.0001,
             };
-            analyzer.record_snapshot(snapshot).await.unwrap();
+            analyzer.record_snapshot(snapshot).await.expect("await should be present");
         }
 
         // Test trend analysis
@@ -216,18 +216,18 @@ mod phase3_analytics_tests {
         // Function works correctly regardless of result count
 
         // Test optimization recommendations
-        let _recommendations = analyzer.generate_recommendations().await.unwrap();
+        let _recommendations = analyzer.generate_recommendations().await.expect("await should be present");
         // Function works correctly regardless of result count
 
         // Test insights
-        let _insights = analyzer.generate_insights().await.unwrap();
+        let _insights = analyzer.generate_insights().await.expect("await should be present");
         // Function works correctly regardless of result count
     }
 
     #[tokio::test]
     async fn test_analytics_integration() {
         let config = AnalyticsConfig::default();
-        let mut engine = AnalyticsEngine::new(config).unwrap();
+        let mut engine = AnalyticsEngine::new(config).expect("value should be available");
 
         // Test multiple event types
         let events = vec![
@@ -259,7 +259,7 @@ mod phase3_analytics_tests {
 
         // Process all events
         for event in events {
-            engine.record_event(event).await.unwrap();
+            engine.record_event(event).await.expect("await should be present");
         }
 
         // Verify metrics
@@ -268,7 +268,7 @@ mod phase3_analytics_tests {
         assert!(metrics.avg_processing_time_ms >= 0.0); // Processing can be very fast
 
         // Generate comprehensive insights
-        let _insights = engine.generate_insights().await.unwrap();
+        let _insights = engine.generate_insights().await.expect("await should be present");
         // Function works correctly regardless of result count
 
         // Test insight filtering
@@ -282,7 +282,7 @@ mod phase3_analytics_tests {
     #[tokio::test]
     async fn test_analytics_performance() {
         let config = AnalyticsConfig::default();
-        let mut engine = AnalyticsEngine::new(config).unwrap();
+        let mut engine = AnalyticsEngine::new(config).expect("value should be available");
 
         // Performance test with many events
         let start_time = std::time::Instant::now();
@@ -294,7 +294,7 @@ mod phase3_analytics_tests {
                 timestamp: Utc::now() + Duration::milliseconds(i),
                 user_context: Some(format!("user_{}", i % 10)),
             };
-            engine.record_event(event).await.unwrap();
+            engine.record_event(event).await.expect("await should be present");
         }
 
         let elapsed = start_time.elapsed();
@@ -309,7 +309,7 @@ mod phase3_analytics_tests {
 
         // Test insight generation performance
         let insight_start = std::time::Instant::now();
-        let insights = engine.generate_insights().await.unwrap();
+        let insights = engine.generate_insights().await.expect("await should be present");
         let insight_elapsed = insight_start.elapsed();
         
         tracing::info!("Generated {} insights in {:?}", insights.len(), insight_elapsed);
@@ -322,7 +322,7 @@ mod phase3_analytics_tests {
         config.retention_days = 1; // Short retention for testing
         config.max_history_entries = 10; // Small history for testing
 
-        let mut engine = AnalyticsEngine::new(config).unwrap();
+        let mut engine = AnalyticsEngine::new(config).expect("value should be available");
 
         // Add events beyond the limit
         for i in 0..15 {
@@ -336,14 +336,14 @@ mod phase3_analytics_tests {
                 },
                 user_context: Some("cleanup_user".to_string()),
             };
-            engine.record_event(event).await.unwrap();
+            engine.record_event(event).await.expect("await should be present");
         }
 
         // Should have trimmed to max_history_entries
         assert!(engine.event_history.len() <= 10);
 
         // Test cleanup
-        engine.cleanup_old_data().await.unwrap();
+        engine.cleanup_old_data().await.expect("await should be present");
 
         // Should have removed old events
         assert!(engine.event_history.len() <= 10);
@@ -383,7 +383,7 @@ mod phase3_integration_tests {
             max_history_entries: 1000,
         };
 
-        let mut engine = AnalyticsEngine::new(config).unwrap();
+        let mut engine = AnalyticsEngine::new(config).expect("value should be available");
 
         // Simulate a realistic usage scenario
         let users = vec!["alice", "bob", "charlie"];
@@ -401,7 +401,7 @@ mod phase3_integration_tests {
                                 timestamp: Utc::now() - Duration::days(day) + Duration::hours(hour),
                                 user_context: Some(user.to_string()),
                             };
-                            engine.record_event(event).await.unwrap();
+                            engine.record_event(event).await.expect("await should be present");
                         }
                     }
                 }
@@ -409,7 +409,7 @@ mod phase3_integration_tests {
         }
 
         // Generate comprehensive insights
-        let insights = engine.generate_insights().await.unwrap();
+        let insights = engine.generate_insights().await.expect("await should be present");
         
         // Should have generated meaningful insights
         assert!(insights.len() > 0);

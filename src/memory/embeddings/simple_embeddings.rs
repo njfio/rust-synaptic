@@ -208,7 +208,7 @@ mod tests {
         embedder.update_vocabulary("artificial intelligence");
         embedder.update_vocabulary("machine learning");
         
-        let embedding = embedder.embed_text("artificial intelligence").unwrap();
+        let embedding = embedder.embed_text("artificial intelligence").expect("value should be available");
         
         assert_eq!(embedding.len(), 100);
         
@@ -226,9 +226,9 @@ mod tests {
         embedder.update_vocabulary("deep learning neural networks");
         embedder.update_vocabulary("cooking recipes food");
         
-        let ai_embedding1 = embedder.embed_text("artificial intelligence").unwrap();
-        let ai_embedding2 = embedder.embed_text("machine learning").unwrap();
-        let cooking_embedding = embedder.embed_text("cooking recipes").unwrap();
+        let ai_embedding1 = embedder.embed_text("artificial intelligence").expect("value should be available");
+        let ai_embedding2 = embedder.embed_text("machine learning").expect("value should be available");
+        let cooking_embedding = embedder.embed_text("cooking recipes").expect("value should be available");
         
         // Calculate cosine similarity
         let ai_similarity = cosine_similarity(&ai_embedding1, &ai_embedding2);

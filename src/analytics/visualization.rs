@@ -400,8 +400,8 @@ impl VisualizationEngine {
         let time_range = if data_points.is_empty() {
             (Utc::now(), Utc::now())
         } else {
-            let min_time = data_points.iter().map(|p| p.timestamp).min().unwrap();
-            let max_time = data_points.iter().map(|p| p.timestamp).max().unwrap();
+            let min_time = data_points.iter().map(|p| p.timestamp).min().expect("min() should succeed");
+            let max_time = data_points.iter().map(|p| p.timestamp).max().expect("max() should succeed");
             (min_time, max_time)
         };
 
@@ -810,10 +810,10 @@ mod tests {
     #[tokio::test]
     async fn test_visual_node_creation() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         let memory_entry = MemoryEntry::new("test_key".to_string(), "Test memory content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let node_id = engine.create_visual_node("test_key", &memory_entry).await.unwrap();
+        let node_id = engine.create_visual_node("test_key", &memory_entry).await.expect("await should be present");
         
         assert!(engine.nodes.contains_key(&node_id));
     }
@@ -821,7 +821,7 @@ mod tests {
     #[tokio::test]
     async fn test_temporal_timeline_creation() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         let data_points = vec![
             TemporalDataPoint {
@@ -833,22 +833,22 @@ mod tests {
             }
         ];
 
-        let timeline_id = engine.create_temporal_timeline("Test Timeline", data_points, TimelineVisualizationType::LineChart).await.unwrap();
+        let timeline_id = engine.create_temporal_timeline("Test Timeline", data_points, TimelineVisualizationType::LineChart).await.expect("await should be present");
         assert!(engine.timelines.contains_key(&timeline_id));
     }
 
     #[tokio::test]
     async fn test_force_directed_layout() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create some nodes
         let memory_entry = MemoryEntry::new("key1".to_string(), "Test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.expect("await should be present");
+        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.expect("await should be present");
 
         // Create an edge
-        engine.create_visual_edge("key1", "key2", 0.8, "similarity").await.unwrap();
+        engine.create_visual_edge("key1", "key2", 0.8, "similarity").await.expect("await should be present");
 
         // Apply layout
         let result = engine.apply_force_directed_layout(10).await;
@@ -858,9 +858,9 @@ mod tests {
     #[tokio::test]
     async fn test_visualization_export() {
         let config = AnalyticsConfig::default();
-        let engine = VisualizationEngine::new(&config).unwrap();
+        let engine = VisualizationEngine::new(&config).expect("value should be available");
 
-        let export = engine.export_visualization_data().await.unwrap();
+        let export = engine.export_visualization_data().await.expect("await should be present");
         assert_eq!(export.nodes.len(), 0);
         assert_eq!(export.edges.len(), 0);
     }
@@ -868,15 +868,15 @@ mod tests {
     #[tokio::test]
     async fn test_webgl_export() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create test nodes
         let memory_entry = MemoryEntry::new("test_key".to_string(), "test content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
-        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.unwrap();
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.expect("await should be present");
+        let _node2_id = engine.create_visual_node("key2", &memory_entry).await.expect("await should be present");
 
         // Export WebGL data
-        let webgl_export = engine.export_webgl_data().await.unwrap();
+        let webgl_export = engine.export_webgl_data().await.expect("await should be present");
 
         assert_eq!(webgl_export.node_count, 2);
         assert_eq!(webgl_export.vertices.len(), 6); // 2 nodes * 3 coordinates
@@ -888,18 +888,18 @@ mod tests {
     #[tokio::test]
     async fn test_vr_export() {
         let config = AnalyticsConfig::default();
-        let mut engine = VisualizationEngine::new(&config).unwrap();
+        let mut engine = VisualizationEngine::new(&config).expect("value should be available");
 
         // Create test nodes with varying importance
         let mut memory_entry = MemoryEntry::new("important_memory".to_string(), "important content".to_string(), crate::memory::types::MemoryType::LongTerm);
         memory_entry.metadata.importance = 0.9; // High importance
-        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.unwrap();
+        let _node1_id = engine.create_visual_node("key1", &memory_entry).await.expect("await should be present");
 
         let memory_entry2 = MemoryEntry::new("normal_memory".to_string(), "normal content".to_string(), crate::memory::types::MemoryType::ShortTerm);
-        let _node2_id = engine.create_visual_node("key2", &memory_entry2).await.unwrap();
+        let _node2_id = engine.create_visual_node("key2", &memory_entry2).await.expect("await should be present");
 
         // Export VR data
-        let vr_export = engine.export_vr_data().await.unwrap();
+        let vr_export = engine.export_vr_data().await.expect("await should be present");
 
         assert_eq!(vr_export.webgl_data.node_count, 2);
         // Interaction zones may be empty initially

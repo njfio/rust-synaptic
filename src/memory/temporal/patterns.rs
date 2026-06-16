@@ -301,7 +301,7 @@ impl PatternDetector {
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| *c)
-            .unwrap();
+            .expect("value should be available");
         if peak_count == 0 {
             return Ok(None);
         }
@@ -343,7 +343,7 @@ impl PatternDetector {
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| *c)
-            .unwrap();
+            .expect("value should be available");
         if peak_count == 0 {
             return Ok(None);
         }
@@ -425,7 +425,7 @@ impl PatternDetector {
 
         let mut daily_counts: BTreeMap<i64, u32> = BTreeMap::new();
         for ev in &evidence {
-            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+            let day = ev.timestamp.date_naive().and_hms_opt(0, 0, 0).expect("value should be available").and_utc().timestamp();
             *daily_counts.entry(day).or_insert(0) += 1;
         }
 
@@ -456,15 +456,15 @@ impl PatternDetector {
         };
 
         let strength = slope.abs().min(1.0);
-        let start = *daily_counts.keys().next().unwrap();
-        let end = *daily_counts.keys().last().unwrap();
+        let start = *daily_counts.keys().next().expect("next() should succeed");
+        let end = *daily_counts.keys().last().expect("last() should succeed");
         let pattern = TemporalPattern {
             id: format!("trend_{:?}", pattern_type),
             pattern_type,
             strength,
             confidence: strength,
-            time_range: TimeRange::new(DateTime::from_timestamp(start, 0).unwrap(),
-                                         DateTime::from_timestamp(end, 0).unwrap()),
+            time_range: TimeRange::new(DateTime::from_timestamp(start, 0).expect("value should be available"),
+                                         DateTime::from_timestamp(end, 0).expect("value should be available")),
             description: "Gradual trend detected".to_string(),
             evidence,
             metadata: HashMap::new(),
@@ -2435,7 +2435,7 @@ impl PatternDetector {
             let range = TimeRange::new(*start, *end);
             if let Some(p) = self.detect_daily_pattern(&range).await? {
                 if let Some(h) = p.metadata.get("hour_of_day").and_then(|s| s.parse::<u32>().ok()) {
-                    let dt = start.date_naive().and_hms_opt(h, 0, 0).unwrap();
+                    let dt = start.date_naive().and_hms_opt(h, 0, 0).expect("value should be available");
                     peak_times.push(dt.and_utc());
                 }
             }
@@ -2449,7 +2449,7 @@ impl PatternDetector {
         let mut clusters: Vec<Vec<DateTime<Utc>>> = Vec::new();
         for ts in timestamps {
             if let Some(cluster) = clusters.last_mut() {
-                if ts - *cluster.last().unwrap() <= Duration::minutes(60) {
+                if ts - *cluster.last().expect("last() should succeed") <= Duration::minutes(60) {
                     cluster.push(ts);
                     continue;
                 }
@@ -2463,7 +2463,7 @@ impl PatternDetector {
         let inter_cluster_time = if clusters.len() > 1 {
             let mut times = Vec::new();
             for pair in clusters.windows(2) {
-                times.push(pair[1][0] - *pair[0].last().unwrap());
+                times.push(pair[1][0] - *pair[0].last().expect("last() should succeed"));
             }
             times.iter().fold(Duration::zero(), |acc, d| acc + *d) / (times.len() as i32)
         } else {
@@ -2519,7 +2519,7 @@ mod tests {
     use chrono::NaiveDate;
 
     fn dt(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap().and_utc()
+        NaiveDate::from_ymd_opt(y, m, d).expect("value should be available").and_hms_opt(h, 0, 0).expect("value should be available").and_utc()
     }
 
     fn evidence_at(ts: DateTime<Utc>) -> PatternEvidence {

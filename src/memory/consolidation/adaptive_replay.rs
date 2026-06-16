@@ -1126,18 +1126,18 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add performance feedback indicating poor performance
         for i in 0..15 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.4); // Low success rate
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let context = create_test_context();
 
         // Force adaptation
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms.perform_adaptation(&context).await.expect("await should be present");
 
         // Check that adaptation occurred
         assert!(mechanisms.metrics.adaptation_count > 0);
@@ -1159,16 +1159,16 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add context history
         for _ in 0..10 {
             let context = create_test_context();
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms.update_context(context).await.expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms.perform_adaptation(&context).await.expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1191,7 +1191,7 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add performance feedback
         for i in 0..15 {
@@ -1199,11 +1199,11 @@ mod tests {
             feedback.retention_improvement = 0.9; // High retention
             feedback.interference_level = 0.1; // Low interference
             feedback.learning_efficiency = 0.8; // Good efficiency
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms.perform_adaptation(&context).await.expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1220,17 +1220,17 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add performance feedback with high variance
         let success_rates = [0.2, 0.8, 0.3, 0.9, 0.1, 0.7, 0.4, 0.8, 0.2, 0.9];
         for (i, &rate) in success_rates.iter().enumerate() {
             let feedback = create_test_feedback(&format!("key_{}", i), rate);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let context = create_test_context();
-        mechanisms.perform_adaptation(&context).await.unwrap();
+        mechanisms.perform_adaptation(&context).await.expect("await should be present");
 
         assert!(mechanisms.metrics.adaptation_count > 0);
     }
@@ -1240,7 +1240,7 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
         let importance = MemoryImportance {
@@ -1256,7 +1256,7 @@ mod tests {
         };
         let context = create_test_context();
 
-        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.unwrap();
+        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.expect("await should be present");
 
         assert_eq!(decision.memory_key, "test_key");
         assert!(decision.replay_priority >= 0.0);
@@ -1273,12 +1273,12 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add multiple feedback entries
         for i in 0..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.7 + (i as f64 * 0.01));
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let metrics = mechanisms.get_metrics();
@@ -1294,10 +1294,10 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         let context = create_test_context();
-        let factors = mechanisms.extract_context_factors(&context).await.unwrap();
+        let factors = mechanisms.extract_context_factors(&context).await.expect("await should be present");
 
         assert!(factors.contains_key("activity_level"));
         assert!(factors.contains_key("system_load"));
@@ -1317,20 +1317,20 @@ mod tests {
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add feedback showing performance decline
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8); // Good performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         for i in 10..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.5); // Poor performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
-        let should_adapt = mechanisms.should_adapt().await.unwrap();
+        let should_adapt = mechanisms.should_adapt().await.expect("await should be present");
         assert!(should_adapt);
     }
 
@@ -1339,12 +1339,12 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add feedback for current strategy
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let strategy_key = mechanisms.get_strategy_key(&mechanisms.current_strategy);
@@ -1360,16 +1360,16 @@ mod tests {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add feedback with known variance
         let success_rates = [0.5, 0.6, 0.7, 0.8, 0.9]; // Low variance
         for (i, &rate) in success_rates.iter().enumerate() {
             let feedback = create_test_feedback(&format!("key_{}", i), rate);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
-        let variance = mechanisms.calculate_performance_variance().await.unwrap();
+        let variance = mechanisms.calculate_performance_variance().await.expect("await should be present");
         assert!(variance >= 0.0);
         assert!(variance < 0.1); // Should be low variance
     }
@@ -1378,12 +1378,12 @@ mod tests {
     async fn test_strategy_fitness_evaluation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add some performance history
         for i in 0..10 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1416,8 +1416,8 @@ mod tests {
             adaptation_window: 24,
         };
 
-        let performance_fitness = mechanisms.evaluate_strategy_fitness(&performance_strategy, &memory, &importance, &context).await.unwrap();
-        let context_fitness = mechanisms.evaluate_strategy_fitness(&context_strategy, &memory, &importance, &context).await.unwrap();
+        let performance_fitness = mechanisms.evaluate_strategy_fitness(&performance_strategy, &memory, &importance, &context).await.expect("await should be present");
+        let context_fitness = mechanisms.evaluate_strategy_fitness(&context_strategy, &memory, &importance, &context).await.expect("await should be present");
 
         assert!(performance_fitness >= 0.0 && performance_fitness <= 1.0);
         assert!(context_fitness >= 0.0 && context_fitness <= 1.0);
@@ -1431,7 +1431,7 @@ mod tests {
     async fn test_memory_fitness_factor_calculation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Create memory with different characteristics
         let mut recent_memory = MemoryEntry::new(
@@ -1471,8 +1471,8 @@ mod tests {
             fisher_information: None,
         };
 
-        let recent_high_fitness = mechanisms.calculate_memory_fitness_factor(&recent_memory, &high_importance).await.unwrap();
-        let old_low_fitness = mechanisms.calculate_memory_fitness_factor(&old_memory, &low_importance).await.unwrap();
+        let recent_high_fitness = mechanisms.calculate_memory_fitness_factor(&recent_memory, &high_importance).await.expect("await should be present");
+        let old_low_fitness = mechanisms.calculate_memory_fitness_factor(&old_memory, &low_importance).await.expect("await should be present");
 
         assert!(recent_high_fitness > old_low_fitness);
         assert!(recent_high_fitness >= 0.0 && recent_high_fitness <= 1.0);
@@ -1483,18 +1483,18 @@ mod tests {
     async fn test_context_variance_with_stable_context() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add stable contexts (low variance)
         for _ in 0..10 {
             let mut context = create_test_context();
             context.activity_level = 0.7; // Stable activity
             context.system_load = 0.3; // Stable load
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms.update_context(context).await.expect("await should be present");
         }
 
         let current_context = create_test_context();
-        let variance = mechanisms.calculate_context_variance(&current_context).await.unwrap();
+        let variance = mechanisms.calculate_context_variance(&current_context).await.expect("await should be present");
 
         assert!(variance < 0.01); // Should be very low variance
     }
@@ -1503,12 +1503,12 @@ mod tests {
     async fn test_hybrid_strategy_selection() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Add performance history that makes multiple strategies viable
         for i in 0..20 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.75); // Good performance
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1531,7 +1531,7 @@ mod tests {
 
         let context = create_test_context();
 
-        let selected_strategy = mechanisms.select_optimal_strategy(&memory, &importance, &context).await.unwrap();
+        let selected_strategy = mechanisms.select_optimal_strategy(&memory, &importance, &context).await.expect("await should be present");
 
         // With good performance across strategies, might select hybrid
         match selected_strategy {
@@ -1548,7 +1548,7 @@ mod tests {
     async fn test_adaptation_confidence_calculation() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         let strategy = AdaptiveReplayStrategy::PerformanceDriven {
             success_threshold: 0.7,
@@ -1556,16 +1556,16 @@ mod tests {
         };
 
         // Test with no historical data
-        let confidence_no_data = mechanisms.calculate_adaptation_confidence(&strategy).await.unwrap();
+        let confidence_no_data = mechanisms.calculate_adaptation_confidence(&strategy).await.expect("await should be present");
         assert_eq!(confidence_no_data, 0.0);
 
         // Add some performance data
         for i in 0..50 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.8);
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
-        let confidence_with_data = mechanisms.calculate_adaptation_confidence(&strategy).await.unwrap();
+        let confidence_with_data = mechanisms.calculate_adaptation_confidence(&strategy).await.expect("await should be present");
         assert!(confidence_with_data > confidence_no_data);
         assert!(confidence_with_data <= 1.0);
     }
@@ -1574,18 +1574,18 @@ mod tests {
     async fn test_comprehensive_adaptive_decision_flow() {
         let config = AdaptiveReplayConfig::default();
         let consolidation_config = ConsolidationConfig::default();
-        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).unwrap();
+        let mut mechanisms = AdaptiveReplayMechanisms::new(config, consolidation_config).expect("value should be available");
 
         // Build up comprehensive history
         for i in 0..30 {
             let feedback = create_test_feedback(&format!("key_{}", i), 0.7 + (i as f64 * 0.01));
-            mechanisms.provide_feedback(feedback).await.unwrap();
+            mechanisms.provide_feedback(feedback).await.expect("await should be present");
         }
 
         for i in 0..10 {
             let mut context = create_test_context();
             context.activity_level = 0.5 + (i as f64 * 0.05);
-            mechanisms.update_context(context).await.unwrap();
+            mechanisms.update_context(context).await.expect("await should be present");
         }
 
         let memory = MemoryEntry::new(
@@ -1609,7 +1609,7 @@ mod tests {
         let context = create_test_context();
 
         // Make adaptive decision
-        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.unwrap();
+        let decision = mechanisms.make_adaptive_decision(&memory, &importance, &context).await.expect("await should be present");
 
         // Verify decision quality
         assert!(decision.replay_priority > 0.5); // Should be high priority

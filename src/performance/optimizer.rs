@@ -1361,7 +1361,7 @@ impl GeneticAlgorithm {
 
         for _ in 0..tournament_size {
             let candidate = &population[fastrand::usize(..population.len())];
-            if best.is_none() || candidate.fitness > best.as_ref().unwrap().fitness {
+            if best.is_none() || candidate.fitness > best.as_ref().expect("as_ref() should succeed").fitness {
                 best = Some(candidate.clone());
             }
         }

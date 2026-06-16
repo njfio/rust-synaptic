@@ -592,7 +592,7 @@ impl AdaptiveAlgorithmSelector {
         match voting_method {
             VotingMethod::Majority => {
                 strategy_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No votes received".to_string(),
@@ -607,7 +607,7 @@ impl AdaptiveAlgorithmSelector {
                 }
 
                 weighted_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No weighted votes received".to_string(),
@@ -616,7 +616,7 @@ impl AdaptiveAlgorithmSelector {
             VotingMethod::Ranked => {
                 // Simple ranked voting (could be more sophisticated)
                 strategy_votes.into_iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).expect("value should be available"))
                     .map(|(algorithm, _)| algorithm)
                     .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
                         message: "No ranked votes received".to_string(),

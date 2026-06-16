@@ -335,7 +335,7 @@ mod tests {
             .build();
 
         assert!(multi.is_ok());
-        let multi = multi.unwrap();
+        let multi = multi.expect("multi should be valid");
         assert_eq!(multi.name(), "MultiProvider");
     }
 
@@ -359,7 +359,7 @@ mod tests {
         let result = multi.embed(text, None).await;
 
         assert!(result.is_ok());
-        let embedding = result.unwrap();
+        let embedding = result.expect("result should be valid");
         assert_eq!(embedding.dimension(), 384);
     }
 
@@ -375,7 +375,7 @@ mod tests {
         let result = multi.embed_batch(&texts, None).await;
 
         assert!(result.is_ok());
-        let embeddings = result.unwrap();
+        let embeddings = result.expect("result should be valid");
         assert_eq!(embeddings.len(), 2);
     }
 }

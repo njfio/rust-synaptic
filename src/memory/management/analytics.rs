@@ -763,8 +763,8 @@ impl MemoryAnalytics {
         // Calculate content type growth
         let content_type_growth = if monthly_content_types.len() > 1 {
             let months: Vec<_> = monthly_content_types.keys().collect();
-            let latest_month = months.iter().max().unwrap();
-            let earliest_month = months.iter().min().unwrap();
+            let latest_month = months.iter().max().expect("max() should succeed");
+            let earliest_month = months.iter().min().expect("min() should succeed");
 
             let latest_types = monthly_content_types.get(*latest_month).map(|s| s.len()).unwrap_or(0);
             let earliest_types = monthly_content_types.get(*earliest_month).map(|s| s.len()).unwrap_or(1);
@@ -2126,7 +2126,7 @@ impl MemoryAnalytics {
         // For each feature dimension
         for dim in 0..features[0].len() {
             let mut values: Vec<f64> = features.iter().map(|f| f[dim]).collect();
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            values.sort_by(|a, b| a.partial_cmp(b).expect("value should be available"));
 
             let q1_idx = values.len() / 4;
             let q3_idx = 3 * values.len() / 4;
@@ -2295,7 +2295,7 @@ impl MemoryAnalytics {
 
         let data_points: Vec<TrendDataPoint> = daily_counts.iter()
             .map(|(date, &count)| TrendDataPoint {
-                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                timestamp: date.and_hms_opt(0, 0, 0).expect("value should be available").and_utc(),
                 value: count as f64,
                 label: date.format("%Y-%m-%d").to_string(),
             })
@@ -2394,7 +2394,7 @@ impl MemoryAnalytics {
 
         let data_points: Vec<TrendDataPoint> = daily_performance.iter()
             .map(|(date, &count)| TrendDataPoint {
-                timestamp: date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                timestamp: date.and_hms_opt(0, 0, 0).expect("value should be available").and_utc(),
                 value: count as f64,
                 label: date.format("%Y-%m-%d").to_string(),
             })

@@ -392,7 +392,7 @@ impl CheckpointManager {
         }
 
         // Sort by importance (highest first)
-        checkpoints.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap());
+        checkpoints.sort_by(|a, b| b.importance.partial_cmp(&a.importance).expect("value should be available"));
 
         // Remove low-importance checkpoints
         for checkpoint in checkpoints.iter().skip(max_count) {
@@ -510,8 +510,8 @@ mod tests {
             .with_description("Serialization test".to_string())
             .with_importance(0.75);
 
-        let serialized = serde_json::to_string(&metadata).unwrap();
-        let deserialized: CheckpointMetadata = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&metadata).expect("value should be available");
+        let deserialized: CheckpointMetadata = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(metadata.id, deserialized.id);
         assert_eq!(metadata.session_id, deserialized.session_id);
@@ -566,8 +566,8 @@ mod tests {
         let state = AgentState::new(session_id);
         let metadata = CheckpointMetadata::new(session_id, state.version());
 
-        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
-        let restored_state = checkpoint.restore_state().unwrap();
+        let checkpoint = Checkpoint::new(&state, metadata).expect("value should be available");
+        let restored_state = checkpoint.restore_state().expect("restore_state() should succeed");
 
         assert_eq!(state.session_id(), restored_state.session_id());
         assert_eq!(state.version(), restored_state.version());
@@ -579,7 +579,7 @@ mod tests {
         let state = AgentState::new(session_id);
         let metadata = CheckpointMetadata::new(session_id, state.version());
 
-        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
+        let checkpoint = Checkpoint::new(&state, metadata).expect("value should be available");
         let size = checkpoint.size();
 
         // Size should be greater than 0
@@ -592,7 +592,7 @@ mod tests {
         let state = AgentState::new(session_id);
         let metadata = CheckpointMetadata::new(session_id, state.version());
 
-        let checkpoint1 = Checkpoint::new(&state, metadata).unwrap();
+        let checkpoint1 = Checkpoint::new(&state, metadata).expect("value should be available");
         let checkpoint2 = checkpoint1.clone();
 
         assert_eq!(checkpoint1.metadata.id, checkpoint2.metadata.id);
@@ -605,10 +605,10 @@ mod tests {
         let state = AgentState::new(session_id);
         let metadata = CheckpointMetadata::new(session_id, state.version());
 
-        let checkpoint = Checkpoint::new(&state, metadata).unwrap();
+        let checkpoint = Checkpoint::new(&state, metadata).expect("value should be available");
 
-        let serialized = serde_json::to_string(&checkpoint).unwrap();
-        let deserialized: Checkpoint = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&checkpoint).expect("value should be available");
+        let deserialized: Checkpoint = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(checkpoint.metadata.id, deserialized.metadata.id);
         assert_eq!(checkpoint.state_data.len(), deserialized.state_data.len());
@@ -679,10 +679,10 @@ mod tests {
         ));
 
         // Create checkpoint
-        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
+        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
 
         // Restore checkpoint
-        let restored_state = manager.restore_checkpoint(checkpoint_id).await.unwrap();
+        let restored_state = manager.restore_checkpoint(checkpoint_id).await.expect("await should be present");
 
         assert_eq!(state.session_id(), restored_state.session_id());
         assert!(restored_state.has_memory("test_key"));
@@ -697,10 +697,10 @@ mod tests {
         let state = AgentState::new(session_id);
 
         // Create multiple checkpoints
-        let _ = manager.create_checkpoint(&state).await.unwrap();
-        let _ = manager.create_checkpoint(&state).await.unwrap();
+        let _ = manager.create_checkpoint(&state).await.expect("await should be present");
+        let _ = manager.create_checkpoint(&state).await.expect("await should be present");
 
-        let checkpoints = manager.list_checkpoints(Some(session_id)).await.unwrap();
+        let checkpoints = manager.list_checkpoints(Some(session_id)).await.expect("await should be present");
         assert_eq!(checkpoints.len(), 2);
     }
 
@@ -712,11 +712,11 @@ mod tests {
         let session_id = Uuid::new_v4();
         let state = AgentState::new(session_id);
 
-        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
-        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.unwrap();
+        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
+        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.expect("await should be present");
 
         assert!(metadata.is_some());
-        assert_eq!(metadata.unwrap().id, checkpoint_id);
+        assert_eq!(metadata.expect("metadata should be valid").id, checkpoint_id);
     }
 
     #[tokio::test]
@@ -727,12 +727,12 @@ mod tests {
         let session_id = Uuid::new_v4();
         let state = AgentState::new(session_id);
 
-        let checkpoint_id = manager.create_checkpoint(&state).await.unwrap();
-        let deleted = manager.delete_checkpoint(checkpoint_id).await.unwrap();
+        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
+        let deleted = manager.delete_checkpoint(checkpoint_id).await.expect("await should be present");
 
         assert!(deleted);
 
-        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.unwrap();
+        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.expect("await should be present");
         assert!(metadata.is_none());
     }
 }

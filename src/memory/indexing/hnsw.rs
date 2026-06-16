@@ -364,7 +364,7 @@ mod tests {
         let index = HnswIndex::default_with_dimension(128);
         assert!(index.is_ok());
 
-        let index = index.unwrap();
+        let index = index.expect("index should be valid");
         assert_eq!(index.dimension(), 128);
         assert_eq!(index.len(), 0);
         assert!(index.is_empty());
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_add_and_search() {
-        let mut index = HnswIndex::default_with_dimension(3).unwrap();
+        let mut index = HnswIndex::default_with_dimension(3).expect("value should be available");
 
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(index.len(), 3);
 
         // Search for nearest neighbors to vec1
-        let results = index.search(&vec1, 2).unwrap();
+        let results = index.search(&vec1, 2).expect("value should be available");
         assert_eq!(results.len(), 2);
 
         // First result should be id1 (exact match)
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_remove() {
-        let mut index = HnswIndex::default_with_dimension(3).unwrap();
+        let mut index = HnswIndex::default_with_dimension(3).expect("value should be available");
 
         let id1 = Uuid::new_v4();
         let vec1 = vec![1.0, 0.0, 0.0];
@@ -413,17 +413,17 @@ mod tests {
 
     #[test]
     fn test_hnsw_clear() {
-        let mut index = HnswIndex::default_with_dimension(3).unwrap();
+        let mut index = HnswIndex::default_with_dimension(3).expect("value should be available");
 
         for _ in 0..10 {
             let id = Uuid::new_v4();
             let vec = vec![1.0, 2.0, 3.0];
-            index.add(id, &vec).unwrap();
+            index.add(id, &vec).expect("value should be available");
         }
 
         assert_eq!(index.len(), 10);
 
-        index.clear().unwrap();
+        index.clear().expect("clear() should succeed");
         assert_eq!(index.len(), 0);
         assert!(index.is_empty());
     }
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_dimension_mismatch() {
-        let mut index = HnswIndex::default_with_dimension(3).unwrap();
+        let mut index = HnswIndex::default_with_dimension(3).expect("value should be available");
 
         let id = Uuid::new_v4();
         let wrong_vec = vec![1.0, 2.0, 3.0, 4.0]; // 4D instead of 3D
@@ -453,11 +453,11 @@ mod tests {
 
     #[test]
     fn test_stats() {
-        let mut index = HnswIndex::default_with_dimension(128).unwrap();
+        let mut index = HnswIndex::default_with_dimension(128).expect("value should be available");
 
         let id = Uuid::new_v4();
         let vec = vec![1.0; 128];
-        index.add(id, &vec).unwrap();
+        index.add(id, &vec).expect("value should be available");
 
         let stats = index.stats();
         assert_eq!(stats.vector_count, 1);

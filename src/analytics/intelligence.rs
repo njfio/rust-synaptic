@@ -1103,12 +1103,12 @@ mod tests {
     #[tokio::test]
     async fn test_memory_intelligence_analysis() {
         let config = AnalyticsConfig::default();
-        let mut engine = MemoryIntelligenceEngine::new(&config).unwrap();
+        let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         let memory_entry = MemoryEntry::new("test_key".to_string(), "This is a test memory with some complex content for analysis".to_string(), crate::memory::types::MemoryType::ShortTerm);
         let relationships = vec![("related_key".to_string(), 0.8)];
 
-        let intelligence = engine.analyze_memory_intelligence("test_key", &memory_entry, &relationships).await.unwrap();
+        let intelligence = engine.analyze_memory_intelligence("test_key", &memory_entry, &relationships).await.expect("await should be present");
         
         assert!(intelligence.intelligence_score >= 0.0);
         assert!(intelligence.intelligence_score <= 1.0);
@@ -1118,7 +1118,7 @@ mod tests {
     #[tokio::test]
     async fn test_pattern_recognition() {
         let config = AnalyticsConfig::default();
-        let mut engine = MemoryIntelligenceEngine::new(&config).unwrap();
+        let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         // Add some events to analyze
         for i in 0..10 {
@@ -1128,17 +1128,17 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("test_user".to_string()),
             };
-            engine.process_event(&event).await.unwrap();
+            engine.process_event(&event).await.expect("await should be present");
         }
 
-        let patterns = engine.recognize_patterns().await.unwrap();
+        let patterns = engine.recognize_patterns().await.expect("await should be present");
         assert!(patterns.len() > 0);
     }
 
     #[tokio::test]
     async fn test_anomaly_detection() {
         let config = AnalyticsConfig::default();
-        let mut engine = MemoryIntelligenceEngine::new(&config).unwrap();
+        let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         // Set baseline
         engine.baseline_metrics.insert("hourly_accesses".to_string(), 5.0);
@@ -1151,10 +1151,10 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("test_user".to_string()),
             };
-            engine.process_event(&event).await.unwrap();
+            engine.process_event(&event).await.expect("await should be present");
         }
 
-        let anomalies = engine.detect_anomalies().await.unwrap();
+        let anomalies = engine.detect_anomalies().await.expect("await should be present");
         assert!(!anomalies.is_empty());
         assert!(anomalies.iter().any(|a| a.anomaly_type == AnomalyType::AccessPattern));
     }
@@ -1162,7 +1162,7 @@ mod tests {
     #[tokio::test]
     async fn test_insight_generation() {
         let config = AnalyticsConfig::default();
-        let mut engine = MemoryIntelligenceEngine::new(&config).unwrap();
+        let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         // Add a high-confidence pattern
         let pattern = PatternRecognition {
@@ -1188,7 +1188,7 @@ mod tests {
             recommended_actions: vec!["noop".to_string()],
         });
 
-        let insights = engine.generate_insights().await.unwrap();
+        let insights = engine.generate_insights().await.expect("await should be present");
         assert!(insights.len() > 0);
     }
 }

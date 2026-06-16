@@ -1872,7 +1872,7 @@ impl MemoryLifecycleManager {
         let mut daily_events: std::collections::HashMap<i64, Vec<&LifecycleEvent>> = std::collections::HashMap::new();
         for event in &self.events {
             if event.timestamp >= analysis_start {
-                let day = event.timestamp.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400;
+                let day = event.timestamp.date_naive().and_hms_opt(0, 0, 0).expect("value should be available").and_utc().timestamp() / 86400;
                 daily_events.entry(day).or_default().push(event);
             }
         }

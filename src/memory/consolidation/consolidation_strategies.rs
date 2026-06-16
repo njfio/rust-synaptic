@@ -848,7 +848,7 @@ impl ConsolidationStrategies {
             if cluster.len() >= (self.hierarchical_config.min_cluster_size as f64 * compression_factor) as usize {
                 // Compress cluster by selecting most important memories
                 let mut compressed_cluster = cluster.clone();
-                compressed_cluster.sort_by(|a, b| b.1.importance_score.partial_cmp(&a.1.importance_score).unwrap());
+                compressed_cluster.sort_by(|a, b| b.1.importance_score.partial_cmp(&a.1.importance_score).expect("value should be available"));
 
                 let target_size = (cluster.len() as f64 * compression_factor) as usize;
                 compressed_cluster.truncate(target_size.max(1));
@@ -921,7 +921,7 @@ mod tests {
     #[tokio::test]
     async fn test_gradual_forgetting_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
@@ -945,7 +945,7 @@ mod tests {
             &ConsolidationStrategy::GradualForgetting,
             &memories,
             &importance_scores,
-        ).await.unwrap();
+        ).await.expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -954,7 +954,7 @@ mod tests {
     #[tokio::test]
     async fn test_knowledge_distillation_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm),
@@ -1002,7 +1002,7 @@ mod tests {
             &ConsolidationStrategy::KnowledgeDistillation,
             &memories,
             &importance_scores,
-        ).await.unwrap();
+        ).await.expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -1014,7 +1014,7 @@ mod tests {
     #[tokio::test]
     async fn test_hierarchical_compression_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "data structure array".to_string(), MemoryType::LongTerm),
@@ -1042,7 +1042,7 @@ mod tests {
             &ConsolidationStrategy::HierarchicalCompression,
             &memories,
             &importance_scores,
-        ).await.unwrap();
+        ).await.expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -1054,14 +1054,14 @@ mod tests {
     #[tokio::test]
     async fn test_semantic_similarity_calculation() {
         let config = ConsolidationConfig::default();
-        let strategies = ConsolidationStrategies::new(&config).unwrap();
+        let strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memory1 = MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm);
         let memory2 = MemoryEntry::new("key2".to_string(), "machine learning models".to_string(), MemoryType::LongTerm);
         let memory3 = MemoryEntry::new("key3".to_string(), "database systems".to_string(), MemoryType::LongTerm);
 
-        let similarity_high = strategies.calculate_semantic_similarity(&memory1, &memory2).await.unwrap();
-        let similarity_low = strategies.calculate_semantic_similarity(&memory1, &memory3).await.unwrap();
+        let similarity_high = strategies.calculate_semantic_similarity(&memory1, &memory2).await.expect("await should be present");
+        let similarity_low = strategies.calculate_semantic_similarity(&memory1, &memory3).await.expect("await should be present");
 
         assert!(similarity_high > similarity_low);
         assert!(similarity_high >= 0.0);
@@ -1073,7 +1073,7 @@ mod tests {
     #[tokio::test]
     async fn test_memory_grouping_by_similarity() {
         let config = ConsolidationConfig::default();
-        let strategies = ConsolidationStrategies::new(&config).unwrap();
+        let strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm),
@@ -1095,7 +1095,7 @@ mod tests {
             }
         }).collect();
 
-        let groups = strategies.group_memories_by_similarity(&memories, &importance_scores).await.unwrap();
+        let groups = strategies.group_memories_by_similarity(&memories, &importance_scores).await.expect("await should be present");
 
         assert!(!groups.is_empty());
         assert!(groups.len() <= memories.len());
@@ -1104,7 +1104,7 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_performance_tracking() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let result = StrategyResult {
             strategy: ConsolidationStrategy::GradualForgetting,
@@ -1114,12 +1114,12 @@ mod tests {
             processing_time_ms: 100,
         };
 
-        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result).await.unwrap();
+        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result).await.expect("await should be present");
 
         let performance = strategies.get_strategy_performance(&ConsolidationStrategy::GradualForgetting);
         assert!(performance.is_some());
 
-        let (success, compression, quality) = performance.unwrap();
+        let (success, compression, quality) = performance.expect("performance should be valid");
         assert_eq!(success, 0.8);
         assert_eq!(compression, 0.3);
         assert_eq!(quality, 0.9);
@@ -1128,7 +1128,7 @@ mod tests {
     #[tokio::test]
     async fn test_best_strategy_selection() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         // Add performance data for different strategies
         let result1 = StrategyResult {
@@ -1147,8 +1147,8 @@ mod tests {
             processing_time_ms: 150,
         };
 
-        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result1).await.unwrap();
-        strategies.record_strategy_performance(ConsolidationStrategy::SelectiveReplay, &result2).await.unwrap();
+        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result1).await.expect("await should be present");
+        strategies.record_strategy_performance(ConsolidationStrategy::SelectiveReplay, &result2).await.expect("await should be present");
 
         let best_for_success = strategies.get_best_strategy("success_rate");
         assert_eq!(best_for_success, Some(ConsolidationStrategy::SelectiveReplay));
@@ -1160,7 +1160,7 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_strategy_with_new_strategies() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).unwrap();
+        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
@@ -1190,7 +1190,7 @@ mod tests {
             &ConsolidationStrategy::Hybrid(hybrid_strategies),
             &memories,
             &importance_scores,
-        ).await.unwrap();
+        ).await.expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);

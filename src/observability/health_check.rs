@@ -341,11 +341,11 @@ impl HealthCheckManager {
             let timeout_duration = self.config.timeout;
             
             let future = async move {
-                let _permit = semaphore.acquire().await.unwrap();
+                let _permit = semaphore.acquire().await.expect("await should be present");
                 
                 let circuit_breaker = circuit_breakers.read().await
                     .get(&checker_name)
-                    .unwrap()
+                    .expect("value should be available")
                     .clone();
                 
                 let result = circuit_breaker.execute(async {
@@ -743,7 +743,7 @@ impl HealthChecker for MemoryHealthChecker {
                 details.insert("total_memory_bytes".to_string(),
                     serde_json::Value::Number(serde_json::Number::from(total_memory)));
                 details.insert("usage_percent".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from_f64(usage_percent).unwrap()));
+                    serde_json::Value::Number(serde_json::Number::from_f64(usage_percent).expect("value should be available")));
 
                 let status = if usage_percent >= self.critical_threshold {
                     HealthStatus::Unhealthy

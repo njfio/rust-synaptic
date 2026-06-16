@@ -520,7 +520,7 @@ mod tests {
         // Verify count through middleware
         let count_result = middleware.count().await;
         assert!(count_result.is_ok());
-        assert_eq!(count_result.unwrap(), 1);
+        assert_eq!(count_result.expect("count_result should be valid"), 1);
     }
 
     #[test]

@@ -512,8 +512,8 @@ mod tests {
         let end = start + Duration::hours(1);
         let range = TimeRange::new(start, end);
 
-        let serialized = serde_json::to_string(&range).unwrap();
-        let deserialized: TimeRange = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&range).expect("value should be available");
+        let deserialized: TimeRange = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(range.start, deserialized.start);
         assert_eq!(range.end, deserialized.end);
@@ -547,8 +547,8 @@ mod tests {
             total_evolution_events: 25,
         };
 
-        let serialized = serde_json::to_string(&stats).unwrap();
-        let deserialized: TemporalUsageStats = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&stats).expect("value should be available");
+        let deserialized: TemporalUsageStats = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(stats.total_versions, deserialized.total_versions);
         assert_eq!(stats.total_diffs, deserialized.total_diffs);
@@ -579,8 +579,8 @@ mod tests {
             stability_score: 0.8,
         };
 
-        let serialized = serde_json::to_string(&summary).unwrap();
-        let deserialized: TemporalSummary = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&summary).expect("value should be available");
+        let deserialized: TemporalSummary = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(summary.total_versions, deserialized.total_versions);
         assert_eq!(summary.total_changes, deserialized.total_changes);
@@ -641,8 +641,8 @@ mod tests {
             },
         };
 
-        let serialized = serde_json::to_string(&analysis).unwrap();
-        let deserialized: TemporalAnalysis = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&analysis).expect("value should be available");
+        let deserialized: TemporalAnalysis = serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(analysis.query, deserialized.query);
         assert_eq!(analysis.summary.total_versions, deserialized.summary.total_versions);

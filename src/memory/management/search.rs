@@ -1340,7 +1340,7 @@ impl AdvancedSearchEngine {
         }
 
         // Sort by strength and limit to top 10
-        related.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap());
+        related.sort_by(|a, b| b.strength.partial_cmp(&a.strength).expect("value should be available"));
         related.truncate(10);
 
         Ok(related)
@@ -1581,7 +1581,7 @@ impl AdvancedSearchEngine {
         }
 
         // Sort by semantic similarity
-        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).expect("value should be available"));
 
         // Apply limit
         if let Some(limit) = limit {

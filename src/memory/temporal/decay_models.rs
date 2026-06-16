@@ -834,10 +834,10 @@ mod tests {
     #[tokio::test]
     async fn test_ebbinghaus_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_ebbinghaus_decay(24.0, &context).await.unwrap();
+        let result = models.calculate_ebbinghaus_decay(24.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -852,10 +852,10 @@ mod tests {
     #[tokio::test]
     async fn test_power_law_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_power_law_decay(48.0, &context).await.unwrap();
+        let result = models.calculate_power_law_decay(48.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -866,10 +866,10 @@ mod tests {
     #[tokio::test]
     async fn test_logarithmic_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_logarithmic_decay(72.0, &context).await.unwrap();
+        let result = models.calculate_logarithmic_decay(72.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -879,10 +879,10 @@ mod tests {
     #[tokio::test]
     async fn test_gaussian_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_gaussian_decay(36.0, &context).await.unwrap();
+        let result = models.calculate_gaussian_decay(36.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -892,10 +892,10 @@ mod tests {
     #[tokio::test]
     async fn test_hyperbolic_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_hyperbolic_decay(60.0, &context).await.unwrap();
+        let result = models.calculate_hyperbolic_decay(60.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -905,10 +905,10 @@ mod tests {
     #[tokio::test]
     async fn test_weibull_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
-        let result = models.calculate_weibull_decay(84.0, &context).await.unwrap();
+        let result = models.calculate_weibull_decay(84.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -918,11 +918,11 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         let hybrid_models = vec![DecayModelType::Ebbinghaus, DecayModelType::PowerLaw];
-        let result = models.calculate_hybrid_decay(&hybrid_models, 48.0, &context).await.unwrap();
+        let result = models.calculate_hybrid_decay(&hybrid_models, 48.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -937,7 +937,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         let mut parameters = HashMap::new();
@@ -945,7 +945,7 @@ mod tests {
         parameters.insert("shape".to_string(), 1.2);
         parameters.insert("scale".to_string(), 48.0);
 
-        let result = models.calculate_custom_decay("test_custom", &parameters, 24.0, &context).await.unwrap();
+        let result = models.calculate_custom_decay("test_custom", &parameters, 24.0, &context).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -960,10 +960,10 @@ mod tests {
     #[tokio::test]
     async fn test_memory_decay_calculation() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
         let memory = create_test_memory();
 
-        let result = models.calculate_memory_decay(&memory, None).await.unwrap();
+        let result = models.calculate_memory_decay(&memory, None).await.expect("await should be present");
 
         assert!(result.retention_probability >= 0.0);
         assert!(result.retention_probability <= 1.0);
@@ -974,7 +974,7 @@ mod tests {
     #[tokio::test]
     async fn test_optimal_model_selection() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         // High importance, frequent access should suggest PowerLaw
         let high_importance_context = DecayContext {
@@ -987,7 +987,7 @@ mod tests {
             engagement_level: 0.7,
         };
 
-        let optimal_model = models.get_optimal_model(&high_importance_context).await.unwrap();
+        let optimal_model = models.get_optimal_model(&high_importance_context).await.expect("await should be present");
         assert_eq!(optimal_model, DecayModelType::PowerLaw);
 
         // Recent access should suggest Ebbinghaus
@@ -1001,7 +1001,7 @@ mod tests {
             engagement_level: 0.5,
         };
 
-        let optimal_model = models.get_optimal_model(&recent_context).await.unwrap();
+        let optimal_model = models.get_optimal_model(&recent_context).await.expect("await should be present");
         assert_eq!(optimal_model, DecayModelType::Ebbinghaus);
     }
 
@@ -1012,7 +1012,7 @@ mod tests {
         config.context_aware = true;
         config.importance_modulation = true;
 
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
 
         let high_engagement_context = DecayContext {
             importance: 0.8,
@@ -1033,7 +1033,7 @@ mod tests {
             adaptive_adjustments: HashMap::new(),
         };
 
-        let adjusted_result = models.apply_adaptive_adjustments(base_result, &high_engagement_context).await.unwrap();
+        let adjusted_result = models.apply_adaptive_adjustments(base_result, &high_engagement_context).await.expect("await should be present");
 
         // Should have higher retention due to adjustments
         assert!(adjusted_result.retention_probability > 0.5);
@@ -1043,7 +1043,7 @@ mod tests {
     #[tokio::test]
     async fn test_content_complexity_estimation() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         let simple_memory = MemoryEntry::new(
             "simple".to_string(),
@@ -1068,7 +1068,7 @@ mod tests {
     #[tokio::test]
     async fn test_emotional_weight_estimation() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
 
         let neutral_memory = MemoryEntry::new(
             "neutral".to_string(),
@@ -1093,16 +1093,16 @@ mod tests {
     #[tokio::test]
     async fn test_model_performance_tracking() {
         let config = DecayConfig::default();
-        let mut models = TemporalDecayModels::new(config).unwrap();
+        let mut models = TemporalDecayModels::new(config).expect("value should be available");
 
         let model_type = DecayModelType::Ebbinghaus;
 
         // Add some performance scores
-        models.update_model_performance(&model_type, 0.8).await.unwrap();
-        models.update_model_performance(&model_type, 0.7).await.unwrap();
-        models.update_model_performance(&model_type, 0.9).await.unwrap();
+        models.update_model_performance(&model_type, 0.8).await.expect("await should be present");
+        models.update_model_performance(&model_type, 0.7).await.expect("await should be present");
+        models.update_model_performance(&model_type, 0.9).await.expect("await should be present");
 
-        let (mean, std_dev) = models.get_model_performance(&model_type).unwrap();
+        let (mean, std_dev) = models.get_model_performance(&model_type).expect("value should be available");
 
         assert!((mean - 0.8).abs() < 0.1); // Should be around 0.8
         assert!(std_dev >= 0.0);
@@ -1114,28 +1114,28 @@ mod tests {
         config.min_decay_rate = 0.01;
         config.max_decay_rate = 0.99;
 
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         // Test very long time (should hit minimum retention)
-        let result = models.calculate_ebbinghaus_decay(10000.0, &context).await.unwrap();
+        let result = models.calculate_ebbinghaus_decay(10000.0, &context).await.expect("await should be present");
         assert!(result.retention_probability >= 0.01);
 
         // Test zero time (should be close to maximum retention)
-        let result = models.calculate_ebbinghaus_decay(0.0, &context).await.unwrap();
+        let result = models.calculate_ebbinghaus_decay(0.0, &context).await.expect("await should be present");
         assert!(result.retention_probability <= 0.99);
     }
 
     #[tokio::test]
     async fn test_time_progression_decay() {
         let config = DecayConfig::default();
-        let models = TemporalDecayModels::new(config).unwrap();
+        let models = TemporalDecayModels::new(config).expect("value should be available");
         let context = create_test_context();
 
         // Test that retention decreases over time
-        let result_1h = models.calculate_ebbinghaus_decay(1.0, &context).await.unwrap();
-        let result_24h = models.calculate_ebbinghaus_decay(24.0, &context).await.unwrap();
-        let result_168h = models.calculate_ebbinghaus_decay(168.0, &context).await.unwrap();
+        let result_1h = models.calculate_ebbinghaus_decay(1.0, &context).await.expect("await should be present");
+        let result_24h = models.calculate_ebbinghaus_decay(24.0, &context).await.expect("await should be present");
+        let result_168h = models.calculate_ebbinghaus_decay(168.0, &context).await.expect("await should be present");
 
         assert!(result_1h.retention_probability > result_24h.retention_probability);
         assert!(result_24h.retention_probability > result_168h.retention_probability);

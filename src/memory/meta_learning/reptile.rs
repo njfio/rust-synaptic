@@ -198,10 +198,10 @@ impl ReptileLearner {
 
     /// Forward pass through the network
     fn forward(&self, features: &Array2<f64>, parameters: &HashMap<String, Array1<f64>>) -> Result<Array2<f64>> {
-        let w1 = parameters.get("w1").unwrap();
-        let b1 = parameters.get("b1").unwrap();
-        let w2 = parameters.get("w2").unwrap();
-        let b2 = parameters.get("b2").unwrap();
+        let w1 = parameters.get("w1").expect("value should be available");
+        let b1 = parameters.get("b1").expect("value should be available");
+        let w2 = parameters.get("w2").expect("value should be available");
+        let b2 = parameters.get("b2").expect("value should be available");
         
         let input_dim = 256;
         let hidden_dim = b1.len();

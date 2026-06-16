@@ -379,7 +379,7 @@ impl MemorySummarizer {
     /// Generate importance-based summary
     async fn generate_importance_based_summary(&self, memories: &[MemoryEntry]) -> Result<String> {
         let mut entries: Vec<_> = memories.to_vec();
-        entries.sort_by(|a, b| b.metadata.importance.partial_cmp(&a.metadata.importance).unwrap());
+        entries.sort_by(|a, b| b.metadata.importance.partial_cmp(&a.metadata.importance).expect("value should be available"));
         let mut lines = Vec::new();
         for mem in entries {
             lines.push(format!("({:.2}) {}", mem.metadata.importance, mem.value.trim()));
@@ -1153,8 +1153,8 @@ impl MemorySummarizer {
 
         let mut sorted: Vec<_> = memories.to_vec();
         sorted.sort_by_key(|m| m.created_at());
-        let start = sorted.first().unwrap().created_at();
-        let end = sorted.last().unwrap().created_at();
+        let start = sorted.first().expect("first() should succeed").created_at();
+        let end = sorted.last().expect("last() should succeed").created_at();
         let events = sorted
             .iter()
             .map(|m| TemporalEvent {

@@ -181,12 +181,12 @@ mod tests {
             MemoryType::ShortTerm,
         );
 
-        storage.store(&mem1).await.unwrap();
-        storage.store(&mem2).await.unwrap();
-        storage.store(&mem3).await.unwrap();
+        storage.store(&mem1).await.expect("await should be present");
+        storage.store(&mem2).await.expect("await should be present");
+        storage.store(&mem3).await.expect("await should be present");
 
         // Search for Rust-related content
-        let results = retriever.search("Rust programming", 10, None).await.unwrap();
+        let results = retriever.search("Rust programming", 10, None).await.expect("await should be present");
 
         // Should find Rust-related memories
         assert!(!results.is_empty());
@@ -211,10 +211,10 @@ mod tests {
             "completely different unrelated content about cooking".to_string(),
             MemoryType::ShortTerm,
         );
-        storage.store(&mem).await.unwrap();
+        storage.store(&mem).await.expect("await should be present");
 
         // Search with unrelated query
-        let results = retriever.search("Rust programming language", 10, None).await.unwrap();
+        let results = retriever.search("Rust programming language", 10, None).await.expect("await should be present");
 
         // High threshold should filter out low-similarity results
         // Results should be empty or very few
@@ -247,15 +247,15 @@ mod tests {
             MemoryType::ShortTerm,
         );
 
-        storage.store(&exact_match).await.unwrap();
-        storage.store(&related).await.unwrap();
-        storage.store(&somewhat_related).await.unwrap();
+        storage.store(&exact_match).await.expect("await should be present");
+        storage.store(&related).await.expect("await should be present");
+        storage.store(&somewhat_related).await.expect("await should be present");
 
         // Search
         let results = retriever
             .search("machine learning artificial intelligence", 10, None)
             .await
-            .unwrap();
+            .expect("await should be present");
 
         // Results should be ranked by similarity
         assert!(!results.is_empty());

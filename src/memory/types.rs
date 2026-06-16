@@ -313,13 +313,13 @@ mod tests {
 
     #[test]
     fn test_memory_type_from_str() {
-        assert_eq!("short_term".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
-        assert_eq!("short".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
-        assert_eq!("st".parse::<MemoryType>().unwrap(), MemoryType::ShortTerm);
+        assert_eq!("short_term".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
+        assert_eq!("short".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
+        assert_eq!("st".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
 
-        assert_eq!("long_term".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
-        assert_eq!("long".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
-        assert_eq!("lt".parse::<MemoryType>().unwrap(), MemoryType::LongTerm);
+        assert_eq!("long_term".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
+        assert_eq!("long".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
+        assert_eq!("lt".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
 
         assert!("invalid".parse::<MemoryType>().is_err());
     }

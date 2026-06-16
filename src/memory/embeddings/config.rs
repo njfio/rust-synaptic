@@ -295,14 +295,14 @@ impl EmbeddingProviderConfig {
             if let Some(config) = self.provider_configs.get(&provider_key) {
                 match config {
                     ProviderConfig::OpenAI { api_key, .. } => {
-                        if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
+                        if api_key.is_none() || api_key.as_ref().expect("as_ref() should succeed").is_empty() {
                             return Err(MemoryError::configuration(
                                 "OpenAI API key is required".to_string(),
                             ));
                         }
                     }
                     ProviderConfig::Cohere { api_key, .. } => {
-                        if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
+                        if api_key.is_none() || api_key.as_ref().expect("as_ref() should succeed").is_empty() {
                             return Err(MemoryError::configuration(
                                 "Cohere API key is required".to_string(),
                             ));
@@ -460,11 +460,11 @@ mod tests {
     fn test_serialization() {
         let config = EmbeddingProviderConfig::openai_default("test-key".to_string());
 
-        let toml_str = toml::to_string(&config).unwrap();
+        let toml_str = toml::to_string(&config).expect("value should be available");
         assert!(toml_str.contains("openai"));
         assert!(toml_str.contains("test-key"));
 
-        let deserialized: EmbeddingProviderConfig = toml::from_str(&toml_str).unwrap();
+        let deserialized: EmbeddingProviderConfig = toml::from_str(&toml_str).expect("value should be available");
         assert_eq!(deserialized.provider, ProviderType::OpenAI);
     }
 }

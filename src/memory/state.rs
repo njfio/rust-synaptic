@@ -355,7 +355,7 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().key, "test_key");
+        assert_eq!(retrieved.expect("retrieved should be valid").key, "test_key");
     }
 
     #[test]
@@ -387,7 +387,7 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().value, "Updated value");
+        assert_eq!(retrieved.expect("retrieved should be valid").value, "Updated value");
     }
 
     #[test]
@@ -477,7 +477,7 @@ mod tests {
 
         let retrieved = state.get_memory("test_key");
         assert!(retrieved.is_some());
-        assert!(matches!(retrieved.unwrap().memory_type, MemoryType::LongTerm));
+        assert!(matches!(retrieved.expect("retrieved should be valid").memory_type, MemoryType::LongTerm));
     }
 
     #[test]
@@ -521,7 +521,7 @@ mod tests {
         state.add_memory(create_test_memory_entry("key1", MemoryType::ShortTerm));
         assert_eq!(state.version(), 2);
 
-        state.update_memory("key1", "Updated".to_string()).unwrap();
+        state.update_memory("key1", "Updated".to_string()).expect("value should be available");
         assert_eq!(state.version(), 3);
 
         state.remove_memory("key1");
@@ -629,7 +629,7 @@ mod tests {
 
         // Access patterns should be tracked
         assert!(state.access_patterns.contains_key("key1"));
-        let pattern = state.access_patterns.get("key1").unwrap();
+        let pattern = state.access_patterns.get("key1").expect("value should be available");
         assert!(pattern.access_count > 0);
     }
 }

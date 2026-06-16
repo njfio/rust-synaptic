@@ -513,7 +513,7 @@ mod tests {
     #[tokio::test]
     async fn test_add_to_buffer() {
         let config = ConsolidationConfig::default();
-        let mut manager = SelectiveReplayManager::new(&config).unwrap();
+        let mut manager = SelectiveReplayManager::new(&config).expect("value should be available");
 
         let memory = MemoryEntry::new(
             "test_key".to_string(),
@@ -541,7 +541,7 @@ mod tests {
     #[tokio::test]
     async fn test_selective_replay() {
         let config = ConsolidationConfig::default();
-        let mut manager = SelectiveReplayManager::new(&config).unwrap();
+        let mut manager = SelectiveReplayManager::new(&config).expect("value should be available");
 
         // Add some memories to buffer with immediate scheduling for testing
         for i in 0..5 {

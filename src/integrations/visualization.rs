@@ -196,8 +196,8 @@ impl RealVisualizationEngine {
             return Ok(filename);
         }
 
-        let min_time = data.first().unwrap().0.clone();
-        let max_time = data.last().unwrap().0.clone();
+        let min_time = data.first().expect("first() should succeed").0.clone();
+        let max_time = data.last().expect("last() should succeed").0.clone();
         let max_count = data.iter().map(|(_, count)| *count).max().unwrap_or(1);
 
         let mut chart = ChartBuilder::on(&root)

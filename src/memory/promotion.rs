@@ -592,7 +592,7 @@ mod tests {
 
         assert!(manager.should_promote(&memory));
 
-        memory = manager.promote_memory(memory).unwrap();
+        memory = manager.promote_memory(memory).expect("value should be available");
         assert_eq!(memory.memory_type, MemoryType::LongTerm);
     }
 

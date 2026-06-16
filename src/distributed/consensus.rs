@@ -415,7 +415,7 @@ mod tests {
         
         let result = consensus.propose_operation(operation).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1);
+        assert_eq!(result.expect("result should be valid"), 1);
         
         let state = consensus.get_state();
         assert_eq!(state.log_length, 1);

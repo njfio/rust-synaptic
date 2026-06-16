@@ -471,7 +471,7 @@ mod tests {
         let provider = CohereProvider::new(config);
         assert!(provider.is_ok());
 
-        let provider = provider.unwrap();
+        let provider = provider.expect("provider should be valid");
         assert_eq!(provider.name(), "CohereProvider");
         assert_eq!(provider.embedding_dimension(), 384);
     }
@@ -495,13 +495,13 @@ mod tests {
         let config = CohereConfig::new(api_key)
             .with_model(CohereModel::EmbedEnglishLightV3)
             .with_input_type(CohereInputType::SearchDocument);
-        let provider = CohereProvider::new(config).unwrap();
+        let provider = CohereProvider::new(config).expect("value should be available");
 
         let text = "This is a test of Cohere embeddings";
         let embedding = provider.embed(text, None).await;
 
         assert!(embedding.is_ok());
-        let embedding = embedding.unwrap();
+        let embedding = embedding.expect("embedding should be valid");
         assert_eq!(embedding.dimension(), 384);
         assert_eq!(embedding.model, "embed-english-light-v3.0");
         assert!(!embedding.content_hash.is_empty());
@@ -517,7 +517,7 @@ mod tests {
 
         let config = CohereConfig::new(api_key)
             .with_model(CohereModel::EmbedEnglishLightV3);
-        let provider = CohereProvider::new(config).unwrap();
+        let provider = CohereProvider::new(config).expect("value should be available");
 
         let texts = vec![
             "First test text".to_string(),
@@ -528,7 +528,7 @@ mod tests {
         let embeddings = provider.embed_batch(&texts, None).await;
 
         assert!(embeddings.is_ok());
-        let embeddings = embeddings.unwrap();
+        let embeddings = embeddings.expect("embeddings should be valid");
         assert_eq!(embeddings.len(), 3);
 
         for embedding in embeddings {
@@ -548,11 +548,11 @@ mod tests {
         let config = CohereConfig::new(api_key)
             .with_model(CohereModel::EmbedEnglishLightV3)
             .with_input_type(CohereInputType::SearchDocument);
-        let provider = CohereProvider::new(config).unwrap();
+        let provider = CohereProvider::new(config).expect("value should be available");
 
-        let emb1 = provider.embed("machine learning and artificial intelligence", None).await.unwrap();
-        let emb2 = provider.embed("deep learning and neural networks", None).await.unwrap();
-        let emb3 = provider.embed("cooking Italian pasta recipes", None).await.unwrap();
+        let emb1 = provider.embed("machine learning and artificial intelligence", None).await.expect("await should be present");
+        let emb2 = provider.embed("deep learning and neural networks", None).await.expect("await should be present");
+        let emb3 = provider.embed("cooking Italian pasta recipes", None).await.expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);

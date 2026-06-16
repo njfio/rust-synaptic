@@ -609,7 +609,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_manager_creation() {
         let config = SyncConfig::default();
-        let manager = SyncManager::new(config).unwrap();
+        let manager = SyncManager::new(config).expect("value should be available");
         
         let state = manager.get_sync_state().await;
         assert!(!state.is_syncing);
@@ -619,14 +619,14 @@ mod tests {
     #[tokio::test]
     async fn test_queue_sync_operation() {
         let config = SyncConfig::default();
-        let manager = SyncManager::new(config).unwrap();
+        let manager = SyncManager::new(config).expect("value should be available");
         
         let operation = SyncManager::create_store_operation(
             "test_key".to_string(),
             b"test_data".to_vec(),
         );
         
-        manager.queue_sync_operation(operation).await.unwrap();
+        manager.queue_sync_operation(operation).await.expect("await should be present");
         
         let pending = manager.pending_operations.lock().await;
         assert_eq!(pending.len(), 1);
@@ -642,7 +642,7 @@ mod tests {
             1000,
             b"remote_data",
             2000,
-        ).unwrap();
+        ).expect("value should be available");
         
         assert!(matches!(resolution, ConflictResolution::UseRemote));
     }
@@ -657,7 +657,7 @@ mod tests {
             1000,
             b"remote_data",
             2000,
-        ).unwrap();
+        ).expect("value should be available");
         
         if let ConflictResolution::Merge(merged) = resolution {
             assert!(merged.len() > b"local_data".len() + b"remote_data".len());

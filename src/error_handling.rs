@@ -589,7 +589,7 @@ mod tests {
         let some_value: Option<i32> = Some(42);
         let none_value: Option<i32> = None;
         
-        assert_eq!(some_value.safe_unwrap("test").unwrap(), 42);
+        assert_eq!(some_value.safe_unwrap("test").expect("value should be available"), 42);
         assert!(none_value.safe_unwrap("test").is_err());
     }
     
@@ -608,21 +608,21 @@ mod tests {
         let vec = vec![1, 2, 3];
         let empty_vec: Vec<i32> = vec![];
         
-        assert_eq!(*vec.safe_first("test").unwrap(), 1);
-        assert_eq!(*vec.safe_last("test").unwrap(), 3);
+        assert_eq!(*vec.safe_first("test").expect("value should be available"), 1);
+        assert_eq!(*vec.safe_last("test").expect("value should be available"), 3);
         assert!(empty_vec.safe_first("test").is_err());
     }
     
     #[test]
     fn test_safe_divide() {
-        assert_eq!(utils::safe_divide(10.0, 2.0, "test").unwrap(), 5.0);
+        assert_eq!(utils::safe_divide(10.0, 2.0, "test").expect("value should be available"), 5.0);
         assert!(utils::safe_divide(10.0, 0.0, "test").is_err());
     }
     
     #[test]
     fn test_safe_percentage() {
-        assert_eq!(utils::safe_percentage(25.0, 100.0, "test").unwrap(), 25.0);
-        assert_eq!(utils::safe_percentage(0.0, 0.0, "test").unwrap(), 0.0);
+        assert_eq!(utils::safe_percentage(25.0, 100.0, "test").expect("value should be available"), 25.0);
+        assert_eq!(utils::safe_percentage(0.0, 0.0, "test").expect("value should be available"), 0.0);
         assert!(utils::safe_percentage(25.0, 0.0, "test").is_err());
     }
 
@@ -647,7 +647,7 @@ mod tests {
 
         let result = utils::retry_with_backoff(operation, 5, 10, "test").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("result should be valid"), 42);
     }
 
     #[tokio::test]

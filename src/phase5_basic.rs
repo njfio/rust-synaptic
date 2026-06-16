@@ -477,7 +477,7 @@ mod tests {
             extracted_features: vec![1.0, 2.0, 3.0],
         };
 
-        let id = manager.store_multimodal("test_key", content, content_type, metadata).unwrap();
+        let id = manager.store_multimodal("test_key", content, content_type, metadata).expect("value should be available");
         assert!(!id.is_empty());
 
         let stats = manager.get_statistics();

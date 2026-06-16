@@ -444,11 +444,11 @@ mod tests {
         };
         
         let node_id = node.id;
-        shard.add_node(node).unwrap();
+        shard.add_node(node).expect("value should be available");
         
         let retrieved = shard.get_node(node_id);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().id, node_id);
+        assert_eq!(retrieved.expect("retrieved should be valid").id, node_id);
         
         let stats = shard.get_stats();
         assert_eq!(stats.node_count, 1);
@@ -472,7 +472,7 @@ mod tests {
         };
         
         let memory_id = memory_node.id;
-        graph.add_memory_node(memory_node).unwrap();
+        graph.add_memory_node(memory_node).expect("value should be available");
         
         // Should be able to retrieve the node
         let retrieved = graph.get_memory_node(memory_id);

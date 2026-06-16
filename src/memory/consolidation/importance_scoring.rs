@@ -846,7 +846,7 @@ mod tests {
     #[tokio::test]
     async fn test_single_importance_calculation() {
         let config = ConsolidationConfig::default();
-        let mut scorer = ImportanceScorer::new(&config).unwrap();
+        let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let memory = MemoryEntry::new(
             "test_key".to_string(),
@@ -854,7 +854,7 @@ mod tests {
             MemoryType::LongTerm
         );
 
-        let importance = scorer.calculate_single_importance(&memory).await.unwrap();
+        let importance = scorer.calculate_single_importance(&memory).await.expect("await should be present");
         
         assert!(importance.importance_score >= 0.0);
         assert!(importance.importance_score <= 1.0);
@@ -864,14 +864,14 @@ mod tests {
     #[tokio::test]
     async fn test_batch_importance_calculation() {
         let config = ConsolidationConfig::default();
-        let mut scorer = ImportanceScorer::new(&config).unwrap();
+        let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Important content".to_string(), MemoryType::LongTerm),
             MemoryEntry::new("key2".to_string(), "Less important".to_string(), MemoryType::ShortTerm),
         ];
 
-        let importance_scores = scorer.calculate_batch_importance(&memories).await.unwrap();
+        let importance_scores = scorer.calculate_batch_importance(&memories).await.expect("await should be present");
 
         assert_eq!(importance_scores.len(), 2);
         for score in importance_scores {
@@ -884,7 +884,7 @@ mod tests {
     async fn test_storage_persistence() {
         let config = ConsolidationConfig::default();
         let storage = Arc::new(MemoryKeyValueStorage::new());
-        let mut scorer = ImportanceScorer::with_storage(&config, storage.clone()).unwrap();
+        let mut scorer = ImportanceScorer::with_storage(&config, storage.clone()).expect("value should be available");
 
         // Create test memories and calculate importance
         let memories = vec![
@@ -892,12 +892,12 @@ mod tests {
             MemoryEntry::new("persist_key2".to_string(), "Persistent content 2".to_string(), MemoryType::ShortTerm),
         ];
 
-        let importance_scores = scorer.calculate_batch_importance(&memories).await.unwrap();
+        let importance_scores = scorer.calculate_batch_importance(&memories).await.expect("await should be present");
         assert_eq!(importance_scores.len(), 2);
 
         // Create a new scorer and load from storage
-        let mut new_scorer = ImportanceScorer::with_storage(&config, storage).unwrap();
-        new_scorer.load_from_storage().await.unwrap();
+        let mut new_scorer = ImportanceScorer::with_storage(&config, storage).expect("value should be available");
+        new_scorer.load_from_storage().await.expect("await should be present");
 
         // Verify data was persisted
         assert!(!new_scorer.access_patterns.is_empty());
@@ -908,7 +908,7 @@ mod tests {
     #[tokio::test]
     async fn test_configurable_weights() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         // Test weight combination
         let combined_score = scorer.combine_importance_factors(0.8, 0.6, 0.4, 0.2, 0.1);
@@ -922,7 +922,7 @@ mod tests {
     #[tokio::test]
     async fn test_entropy_calculation() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         // Test entropy calculation
         let entropy1 = scorer.calculate_content_entropy("aaaa"); // Low entropy
@@ -936,7 +936,7 @@ mod tests {
     #[tokio::test]
     async fn test_semantic_density() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         // Test semantic density calculation
         let density1 = scorer.calculate_semantic_density("the a an"); // Low density (short words)
@@ -950,7 +950,7 @@ mod tests {
     #[tokio::test]
     async fn test_enhanced_temporal_decay() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         // Create memories with different characteristics
         let mut recent_memory = MemoryEntry::new(
@@ -967,8 +967,8 @@ mod tests {
         );
         old_memory.metadata.importance = 0.3;
 
-        let recent_score = scorer.calculate_recency_score(&recent_memory).await.unwrap();
-        let old_score = scorer.calculate_recency_score(&old_memory).await.unwrap();
+        let recent_score = scorer.calculate_recency_score(&recent_memory).await.expect("await should be present");
+        let old_score = scorer.calculate_recency_score(&old_memory).await.expect("await should be present");
 
         // Recent memory should have higher recency score
         assert!(recent_score >= old_score);
@@ -979,7 +979,7 @@ mod tests {
     #[tokio::test]
     async fn test_adaptive_half_life_calculation() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let mut important_memory = MemoryEntry::new(
             "important".to_string(),
@@ -1006,7 +1006,7 @@ mod tests {
     #[tokio::test]
     async fn test_sophisticated_centrality_calculation() {
         let config = ConsolidationConfig::default();
-        let mut scorer = ImportanceScorer::new(&config).unwrap();
+        let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let mut hub_memory = MemoryEntry::new(
             "hub_memory".to_string(),
@@ -1022,8 +1022,8 @@ mod tests {
         );
         isolated_memory.metadata.importance = 0.2;
 
-        let hub_centrality = scorer.calculate_centrality_score(&hub_memory).await.unwrap();
-        let isolated_centrality = scorer.calculate_centrality_score(&isolated_memory).await.unwrap();
+        let hub_centrality = scorer.calculate_centrality_score(&hub_memory).await.expect("await should be present");
+        let isolated_centrality = scorer.calculate_centrality_score(&isolated_memory).await.expect("await should be present");
 
         // Hub memory should have higher centrality
         assert!(hub_centrality > isolated_centrality);
@@ -1034,7 +1034,7 @@ mod tests {
     #[tokio::test]
     async fn test_betweenness_centrality_approximation() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let bridge_memory = MemoryEntry::new(
             "bridge".to_string(),
@@ -1059,7 +1059,7 @@ mod tests {
     #[tokio::test]
     async fn test_enhanced_access_consistency() {
         let config = ConsolidationConfig::default();
-        let scorer = ImportanceScorer::new(&config).unwrap();
+        let scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let mut frequent_memory = MemoryEntry::new(
             "frequent".to_string(),
@@ -1090,7 +1090,7 @@ mod tests {
     #[tokio::test]
     async fn test_content_based_relationship_estimation() {
         let config = ConsolidationConfig::default();
-        let mut scorer = ImportanceScorer::new(&config).unwrap();
+        let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         // Create memory with rich content for analysis
         let rich_memory = MemoryEntry::new(
@@ -1100,7 +1100,7 @@ mod tests {
         );
 
         // Calculate content analysis first
-        let _ = scorer.calculate_uniqueness_score(&rich_memory).await.unwrap();
+        let _ = scorer.calculate_uniqueness_score(&rich_memory).await.expect("await should be present");
 
         let in_degree = scorer.estimate_in_degree("rich_content");
         let out_degree = scorer.estimate_out_degree("rich_content");
@@ -1116,7 +1116,7 @@ mod tests {
     #[tokio::test]
     async fn test_comprehensive_importance_factors() {
         let config = ConsolidationConfig::default();
-        let mut scorer = ImportanceScorer::new(&config).unwrap();
+        let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let comprehensive_memory = MemoryEntry::new(
             "comprehensive".to_string(),
@@ -1124,7 +1124,7 @@ mod tests {
             MemoryType::LongTerm
         );
 
-        let importance = scorer.calculate_single_importance(&comprehensive_memory).await.unwrap();
+        let importance = scorer.calculate_single_importance(&comprehensive_memory).await.expect("await should be present");
 
         // Verify all importance components are calculated
         assert!(importance.importance_score >= 0.0 && importance.importance_score <= 1.0);

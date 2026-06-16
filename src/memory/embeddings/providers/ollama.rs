@@ -362,7 +362,7 @@ mod tests {
         let provider = OllamaProvider::new(config);
         assert!(provider.is_ok());
 
-        let provider = provider.unwrap();
+        let provider = provider.expect("provider should be valid");
         assert_eq!(provider.name(), "OllamaProvider");
         assert_eq!(provider.embedding_dimension(), 768);
         assert!(provider.is_available());
@@ -372,11 +372,11 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_availability() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
         let available = provider.check_availability().await;
         assert!(available.is_ok());
 
-        if available.unwrap() {
+        if available.expect("available should be valid") {
             tracing::info!("Ollama server is available");
         } else {
             tracing::info!("Ollama server is not running");
@@ -386,7 +386,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_embedding_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         // Check if server is available
         if !provider.check_availability().await.unwrap_or(false) {
@@ -398,7 +398,7 @@ mod tests {
         let embedding = provider.embed(text, None).await;
 
         assert!(embedding.is_ok());
-        let embedding = embedding.unwrap();
+        let embedding = embedding.expect("embedding should be valid");
         assert_eq!(embedding.dimension(), 768);
         assert!(embedding.model.starts_with("ollama:"));
         assert!(!embedding.content_hash.is_empty());
@@ -407,7 +407,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_batch_embedding_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         if !provider.check_availability().await.unwrap_or(false) {
             tracing::info!("Skipping integration test: Ollama server not available");
@@ -422,7 +422,7 @@ mod tests {
         let embeddings = provider.embed_batch(&texts, None).await;
 
         assert!(embeddings.is_ok());
-        let embeddings = embeddings.unwrap();
+        let embeddings = embeddings.expect("embeddings should be valid");
         assert_eq!(embeddings.len(), 2);
 
         for embedding in embeddings {
@@ -433,16 +433,16 @@ mod tests {
     #[tokio::test]
     #[ignore] // Run with --ignored flag when Ollama is running
     async fn test_ollama_similarity_integration() {
-        let provider = OllamaProvider::default().unwrap();
+        let provider = OllamaProvider::default().expect("value should be available");
 
         if !provider.check_availability().await.unwrap_or(false) {
             tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
-        let emb1 = provider.embed("machine learning and AI", None).await.unwrap();
-        let emb2 = provider.embed("deep learning and neural networks", None).await.unwrap();
-        let emb3 = provider.embed("cooking pasta recipes", None).await.unwrap();
+        let emb1 = provider.embed("machine learning and AI", None).await.expect("await should be present");
+        let emb2 = provider.embed("deep learning and neural networks", None).await.expect("await should be present");
+        let emb3 = provider.embed("cooking pasta recipes", None).await.expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);

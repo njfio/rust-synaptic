@@ -394,7 +394,7 @@ mod tests {
     #[tokio::test]
     async fn test_should_consolidate() {
         let config = ConsolidationConfig::default();
-        let system = MemoryConsolidationSystem::new(config).unwrap();
+        let system = MemoryConsolidationSystem::new(config).expect("value should be available");
         
         // Should consolidate on first run
         assert!(system.should_consolidate());
@@ -403,14 +403,14 @@ mod tests {
     #[tokio::test]
     async fn test_memory_consolidation() {
         let config = ConsolidationConfig::default();
-        let mut system = MemoryConsolidationSystem::new(config).unwrap();
+        let mut system = MemoryConsolidationSystem::new(config).expect("value should be available");
 
         let memories = vec![
             MemoryEntry::new("key1".to_string(), "Important memory content".to_string(), MemoryType::LongTerm),
             MemoryEntry::new("key2".to_string(), "Less important content".to_string(), MemoryType::ShortTerm),
         ];
 
-        let result = system.consolidate_memories(&memories).await.unwrap();
+        let result = system.consolidate_memories(&memories).await.expect("await should be present");
         
         assert_eq!(result.memories_processed, 2);
         assert!(result.effectiveness_score >= 0.0);

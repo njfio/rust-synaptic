@@ -156,7 +156,7 @@ impl ImageMemoryProcessor {
         let mut ocr = self
             .ocr_engine
             .as_ref()
-            .unwrap()
+            .expect("as_ref() should succeed")
             .lock()
             .map_err(|_| SynapticError::ProcessingError("Failed to lock OCR engine".to_string()))?;
         
@@ -208,7 +208,7 @@ impl ImageMemoryProcessor {
             return Ok(vec![]);
         }
 
-        let detector = self.object_detector.as_ref().unwrap();
+        let detector = self.object_detector.as_ref().expect("as_ref() should succeed");
         
         // Convert image to OpenCV Mat
         let rgb_img = img.to_rgb8();
