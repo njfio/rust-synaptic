@@ -154,18 +154,15 @@ fn bench_memory_manager(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage).await.unwrap();
+                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
 
                         for i in 0..count {
-                            let content = format!("Memory content for benchmark {}", i);
-                            manager
-                                .store_memory(
-                                    black_box(&content),
-                                    MemoryType::ShortTerm,
-                                    std::collections::HashMap::new(),
-                                )
-                                .await
-                                .unwrap();
+                            let entry = MemoryEntry::new(
+                                format!("benchmark_key_{}", i),
+                                format!("Memory content for benchmark {}", i),
+                                MemoryType::ShortTerm,
+                            );
+                            manager.store_memory(black_box(&entry)).await.unwrap();
                         }
                     })
                 })
@@ -176,28 +173,27 @@ fn bench_memory_manager(c: &mut Criterion) {
             BenchmarkId::new("search_memories", entry_count),
             entry_count,
             |b, &count| {
-                let manager = rt.block_on(async {
+                let storage = rt.block_on(async {
                     let storage = Arc::new(MemoryStorage::new());
-                    let manager = MemoryManager::new(storage).await.unwrap();
+                    let manager = MemoryManager::new(storage.clone(), None, None, None)
+                        .await
+                        .unwrap();
 
                     for i in 0..count {
-                        let content = format!("Memory content for benchmark {}", i);
-                        manager
-                            .store_memory(
-                                &content,
-                                MemoryType::ShortTerm,
-                                std::collections::HashMap::new(),
-                            )
-                            .await
-                            .unwrap();
+                        let entry = MemoryEntry::new(
+                            format!("benchmark_key_{}", i),
+                            format!("Memory content for benchmark {}", i),
+                            MemoryType::ShortTerm,
+                        );
+                        manager.store_memory(&entry).await.unwrap();
                     }
-                    manager
+                    storage
                 });
 
                 b.iter(|| {
                     rt.block_on(async {
-                        manager
-                            .search_memories(black_box("benchmark"), black_box(50))
+                        storage
+                            .search(black_box("benchmark"), black_box(50))
                             .await
                             .unwrap()
                     })
@@ -267,28 +263,32 @@ fn bench_consolidation(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage).await.unwrap();
+                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
 
                         // Store memories with some duplicates
+                        let mut entries = Vec::new();
                         for i in 0..count {
                             let content = if i % 10 == 0 {
                                 "Duplicate content for consolidation testing".to_string()
                             } else {
                                 format!("Unique content for entry {}", i)
                             };
+                            let entry = MemoryEntry::new(
+                                format!("consolidation_key_{}", i),
+                                content,
+                                MemoryType::LongTerm,
+                            );
+                            manager.store_memory(&entry).await.unwrap();
+                            entries.push(entry);
+                        }
 
+                        // Benchmark consolidation-style related-memory analysis
+                        for entry in &entries {
                             manager
-                                .store_memory(
-                                    &content,
-                                    MemoryType::LongTerm,
-                                    std::collections::HashMap::new(),
-                                )
+                                .count_related_memories(black_box(entry))
                                 .await
                                 .unwrap();
                         }
-
-                        // Benchmark consolidation
-                        manager.consolidate_memories().await.unwrap();
                     })
                 })
             },
@@ -310,29 +310,20 @@ fn bench_similarity_calculations(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 let storage = Arc::new(MemoryStorage::new());
-                let manager = MemoryManager::new(storage).await.unwrap();
+                let manager = MemoryManager::new(storage.clone(), None, None, None)
+                    .await
+                    .unwrap();
 
-                // Store entries
+                // Store entries (subset for performance)
                 for entry in &entries[..100] {
-                    // Use subset for performance
-                    manager
-                        .store_memory(
-                            &entry.value,
-                            entry.memory_type.clone(),
-                            std::collections::HashMap::new(),
-                        )
-                        .await
-                        .unwrap();
+                    manager.store_memory(entry).await.unwrap();
                 }
 
                 // Calculate similarities
-                let memories = manager.get_all_memories().await.unwrap();
+                let memories = storage.get_all_entries().await.unwrap();
                 for i in 0..memories.len().min(10) {
                     for j in (i + 1)..memories.len().min(10) {
-                        manager
-                            .calculate_similarity(&memories[i], &memories[j])
-                            .await
-                            .unwrap();
+                        black_box(memories[i].similarity_score(&memories[j]));
                     }
                 }
             })

@@ -3,7 +3,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::sync::Arc;
 use synaptic::memory::{
-    retrieval::{MemoryRetriever, RetrievalConfig},
+    retrieval::{IndexedMemoryRetriever, IndexingConfig, RetrievalConfig},
     storage::{memory::MemoryStorage, Storage},
     types::{MemoryEntry, MemoryMetadata, MemoryType},
 };
@@ -29,7 +29,7 @@ fn create_test_entries(count: usize) -> Vec<MemoryEntry> {
         let mut metadata = MemoryMetadata::new();
         metadata.created_at = base_time + chrono::Duration::hours(i as i64);
         metadata.last_accessed = base_time + chrono::Duration::hours((i * 2) as i64);
-        metadata.access_count = (i % 100) as u32; // Varying access counts
+        metadata.access_count = (i % 100) as u64; // Varying access counts
         metadata.importance = (i as f64 % 10.0) / 10.0; // Varying importance
 
         entry.metadata = metadata;
@@ -63,7 +63,11 @@ fn bench_get_recent(c: &mut Criterion) {
             size,
             |b, &size| {
                 let storage = rt.block_on(setup_storage_with_data(size));
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    IndexingConfig::default(),
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever.get_recent(black_box(10)).await.unwrap();
@@ -88,7 +92,11 @@ fn bench_get_frequent(c: &mut Criterion) {
             size,
             |b, &size| {
                 let storage = rt.block_on(setup_storage_with_data(size));
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    IndexingConfig::default(),
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever.get_frequent(black_box(10)).await.unwrap();
@@ -114,7 +122,7 @@ fn bench_get_by_tags(c: &mut Criterion) {
             |b, &size| {
                 let storage = rt.block_on(async {
                     let storage = Arc::new(MemoryStorage::new());
-                    let mut entries = create_test_entries(*size);
+                    let mut entries = create_test_entries(size);
 
                     // Add tags to some entries
                     for (i, entry) in entries.iter_mut().enumerate() {
@@ -133,7 +141,11 @@ fn bench_get_by_tags(c: &mut Criterion) {
                     storage
                 });
 
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    IndexingConfig::default(),
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever
@@ -185,7 +197,7 @@ fn bench_retrieve_operations(c: &mut Criterion) {
             size,
             |b, &size| {
                 let (storage, keys) = rt.block_on(async {
-                    let storage = setup_storage_with_data(*size).await;
+                    let storage = setup_storage_with_data(size).await;
                     let keys = storage.list_keys().await.unwrap();
                     (storage, keys)
                 });
@@ -215,7 +227,7 @@ fn bench_sorting_overhead(c: &mut Criterion) {
             BenchmarkId::new("sort_by_access_time", size),
             size,
             |b, &size| {
-                let entries = create_test_entries(*size);
+                let entries = create_test_entries(size);
 
                 b.iter(|| {
                     let mut entries_copy = entries.clone();
@@ -230,7 +242,7 @@ fn bench_sorting_overhead(c: &mut Criterion) {
             BenchmarkId::new("sort_by_access_count", size),
             size,
             |b, &size| {
-                let entries = create_test_entries(*size);
+                let entries = create_test_entries(size);
 
                 b.iter(|| {
                     let mut entries_copy = entries.clone();

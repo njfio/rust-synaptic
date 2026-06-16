@@ -3,7 +3,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::sync::Arc;
 use synaptic::memory::{
-    retrieval::{IndexedMemoryRetriever, IndexingConfig, MemoryRetriever, RetrievalConfig},
+    retrieval::{IndexedMemoryRetriever, IndexingConfig, RetrievalConfig},
     storage::{memory::MemoryStorage, Storage},
     types::{MemoryEntry, MemoryMetadata, MemoryType},
 };
@@ -28,7 +28,7 @@ fn create_test_entries(count: usize) -> Vec<MemoryEntry> {
         let mut metadata = MemoryMetadata::new();
         metadata.created_at = base_time + chrono::Duration::hours(i as i64);
         metadata.last_accessed = base_time + chrono::Duration::hours((i * 2) as i64);
-        metadata.access_count = (i % 100) as u32;
+        metadata.access_count = (i % 100) as u64;
         metadata.importance = (i as f64 % 10.0) / 10.0;
 
         if i % 5 == 0 {
@@ -67,7 +67,17 @@ fn bench_retrieval_comparison(c: &mut Criterion) {
             size,
             |b, &size| {
                 let storage = rt.block_on(setup_storage_with_data(size));
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let unindexed_config = IndexingConfig {
+                    enable_access_time_index: false,
+                    enable_frequency_index: false,
+                    enable_tag_index: false,
+                    ..Default::default()
+                };
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    unindexed_config,
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever.get_recent(black_box(10)).await.unwrap();
@@ -129,7 +139,17 @@ fn bench_retrieval_comparison(c: &mut Criterion) {
             size,
             |b, &size| {
                 let storage = rt.block_on(setup_storage_with_data(size));
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let unindexed_config = IndexingConfig {
+                    enable_access_time_index: false,
+                    enable_frequency_index: false,
+                    enable_tag_index: false,
+                    ..Default::default()
+                };
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    unindexed_config,
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever.get_frequent(black_box(10)).await.unwrap();
@@ -164,7 +184,17 @@ fn bench_retrieval_comparison(c: &mut Criterion) {
             size,
             |b, &size| {
                 let storage = rt.block_on(setup_storage_with_data(size));
-                let retriever = MemoryRetriever::new(storage.clone(), RetrievalConfig::default());
+                let unindexed_config = IndexingConfig {
+                    enable_access_time_index: false,
+                    enable_frequency_index: false,
+                    enable_tag_index: false,
+                    ..Default::default()
+                };
+                let retriever = IndexedMemoryRetriever::new(
+                    storage.clone(),
+                    RetrievalConfig::default(),
+                    unindexed_config,
+                );
 
                 b.to_async(&rt).iter(|| async {
                     let result = retriever

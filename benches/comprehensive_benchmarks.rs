@@ -13,8 +13,6 @@ use synaptic::{
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::time::{Duration, Instant};
-#[cfg(feature = "analytics")]
-use synaptic::analytics::{ClusteringAnalyzer, SimilarityAnalyzer, TrendAnalyzer};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
@@ -77,6 +75,39 @@ fn generate_test_data(config: &BenchmarkConfig) -> Vec<(String, String)> {
             (key, content)
         })
         .collect()
+}
+
+/// Simple greedy clustering of memory entries by content similarity.
+///
+/// Stands in for the removed `ClusteringAnalyzer::cluster_memories` API so the
+/// benchmark still measures a representative clustering workload over the
+/// current `MemoryEntry::similarity_score` primitive.
+#[allow(dead_code)]
+fn greedy_cluster(entries: &[MemoryEntry], max_clusters: usize) -> Vec<Vec<usize>> {
+    let mut clusters: Vec<Vec<usize>> = Vec::new();
+    let mut centroids: Vec<usize> = Vec::new();
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let mut best: Option<(usize, f64)> = None;
+        for (cluster_idx, &centroid) in centroids.iter().enumerate() {
+            let score = entry.similarity_score(&entries[centroid]);
+            if best.map_or(true, |(_, b)| score > b) {
+                best = Some((cluster_idx, score));
+            }
+        }
+
+        match best {
+            Some((cluster_idx, score)) if score >= 0.5 || centroids.len() >= max_clusters => {
+                clusters[cluster_idx].push(idx);
+            }
+            _ => {
+                centroids.push(idx);
+                clusters.push(vec![idx]);
+            }
+        }
+    }
+
+    clusters
 }
 
 /// Micro-benchmarks for core operations
@@ -191,16 +222,19 @@ fn bench_analytics_operations(c: &mut Criterion) {
             &(config.clone(), test_data.clone()),
             |b, (cfg, data)| {
                 b.to_async(&rt).iter(|| async {
-                    let analyzer = SimilarityAnalyzer::new();
+                    let _ = cfg;
+                    let entries: Vec<MemoryEntry> = data
+                        .iter()
+                        .map(|(key, value)| {
+                            MemoryEntry::new(key.clone(), value.clone(), MemoryType::ShortTerm)
+                        })
+                        .collect();
 
                     let start = Instant::now();
                     for i in 0..100 {
-                        let content1 = &data[i % data.len()].1;
-                        let content2 = &data[(i + 1) % data.len()].1;
-                        let similarity = analyzer
-                            .calculate_text_similarity(content1, content2)
-                            .await
-                            .unwrap();
+                        let e1 = &entries[i % entries.len()];
+                        let e2 = &entries[(i + 1) % entries.len()];
+                        let similarity = e1.similarity_score(e2);
                         black_box(similarity);
                     }
                     let duration = start.elapsed();
@@ -217,8 +251,7 @@ fn bench_analytics_operations(c: &mut Criterion) {
             &(config.clone(), test_data.clone()),
             |b, (cfg, data)| {
                 b.to_async(&rt).iter(|| async {
-                    let analyzer = ClusteringAnalyzer::new();
-
+                    let _ = cfg;
                     let memories: Vec<MemoryEntry> = data
                         .iter()
                         .take(100)
@@ -228,7 +261,7 @@ fn bench_analytics_operations(c: &mut Criterion) {
                         .collect();
 
                     let start = Instant::now();
-                    let clusters = analyzer.cluster_memories(&memories, 5).await.unwrap();
+                    let clusters = greedy_cluster(&memories, 5);
                     let duration = start.elapsed();
 
                     let ops_per_sec = 100.0 / duration.as_secs_f64();
@@ -417,31 +450,22 @@ fn bench_integration_scenarios(c: &mut Criterion) {
 
             let start = Instant::now();
 
-            // Similarity analysis
-            let similarity_analyzer = SimilarityAnalyzer::new();
-            for i in 0..50 {
-                let content1 = &test_data[i].1;
-                let content2 = &test_data[i + 1].1;
-                let similarity = similarity_analyzer
-                    .calculate_text_similarity(content1, content2)
-                    .await
-                    .unwrap();
-                black_box(similarity);
-            }
-
-            // Clustering analysis
-            let clustering_analyzer = ClusteringAnalyzer::new();
-            let memories: Vec<MemoryEntry> = test_data
+            let entries: Vec<MemoryEntry> = test_data
                 .iter()
-                .take(50)
                 .map(|(key, value)| {
                     MemoryEntry::new(key.clone(), value.clone(), MemoryType::ShortTerm)
                 })
                 .collect();
-            let clusters = clustering_analyzer
-                .cluster_memories(&memories, 5)
-                .await
-                .unwrap();
+
+            // Similarity analysis
+            for i in 0..50 {
+                let similarity = entries[i].similarity_score(&entries[i + 1]);
+                black_box(similarity);
+            }
+
+            // Clustering analysis
+            let memories: Vec<MemoryEntry> = entries.iter().take(50).cloned().collect();
+            let clusters = greedy_cluster(&memories, 5);
             black_box(clusters);
 
             let duration = start.elapsed();
