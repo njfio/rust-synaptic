@@ -202,6 +202,14 @@ pub enum MemoryError {
     /// Query parsing and execution errors
     #[error("Invalid query: {message}")]
     InvalidQuery { message: String },
+
+    /// Internal errors (unexpected internal state)
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    /// Errors originating from external systems/services
+    #[error("External error: {0}")]
+    External(String),
 }
 
 impl MemoryError {
@@ -437,6 +445,35 @@ impl MemoryError {
     /// Create an invalid query error
     pub fn invalid_query<S: Into<String>>(message: S) -> Self {
         Self::InvalidQuery {
+            message: message.into(),
+        }
+    }
+
+    /// Create an internal error
+    pub fn internal<S: Into<String>>(message: S) -> Self {
+        Self::Internal(message.into())
+    }
+
+    /// Create an external error
+    pub fn external<S: Into<String>>(message: S) -> Self {
+        Self::External(message.into())
+    }
+
+    /// Create a not-found error from a key
+    pub fn not_found<S: Into<String>>(key: S) -> Self {
+        Self::NotFound { key: key.into() }
+    }
+
+    /// Create an operation error (an operation that could not be completed)
+    pub fn operation<S: Into<String>>(message: S) -> Self {
+        Self::Unexpected {
+            message: message.into(),
+        }
+    }
+
+    /// Create an invalid input error
+    pub fn invalid_input<S: Into<String>>(message: S) -> Self {
+        Self::InvalidInput {
             message: message.into(),
         }
     }

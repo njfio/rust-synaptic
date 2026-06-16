@@ -544,6 +544,7 @@ impl MemoryStorage {
         let file_data = tokio::fs::read(path).await
             .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
 
+        let is_compressed = self.is_compressed_data(&file_data);
         let json_data = if self.is_compressed_data(&file_data) {
             String::from_utf8(self.decompress_data(&file_data)?)
                 .map_err(|e| MemoryError::storage(format!("Failed to decode decompressed data: {}", e)))?
@@ -563,7 +564,7 @@ impl MemoryStorage {
             backup_timestamp: backup_data.backup_timestamp,
             creation_method: backup_data.metadata.creation_method,
             compression: backup_data.metadata.compression,
-            is_compressed: self.is_compressed_data(&file_data),
+            is_compressed,
         })
     }
 }

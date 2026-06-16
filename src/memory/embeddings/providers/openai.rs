@@ -117,7 +117,7 @@ impl OpenAIConfig {
     /// Load API key from environment variable
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| MemoryError::Configuration("OPENAI_API_KEY not set".to_string()))?;
+            .map_err(|_| MemoryError::configuration("OPENAI_API_KEY not set".to_string()))?;
         Ok(Self::new(api_key))
     }
 }
@@ -155,7 +155,7 @@ impl OpenAIProvider {
     #[cfg(feature = "llm-integration")]
     pub fn new(config: OpenAIConfig) -> Result<Self> {
         if config.api_key.is_empty() {
-            return Err(MemoryError::Configuration(
+            return Err(MemoryError::configuration(
                 "OpenAI API key is required".to_string(),
             ));
         }
@@ -173,7 +173,7 @@ impl OpenAIProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     pub fn new(_config: OpenAIConfig) -> Result<Self> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "OpenAI provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -292,7 +292,7 @@ impl EmbeddingProvider for OpenAIProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     async fn embed(&self, _text: &str, _options: Option<&EmbedOptions>) -> Result<Embedding> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "OpenAI provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -350,7 +350,7 @@ impl EmbeddingProvider for OpenAIProvider {
         _texts: &[String],
         _options: Option<&EmbedOptions>,
     ) -> Result<Vec<Embedding>> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "OpenAI provider requires 'llm-integration' feature".to_string(),
         ))
     }

@@ -323,7 +323,7 @@ impl HybridRetriever {
         for results in all_results {
             for scored in results {
                 let entry = memory_scores
-                    .entry(scored.memory.key.clone())
+                    .entry(scored.memory.entry.key.clone())
                     .or_insert_with(|| (scored.memory.clone(), Vec::new()));
 
                 entry.1.push((scored.signal, scored.score));

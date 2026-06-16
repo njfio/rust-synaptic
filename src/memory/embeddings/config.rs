@@ -180,19 +180,19 @@ impl EmbeddingProviderConfig {
     /// Load configuration from TOML file
     pub fn from_toml_file(path: PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)
-            .map_err(|e| MemoryError::Configuration(format!("Failed to read config file: {}", e)))?;
+            .map_err(|e| MemoryError::configuration(format!("Failed to read config file: {}", e)))?;
 
         toml::from_str(&content)
-            .map_err(|e| MemoryError::Configuration(format!("Failed to parse TOML config: {}", e)))
+            .map_err(|e| MemoryError::configuration(format!("Failed to parse TOML config: {}", e)))
     }
 
     /// Save configuration to TOML file
     pub fn to_toml_file(&self, path: PathBuf) -> Result<()> {
         let content = toml::to_string_pretty(self)
-            .map_err(|e| MemoryError::Configuration(format!("Failed to serialize config: {}", e)))?;
+            .map_err(|e| MemoryError::configuration(format!("Failed to serialize config: {}", e)))?;
 
         std::fs::write(path, content)
-            .map_err(|e| MemoryError::Configuration(format!("Failed to write config file: {}", e)))?;
+            .map_err(|e| MemoryError::configuration(format!("Failed to write config file: {}", e)))?;
 
         Ok(())
     }
@@ -209,7 +209,7 @@ impl EmbeddingProviderConfig {
                 "cohere" => ProviderType::Cohere,
                 "tfidf" => ProviderType::TfIdf,
                 _ => {
-                    return Err(MemoryError::Configuration(format!(
+                    return Err(MemoryError::configuration(format!(
                         "Unknown provider type: {}",
                         provider_str
                     )))
@@ -284,7 +284,7 @@ impl EmbeddingProviderConfig {
         // Check if selected provider has configuration
         let provider_key = self.provider.name().to_lowercase();
         if !self.provider_configs.contains_key(&provider_key) {
-            return Err(MemoryError::Configuration(format!(
+            return Err(MemoryError::configuration(format!(
                 "No configuration found for provider {}",
                 self.provider.name()
             )));
@@ -296,14 +296,14 @@ impl EmbeddingProviderConfig {
                 match config {
                     ProviderConfig::OpenAI { api_key, .. } => {
                         if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
-                            return Err(MemoryError::Configuration(
+                            return Err(MemoryError::configuration(
                                 "OpenAI API key is required".to_string(),
                             ));
                         }
                     }
                     ProviderConfig::Cohere { api_key, .. } => {
                         if api_key.is_none() || api_key.as_ref().unwrap().is_empty() {
-                            return Err(MemoryError::Configuration(
+                            return Err(MemoryError::configuration(
                                 "Cohere API key is required".to_string(),
                             ));
                         }
@@ -317,7 +317,7 @@ impl EmbeddingProviderConfig {
         for provider_type in &self.fallback_chain {
             let fallback_key = provider_type.name().to_lowercase();
             if !self.provider_configs.contains_key(&fallback_key) {
-                return Err(MemoryError::Configuration(format!(
+                return Err(MemoryError::configuration(format!(
                     "No configuration found for fallback provider {}",
                     provider_type.name()
                 )));

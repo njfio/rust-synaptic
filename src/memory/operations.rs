@@ -172,7 +172,7 @@ impl MemoryOperations for SynapticMemory {
         );
 
         // Use AgentMemory's store method which handles all integrations
-        self.agent_memory.store(&entry.key, &entry.content).await?;
+        self.agent_memory.store(&entry.key, &entry.value).await?;
 
         tracing::info!(
             key = %entry.key,
@@ -270,6 +270,17 @@ impl MemoryOperations for SynapticMemory {
 
         CoreMemoryStats::new(self.session_id)
     }
+
+    async fn clear_all(&mut self) -> Result<()> {
+        tracing::warn!("Clearing all memories via MemoryOperations");
+
+        // Clear the underlying storage backing the agent memory.
+        self.agent_memory.storage().clear().await?;
+
+        tracing::info!("All memories cleared successfully");
+
+        Ok(())
+    }
 }
 
 /// Builder for creating SynapticMemory instances with custom configuration.
@@ -333,7 +344,7 @@ impl SynapticMemoryBuilder {
     ///
     /// * `enabled` - Whether to enable temporal tracking
     pub fn with_temporal_tracking(mut self, enabled: bool) -> Self {
-        self.config.enable_temporal = enabled;
+        self.config.enable_temporal_tracking = enabled;
         self
     }
 
@@ -343,7 +354,7 @@ impl SynapticMemoryBuilder {
     ///
     /// * `interval` - How frequently to create automatic checkpoints
     pub fn with_checkpoint_interval(mut self, interval: std::time::Duration) -> Self {
-        self.config.checkpoint_interval = interval;
+        self.config.checkpoint_interval = interval.as_secs() as usize;
         self
     }
 

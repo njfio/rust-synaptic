@@ -142,7 +142,7 @@ impl CohereConfig {
     /// Load API key from environment variable
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("COHERE_API_KEY")
-            .map_err(|_| MemoryError::Configuration("COHERE_API_KEY not set".to_string()))?;
+            .map_err(|_| MemoryError::configuration("COHERE_API_KEY not set".to_string()))?;
         Ok(Self::new(api_key))
     }
 }
@@ -182,7 +182,7 @@ impl CohereProvider {
     #[cfg(feature = "llm-integration")]
     pub fn new(config: CohereConfig) -> Result<Self> {
         if config.api_key.is_empty() {
-            return Err(MemoryError::Configuration(
+            return Err(MemoryError::configuration(
                 "Cohere API key is required".to_string(),
             ));
         }
@@ -200,7 +200,7 @@ impl CohereProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     pub fn new(_config: CohereConfig) -> Result<Self> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Cohere provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -334,7 +334,7 @@ impl EmbeddingProvider for CohereProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     async fn embed(&self, _text: &str, _options: Option<&EmbedOptions>) -> Result<Embedding> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Cohere provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -398,7 +398,7 @@ impl EmbeddingProvider for CohereProvider {
         _texts: &[String],
         _options: Option<&EmbedOptions>,
     ) -> Result<Vec<Embedding>> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Cohere provider requires 'llm-integration' feature".to_string(),
         ))
     }

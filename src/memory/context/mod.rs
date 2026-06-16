@@ -147,7 +147,7 @@ impl AgentContext {
                     i + 1,
                     memory.value,
                     memory.memory_type,
-                    memory.created_at.format("%Y-%m-%d %H:%M")
+                    memory.created_at().format("%Y-%m-%d %H:%M")
                 ));
             }
         }
@@ -165,7 +165,7 @@ impl AgentContext {
             for memory in &self.temporal_memories {
                 output.push_str(&format!("- {} *({} ago)*\n",
                     memory.value,
-                    format_time_ago(memory.created_at)
+                    format_time_ago(memory.created_at())
                 ));
             }
         }

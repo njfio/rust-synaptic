@@ -369,8 +369,8 @@ impl AgentMemory {
                 if pm.should_promote(&entry) {
                     tracing::info!(
                         memory_key = %entry.key,
-                        access_count = entry.access_count,
-                        importance = entry.importance,
+                        access_count = entry.access_count(),
+                        importance = entry.metadata.importance,
                         "Automatically promoting memory to long-term storage"
                     );
                     entry = pm.promote_memory(entry)?;
@@ -413,8 +413,8 @@ impl AgentMemory {
                 if pm.should_promote(&entry) {
                     tracing::info!(
                         memory_key = %entry.key,
-                        access_count = entry.access_count,
-                        importance = entry.importance,
+                        access_count = entry.access_count(),
+                        importance = entry.metadata.importance,
                         "Automatically promoting memory to long-term storage"
                     );
                     entry = pm.promote_memory(entry)?;

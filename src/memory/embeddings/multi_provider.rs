@@ -289,7 +289,7 @@ impl MultiProviderBuilder {
     /// Build the multi-provider
     pub fn build(self) -> Result<MultiProvider> {
         let primary = self.primary.ok_or_else(|| {
-            MemoryError::Configuration("Primary provider is required".to_string())
+            MemoryError::configuration("Primary provider is required".to_string())
         })?;
 
         Ok(MultiProvider {
