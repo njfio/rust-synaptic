@@ -315,6 +315,11 @@ impl EmbeddingProviderConfig {
 
         // Validate fallback chain
         for provider_type in &self.fallback_chain {
+            // TF-IDF is the built-in, dependency-free fallback; it needs no
+            // provider configuration to be valid in a fallback chain.
+            if *provider_type == ProviderType::TfIdf {
+                continue;
+            }
             let fallback_key = provider_type.name().to_lowercase();
             if !self.provider_configs.contains_key(&fallback_key) {
                 return Err(MemoryError::configuration(format!(
