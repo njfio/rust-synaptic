@@ -4,10 +4,11 @@
 //! and real-world scenario testing with detailed performance analysis.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+#[cfg(feature = "security")]
+use synaptic::security::{SecurityConfig, SecurityManager};
 use synaptic::{
-    memory::types::MemoryMetadata,
-    security::{SecurityConfig, SecurityManager},
-    AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
+    memory::types::MemoryMetadata, AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
+    StorageBackend,
 };
 
 use rand::distributions::Alphanumeric;
@@ -274,7 +275,12 @@ fn bench_analytics_operations(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark security operations (no-op when the `security` feature is off).
+#[cfg(not(feature = "security"))]
+fn bench_security_operations(_c: &mut Criterion) {}
+
 /// Benchmark security operations
+#[cfg(feature = "security")]
 fn bench_security_operations(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 

@@ -234,6 +234,7 @@ opentelemetry_otlp = { package = "opentelemetry-otlp", version = "0.17", optiona
 tempfile = "3.8"
 criterion = { version = "0.5", features = ["async_tokio"] }
 base64 = "0.21"
+tracing-test = "0.2"
 
 [features]
 # Core Features (minimal dependencies) - Updated for development

@@ -2,7 +2,7 @@
 //!
 //! Comprehensive tests for Phase 5B document and data processing capabilities.
 
-use base64;
+use base64::Engine;
 use std::fs;
 use synaptic::phase5b_basic::*;
 use tempfile::TempDir;
@@ -141,8 +141,9 @@ fn test_document_processing() {
     );
 
     // Test PDF file
-    let pdf_bytes =
-        base64::decode(include_str!("assets/sample.pdf.base64").replace('\n', "")).unwrap();
+    let pdf_bytes = base64::engine::general_purpose::STANDARD
+        .decode(include_str!("assets/sample.pdf.base64").replace('\n', ""))
+        .unwrap();
     let pdf_path = temp_dir.path().join("test.pdf");
     fs::write(&pdf_path, pdf_bytes).unwrap();
     let result = manager.process_file(&pdf_path).unwrap();
@@ -156,8 +157,9 @@ fn test_document_processing() {
     );
 
     // Test DOCX file
-    let docx_bytes =
-        base64::decode(include_str!("assets/sample.docx.base64").replace('\n', "")).unwrap();
+    let docx_bytes = base64::engine::general_purpose::STANDARD
+        .decode(include_str!("assets/sample.docx.base64").replace('\n', ""))
+        .unwrap();
     let docx_path = temp_dir.path().join("test.docx");
     fs::write(&docx_path, docx_bytes).unwrap();
     let result = manager.process_file(&docx_path).unwrap();

@@ -8,7 +8,6 @@ use tracing_test::traced_test;
 mod logging_standards_tests {
     use super::*;
     use std::sync::Arc;
-    use synaptic::config::MemoryConfig;
     use synaptic::memory::management::MemoryManager;
     use synaptic::memory::storage::memory::MemoryStorage;
     use synaptic::memory::types::{MemoryEntry, MemoryType};
@@ -172,9 +171,10 @@ mod logging_standards_tests {
     #[traced_test]
     #[tokio::test]
     async fn test_memory_manager_logging() {
-        let config = MemoryConfig::default();
         let storage = Arc::new(MemoryStorage::new());
-        let manager = MemoryManager::new(config, storage).await.unwrap();
+        // MemoryManager::new now takes a storage backend plus optional
+        // knowledge-graph / temporal / advanced managers.
+        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
 
         let memory = MemoryEntry::new(
             "test_key".to_string(),
@@ -183,7 +183,7 @@ mod logging_standards_tests {
         );
 
         // This should generate structured logs
-        let result = manager.store_memory("test_key", memory).await;
+        let result = manager.store_memory(&memory).await;
         assert!(result.is_ok());
 
         // Verify that memory operations generate appropriate logs

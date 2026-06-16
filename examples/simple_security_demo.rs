@@ -187,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
                 println!(
                     "    Zero-Knowledge Proofs Generated: {}",
-                    zk_metrics.total_proofs
+                    zk_metrics.total_proofs_generated
                 );
                 println!(
                     "    Zero-Knowledge Proofs Verified: {}",

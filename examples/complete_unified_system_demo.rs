@@ -214,7 +214,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if let Some(ref zk_metrics) = security_metrics.zero_knowledge_metrics {
-        println!("    ZK Proofs Generated: {}", zk_metrics.total_proofs);
+        println!(
+            "    ZK Proofs Generated: {}",
+            zk_metrics.total_proofs_generated
+        );
         println!(
             "    ZK Verification Rate: {:.1}%",
             zk_metrics.verification_success_rate
