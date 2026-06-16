@@ -3,7 +3,7 @@
 //! These tests verify that embedding providers work correctly with the
 //! retrieval pipeline and can be used for semantic search.
 
-use rust_synaptic::{
+use synaptic::{
     AgentMemory, MemoryConfig, StorageBackend,
     memory::{
         embeddings::{
@@ -57,7 +57,7 @@ async fn test_tfidf_provider_custom_config() {
         embedding_dim: 512,
         ..Default::default()
     };
-    let provider = TfIdfProvider::with_config(config);
+    let provider = TfIdfProvider::new(config);
 
     let embedding = provider.embed("test", None).await.unwrap();
     assert_eq!(embedding.vector.len(), 512);
@@ -165,7 +165,7 @@ async fn test_embedding_cache_basic() {
     let text = "cached content";
     let embedding = provider.embed(text, None).await.unwrap();
 
-    cache.put(text.to_string(), embedding.clone());
+    cache.insert(text.to_string(), embedding.clone());
 
     let retrieved = cache.get(text);
     assert!(retrieved.is_some());
@@ -183,12 +183,12 @@ async fn test_embedding_cache_eviction() {
     for i in 0..3 {
         let text = format!("content {}", i);
         let embedding = provider.embed(&text, None).await.unwrap();
-        cache.put(text, embedding);
+        cache.insert(text, embedding);
     }
 
     let stats = cache.stats();
     assert!(stats.entry_count <= 2, "Cache should respect max size");
-    assert_eq!(stats.evictions, 1, "Should have evicted one entry");
+    assert_eq!(stats.entry_count, 2, "Should have evicted one entry, keeping max_size");
 }
 
 #[tokio::test]
@@ -201,7 +201,7 @@ async fn test_embedding_cache_ttl_expiry() {
     let text = "expiring content";
     let embedding = provider.embed(text, None).await.unwrap();
 
-    cache.put(text.to_string(), embedding);
+    cache.insert(text.to_string(), embedding);
     assert!(cache.get(text).is_some());
 
     // Wait for expiry
@@ -217,7 +217,7 @@ async fn test_embedding_cache_clear() {
     let provider = TfIdfProvider::default();
     let embedding = provider.embed("test", None).await.unwrap();
 
-    cache.put("test".to_string(), embedding);
+    cache.insert("test".to_string(), embedding);
     assert_eq!(cache.stats().entry_count, 1);
 
     cache.clear();
@@ -282,7 +282,7 @@ async fn test_dense_vector_search() {
     assert!(!results.is_empty());
 
     // Top results should be ML-related
-    let top_keys: Vec<&str> = results.iter().take(2).map(|r| r.fragment.key.as_str()).collect();
+    let top_keys: Vec<&str> = results.iter().take(2).map(|r| r.memory.entry.key.as_str()).collect();
     assert!(top_keys.contains(&"ml1") || top_keys.contains(&"ml2"));
 }
 
@@ -368,7 +368,7 @@ async fn test_hybrid_with_dense_vector() {
     // Should find rust-related memories
     assert!(!results.is_empty());
     let rust_count = results.iter()
-        .filter(|r| r.key.contains("rust"))
+        .filter(|r| r.entry.key.contains("rust"))
         .count();
     assert!(rust_count >= 1, "Should find rust-related memories");
 }
@@ -532,6 +532,6 @@ async fn test_provider_capabilities() {
     let caps = provider.capabilities();
 
     assert!(caps.supports_batch);
-    assert_eq!(caps.max_batch_size, 100);
-    assert_eq!(caps.max_text_length, 8192);
+    assert_eq!(caps.max_batch_size, Some(100));
+    assert_eq!(caps.max_input_length, Some(8192));
 }

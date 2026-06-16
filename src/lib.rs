@@ -493,6 +493,11 @@ impl AgentMemory {
     }
 
     /// Get current memory statistics
+    /// Get the session ID for this agent memory instance
+    pub fn session_id(&self) -> Uuid {
+        self.state.session_id()
+    }
+
     pub fn stats(&self) -> MemoryStats {
         MemoryStats {
             short_term_count: self.state.short_term_memory_count(),

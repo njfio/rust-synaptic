@@ -284,6 +284,16 @@ name = "phase4_security_privacy"
 path = "examples/phase4_security_privacy.rs"
 required-features = ["security"]
 
+[[example]]
+name = "simple_security_demo"
+path = "examples/simple_security_demo.rs"
+required-features = ["security"]
+
+[[example]]
+name = "complete_unified_system_demo"
+path = "examples/complete_unified_system_demo.rs"
+required-features = ["security"]
+
 
 
 # Test configuration

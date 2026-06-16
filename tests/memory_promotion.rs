@@ -54,7 +54,7 @@ async fn test_importance_promotion() {
     // Manually set high importance (in real usage, consolidation would set this)
     // For this test, we'll need to retrieve, modify importance, and store again
     let mut entry = memory.retrieve("importance_test").await.unwrap().unwrap();
-    entry.importance = 0.9;
+    entry.metadata.importance = 0.9;
     memory.storage().store(&entry).await.unwrap();
 
     // Retrieve again - should trigger promotion check
@@ -89,7 +89,7 @@ async fn test_hybrid_policy_promotion() {
 
     // Set moderate importance
     let mut entry = memory.retrieve("hybrid_test").await.unwrap().unwrap();
-    entry.importance = 0.7;
+    entry.metadata.importance = 0.7;
     memory.storage().store(&entry).await.unwrap();
 
     // Hybrid policy should promote based on combined score
@@ -215,17 +215,17 @@ async fn test_access_frequency_policy_unit() {
     );
 
     // Below threshold
-    entry.access_count = 3;
+    entry.metadata.access_count = 3 as u64;
     assert!(!policy.should_promote(&entry));
     assert!(policy.promotion_score(&entry) < 1.0);
 
     // At threshold
-    entry.access_count = 5;
+    entry.metadata.access_count = 5 as u64;
     assert!(policy.should_promote(&entry));
     assert_eq!(policy.promotion_score(&entry), 1.0);
 
     // Above threshold
-    entry.access_count = 10;
+    entry.metadata.access_count = 10 as u64;
     assert!(policy.should_promote(&entry));
     assert_eq!(policy.promotion_score(&entry), 1.0);
 }
@@ -241,11 +241,11 @@ async fn test_time_based_policy_unit() {
     );
 
     // Recent memory
-    entry.created_at = chrono::Utc::now() - Duration::days(2);
+    entry.metadata.created_at = chrono::Utc::now() - Duration::days(2);
     assert!(!policy.should_promote(&entry));
 
     // Old memory
-    entry.created_at = chrono::Utc::now() - Duration::days(10);
+    entry.metadata.created_at = chrono::Utc::now() - Duration::days(10);
     assert!(policy.should_promote(&entry));
 }
 
@@ -260,11 +260,11 @@ async fn test_importance_policy_unit() {
     );
 
     // Low importance
-    entry.importance = 0.5;
+    entry.metadata.importance = 0.5;
     assert!(!policy.should_promote(&entry));
 
     // High importance
-    entry.importance = 0.9;
+    entry.metadata.importance = 0.9;
     assert!(policy.should_promote(&entry));
 }
 
@@ -281,18 +281,18 @@ async fn test_hybrid_policy_unit() {
     );
 
     // High access, low importance
-    entry.access_count = 10;
-    entry.importance = 0.3;
+    entry.metadata.access_count = 10 as u64;
+    entry.metadata.importance = 0.3;
     assert!(policy.should_promote(&entry)); // Access alone pushes over threshold
 
     // Low access, high importance
-    entry.access_count = 1;
-    entry.importance = 0.9;
+    entry.metadata.access_count = 1 as u64;
+    entry.metadata.importance = 0.9;
     assert!(policy.should_promote(&entry)); // Importance alone pushes over threshold
 
     // Both low
-    entry.access_count = 1;
-    entry.importance = 0.3;
+    entry.metadata.access_count = 1 as u64;
+    entry.metadata.importance = 0.3;
     assert!(!policy.should_promote(&entry));
 }
 
@@ -306,7 +306,7 @@ async fn test_promotion_manager_unit() {
         "content".to_string(),
         MemoryType::ShortTerm,
     );
-    entry.access_count = 5;
+    entry.metadata.access_count = 5 as u64;
 
     assert!(manager.should_promote(&entry));
 
@@ -359,9 +359,9 @@ async fn test_promotion_preserves_metadata() {
 
     // Set metadata
     let mut entry = memory.retrieve("metadata_test").await.unwrap().unwrap();
-    entry.importance = 0.75;
-    entry.tags = vec!["important".to_string(), "urgent".to_string()];
-    let original_created_at = entry.created_at;
+    entry.metadata.importance = 0.75;
+    entry.metadata.tags = vec!["important".to_string(), "urgent".to_string()];
+    let original_created_at = entry.created_at();
     memory.storage().store(&entry).await.unwrap();
 
     // Access to trigger promotion
@@ -372,9 +372,9 @@ async fn test_promotion_preserves_metadata() {
     // Verify metadata preserved
     let promoted = memory.retrieve("metadata_test").await.unwrap().unwrap();
     assert_eq!(promoted.memory_type, MemoryType::LongTerm);
-    assert_eq!(promoted.importance, 0.75, "Importance should be preserved");
-    assert_eq!(promoted.tags, vec!["important", "urgent"], "Tags should be preserved");
-    assert_eq!(promoted.created_at, original_created_at, "Created timestamp should be preserved");
+    assert_eq!(promoted.metadata.importance, 0.75, "Importance should be preserved");
+    assert_eq!(promoted.metadata.tags, vec!["important", "urgent"], "Tags should be preserved");
+    assert_eq!(promoted.created_at(), original_created_at, "Created timestamp should be preserved");
 }
 
 #[tokio::test]

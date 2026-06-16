@@ -22,7 +22,7 @@ async fn test_cache_miss_rehydrates_state() {
     // Verify it's accessible
     let entry1 = memory.retrieve("test_key").await.unwrap();
     assert!(entry1.is_some(), "Memory should be retrievable after store");
-    assert_eq!(entry1.unwrap().content, "test_value");
+    assert_eq!(entry1.unwrap().value, "test_value");
 
     // Create a new AgentMemory instance with the same storage
     // This simulates a cache miss scenario where state is empty but storage has the data
@@ -32,17 +32,18 @@ async fn test_cache_miss_rehydrates_state() {
     // First retrieval - cache miss, should load from storage into state
     let entry2 = memory2.retrieve("test_key").await.unwrap();
     assert!(entry2.is_some(), "Memory should be retrievable from storage");
-    assert_eq!(entry2.unwrap().content, "test_value");
+    assert_eq!(entry2.unwrap().value, "test_value");
 
     // Second retrieval - should now be in state (cache hit)
     // This tests that the first retrieval injected the entry into state
     let entry3 = memory2.retrieve("test_key").await.unwrap();
     assert!(entry3.is_some(), "Memory should still be retrievable");
-    assert_eq!(entry3.unwrap().content, "test_value");
+    let entry3 = entry3.unwrap();
+    assert_eq!(entry3.value, "test_value");
 
     // The key assertion: access_count should have increased twice
     // Once for the cache miss rehydration, once for the cache hit
-    assert!(entry3.unwrap().access_count >= 1,
+    assert!(entry3.access_count() >= 1,
         "Access count should be updated after cache miss rehydration");
 }
 
@@ -56,8 +57,8 @@ async fn test_access_patterns_updated_on_cache_miss() {
 
     // Get initial access time
     let entry1 = memory.retrieve("access_test").await.unwrap().unwrap();
-    let initial_access = entry1.last_accessed;
-    let initial_count = entry1.access_count;
+    let initial_access = entry1.last_accessed();
+    let initial_count = entry1.access_count();
 
     // Wait a bit to ensure timestamp difference
     sleep(Duration::from_millis(100)).await;
@@ -70,9 +71,9 @@ async fn test_access_patterns_updated_on_cache_miss() {
     let entry2 = memory2.retrieve("access_test").await.unwrap().unwrap();
 
     // Verify access patterns were updated
-    assert!(entry2.last_accessed >= initial_access,
+    assert!(entry2.last_accessed() >= initial_access,
         "Last accessed time should be updated on cache miss");
-    assert!(entry2.access_count > initial_count,
+    assert!(entry2.access_count() > initial_count,
         "Access count should be incremented on cache miss");
 }
 
@@ -103,7 +104,7 @@ async fn test_repeated_cache_miss_retrieval_performance() {
     for i in 0..10 {
         let entry = memory2.retrieve(&format!("key_{}", i)).await.unwrap();
         assert!(entry.is_some(), "Memory {} should be found in state cache", i);
-        assert_eq!(entry.unwrap().content, format!("value_{}", i));
+        assert_eq!(entry.unwrap().value, format!("value_{}", i));
     }
 }
 
@@ -159,7 +160,7 @@ async fn test_concurrent_cache_miss_rehydration() {
             let mut m = mem.lock().await;
             let entry = m.retrieve(&key).await.unwrap();
             assert!(entry.is_some(), "Memory {} should be found", key);
-            assert_eq!(entry.unwrap().content, expected_value);
+            assert_eq!(entry.unwrap().value, expected_value);
         }));
     }
 
@@ -213,7 +214,7 @@ async fn test_cache_miss_with_state_clearing() {
     // Should still be retrievable from storage (cache miss)
     let entry2 = memory2.retrieve("persistent_key").await.unwrap();
     assert!(entry2.is_some(), "Memory should survive state clearing");
-    assert_eq!(entry2.unwrap().content, "persistent_value");
+    assert_eq!(entry2.unwrap().value, "persistent_value");
 }
 
 #[tokio::test]
@@ -228,8 +229,8 @@ async fn test_cache_rehydration_preserves_metadata() {
 
     // Get the entry to verify initial metadata
     let entry1 = memory.retrieve("metadata_key").await.unwrap().unwrap();
-    let original_importance = entry1.importance;
-    let original_created_at = entry1.created_at;
+    let original_importance = entry1.metadata.importance;
+    let original_created_at = entry1.created_at();
 
     // Create new instance (cache miss scenario)
     let config2 = MemoryConfig::default();
@@ -239,11 +240,11 @@ async fn test_cache_rehydration_preserves_metadata() {
     let entry2 = memory2.retrieve("metadata_key").await.unwrap().unwrap();
 
     // Verify metadata is preserved
-    assert_eq!(entry2.importance, original_importance,
+    assert_eq!(entry2.metadata.importance, original_importance,
         "Importance should be preserved");
-    assert_eq!(entry2.created_at, original_created_at,
+    assert_eq!(entry2.created_at(), original_created_at,
         "Created timestamp should be preserved");
-    assert_eq!(entry2.content, "value_with_metadata",
+    assert_eq!(entry2.value, "value_with_metadata",
         "Content should be preserved");
 }
 
@@ -260,7 +261,7 @@ async fn test_cache_miss_updates_state_not_storage() {
 
     // Get initial entry
     let entry1 = memory.retrieve("io_test").await.unwrap().unwrap();
-    let initial_access_count = entry1.access_count;
+    let initial_access_count = entry1.access_count();
 
     // Create new instance
     let config2 = MemoryConfig::default();
@@ -270,7 +271,7 @@ async fn test_cache_miss_updates_state_not_storage() {
     let entry2 = memory2.retrieve("io_test").await.unwrap().unwrap();
 
     // Access count should be incremented locally in state
-    assert!(entry2.access_count >= initial_access_count,
+    assert!(entry2.access_count() >= initial_access_count,
         "Access count should be updated in state");
 
     // Note: We can't easily verify that storage wasn't written to without
