@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// them for consumption by language models.
 pub struct ContextBuilder {
     storage: Arc<dyn Storage>,
-    retriever: Option<Arc<MemoryRetriever>>,
+    retriever: Option<Arc<dyn MemoryRetriever>>,
     graph: Option<Arc<MemoryKnowledgeGraph>>,
 
     // Query parameters

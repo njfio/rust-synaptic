@@ -200,6 +200,12 @@ toml = "0.8.23"
 serde_yaml = "0.9.34"
 dirs = "6.0.0"
 
+# Observability (optional, gated behind the `observability` feature)
+prometheus = { version = "0.13", optional = true }
+opentelemetry = { version = "0.24", optional = true }
+opentelemetry_sdk = { package = "opentelemetry_sdk", version = "0.24", optional = true }
+opentelemetry_otlp = { package = "opentelemetry-otlp", version = "0.17", optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 criterion = "0.5"
@@ -226,6 +232,7 @@ homomorphic-encryption = ["tfhe"]
 zero-knowledge-proofs = ["bellman", "bls12_381"]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
+observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]
 
 # External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]

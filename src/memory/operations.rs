@@ -6,13 +6,13 @@
 
 use crate::memory::{
     MemoryOperations, MemoryEntry, MemoryFragment, CoreMemoryStats, MemoryType,
-    storage::{Storage, StorageBackend, create_storage},
+    storage::{Storage, create_storage},
     state::AgentState,
     checkpoint::CheckpointManager,
     knowledge_graph::{MemoryKnowledgeGraph, GraphConfig},
     temporal::TemporalMemoryManager,
 };
-use crate::{AgentMemory, MemoryConfig, MemoryError, Result};
+use crate::{AgentMemory, MemoryConfig, MemoryError, Result, StorageBackend};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -185,13 +185,7 @@ impl MemoryOperations for SynapticMemory {
     async fn get_memory(&self, key: &str) -> Result<Option<MemoryEntry>> {
         tracing::debug!(key = %key, "Retrieving memory via MemoryOperations");
 
-        // Cast away const since retrieve updates access patterns
-        // This is safe because we're just accessing the underlying mutable AgentMemory
-        let memory = unsafe {
-            &mut *(self as *const Self as *mut Self)
-        };
-
-        memory.agent_memory.retrieve(key).await
+        self.agent_memory.storage().retrieve(key).await
     }
 
     async fn search_memories(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {

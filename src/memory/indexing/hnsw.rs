@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// databases with millions of entries.
 pub struct HnswIndex {
     /// The underlying HNSW index
-    index: Arc<RwLock<Hnsw<f32, DistanceL2>>>,
+    index: Arc<RwLock<Hnsw<'static, f32, DistL2>>>,
     /// Mapping from UUID to internal HNSW ID
     uuid_to_id: Arc<RwLock<HashMap<Uuid, usize>>>,
     /// Mapping from internal ID back to UUID
@@ -96,12 +96,12 @@ impl HnswIndex {
         let ef_c = hnsw_params.ef_construction;
         let max_layer = hnsw_params.max_layer as u8;
 
-        let hnsw = Hnsw::<f32, DistanceL2>::new(
+        let hnsw = Hnsw::<f32, DistL2>::new(
             max_nb_connection,
             config.max_vectors.unwrap_or(100_000),
             max_layer,
             ef_c,
-            DistanceL2,
+            DistL2,
         );
 
         Ok(Self {
@@ -246,12 +246,12 @@ impl VectorIndex for HnswIndex {
         let ef_c = self.hnsw_params.ef_construction;
         let max_layer = self.hnsw_params.max_layer as u8;
 
-        let new_hnsw = Hnsw::<f32, DistanceL2>::new(
+        let new_hnsw = Hnsw::<f32, DistL2>::new(
             max_nb_connection,
             self.config.max_vectors.unwrap_or(100_000),
             max_layer,
             ef_c,
-            DistanceL2,
+            DistL2,
         );
 
         let mut index = self.index.write()
@@ -307,7 +307,7 @@ impl VectorIndex for HnswIndex {
         let mut index = self.index.write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
 
-        *index = Hnsw::<f32, DistanceL2>::file_load(path)
+        *index = Hnsw::<f32, DistL2>::file_load(path)
             .map_err(|e| MemoryError::External(format!("Failed to load HNSW index: {:?}", e)))?;
 
         // Load UUID mappings
