@@ -695,7 +695,7 @@ impl PrometheusMetrics {
                 "Attempted to unregister non-existent custom metric: {}",
                 name
             );
-            Err(crate::error::SynapticError::NotFound(format!(
+            Err(crate::error::SynapticError::not_found(format!(
                 "Custom metric '{}' not found",
                 name
             )))

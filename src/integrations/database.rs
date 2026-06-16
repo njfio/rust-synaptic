@@ -379,6 +379,19 @@ impl DatabaseClient {
     }
 }
 
+/// Build a [`MemoryFragment`] from a `(key, value)` database row.
+///
+/// The full value is stored on the underlying [`MemoryEntry`], and a truncated
+/// snippet of the value is surfaced as a highlight for display purposes.
+#[cfg(feature = "sql-storage")]
+fn row_to_fragment(row: sqlx::postgres::PgRow) -> crate::memory::types::MemoryFragment {
+    let key: String = row.get("key");
+    let value: String = row.get("value");
+    let snippet: String = value.chars().take(100).collect();
+    let entry = MemoryEntry::new(key, value, MemoryType::LongTerm);
+    crate::memory::types::MemoryFragment::new(entry, 1.0).with_highlights(vec![snippet])
+}
+
 // Implement Storage trait for DatabaseClient
 #[async_trait::async_trait]
 impl Storage for DatabaseClient {
@@ -431,22 +444,10 @@ impl Storage for DatabaseClient {
             let fragments = if rows.len() > 100 {
                 // Use parallel processing for large result sets
                 use rayon::prelude::*;
-                rows.into_par_iter()
-                    .map(|row| crate::memory::types::MemoryFragment {
-                        key: row.get("key"),
-                        snippet: row.get::<String, _>("value").chars().take(100).collect(),
-                        relevance_score: 1.0, // Default relevance score
-                    })
-                    .collect()
+                rows.into_par_iter().map(row_to_fragment).collect()
             } else {
                 // Use sequential processing for small result sets
-                rows.into_iter()
-                    .map(|row| crate::memory::types::MemoryFragment {
-                        key: row.get("key"),
-                        snippet: row.get::<String, _>("value").chars().take(100).collect(),
-                        relevance_score: 1.0, // Default relevance score
-                    })
-                    .collect()
+                rows.into_iter().map(row_to_fragment).collect()
             };
 
             Ok(fragments)
@@ -640,6 +641,33 @@ impl Storage for DatabaseClient {
                 let _ = self.store_memory(&entry).await;
             }
             Ok(())
+        }
+        #[cfg(not(feature = "sql-storage"))]
+        {
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
+        }
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        #[cfg(feature = "sql-storage")]
+        {
+            let rows = sqlx::query(&format!(
+                "SELECT key, value FROM {}.memory_entries",
+                self.config.schema
+            ))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Get all entries failed: {}", e)))?;
+            Ok(rows
+                .into_iter()
+                .map(|row| {
+                    let key: String = row.get("key");
+                    let value: String = row.get("value");
+                    MemoryEntry::new(key, value, MemoryType::LongTerm)
+                })
+                .collect())
         }
         #[cfg(not(feature = "sql-storage"))]
         {

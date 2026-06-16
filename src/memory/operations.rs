@@ -364,7 +364,14 @@ impl SynapticMemoryBuilder {
     ///
     /// * `enabled` - Whether to enable analytics
     pub fn with_analytics(mut self, enabled: bool) -> Self {
-        self.config.enable_analytics = enabled;
+        #[cfg(feature = "analytics")]
+        {
+            self.config.enable_analytics = enabled;
+        }
+        #[cfg(not(feature = "analytics"))]
+        {
+            let _ = enabled;
+        }
         self
     }
 

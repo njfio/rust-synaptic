@@ -5,6 +5,12 @@ use thiserror::Error;
 /// Result type alias for memory operations
 pub type Result<T> = std::result::Result<T, MemoryError>;
 
+/// Backwards-compatible alias for [`MemoryError`].
+///
+/// Several modules historically referred to the crate's error type as
+/// `SynapticError`; this alias keeps those references valid.
+pub type SynapticError = MemoryError;
+
 /// Comprehensive error types for memory operations
 #[derive(Error, Debug)]
 pub enum MemoryError {
@@ -210,6 +216,10 @@ pub enum MemoryError {
     /// Errors originating from external systems/services
     #[error("External error: {0}")]
     External(String),
+
+    /// Circuit breaker is open and rejecting calls
+    #[error("Circuit breaker open: {0}")]
+    CircuitBreakerOpen(String),
 }
 
 impl MemoryError {
@@ -647,6 +657,22 @@ where
 impl From<candle_core::Error> for MemoryError {
     fn from(err: candle_core::Error) -> Self {
         MemoryError::storage(format!("ML model error: {}", err))
+    }
+}
+
+/// Convert from prometheus::Error for observability/metrics operations
+#[cfg(feature = "observability")]
+impl From<prometheus::Error> for MemoryError {
+    fn from(err: prometheus::Error) -> Self {
+        MemoryError::processing_error(format!("Prometheus error: {}", err))
+    }
+}
+
+/// Convert from opentelemetry trace errors for observability/tracing operations
+#[cfg(feature = "observability")]
+impl From<opentelemetry::trace::TraceError> for MemoryError {
+    fn from(err: opentelemetry::trace::TraceError) -> Self {
+        MemoryError::processing_error(format!("OpenTelemetry trace error: {}", err))
     }
 }
 

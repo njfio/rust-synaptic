@@ -146,7 +146,7 @@ pub trait HealthChecker: Send + Sync {
 }
 
 /// Circuit breaker for protecting against cascading failures
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CircuitBreaker {
     name: String,
     state: Arc<RwLock<CircuitBreakerState>>,
@@ -351,19 +351,20 @@ impl HealthCheckManager {
             let future = async move {
                 let _permit = semaphore.acquire().await.expect("await should be present");
 
-                let circuit_breaker = circuit_breakers
-                    .read()
-                    .await
-                    .get(&checker_name)
-                    .expect("value should be available")
-                    .clone();
+                let circuit_breaker = {
+                    let circuit_breakers_guard = circuit_breakers.read().await;
+                    circuit_breakers_guard
+                        .get(&checker_name)
+                        .expect("value should be available")
+                        .clone()
+                };
 
                 let result = circuit_breaker
                     .execute(async {
                         timeout(timeout_duration, checker_ref.check_health())
                             .await
                             .map_err(|_| {
-                                SynapticError::Timeout(format!(
+                                SynapticError::timeout(format!(
                                     "Health check timeout for {}",
                                     checker_name
                                 ))
@@ -377,10 +378,10 @@ impl HealthCheckManager {
             check_futures.push(future);
         }
 
-        drop(checkers);
-
-        // Execute all health checks concurrently
+        // Execute all health checks concurrently. `checkers` must stay alive
+        // until the futures (which borrow checker references) have completed.
         let results = futures::future::join_all(check_futures).await;
+        drop(checkers);
 
         // Process results
         for (component_name, result) in results {
@@ -437,7 +438,7 @@ impl HealthCheckManager {
     pub async fn check_component_health(&self, component_name: &str) -> Result<HealthCheckResult> {
         let checkers = self.checkers.read().await;
         let checker = checkers.get(component_name).ok_or_else(|| {
-            SynapticError::NotFound(format!(
+            SynapticError::not_found(format!(
                 "Health checker for component '{}' not found",
                 component_name
             ))
@@ -445,7 +446,7 @@ impl HealthCheckManager {
 
         let circuit_breakers = self.circuit_breakers.read().await;
         let circuit_breaker = circuit_breakers.get(component_name).ok_or_else(|| {
-            SynapticError::NotFound(format!(
+            SynapticError::not_found(format!(
                 "Circuit breaker for component '{}' not found",
                 component_name
             ))
@@ -456,7 +457,7 @@ impl HealthCheckManager {
                 timeout(self.config.timeout, checker.check_health())
                     .await
                     .map_err(|_| {
-                        SynapticError::Timeout(format!(
+                        SynapticError::timeout(format!(
                             "Health check timeout for {}",
                             component_name
                         ))

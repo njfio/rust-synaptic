@@ -7,8 +7,8 @@
 use crate::error::Result;
 use opentelemetry::{
     global,
-    trace::{Span, SpanKind, Status, TraceContextExt, Tracer},
-    Context, KeyValue,
+    trace::{Span, Tracer, TracerProvider as _},
+    KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
@@ -58,7 +58,8 @@ impl Default for TracingConfig {
 /// OpenTelemetry tracing manager for the Synaptic system
 #[derive(Clone)]
 pub struct OpenTelemetryTracing {
-    tracer: Arc<dyn Tracer + Send + Sync>,
+    tracer: opentelemetry_sdk::trace::Tracer,
+    provider: opentelemetry_sdk::trace::TracerProvider,
     config: TracingConfig,
     active_spans: Arc<RwLock<HashMap<String, SpanContext>>>,
 }
@@ -88,7 +89,7 @@ impl OpenTelemetryTracing {
             KeyValue::new("deployment.environment", config.environment.clone()),
             KeyValue::new("telemetry.sdk.name", "opentelemetry"),
             KeyValue::new("telemetry.sdk.language", "rust"),
-            KeyValue::new("telemetry.sdk.version", opentelemetry::sdk::version()),
+            KeyValue::new("telemetry.sdk.version", env!("CARGO_PKG_VERSION")),
         ]);
 
         // Configure sampler based on sampling ratio
@@ -107,7 +108,7 @@ impl OpenTelemetryTracing {
             .build_span_exporter()?;
 
         // Configure trace provider
-        let trace_config = trace::config()
+        let trace_config = trace::Config::default()
             .with_sampler(sampler)
             .with_id_generator(RandomIdGenerator::default())
             .with_max_events_per_span(config.max_events_per_span)
@@ -129,7 +130,8 @@ impl OpenTelemetryTracing {
         info!("OpenTelemetry tracing initialized successfully");
 
         Ok(Self {
-            tracer: Arc::new(tracer),
+            tracer,
+            provider: tracer_provider,
             config,
             active_spans: Arc::new(RwLock::new(HashMap::new())),
         })
@@ -138,7 +140,7 @@ impl OpenTelemetryTracing {
     /// Create a new span for memory operations
     pub async fn start_memory_span(&self, operation: &str, memory_type: &str) -> Result<String> {
         let span_name = format!("memory.{}", operation);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "memory"));
@@ -174,7 +176,7 @@ impl OpenTelemetryTracing {
     /// Create a new span for query operations
     pub async fn start_query_span(&self, query_type: &str, complexity: &str) -> Result<String> {
         let span_name = format!("query.{}", query_type);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "query"));
@@ -210,7 +212,7 @@ impl OpenTelemetryTracing {
     /// Create a new span for analytics operations
     pub async fn start_analytics_span(&self, operation: &str, algorithm: &str) -> Result<String> {
         let span_name = format!("analytics.{}", operation);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "analytics"));
@@ -246,7 +248,7 @@ impl OpenTelemetryTracing {
     /// Create a new span for storage operations
     pub async fn start_storage_span(&self, operation: &str, backend: &str) -> Result<String> {
         let span_name = format!("storage.{}", operation);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "storage"));
@@ -286,7 +288,7 @@ impl OpenTelemetryTracing {
         resource_type: &str,
     ) -> Result<String> {
         let span_name = format!("security.{}", operation);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "security"));
@@ -336,7 +338,7 @@ impl OpenTelemetryTracing {
                 "Attempted to add attribute to non-existent span: {}",
                 span_id
             );
-            Err(crate::error::SynapticError::NotFound(format!(
+            Err(crate::error::SynapticError::not_found(format!(
                 "Span '{}' not found",
                 span_id
             )))
@@ -408,7 +410,7 @@ impl OpenTelemetryTracing {
             Ok(())
         } else {
             warn!("Attempted to finish non-existent span: {}", span_id);
-            Err(crate::error::SynapticError::NotFound(format!(
+            Err(crate::error::SynapticError::not_found(format!(
                 "Span '{}' not found",
                 span_id
             )))
@@ -438,7 +440,7 @@ impl OpenTelemetryTracing {
             Ok(())
         } else {
             warn!("Attempted to finish non-existent span: {}", span_id);
-            Err(crate::error::SynapticError::NotFound(format!(
+            Err(crate::error::SynapticError::not_found(format!(
                 "Span '{}' not found",
                 span_id
             )))
@@ -463,7 +465,7 @@ impl OpenTelemetryTracing {
         component: &str,
     ) -> Result<String> {
         let span_name = format!("{}.{}", component, operation);
-        let mut span = self.tracer.start(&span_name);
+        let mut span = self.tracer.start(span_name.clone());
 
         // Set span attributes
         span.set_attribute(KeyValue::new("operation.type", "child"));
@@ -500,10 +502,10 @@ impl OpenTelemetryTracing {
         info!("Flushing OpenTelemetry spans");
 
         // Force flush the tracer provider
-        if let Some(provider) =
-            global::tracer_provider().downcast_ref::<opentelemetry_sdk::trace::TracerProvider>()
-        {
-            provider.force_flush();
+        for result in self.provider.force_flush() {
+            if let Err(e) = result {
+                warn!("Error while flushing OpenTelemetry spans: {}", e);
+            }
         }
 
         Ok(())
