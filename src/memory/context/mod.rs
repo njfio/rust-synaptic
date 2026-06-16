@@ -362,7 +362,11 @@ mod tests {
         let mut context = AgentContext::new();
         context.query = Some("test query".to_string());
 
-        let mut memory = MemoryEntry::new("test memory".to_string(), MemoryType::ShortTerm);
+        let memory = MemoryEntry::new(
+            "test_memory".to_string(),
+            "test memory".to_string(),
+            MemoryType::ShortTerm,
+        );
         context.core_memories.push(memory);
 
         let plain = context.format_plain();

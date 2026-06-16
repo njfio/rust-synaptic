@@ -518,9 +518,9 @@ mod tests {
             "test content".to_string(),
             MemoryType::ShortTerm,
         );
-        entry.access_count = access_count;
-        entry.importance = importance;
-        entry.created_at = created_at;
+        entry.metadata.access_count = access_count as u64;
+        entry.metadata.importance = importance;
+        entry.metadata.created_at = created_at;
         entry
     }
 

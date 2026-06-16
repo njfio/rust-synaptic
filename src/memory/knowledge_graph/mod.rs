@@ -982,7 +982,8 @@ mod tests {
         let empty_path = GraphPath {
             nodes: vec![],
             edges: vec![],
-            total_weight: 0.0,
+            length: 0,
+            weight: 0.0,
         };
 
         let strength = graph.calculate_relationship_strength(&empty_path);
@@ -997,7 +998,8 @@ mod tests {
             path: GraphPath {
                 nodes: vec![],
                 edges: vec![],
-                total_weight: 0.0,
+                length: 0,
+                weight: 0.0,
             },
             relationship_strength: 0.8,
         };
@@ -1087,7 +1089,8 @@ mod tests {
             path: GraphPath {
                 nodes: vec![],
                 edges: vec![],
-                total_weight: 0.0,
+                length: 0,
+                weight: 0.0,
             },
             relationship_strength: 0.8,
         };

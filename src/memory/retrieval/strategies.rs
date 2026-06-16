@@ -361,22 +361,22 @@ mod tests {
         let retriever = TemporalRetriever::new(storage);
 
         // Recent memory
-        let recent_fragment = MemoryFragment {
-            key: "recent".to_string(),
-            content: "recent content".to_string(),
-            memory_type: MemoryType::ShortTerm,
-            relevance_score: 0.5,
-            timestamp: Utc::now() - Duration::days(1),
-        };
+        let mut recent_entry = MemoryEntry::new(
+            "recent".to_string(),
+            "recent content".to_string(),
+            MemoryType::ShortTerm,
+        );
+        recent_entry.metadata.created_at = Utc::now() - Duration::days(1);
+        let recent_fragment = MemoryFragment::new(recent_entry, 0.5);
 
         // Old memory
-        let old_fragment = MemoryFragment {
-            key: "old".to_string(),
-            content: "old content".to_string(),
-            memory_type: MemoryType::LongTerm,
-            relevance_score: 0.5,
-            timestamp: Utc::now() - Duration::days(365),
-        };
+        let mut old_entry = MemoryEntry::new(
+            "old".to_string(),
+            "old content".to_string(),
+            MemoryType::LongTerm,
+        );
+        old_entry.metadata.created_at = Utc::now() - Duration::days(365);
+        let old_fragment = MemoryFragment::new(old_entry, 0.5);
 
         let recent_score = retriever.compute_temporal_score(&recent_fragment);
         let old_score = retriever.compute_temporal_score(&old_fragment);

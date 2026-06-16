@@ -55,7 +55,7 @@ use crate::memory::embeddings::EmbeddingManager;
 ///
 /// // Retrieve it
 /// if let Some(entry) = memory.get_memory("user_preference").await? {
-///     println!("Retrieved: {}", entry.content);
+///     println!("Retrieved: {}", entry.value);
 /// }
 /// # Ok(())
 /// # }
@@ -434,7 +434,7 @@ mod tests {
         // Retrieve
         let retrieved = memory.get_memory("test_key").await.unwrap();
         assert!(retrieved.is_some(), "Should retrieve stored memory");
-        assert_eq!(retrieved.unwrap().content, "test_value");
+        assert_eq!(retrieved.unwrap().value, "test_value");
     }
 
     #[tokio::test]
@@ -455,7 +455,7 @@ mod tests {
 
         // Verify
         let retrieved = memory.get_memory("update_test").await.unwrap().unwrap();
-        assert_eq!(retrieved.content, "updated_value");
+        assert_eq!(retrieved.value, "updated_value");
     }
 
     #[tokio::test]

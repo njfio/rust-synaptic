@@ -298,15 +298,10 @@ mod tests {
 
     fn create_test_memory_entry(key: &str, memory_type: MemoryType) -> MemoryEntry {
         MemoryEntry {
-            id: Uuid::new_v4(),
             key: key.to_string(),
             value: format!("Test value for {}", key),
             memory_type,
-            content: format!("Test content for {}", key),
             metadata: MemoryMetadata::new(),
-            created_at: Utc::now(),
-            accessed_at: Utc::now(),
-            access_count: 0,
             embedding: None,
         }
     }

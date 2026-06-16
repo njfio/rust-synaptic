@@ -313,8 +313,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_provider_creation() {
-        let primary = Arc::new(TfIdfProvider::default());
-        let fallback = Arc::new(TfIdfProvider::default());
+        let primary: Arc<dyn EmbeddingProvider> = Arc::new(TfIdfProvider::default());
+        let fallback: Arc<dyn EmbeddingProvider> = Arc::new(TfIdfProvider::default());
 
         let multi = MultiProvider::new(Arc::clone(&primary))
             .with_fallback(fallback);

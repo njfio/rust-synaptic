@@ -325,12 +325,12 @@ impl ContextBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::storage::MemoryStorage;
+    use crate::memory::storage::memory::MemoryStorage;
     use crate::memory::types::MemoryType;
 
     #[tokio::test]
     async fn test_context_builder_creation() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
         let builder = ContextBuilder::new(storage);
 
         assert_eq!(builder.search_limit, 10);
@@ -339,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_builder_with_filters() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
 
         let builder = ContextBuilder::new(storage)
             .with_memory_types(vec![MemoryType::LongTerm])
@@ -354,10 +354,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_relevance_scoring() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
         let builder = ContextBuilder::new(storage);
 
-        let mut entry = MemoryEntry::new("machine learning algorithms".to_string(), MemoryType::ShortTerm);
+        let entry = MemoryEntry::new(
+            "ml_algos".to_string(),
+            "machine learning algorithms".to_string(),
+            MemoryType::ShortTerm,
+        );
         let score = builder.simple_relevance_score(&entry, "machine learning");
 
         assert!(score > 0.0);

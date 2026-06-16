@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn test_serde_json_error_conversion() {
         let json_str = "{invalid json}";
-        let result: Result<serde_json::Value, _> = serde_json::from_str(json_str);
+        let result: std::result::Result<serde_json::Value, _> = serde_json::from_str(json_str);
         if let Err(json_err) = result {
             let mem_err: MemoryError = json_err.into();
             assert!(matches!(mem_err, MemoryError::Serialization(_)));
