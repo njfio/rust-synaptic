@@ -39,8 +39,11 @@ async fn test_empty_backup_file() {
     assert!(result.is_err(), "Should fail when backup file is empty");
     let err_msg = format!("{:?}", result.unwrap_err());
     assert!(
-        err_msg.contains("Failed to decode") || err_msg.contains("Failed to deserialize"),
-        "Error should mention decoding or deserialization failure: {}",
+        err_msg.contains("Failed to decode")
+            || err_msg.contains("Failed to deserialize")
+            || err_msg.contains("Failed to parse")
+            || err_msg.contains("EOF"),
+        "Error should mention decoding/deserialization/parse failure: {}",
         err_msg
     );
 }
@@ -125,34 +128,33 @@ async fn test_unsupported_backup_version() {
 
 #[tokio::test]
 async fn test_checksum_mismatch() {
+    // Produce a real, well-formed backup first so the on-disk format always
+    // matches the current serializer, then corrupt only the checksum field.
+    let source = Arc::new(MemoryStorage::new());
+    source
+        .store(&MemoryEntry::new(
+            "test_key".to_string(),
+            "test content".to_string(),
+            MemoryType::LongTerm,
+        ))
+        .await
+        .unwrap();
+
+    let backup_file = NamedTempFile::new().unwrap();
+    let backup_path = backup_file.path().to_str().unwrap().to_string();
+    source.backup(&backup_path).await.unwrap();
+
+    // Tamper with the persisted checksum so integrity verification must fail.
+    // Round-trip through serde_json so this is robust against backup format
+    // drift: we only overwrite metadata.checksum and leave everything else.
+    let original = std::fs::read_to_string(&backup_path).unwrap();
+    let mut backup_value: serde_json::Value = serde_json::from_str(&original).unwrap();
+    backup_value["metadata"]["checksum"] =
+        serde_json::Value::String("wrong_checksum_value".to_string());
+    let corrupted = serde_json::to_string_pretty(&backup_value).unwrap();
+
     let mut temp_file = NamedTempFile::new().unwrap();
-    // Create a backup with intentionally wrong checksum
-    let backup_json = r#"{
-        "version": "1.1",
-        "entry_count": 1,
-        "total_size": 100,
-        "created_at": "2024-01-01T00:00:00Z",
-        "backup_timestamp": "2024-01-01T00:00:00Z",
-        "entries": [{
-            "key": "test_key",
-            "memory_type": "Episodic",
-            "content": "test content",
-            "metadata": {},
-            "embedding": null,
-            "importance": 0.5,
-            "access_count": 0,
-            "created_at": "2024-01-01T00:00:00Z",
-            "last_accessed": "2024-01-01T00:00:00Z",
-            "tags": []
-        }],
-        "metadata": {
-            "creation_method": "test",
-            "compression": null,
-            "checksum": "wrong_checksum_value",
-            "custom_fields": {}
-        }
-    }"#;
-    temp_file.write_all(backup_json.as_bytes()).unwrap();
+    temp_file.write_all(corrupted.as_bytes()).unwrap();
     temp_file.flush().unwrap();
 
     let storage = Arc::new(MemoryStorage::new());

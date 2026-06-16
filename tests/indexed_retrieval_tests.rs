@@ -344,7 +344,7 @@ async fn test_performance_improvement() {
         IndexedMemoryRetriever::new(storage.clone(), config.clone(), indexing_config_disabled);
 
     let start = Instant::now();
-    let _recent_fallback = retriever_fallback.get_recent(10).await.unwrap();
+    let recent_fallback = retriever_fallback.get_recent(10).await.unwrap();
     let fallback_time = start.elapsed();
 
     // Test with indexing enabled
@@ -353,7 +353,7 @@ async fn test_performance_improvement() {
     retriever_indexed.initialize_indexes().await.unwrap();
 
     let start = Instant::now();
-    let _recent_indexed = retriever_indexed.get_recent(10).await.unwrap();
+    let recent_indexed = retriever_indexed.get_recent(10).await.unwrap();
     let indexed_time = start.elapsed();
 
     // Indexed version should be faster (though with small dataset, difference might be minimal)
@@ -362,9 +362,12 @@ async fn test_performance_improvement() {
         fallback_time, indexed_time
     );
 
-    // At minimum, both should complete successfully
-    assert!(fallback_time.as_millis() > 0);
-    // `indexed_time` is always a valid, non-negative duration; the indexed path
-    // is expected to be at least as fast as the fallback path.
-    assert!(indexed_time <= fallback_time || indexed_time.as_millis() > 0);
+    // Both paths must complete successfully and return the same set of results.
+    // (Timing is not asserted directly: sub-millisecond operations make a strict
+    // `> 0ms` floor flaky on fast machines.)
+    assert_eq!(
+        recent_fallback.len(),
+        recent_indexed.len(),
+        "indexed and fallback retrieval should return the same number of results"
+    );
 }
