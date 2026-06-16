@@ -6,7 +6,7 @@
 
 use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
 use synaptic::memory::{MemoryOperations, MemoryEntry, MemoryType};
-use synaptic::memory::storage::StorageBackend;
+use synaptic::StorageBackend;
 use std::time::Duration;
 
 #[tokio::test]
@@ -28,7 +28,7 @@ async fn test_basic_store_and_retrieve() {
 
     let retrieved_entry = retrieved.unwrap();
     assert_eq!(retrieved_entry.key, "basic_test");
-    assert_eq!(retrieved_entry.content, "This is a basic test");
+    assert_eq!(retrieved_entry.value, "This is a basic test");
     assert_eq!(retrieved_entry.memory_type, MemoryType::ShortTerm);
 }
 
@@ -50,7 +50,7 @@ async fn test_store_multiple_memories() {
     for i in 0..10 {
         let retrieved = memory.get_memory(&format!("key_{}", i)).await.unwrap();
         assert!(retrieved.is_some(), "Memory {} should exist", i);
-        assert_eq!(retrieved.unwrap().content, format!("Value number {}", i));
+        assert_eq!(retrieved.unwrap().value, format!("Value number {}", i));
     }
 }
 
@@ -79,8 +79,8 @@ async fn test_update_existing_memory() {
 
     // Verify update
     let retrieved = memory.get_memory("update_key").await.unwrap().unwrap();
-    assert_eq!(retrieved.content, "Updated value");
-    assert!(retrieved.access_count > 0, "Access count should be updated");
+    assert_eq!(retrieved.value, "Updated value");
+    assert!(retrieved.access_count() > 0, "Access count should be updated");
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn test_search_memories() {
 
     // All results should contain "Rust"
     for fragment in &results {
-        assert!(fragment.entry.content.contains("Rust"),
+        assert!(fragment.entry.value.contains("Rust"),
             "Result should contain search term");
     }
 }
@@ -382,7 +382,7 @@ async fn test_large_content_storage() {
     memory.store_memory(entry).await.unwrap();
 
     let retrieved = memory.get_memory("large_content").await.unwrap().unwrap();
-    assert_eq!(retrieved.content.len(), 1_000_000);
+    assert_eq!(retrieved.value.len(), 1_000_000);
 }
 
 #[tokio::test]
@@ -433,7 +433,7 @@ async fn test_update_preserves_metadata() {
     memory.store_memory(entry).await.unwrap();
 
     let initial = memory.get_memory("metadata_test").await.unwrap().unwrap();
-    let initial_created = initial.created_at;
+    let initial_created = initial.created_at();
     let initial_type = initial.memory_type;
 
     // Update content
@@ -441,8 +441,8 @@ async fn test_update_preserves_metadata() {
 
     // Verify metadata preserved
     let updated = memory.get_memory("metadata_test").await.unwrap().unwrap();
-    assert_eq!(updated.created_at, initial_created, "Created time should be preserved");
-    assert_eq!(updated.content, "Updated content");
+    assert_eq!(updated.created_at(), initial_created, "Created time should be preserved");
+    assert_eq!(updated.value, "Updated content");
 }
 
 #[tokio::test]
@@ -462,6 +462,6 @@ async fn test_multiple_updates() {
     }
 
     let final_entry = memory.get_memory("multi_update").await.unwrap().unwrap();
-    assert_eq!(final_entry.content, "Version 5");
-    assert!(final_entry.access_count >= 5, "Should track multiple accesses");
+    assert_eq!(final_entry.value, "Version 5");
+    assert!(final_entry.access_count() >= 5, "Should track multiple accesses");
 }

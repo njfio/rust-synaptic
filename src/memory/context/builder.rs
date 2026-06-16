@@ -6,8 +6,9 @@
 use super::{AgentContext, ContextFormat, TokenCounter};
 use crate::error::{MemoryError, Result};
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
+use crate::memory::knowledge_graph::types::RelationshipType;
 use crate::memory::storage::Storage;
-use crate::memory::retrieval::MemoryRetriever;
+use crate::memory::retrieval::{MemoryRetriever, SearchQuery};
 use crate::memory::types::{MemoryEntry, MemoryType};
 use chrono::{DateTime, Utc, Duration};
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use uuid::Uuid;
 /// them for consumption by language models.
 pub struct ContextBuilder {
     storage: Arc<dyn Storage>,
-    retriever: Option<Arc<MemoryRetriever>>,
+    retriever: Option<Arc<dyn MemoryRetriever>>,
     graph: Option<Arc<MemoryKnowledgeGraph>>,
 
     // Query parameters
@@ -72,7 +73,7 @@ impl ContextBuilder {
     }
 
     /// Set the memory retriever
-    pub fn with_retriever(mut self, retriever: Arc<MemoryRetriever>) -> Self {
+    pub fn with_retriever(mut self, retriever: Arc<dyn MemoryRetriever>) -> Self {
         self.retriever = Some(retriever);
         self
     }
@@ -90,11 +91,13 @@ impl ContextBuilder {
 
         // Use retriever if available
         if let Some(retriever) = &self.retriever {
-            let results = retriever.retrieve_relevant(query, limit).await?;
-            self.core_memories.extend(results);
+            let search_query = SearchQuery::new(query.to_string()).with_limit(limit);
+            let results = retriever.search(&search_query).await?;
+            self.core_memories
+                .extend(results.into_iter().map(|fragment| fragment.entry));
         } else {
             // Fallback to simple storage search
-            let all_entries = self.storage.list_all().await?;
+            let all_entries = self.storage.get_all_entries().await?;
             let mut scored: Vec<(MemoryEntry, f64)> = all_entries
                 .into_iter()
                 .filter(|entry| entry.value.to_lowercase().contains(&query.to_lowercase()))
@@ -123,22 +126,35 @@ impl ContextBuilder {
         self.graph_depth = depth;
 
         if let Some(graph) = &self.graph {
-            for memory in &self.core_memories {
-                let memory_id = memory.id().to_string();
+            // Map any requested relationship-type names onto the graph's
+            // `RelationshipType` enum; unknown names are ignored. A `None`
+            // filter (or no recognized types) traverses all relationships.
+            let typed_filter: Option<Vec<RelationshipType>> = relationship_types.map(|types| {
+                types
+                    .into_iter()
+                    .map(RelationshipType::from_name)
+                    .collect()
+            });
 
-                // Get neighbors at specified depth
-                let neighbors = if let Some(ref types) = relationship_types {
-                    graph.get_related_memories(&memory_id, Some(types.clone()))
-                } else {
-                    graph.get_related_memories(&memory_id, None)
-                };
+            // Collect keys first to avoid holding an immutable borrow of
+            // `self.core_memories` across the mutable `self.related_memories`
+            // pushes below.
+            let memory_keys: Vec<String> =
+                self.core_memories.iter().map(|m| m.key.clone()).collect();
+
+            for memory_key in memory_keys {
+                // Get related memories at the specified depth
+                let related = graph
+                    .find_related_memories(&memory_key, depth, typed_filter.clone())
+                    .await?;
 
                 // Add neighbors with their relationship strength
-                for (neighbor_id, strength) in neighbors {
-                    if let Ok(neighbor_uuid) = Uuid::parse_str(&neighbor_id) {
-                        if let Ok(Some(neighbor_entry)) = self.storage.get(&neighbor_uuid.to_string()).await {
-                            self.related_memories.push((neighbor_entry, strength as f64));
-                        }
+                for related_memory in related {
+                    if let Ok(Some(neighbor_entry)) =
+                        self.storage.retrieve(&related_memory.memory_key).await
+                    {
+                        self.related_memories
+                            .push((neighbor_entry, related_memory.relationship_strength));
                     }
                 }
             }
@@ -159,11 +175,11 @@ impl ContextBuilder {
     ) -> Result<Self> {
         self.time_range = Some((start, end));
 
-        let all_entries = self.storage.list_all().await?;
+        let all_entries = self.storage.get_all_entries().await?;
         self.temporal_memories = all_entries
             .into_iter()
             .filter(|entry| {
-                entry.created_at >= start && entry.created_at <= end
+                entry.created_at() >= start && entry.created_at() <= end
             })
             .collect();
 
@@ -309,12 +325,12 @@ impl ContextBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::storage::MemoryStorage;
+    use crate::memory::storage::memory::MemoryStorage;
     use crate::memory::types::MemoryType;
 
     #[tokio::test]
     async fn test_context_builder_creation() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
         let builder = ContextBuilder::new(storage);
 
         assert_eq!(builder.search_limit, 10);
@@ -323,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_builder_with_filters() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
 
         let builder = ContextBuilder::new(storage)
             .with_memory_types(vec![MemoryType::LongTerm])
@@ -338,10 +354,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_relevance_scoring() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
         let builder = ContextBuilder::new(storage);
 
-        let mut entry = MemoryEntry::new("machine learning algorithms".to_string(), MemoryType::ShortTerm);
+        let entry = MemoryEntry::new(
+            "ml_algos".to_string(),
+            "machine learning algorithms".to_string(),
+            MemoryType::ShortTerm,
+        );
         let score = builder.simple_relevance_score(&entry, "machine learning");
 
         assert!(score > 0.0);

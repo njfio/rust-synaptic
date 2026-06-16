@@ -11,7 +11,7 @@
 
 use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
 use synaptic::memory::{MemoryOperations, MemoryEntry, MemoryType};
-use synaptic::memory::storage::StorageBackend;
+use synaptic::StorageBackend;
 use std::time::Duration;
 
 #[tokio::main]
@@ -80,7 +80,7 @@ async fn basic_usage() -> Result<(), Box<dyn std::error::Error>> {
 
     // Retrieve it
     if let Some(retrieved) = memory.get_memory("greeting").await? {
-        println!("  ✓ Retrieved memory: {}", retrieved.content);
+        println!("  ✓ Retrieved memory: {}", retrieved.value);
     }
 
     Ok(())
@@ -143,7 +143,7 @@ async fn store_and_retrieve() -> Result<(), Box<dyn std::error::Error>> {
     ] {
         if let Some(entry) = memory.get_memory(key).await? {
             println!("  ✓ {} = {} (accessed {} times)",
-                key, entry.content, entry.access_count);
+                key, entry.value, entry.access_count());
         }
     }
 
@@ -180,7 +180,7 @@ async fn update_operations() -> Result<(), Box<dyn std::error::Error>> {
     // Verify final state
     if let Some(final_entry) = memory.get_memory("status").await? {
         println!("  ✓ Final status: {} (accessed {} times)",
-            final_entry.content, final_entry.access_count);
+            final_entry.value, final_entry.access_count());
     }
 
     // Try to update non-existent memory (should fail)
@@ -225,7 +225,7 @@ async fn search_operations() -> Result<(), Box<dyn std::error::Error>> {
         println!("    {}. [Score: {:.2}] {}",
             i + 1,
             fragment.relevance_score,
-            fragment.entry.content.chars().take(60).collect::<String>()
+            fragment.entry.value.chars().take(60).collect::<String>()
         );
     }
 

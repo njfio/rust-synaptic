@@ -52,7 +52,7 @@ impl DenseVectorRetriever {
         // Generate embedding for the fragment
         let fragment_embedding = self
             .provider
-            .embed(&fragment.content, None)
+            .embed(&fragment.entry.value, None)
             .await?;
 
         // Compute cosine similarity

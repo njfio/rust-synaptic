@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// databases with millions of entries.
 pub struct HnswIndex {
     /// The underlying HNSW index
-    index: Arc<RwLock<Hnsw<f32, DistanceL2>>>,
+    index: Arc<RwLock<Hnsw<'static, f32, DistL2>>>,
     /// Mapping from UUID to internal HNSW ID
     uuid_to_id: Arc<RwLock<HashMap<Uuid, usize>>>,
     /// Mapping from internal ID back to UUID
@@ -94,14 +94,14 @@ impl HnswIndex {
         // Note: hnsw_rs uses L2 distance, we'll convert other metrics in search
         let max_nb_connection = hnsw_params.max_connections;
         let ef_c = hnsw_params.ef_construction;
-        let max_layer = hnsw_params.max_layer as u8;
+        let max_layer = hnsw_params.max_layer;
 
-        let hnsw = Hnsw::<f32, DistanceL2>::new(
+        let hnsw = Hnsw::<f32, DistL2>::new(
             max_nb_connection,
             config.max_vectors.unwrap_or(100_000),
             max_layer,
             ef_c,
-            DistanceL2,
+            DistL2,
         );
 
         Ok(Self {
@@ -179,7 +179,7 @@ impl HnswIndex {
 impl VectorIndex for HnswIndex {
     fn add(&mut self, id: Uuid, vector: &[f32]) -> Result<()> {
         if vector.len() != self.config.dimension {
-            return Err(MemoryError::InvalidInput(format!(
+            return Err(MemoryError::invalid_input(format!(
                 "Vector dimension mismatch: expected {}, got {}",
                 self.config.dimension,
                 vector.len()
@@ -199,7 +199,7 @@ impl VectorIndex for HnswIndex {
 
     fn search(&self, query: &[f32], k: usize) -> Result<Vec<(Uuid, f32)>> {
         if query.len() != self.config.dimension {
-            return Err(MemoryError::InvalidInput(format!(
+            return Err(MemoryError::invalid_input(format!(
                 "Query dimension mismatch: expected {}, got {}",
                 self.config.dimension,
                 query.len()
@@ -244,14 +244,14 @@ impl VectorIndex for HnswIndex {
         // Create a new index
         let max_nb_connection = self.hnsw_params.max_connections;
         let ef_c = self.hnsw_params.ef_construction;
-        let max_layer = self.hnsw_params.max_layer as u8;
+        let max_layer = self.hnsw_params.max_layer;
 
-        let new_hnsw = Hnsw::<f32, DistanceL2>::new(
+        let new_hnsw = Hnsw::<f32, DistL2>::new(
             max_nb_connection,
             self.config.max_vectors.unwrap_or(100_000),
             max_layer,
             ef_c,
-            DistanceL2,
+            DistL2,
         );
 
         let mut index = self.index.write()
@@ -285,7 +285,16 @@ impl VectorIndex for HnswIndex {
         let index = self.index.read()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
 
-        index.file_dump(path)
+        // hnsw_rs 0.3 `file_dump` takes a target directory plus a basename and
+        // writes `<basename>.hnsw.graph` / `<basename>.hnsw.data` into it.
+        let dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let basename = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("hnsw_index");
+        std::fs::create_dir_all(dir)
+            .map_err(|e| MemoryError::External(format!("Failed to create dump dir: {}", e)))?;
+        index.file_dump(dir, basename)
             .map_err(|e| MemoryError::External(format!("Failed to save HNSW index: {:?}", e)))?;
 
         // Save UUID mappings
@@ -302,41 +311,19 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
-    fn load(&mut self, path: &Path) -> Result<()> {
-        // Load HNSW index
-        let mut index = self.index.write()
-            .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
-
-        *index = Hnsw::<f32, DistanceL2>::file_load(path)
-            .map_err(|e| MemoryError::External(format!("Failed to load HNSW index: {:?}", e)))?;
-
-        // Load UUID mappings
-        let uuid_map_path = path.with_extension("uuid_map");
-        let serialized = std::fs::read(&uuid_map_path)
-            .map_err(|e| MemoryError::External(format!("Failed to read UUID map: {}", e)))?;
-
-        let loaded_map: HashMap<Uuid, usize> = bincode::deserialize(&serialized)
-            .map_err(|e| MemoryError::External(format!("Failed to deserialize UUID map: {}", e)))?;
-
-        let mut uuid_map = self.uuid_to_id.write()
-            .map_err(|e| MemoryError::Internal(format!("Failed to lock UUID map: {}", e)))?;
-        *uuid_map = loaded_map.clone();
-
-        // Rebuild reverse mapping
-        let mut id_map = self.id_to_uuid.write()
-            .map_err(|e| MemoryError::Internal(format!("Failed to lock ID map: {}", e)))?;
-        id_map.clear();
-        for (uuid, id) in loaded_map {
-            id_map.insert(id, uuid);
-        }
-
-        // Update next_id
-        let max_id = id_map.keys().max().copied().unwrap_or(0);
-        let mut next_id = self.next_id.write()
-            .map_err(|e| MemoryError::Internal(format!("Failed to lock next_id: {}", e)))?;
-        *next_id = max_id + 1;
-
-        Ok(())
+    fn load(&mut self, _path: &Path) -> Result<()> {
+        // DEGRADED: hnsw_rs 0.3 loads an index via `HnswIo::load_hnsw`, whose
+        // return type borrows from the `HnswIo` instance (lifetime bound
+        // `'a: 'b`). That makes the loaded `Hnsw` impossible to store in our
+        // `Hnsw<'static, ...>` field without leaking the loader. Reloading a
+        // persisted index from disk is therefore not supported on this
+        // hnsw_rs version. Saving (`save`) still works; callers should rebuild
+        // the in-memory index by re-inserting vectors. See `save` for details.
+        Err(MemoryError::External(
+            "Loading a persisted HNSW index is not supported with hnsw_rs 0.3 \
+             (HnswIo::load_hnsw return type is lifetime-bound to the loader); \
+             rebuild the index by re-inserting vectors instead".to_string(),
+        ))
     }
 
     fn stats(&self) -> IndexStats {

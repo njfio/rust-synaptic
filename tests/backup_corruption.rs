@@ -197,18 +197,16 @@ async fn test_backup_info_no_redundant_read() {
     let storage = Arc::new(MemoryStorage::new());
 
     // Create a valid backup
-    let entry = MemoryEntry {
-        key: "test_key".to_string(),
-        memory_type: MemoryType::Episodic,
-        content: "test content".to_string(),
-        metadata: Default::default(),
-        embedding: None,
-        importance: 0.5,
-        access_count: 0,
-        created_at: chrono::Utc::now(),
-        last_accessed: chrono::Utc::now(),
-        tags: vec![],
-    };
+    let mut entry = MemoryEntry::new(
+        "test_key".to_string(),
+        "test content".to_string(),
+        MemoryType::LongTerm,
+    );
+    entry.metadata.importance = 0.5;
+    entry.metadata.access_count = 0;
+    entry.metadata.created_at = chrono::Utc::now();
+    entry.metadata.last_accessed = chrono::Utc::now();
+    entry.metadata.tags = vec![];
 
     storage.store(&entry).await.unwrap();
 
@@ -253,18 +251,16 @@ async fn test_concurrent_backup_operations_no_corruption() {
 
     // Store test entries
     for i in 0..10 {
-        let entry = MemoryEntry {
-            key: format!("key_{}", i),
-            memory_type: MemoryType::Episodic,
-            content: format!("content {}", i),
-            metadata: Default::default(),
-            embedding: None,
-            importance: 0.5,
-            access_count: 0,
-            created_at: chrono::Utc::now(),
-            last_accessed: chrono::Utc::now(),
-            tags: vec![],
-        };
+        let mut entry = MemoryEntry::new(
+            format!("key_{}", i),
+            format!("content {}", i),
+            MemoryType::LongTerm,
+        );
+        entry.metadata.importance = 0.5;
+        entry.metadata.access_count = 0;
+        entry.metadata.created_at = chrono::Utc::now();
+        entry.metadata.last_accessed = chrono::Utc::now();
+        entry.metadata.tags = vec![];
         storage.store(&entry).await.unwrap();
     }
 

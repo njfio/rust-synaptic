@@ -25,7 +25,7 @@ fn create_test_entries(count: usize) -> Vec<MemoryEntry> {
         let mut metadata = MemoryMetadata::new();
         metadata.created_at = base_time + Duration::hours(i as i64);
         metadata.last_accessed = base_time + Duration::hours((i * 2) as i64);
-        metadata.access_count = (i % 100) as u32; // Varying access counts
+        metadata.access_count = (i % 100) as u64; // Varying access counts
         metadata.importance = (i as f64 % 10.0) / 10.0; // Varying importance
         
         // Add tags to some entries

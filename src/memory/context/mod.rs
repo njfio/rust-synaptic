@@ -147,7 +147,7 @@ impl AgentContext {
                     i + 1,
                     memory.value,
                     memory.memory_type,
-                    memory.created_at.format("%Y-%m-%d %H:%M")
+                    memory.created_at().format("%Y-%m-%d %H:%M")
                 ));
             }
         }
@@ -165,7 +165,7 @@ impl AgentContext {
             for memory in &self.temporal_memories {
                 output.push_str(&format!("- {} *({} ago)*\n",
                     memory.value,
-                    format_time_ago(memory.created_at)
+                    format_time_ago(memory.created_at())
                 ));
             }
         }
@@ -362,7 +362,11 @@ mod tests {
         let mut context = AgentContext::new();
         context.query = Some("test query".to_string());
 
-        let mut memory = MemoryEntry::new("test memory".to_string(), MemoryType::ShortTerm);
+        let memory = MemoryEntry::new(
+            "test_memory".to_string(),
+            "test memory".to_string(),
+            MemoryType::ShortTerm,
+        );
         context.core_memories.push(memory);
 
         let plain = context.format_plain();

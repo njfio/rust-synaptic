@@ -90,19 +90,24 @@ impl AgentState {
 
     /// Get a memory by key from either short-term or long-term storage
     pub fn get_memory(&mut self, key: &str) -> Option<MemoryEntry> {
-        // First check short-term memory
-        if let Some(entry) = self.short_term_memories.get(key).cloned() {
+        // Mark the STORED entry as accessed (bumps its metadata.access_count) so
+        // that access-ranking (e.g. get_most_accessed) reflects retrievals, then
+        // also update the separate access-pattern stats.
+        let retrieved = if let Some(entry) = self.short_term_memories.get_mut(key) {
+            entry.mark_accessed();
+            Some(entry.clone())
+        } else if let Some(entry) = self.long_term_memories.get_mut(key) {
+            entry.mark_accessed();
+            Some(entry.clone())
+        } else {
+            None
+        };
+
+        if retrieved.is_some() {
             self.update_access_pattern(key);
-            return Some(entry);
         }
 
-        // Then check long-term memory
-        if let Some(entry) = self.long_term_memories.get(key).cloned() {
-            self.update_access_pattern(key);
-            return Some(entry);
-        }
-
-        None
+        retrieved
     }
 
     /// Check if a memory exists
@@ -298,15 +303,10 @@ mod tests {
 
     fn create_test_memory_entry(key: &str, memory_type: MemoryType) -> MemoryEntry {
         MemoryEntry {
-            id: Uuid::new_v4(),
             key: key.to_string(),
             value: format!("Test value for {}", key),
             memory_type,
-            content: format!("Test content for {}", key),
             metadata: MemoryMetadata::new(),
-            created_at: Utc::now(),
-            accessed_at: Utc::now(),
-            access_count: 0,
             embedding: None,
         }
     }

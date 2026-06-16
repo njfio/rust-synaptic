@@ -6,13 +6,13 @@
 
 use crate::memory::{
     MemoryOperations, MemoryEntry, MemoryFragment, CoreMemoryStats, MemoryType,
-    storage::{Storage, StorageBackend, create_storage},
+    storage::{Storage, create_storage},
     state::AgentState,
     checkpoint::CheckpointManager,
     knowledge_graph::{MemoryKnowledgeGraph, GraphConfig},
     temporal::TemporalMemoryManager,
 };
-use crate::{AgentMemory, MemoryConfig, MemoryError, Result};
+use crate::{AgentMemory, MemoryConfig, MemoryError, Result, StorageBackend};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -55,7 +55,7 @@ use crate::memory::embeddings::EmbeddingManager;
 ///
 /// // Retrieve it
 /// if let Some(entry) = memory.get_memory("user_preference").await? {
-///     println!("Retrieved: {}", entry.content);
+///     println!("Retrieved: {}", entry.value);
 /// }
 /// # Ok(())
 /// # }
@@ -172,7 +172,7 @@ impl MemoryOperations for SynapticMemory {
         );
 
         // Use AgentMemory's store method which handles all integrations
-        self.agent_memory.store(&entry.key, &entry.content).await?;
+        self.agent_memory.store(&entry.key, &entry.value).await?;
 
         tracing::info!(
             key = %entry.key,
@@ -185,13 +185,7 @@ impl MemoryOperations for SynapticMemory {
     async fn get_memory(&self, key: &str) -> Result<Option<MemoryEntry>> {
         tracing::debug!(key = %key, "Retrieving memory via MemoryOperations");
 
-        // Cast away const since retrieve updates access patterns
-        // This is safe because we're just accessing the underlying mutable AgentMemory
-        let memory = unsafe {
-            &mut *(self as *const Self as *mut Self)
-        };
-
-        memory.agent_memory.retrieve(key).await
+        self.agent_memory.storage().retrieve(key).await
     }
 
     async fn search_memories(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
@@ -276,6 +270,17 @@ impl MemoryOperations for SynapticMemory {
 
         CoreMemoryStats::new(self.session_id)
     }
+
+    async fn clear_all(&mut self) -> Result<()> {
+        tracing::warn!("Clearing all memories via MemoryOperations");
+
+        // Clear the underlying storage backing the agent memory.
+        self.agent_memory.storage().clear().await?;
+
+        tracing::info!("All memories cleared successfully");
+
+        Ok(())
+    }
 }
 
 /// Builder for creating SynapticMemory instances with custom configuration.
@@ -339,7 +344,7 @@ impl SynapticMemoryBuilder {
     ///
     /// * `enabled` - Whether to enable temporal tracking
     pub fn with_temporal_tracking(mut self, enabled: bool) -> Self {
-        self.config.enable_temporal = enabled;
+        self.config.enable_temporal_tracking = enabled;
         self
     }
 
@@ -349,7 +354,7 @@ impl SynapticMemoryBuilder {
     ///
     /// * `interval` - How frequently to create automatic checkpoints
     pub fn with_checkpoint_interval(mut self, interval: std::time::Duration) -> Self {
-        self.config.checkpoint_interval = interval;
+        self.config.checkpoint_interval = interval.as_secs() as usize;
         self
     }
 
@@ -429,7 +434,7 @@ mod tests {
         // Retrieve
         let retrieved = memory.get_memory("test_key").await.unwrap();
         assert!(retrieved.is_some(), "Should retrieve stored memory");
-        assert_eq!(retrieved.unwrap().content, "test_value");
+        assert_eq!(retrieved.unwrap().value, "test_value");
     }
 
     #[tokio::test]
@@ -450,7 +455,7 @@ mod tests {
 
         // Verify
         let retrieved = memory.get_memory("update_test").await.unwrap().unwrap();
-        assert_eq!(retrieved.content, "updated_value");
+        assert_eq!(retrieved.value, "updated_value");
     }
 
     #[tokio::test]

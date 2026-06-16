@@ -589,12 +589,10 @@ mod tests {
     // Helper function to create test entries
     fn create_test_entry() -> MemoryEntry {
         MemoryEntry {
-            id: Uuid::new_v4(),
-            content: "test content".to_string(),
+            key: "test_key".to_string(),
+            value: "test content".to_string(),
             memory_type: MemoryType::ShortTerm,
             metadata: MemoryMetadata::new(),
-            created_at: chrono::Utc::now(),
-            accessed_at: chrono::Utc::now(),
             embedding: None,
         }
     }

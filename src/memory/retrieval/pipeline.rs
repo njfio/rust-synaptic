@@ -323,7 +323,7 @@ impl HybridRetriever {
         for results in all_results {
             for scored in results {
                 let entry = memory_scores
-                    .entry(scored.memory.key.clone())
+                    .entry(scored.memory.entry.key.clone())
                     .or_insert_with(|| (scored.memory.clone(), Vec::new()));
 
                 entry.1.push((scored.signal, scored.score));
@@ -506,13 +506,14 @@ mod tests {
 
     #[test]
     fn test_scored_memory_creation() {
-        let memory = MemoryFragment {
-            key: "test".to_string(),
-            content: "test content".to_string(),
-            memory_type: crate::memory::types::MemoryType::ShortTerm,
-            relevance_score: 0.8,
-            timestamp: chrono::Utc::now(),
-        };
+        let memory = MemoryFragment::new(
+            crate::memory::types::MemoryEntry::new(
+                "test".to_string(),
+                "test content".to_string(),
+                crate::memory::types::MemoryType::ShortTerm,
+            ),
+            0.8,
+        );
 
         let scored = ScoredMemory::new(memory.clone(), 0.9, RetrievalSignal::DenseVector);
         assert_eq!(scored.score, 0.9);
@@ -557,13 +558,14 @@ mod tests {
     async fn test_cache_operations() {
         let mut cache = ScoreCache::new(300);
 
-        let memory = MemoryFragment {
-            key: "test".to_string(),
-            content: "test content".to_string(),
-            memory_type: crate::memory::types::MemoryType::ShortTerm,
-            relevance_score: 0.8,
-            timestamp: chrono::Utc::now(),
-        };
+        let memory = MemoryFragment::new(
+            crate::memory::types::MemoryEntry::new(
+                "test".to_string(),
+                "test content".to_string(),
+                crate::memory::types::MemoryType::ShortTerm,
+            ),
+            0.8,
+        );
 
         // Insert
         cache.insert("test_query".to_string(), vec![memory.clone()]);

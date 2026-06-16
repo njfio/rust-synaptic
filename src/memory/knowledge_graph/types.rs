@@ -68,6 +68,28 @@ pub enum RelationshipType {
     Custom(String),
 }
 
+impl RelationshipType {
+    /// Parse a relationship type from its string name (inverse of `Display`).
+    /// Unknown names are preserved as a `Custom` relationship type.
+    pub fn from_name<S: Into<String>>(name: S) -> Self {
+        let name = name.into();
+        match name.as_str() {
+            "related_to" => RelationshipType::RelatedTo,
+            "causes" => RelationshipType::Causes,
+            "caused_by" => RelationshipType::CausedBy,
+            "part_of" => RelationshipType::PartOf,
+            "contains" => RelationshipType::Contains,
+            "temporally_related" => RelationshipType::TemporallyRelated,
+            "semantically_related" => RelationshipType::SemanticallyRelated,
+            "references" => RelationshipType::References,
+            "depends_on" => RelationshipType::DependsOn,
+            "similar_to" => RelationshipType::SimilarTo,
+            "contradicts" => RelationshipType::Contradicts,
+            _ => RelationshipType::Custom(name),
+        }
+    }
+}
+
 impl std::fmt::Display for RelationshipType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

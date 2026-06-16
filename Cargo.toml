@@ -200,6 +200,12 @@ toml = "0.8.23"
 serde_yaml = "0.9.34"
 dirs = "6.0.0"
 
+# Observability (optional, gated behind the `observability` feature)
+prometheus = { version = "0.13", optional = true }
+opentelemetry = { version = "0.24", optional = true }
+opentelemetry_sdk = { package = "opentelemetry_sdk", version = "0.24", optional = true }
+opentelemetry_otlp = { package = "opentelemetry-otlp", version = "0.17", optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 criterion = "0.5"
@@ -226,6 +232,7 @@ homomorphic-encryption = ["tfhe"]
 zero-knowledge-proofs = ["bellman", "bls12_381"]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
+observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]
 
 # External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
@@ -277,12 +284,50 @@ name = "phase4_security_privacy"
 path = "examples/phase4_security_privacy.rs"
 required-features = ["security"]
 
+[[example]]
+name = "simple_security_demo"
+path = "examples/simple_security_demo.rs"
+required-features = ["security"]
+
+[[example]]
+name = "complete_unified_system_demo"
+path = "examples/complete_unified_system_demo.rs"
+required-features = ["security"]
+
 
 
 # Test configuration
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
+
+# Feature-gated tests: these reference modules/types that only exist under
+# specific (non-default) feature flags, so they are excluded from the default
+# `cargo test` build and only compiled when their feature is enabled.
+[[test]]
+name = "cross_platform_integration_tests"
+path = "tests/cross_platform_integration_tests.rs"
+required-features = ["cross-platform"]
+
+[[test]]
+name = "wasm_adapter_tests"
+path = "tests/wasm_adapter_tests.rs"
+required-features = ["cross-platform"]
+
+[[test]]
+name = "zero_knowledge_tests"
+path = "tests/zero_knowledge_tests.rs"
+required-features = ["security"]
+
+[[test]]
+name = "storage_capability_tests"
+path = "tests/storage_capability_tests.rs"
+required-features = ["external-integrations"]
+
+[[test]]
+name = "logging_standards_tests"
+path = "tests/logging_standards_tests.rs"
+required-features = ["observability"]
 
 [[test]]
 name = "security_suite"

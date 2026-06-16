@@ -28,7 +28,8 @@ impl KeywordRetriever {
 
     /// Compute BM25-style score for a memory against a query
     fn compute_bm25_score(&self, memory_content: &str, query: &str) -> f64 {
-        let query_terms: Vec<&str> = query.to_lowercase().split_whitespace().collect();
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
         let content_lower = memory_content.to_lowercase();
         let content_terms: Vec<&str> = content_lower.split_whitespace().collect();
 
@@ -50,8 +51,8 @@ impl KeywordRetriever {
 
         // Calculate score
         let mut score = 0.0;
-        for query_term in query_terms {
-            if let Some(&freq) = term_freq.get(query_term) {
+        for query_term in &query_terms {
+            if let Some(&freq) = term_freq.get(*query_term) {
                 let tf = freq as f64;
                 let idf = 1.0; // Simplified IDF (would need document collection for real IDF)
 
@@ -88,7 +89,7 @@ impl RetrievalPipeline for KeywordRetriever {
         let mut scored_results: Vec<ScoredMemory> = fragments
             .into_iter()
             .map(|fragment| {
-                let score = self.compute_bm25_score(&fragment.content, query);
+                let score = self.compute_bm25_score(&fragment.entry.value, query);
                 ScoredMemory::new(fragment, score, RetrievalSignal::SparseKeyword)
             })
             .collect();
@@ -148,7 +149,7 @@ impl TemporalRetriever {
         let now = Utc::now();
 
         // Recency score (exponential decay)
-        let age_days = (now - memory.timestamp).num_days() as f64;
+        let age_days = (now - memory.entry.created_at()).num_days() as f64;
         let recency_score = (-age_days / 30.0).exp(); // 30-day half-life
 
         // For frequency, we'd need access count from full MemoryEntry
@@ -294,7 +295,7 @@ impl RetrievalPipeline for GraphRetriever {
             // Compute graph-enhanced score
             let base_score = fragment.relevance_score;
             let graph_score = self
-                .compute_graph_score(&fragment.key, base_score)
+                .compute_graph_score(&fragment.entry.key, base_score)
                 .await
                 .unwrap_or(base_score);
 
@@ -360,22 +361,22 @@ mod tests {
         let retriever = TemporalRetriever::new(storage);
 
         // Recent memory
-        let recent_fragment = MemoryFragment {
-            key: "recent".to_string(),
-            content: "recent content".to_string(),
-            memory_type: MemoryType::ShortTerm,
-            relevance_score: 0.5,
-            timestamp: Utc::now() - Duration::days(1),
-        };
+        let mut recent_entry = MemoryEntry::new(
+            "recent".to_string(),
+            "recent content".to_string(),
+            MemoryType::ShortTerm,
+        );
+        recent_entry.metadata.created_at = Utc::now() - Duration::days(1);
+        let recent_fragment = MemoryFragment::new(recent_entry, 0.5);
 
         // Old memory
-        let old_fragment = MemoryFragment {
-            key: "old".to_string(),
-            content: "old content".to_string(),
-            memory_type: MemoryType::LongTerm,
-            relevance_score: 0.5,
-            timestamp: Utc::now() - Duration::days(365),
-        };
+        let mut old_entry = MemoryEntry::new(
+            "old".to_string(),
+            "old content".to_string(),
+            MemoryType::LongTerm,
+        );
+        old_entry.metadata.created_at = Utc::now() - Duration::days(365);
+        let old_fragment = MemoryFragment::new(old_entry, 0.5);
 
         let recent_score = retriever.compute_temporal_score(&recent_fragment);
         let old_score = retriever.compute_temporal_score(&old_fragment);

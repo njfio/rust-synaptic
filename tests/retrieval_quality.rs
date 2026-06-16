@@ -3,7 +3,7 @@
 //! These tests verify that the retrieval pipeline components work correctly
 //! and can be combined for high-quality search results.
 
-use rust_synaptic::{
+use synaptic::{
     AgentMemory, MemoryConfig, StorageBackend,
     memory::retrieval::{
         RetrievalPipeline, HybridRetriever, PipelineConfig, FusionStrategy,
@@ -178,7 +178,7 @@ async fn test_hybrid_search_with_results() {
     // Should find Rust-related memories
     assert!(!results.is_empty());
     // Results should contain rust memories
-    let has_rust = results.iter().any(|r| r.key.contains("rust"));
+    let has_rust = results.iter().any(|r| r.entry.key.contains("rust"));
     assert!(has_rust, "Should find rust-related memories");
 }
 
@@ -312,7 +312,7 @@ async fn test_min_score_filtering() {
     for result in results {
         // We can't directly test the score since it's internal to fusion
         // but we can verify results were returned
-        assert!(!result.key.is_empty());
+        assert!(!result.entry.key.is_empty());
     }
 }
 
@@ -345,7 +345,7 @@ async fn test_temporal_retriever_recency_bias() {
 
     // Recent memory should be found
     assert!(!results.is_empty());
-    let has_recent = results.iter().any(|r| r.key.contains("recent"));
+    let has_recent = results.iter().any(|r| r.entry.key.contains("recent"));
     assert!(has_recent, "Recent memories should be prioritized");
 }
 
@@ -373,7 +373,7 @@ async fn test_multiple_signals_fusion() {
 
     // Should combine signals and return relevant results
     assert!(!results.is_empty());
-    let rust_count = results.iter().filter(|r| r.key.contains("mem1") || r.key.contains("mem2")).count();
+    let rust_count = results.iter().filter(|r| r.entry.key.contains("mem1") || r.entry.key.contains("mem2")).count();
     assert!(rust_count >= 1, "Should find rust-related memories");
 }
 

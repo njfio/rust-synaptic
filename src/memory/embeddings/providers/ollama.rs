@@ -140,7 +140,7 @@ impl OllamaProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     pub fn new(_config: OllamaConfig) -> Result<Self> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Ollama provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -263,7 +263,7 @@ impl EmbeddingProvider for OllamaProvider {
 
     #[cfg(not(feature = "llm-integration"))]
     async fn embed(&self, _text: &str, _options: Option<&EmbedOptions>) -> Result<Embedding> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Ollama provider requires 'llm-integration' feature".to_string(),
         ))
     }
@@ -291,7 +291,7 @@ impl EmbeddingProvider for OllamaProvider {
         _texts: &[String],
         _options: Option<&EmbedOptions>,
     ) -> Result<Vec<Embedding>> {
-        Err(MemoryError::Configuration(
+        Err(MemoryError::configuration(
             "Ollama provider requires 'llm-integration' feature".to_string(),
         ))
     }

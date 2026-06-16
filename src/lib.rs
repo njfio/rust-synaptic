@@ -44,6 +44,7 @@ pub mod error_handling;
 pub mod memory;
 pub mod logging;
 pub mod cli;
+#[cfg(feature = "observability")]
 pub mod observability;
 
 #[cfg(feature = "distributed")]
@@ -368,8 +369,8 @@ impl AgentMemory {
                 if pm.should_promote(&entry) {
                     tracing::info!(
                         memory_key = %entry.key,
-                        access_count = entry.access_count,
-                        importance = entry.importance,
+                        access_count = entry.access_count(),
+                        importance = entry.metadata.importance,
                         "Automatically promoting memory to long-term storage"
                     );
                     entry = pm.promote_memory(entry)?;
@@ -412,8 +413,8 @@ impl AgentMemory {
                 if pm.should_promote(&entry) {
                     tracing::info!(
                         memory_key = %entry.key,
-                        access_count = entry.access_count,
-                        importance = entry.importance,
+                        access_count = entry.access_count(),
+                        importance = entry.metadata.importance,
                         "Automatically promoting memory to long-term storage"
                     );
                     entry = pm.promote_memory(entry)?;
@@ -492,6 +493,11 @@ impl AgentMemory {
     }
 
     /// Get current memory statistics
+    /// Get the session ID for this agent memory instance
+    pub fn session_id(&self) -> Uuid {
+        self.state.session_id()
+    }
+
     pub fn stats(&self) -> MemoryStats {
         MemoryStats {
             short_term_count: self.state.short_term_memory_count(),

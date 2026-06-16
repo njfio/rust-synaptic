@@ -169,7 +169,7 @@ impl AccessFrequencyPolicy {
 impl MemoryPromotionPolicy for AccessFrequencyPolicy {
     fn should_promote(&self, memory: &MemoryEntry) -> bool {
         memory.memory_type == MemoryType::ShortTerm
-            && memory.access_count >= self.access_threshold
+            && memory.access_count() >= self.access_threshold as u64
     }
 
     fn description(&self) -> String {
@@ -188,7 +188,7 @@ impl MemoryPromotionPolicy for AccessFrequencyPolicy {
             return 0.0;
         }
 
-        let ratio = memory.access_count as f64 / self.access_threshold as f64;
+        let ratio = memory.access_count() as f64 / self.access_threshold as f64;
         ratio.min(1.0)
     }
 }
@@ -210,8 +210,29 @@ impl MemoryPromotionPolicy for AccessFrequencyPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeBasedPolicy {
     /// Minimum age for promotion (in seconds)
-    #[serde(with = "chrono::serde::ts_seconds")]
+    #[serde(with = "duration_secs")]
     pub min_age: ChronoDuration,
+}
+
+/// Serialize/deserialize a `chrono::Duration` as an integer number of seconds.
+mod duration_secs {
+    use chrono::Duration as ChronoDuration;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(duration: &ChronoDuration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(duration.num_seconds())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ChronoDuration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = i64::deserialize(deserializer)?;
+        Ok(ChronoDuration::seconds(secs))
+    }
 }
 
 impl TimeBasedPolicy {
@@ -231,7 +252,7 @@ impl MemoryPromotionPolicy for TimeBasedPolicy {
             return false;
         }
 
-        let age = Utc::now() - memory.created_at;
+        let age = Utc::now() - memory.created_at();
         age >= self.min_age
     }
 
@@ -251,7 +272,7 @@ impl MemoryPromotionPolicy for TimeBasedPolicy {
             return 0.0;
         }
 
-        let age = Utc::now() - memory.created_at;
+        let age = Utc::now() - memory.created_at();
         let ratio = age.num_seconds() as f64 / self.min_age.num_seconds() as f64;
         ratio.min(1.0)
     }
@@ -292,7 +313,7 @@ impl ImportancePolicy {
 impl MemoryPromotionPolicy for ImportancePolicy {
     fn should_promote(&self, memory: &MemoryEntry) -> bool {
         memory.memory_type == MemoryType::ShortTerm
-            && memory.importance >= self.importance_threshold
+            && memory.metadata.importance >= self.importance_threshold
     }
 
     fn description(&self) -> String {
@@ -311,7 +332,7 @@ impl MemoryPromotionPolicy for ImportancePolicy {
             return 0.0;
         }
 
-        (memory.importance / self.importance_threshold).min(1.0)
+        (memory.metadata.importance / self.importance_threshold).min(1.0)
     }
 }
 
@@ -461,8 +482,8 @@ impl MemoryPromotionManager {
 
         tracing::info!(
             memory_key = %memory.key,
-            access_count = memory.access_count,
-            importance = memory.importance,
+            access_count = memory.access_count(),
+            importance = memory.metadata.importance,
             policy = %self.policy.name(),
             "Promoting memory to long-term storage"
         );
@@ -497,9 +518,9 @@ mod tests {
             "test content".to_string(),
             MemoryType::ShortTerm,
         );
-        entry.access_count = access_count;
-        entry.importance = importance;
-        entry.created_at = created_at;
+        entry.metadata.access_count = access_count as u64;
+        entry.metadata.importance = importance;
+        entry.metadata.created_at = created_at;
         entry
     }
 
