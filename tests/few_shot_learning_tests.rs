@@ -1,15 +1,14 @@
 //! Comprehensive tests for Few-Shot Learning System
-//! 
+//!
 //! Tests prototype networks, matching networks, relation networks, and memory-augmented
 //! few-shot learning capabilities with comprehensive validation.
 
-use synaptic::memory::meta_learning::{
-    FewShotLearningEngine, FewShotConfig, FewShotAlgorithm, FewShotEpisode,
-    SupportExample, QueryExample, DistanceMetric, AttentionType, ActivationFunction,
-    PrototypeUpdateStrategy
-};
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
+use synaptic::memory::meta_learning::{
+    ActivationFunction, AttentionType, DistanceMetric, FewShotAlgorithm, FewShotConfig,
+    FewShotEpisode, FewShotLearningEngine, PrototypeUpdateStrategy, QueryExample, SupportExample,
+};
 
 /// Create test few-shot learning configuration
 fn create_test_config() -> FewShotConfig {
@@ -27,18 +26,23 @@ fn create_test_config() -> FewShotConfig {
 }
 
 /// Create test support examples
-fn create_support_examples(num_classes: usize, shots_per_class: usize, feature_dim: usize) -> Vec<SupportExample> {
+fn create_support_examples(
+    num_classes: usize,
+    shots_per_class: usize,
+    feature_dim: usize,
+) -> Vec<SupportExample> {
     let mut examples = Vec::new();
-    
+
     for class_id in 0..num_classes {
         for shot in 0..shots_per_class {
             let mut features = vec![0.0; feature_dim];
-            
+
             // Create class-specific patterns
             for i in 0..feature_dim {
-                features[i] = (class_id as f64 + 1.0) * 0.5 + (shot as f64 * 0.1) + (i as f64 * 0.01);
+                features[i] =
+                    (class_id as f64 + 1.0) * 0.5 + (shot as f64 * 0.1) + (i as f64 * 0.01);
             }
-            
+
             examples.push(SupportExample {
                 id: format!("support_{}_{}", class_id, shot),
                 features,
@@ -51,24 +55,30 @@ fn create_support_examples(num_classes: usize, shots_per_class: usize, feature_d
             });
         }
     }
-    
+
     examples
 }
 
 /// Create test query examples
-fn create_query_examples(num_classes: usize, queries_per_class: usize, feature_dim: usize) -> Vec<QueryExample> {
+fn create_query_examples(
+    num_classes: usize,
+    queries_per_class: usize,
+    feature_dim: usize,
+) -> Vec<QueryExample> {
     let mut examples = Vec::new();
-    
+
     for class_id in 0..num_classes {
         for query in 0..queries_per_class {
             let mut features = vec![0.0; feature_dim];
-            
+
             // Create class-specific patterns with some noise
             for i in 0..feature_dim {
-                features[i] = (class_id as f64 + 1.0) * 0.5 + (query as f64 * 0.05) + (i as f64 * 0.01) + 
-                             (rand::random::<f64>() - 0.5) * 0.1; // Add noise
+                features[i] = (class_id as f64 + 1.0) * 0.5
+                    + (query as f64 * 0.05)
+                    + (i as f64 * 0.01)
+                    + (rand::random::<f64>() - 0.5) * 0.1; // Add noise
             }
-            
+
             examples.push(QueryExample {
                 id: format!("query_{}_{}", class_id, query),
                 features,
@@ -80,15 +90,17 @@ fn create_query_examples(num_classes: usize, queries_per_class: usize, feature_d
             });
         }
     }
-    
+
     examples
 }
 
 /// Create test episode
 fn create_test_episode(config: &FewShotConfig) -> FewShotEpisode {
-    let support_set = create_support_examples(config.num_ways, config.support_shots, config.embedding_dim);
-    let query_set = create_query_examples(config.num_ways, config.query_shots, config.embedding_dim);
-    
+    let support_set =
+        create_support_examples(config.num_ways, config.support_shots, config.embedding_dim);
+    let query_set =
+        create_query_examples(config.num_ways, config.query_shots, config.embedding_dim);
+
     FewShotEpisode {
         id: "test_episode_001".to_string(),
         support_set,
@@ -105,12 +117,12 @@ fn create_test_episode(config: &FewShotConfig) -> FewShotEpisode {
 async fn test_few_shot_engine_creation() -> synaptic::error::Result<()> {
     let config = create_test_config();
     let engine = FewShotLearningEngine::new(config)?;
-    
+
     // Verify engine initialization
     assert_eq!(engine.get_metrics().total_episodes, 0);
     assert_eq!(engine.get_episode_history().len(), 0);
     assert_eq!(engine.get_memory_bank().examples.len(), 0);
-    
+
     Ok(())
 }
 
@@ -118,30 +130,33 @@ async fn test_few_shot_engine_creation() -> synaptic::error::Result<()> {
 async fn test_prototype_network_learning() -> synaptic::error::Result<()> {
     let config = create_test_config();
     let mut engine = FewShotLearningEngine::new(config.clone())?;
-    
+
     // Set prototype network algorithm
     let algorithm = FewShotAlgorithm::PrototypeNetwork {
         distance_metric: DistanceMetric::Euclidean,
         prototype_update_strategy: PrototypeUpdateStrategy::Mean,
     };
     engine.set_algorithm(algorithm);
-    
+
     // Create and process episode
     let episode = create_test_episode(&config);
     let result = engine.process_episode(episode).await?;
-    
+
     // Verify results
     assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-    assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+    assert_eq!(
+        result.predictions.len(),
+        config.num_ways * config.query_shots
+    );
     assert!(result.adaptation_time_ms > 0);
     assert!(result.inference_time_ms > 0);
-    
+
     // Check that prototypes were created
     assert!(engine.get_memory_bank().prototypes.len() > 0);
-    
+
     // Verify per-class accuracy
     assert_eq!(result.per_class_accuracy.len(), config.num_ways);
-    
+
     Ok(())
 }
 
@@ -149,7 +164,7 @@ async fn test_prototype_network_learning() -> synaptic::error::Result<()> {
 async fn test_matching_network_learning() -> synaptic::error::Result<()> {
     let config = create_test_config();
     let mut engine = FewShotLearningEngine::new(config.clone())?;
-    
+
     // Set matching network algorithm
     let algorithm = FewShotAlgorithm::MatchingNetwork {
         attention_type: AttentionType::ScaledDotProduct,
@@ -157,23 +172,26 @@ async fn test_matching_network_learning() -> synaptic::error::Result<()> {
         context_encoding: true,
     };
     engine.set_algorithm(algorithm);
-    
+
     // Create and process episode
     let episode = create_test_episode(&config);
     let result = engine.process_episode(episode).await?;
-    
+
     // Verify results
     assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-    assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+    assert_eq!(
+        result.predictions.len(),
+        config.num_ways * config.query_shots
+    );
     assert!(result.adaptation_time_ms > 0);
     assert!(result.inference_time_ms > 0);
-    
+
     // Check predictions have confidence scores
     for prediction in &result.predictions {
         assert!(prediction.confidence >= 0.0 && prediction.confidence <= 1.0);
         assert!(!prediction.class_probabilities.is_empty());
     }
-    
+
     Ok(())
 }
 
@@ -181,7 +199,7 @@ async fn test_matching_network_learning() -> synaptic::error::Result<()> {
 async fn test_relation_network_learning() -> synaptic::error::Result<()> {
     let config = create_test_config();
     let mut engine = FewShotLearningEngine::new(config.clone())?;
-    
+
     // Set relation network algorithm
     let algorithm = FewShotAlgorithm::RelationNetwork {
         relation_module_layers: vec![256, 128, 64, 1],
@@ -189,23 +207,26 @@ async fn test_relation_network_learning() -> synaptic::error::Result<()> {
         activation_function: ActivationFunction::ReLU,
     };
     engine.set_algorithm(algorithm);
-    
+
     // Create and process episode
     let episode = create_test_episode(&config);
     let result = engine.process_episode(episode).await?;
-    
+
     // Verify results
     assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-    assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+    assert_eq!(
+        result.predictions.len(),
+        config.num_ways * config.query_shots
+    );
     assert!(result.adaptation_time_ms > 0);
     assert!(result.inference_time_ms > 0);
-    
+
     // Check that relation scores are reasonable
     for prediction in &result.predictions {
         assert!(prediction.confidence >= 0.0 && prediction.confidence <= 1.0);
         assert!(prediction.metadata.contains_key("max_relation_score"));
     }
-    
+
     Ok(())
 }
 
@@ -214,28 +235,28 @@ async fn test_memory_augmentation() -> synaptic::error::Result<()> {
     let mut config = create_test_config();
     config.use_memory_augmentation = true;
     config.memory_bank_size = 50;
-    
+
     let mut engine = FewShotLearningEngine::new(config.clone())?;
-    
+
     // Process multiple episodes to build memory
     for i in 0..3 {
         let mut episode = create_test_episode(&config);
         episode.id = format!("episode_{}", i);
-        
+
         let result = engine.process_episode(episode).await?;
         assert!(result.accuracy >= 0.0);
     }
-    
+
     // Check memory bank utilization
     let metrics = engine.get_metrics();
     assert!(metrics.memory_utilization > 0.0);
     assert!(engine.get_memory_bank().examples.len() > 0);
-    
+
     // Test memory bank clearing
     engine.clear_memory_bank().await?;
     assert_eq!(engine.get_memory_bank().examples.len(), 0);
     assert_eq!(engine.get_memory_bank().prototypes.len(), 0);
-    
+
     Ok(())
 }
 
@@ -248,24 +269,27 @@ async fn test_distance_metrics() -> synaptic::error::Result<()> {
         DistanceMetric::Manhattan,
         DistanceMetric::Mahalanobis,
     ];
-    
+
     for metric in distance_metrics {
         let mut engine = FewShotLearningEngine::new(config.clone())?;
-        
+
         let algorithm = FewShotAlgorithm::PrototypeNetwork {
             distance_metric: metric,
             prototype_update_strategy: PrototypeUpdateStrategy::Mean,
         };
         engine.set_algorithm(algorithm);
-        
+
         let episode = create_test_episode(&config);
         let result = engine.process_episode(episode).await?;
-        
+
         // All distance metrics should produce valid results
         assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-        assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+        assert_eq!(
+            result.predictions.len(),
+            config.num_ways * config.query_shots
+        );
     }
-    
+
     Ok(())
 }
 
@@ -278,25 +302,28 @@ async fn test_attention_mechanisms() -> synaptic::error::Result<()> {
         AttentionType::ScaledDotProduct,
         AttentionType::MultiHead { num_heads: 4 },
     ];
-    
+
     for attention_type in attention_types {
         let mut engine = FewShotLearningEngine::new(config.clone())?;
-        
+
         let algorithm = FewShotAlgorithm::MatchingNetwork {
             attention_type,
             bidirectional_encoding: false,
             context_encoding: false,
         };
         engine.set_algorithm(algorithm);
-        
+
         let episode = create_test_episode(&config);
         let result = engine.process_episode(episode).await?;
-        
+
         // All attention mechanisms should produce valid results
         assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-        assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+        assert_eq!(
+            result.predictions.len(),
+            config.num_ways * config.query_shots
+        );
     }
-    
+
     Ok(())
 }
 
@@ -322,7 +349,11 @@ async fn test_parameter_export_import() -> synaptic::error::Result<()> {
 
     // Results should be similar (allowing for some numerical differences)
     let accuracy_diff = (result1.accuracy - result2.accuracy).abs();
-    assert!(accuracy_diff < 0.1, "Accuracy difference too large: {}", accuracy_diff);
+    assert!(
+        accuracy_diff < 0.1,
+        "Accuracy difference too large: {}",
+        accuracy_diff
+    );
 
     Ok(())
 }
@@ -391,7 +422,9 @@ async fn test_activation_functions() -> synaptic::error::Result<()> {
     let config = create_test_config();
     let activations = vec![
         ActivationFunction::ReLU,
-        ActivationFunction::LeakyReLU { negative_slope: 0.01 },
+        ActivationFunction::LeakyReLU {
+            negative_slope: 0.01,
+        },
         ActivationFunction::Tanh,
         ActivationFunction::Sigmoid,
         ActivationFunction::Swish,
@@ -412,7 +445,10 @@ async fn test_activation_functions() -> synaptic::error::Result<()> {
 
         // All activation functions should produce valid results
         assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-        assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+        assert_eq!(
+            result.predictions.len(),
+            config.num_ways * config.query_shots
+        );
     }
 
     Ok(())
@@ -472,12 +508,17 @@ async fn test_performance_consistency() -> synaptic::error::Result<()> {
     }
 
     // Results should be consistent for deterministic algorithm
-    let accuracy_variance = accuracies.iter()
+    let accuracy_variance = accuracies
+        .iter()
         .map(|&acc| (acc - accuracies[0]).abs())
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or(0.0);
 
-    assert!(accuracy_variance < 0.01, "Accuracy variance too high: {}", accuracy_variance);
+    assert!(
+        accuracy_variance < 0.01,
+        "Accuracy variance too high: {}",
+        accuracy_variance
+    );
 
     Ok(())
 }
@@ -535,7 +576,10 @@ async fn test_algorithm_switching() -> synaptic::error::Result<()> {
 
         let result = engine.process_episode(episode.clone()).await?;
         assert!(result.accuracy >= 0.0 && result.accuracy <= 1.0);
-        assert_eq!(result.predictions.len(), config.num_ways * config.query_shots);
+        assert_eq!(
+            result.predictions.len(),
+            config.num_ways * config.query_shots
+        );
     }
 
     Ok(())

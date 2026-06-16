@@ -7,43 +7,43 @@
 //! - Retrieval mechanisms
 //! - Checkpointing system
 
-pub mod types;
-pub mod state;
-pub mod storage;
-pub mod retrieval;
 pub mod checkpoint;
-pub mod knowledge_graph;
-pub mod temporal;
-pub mod management;
 pub mod consolidation;
+pub mod context;
+pub mod indexing;
+pub mod knowledge_graph;
+pub mod management;
 pub mod meta_learning;
 pub mod operations;
 pub mod promotion;
-pub mod indexing;
-pub mod context;
+pub mod retrieval;
+pub mod state;
+pub mod storage;
+pub mod temporal;
+pub mod types;
 
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 
 // Re-export commonly used types
-pub use types::{MemoryEntry, MemoryFragment, MemoryType, MemoryMetadata};
-pub use state::AgentState;
-pub use storage::{Storage, create_storage};
-pub use retrieval::MemoryRetriever;
 pub use checkpoint::CheckpointManager;
 pub use knowledge_graph::{
-    MemoryKnowledgeGraph, Node, Edge, RelationshipType, NodeType,
-    GraphQuery, GraphQueryBuilder, KnowledgeGraph, GraphConfig,
+    Edge, GraphConfig, GraphQuery, GraphQueryBuilder, KnowledgeGraph, MemoryKnowledgeGraph, Node,
+    NodeType, RelationshipType,
 };
 pub use meta_learning::{
-    MetaLearningSystem, MetaLearningConfig, MetaTask, TaskType, MetaAlgorithm,
-    AdaptationResult, MetaLearningMetrics, MAMLLearner, ReptileLearner, PrototypicalLearner,
+    AdaptationResult, MAMLLearner, MetaAlgorithm, MetaLearningConfig, MetaLearningMetrics,
+    MetaLearningSystem, MetaTask, PrototypicalLearner, ReptileLearner, TaskType,
 };
+pub use retrieval::MemoryRetriever;
+pub use state::AgentState;
+pub use storage::{create_storage, Storage};
+pub use types::{MemoryEntry, MemoryFragment, MemoryMetadata, MemoryType};
 
 use crate::error::Result;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Core memory operations trait providing fundamental memory management capabilities.
 ///
@@ -315,16 +315,16 @@ impl CoreMemoryStats {
 
     pub fn update_with_entry(&mut self, entry: &MemoryEntry) {
         self.total_entries += 1;
-        
+
         match entry.memory_type {
             MemoryType::ShortTerm => self.short_term_entries += 1,
             MemoryType::LongTerm => self.long_term_entries += 1,
         }
-        
+
         let entry_size = entry.estimated_size();
         self.total_size_bytes += entry_size;
         self.average_entry_size = self.total_size_bytes as f64 / self.total_entries as f64;
-        
+
         let entry_time = entry.created_at();
         if self.oldest_entry.is_none() || Some(entry_time) < self.oldest_entry {
             self.oldest_entry = Some(entry_time);
@@ -337,7 +337,7 @@ impl CoreMemoryStats {
     pub fn remove_entry(&mut self, entry: &MemoryEntry) {
         if self.total_entries > 0 {
             self.total_entries -= 1;
-            
+
             match entry.memory_type {
                 MemoryType::ShortTerm => {
                     if self.short_term_entries > 0 {
@@ -350,12 +350,12 @@ impl CoreMemoryStats {
                     }
                 }
             }
-            
+
             let entry_size = entry.estimated_size();
             if self.total_size_bytes >= entry_size {
                 self.total_size_bytes -= entry_size;
             }
-            
+
             if self.total_entries > 0 {
                 self.average_entry_size = self.total_size_bytes as f64 / self.total_entries as f64;
             } else {

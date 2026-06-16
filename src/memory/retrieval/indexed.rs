@@ -5,20 +5,16 @@
 
 use crate::{
     error::Result,
-    memory::{
-        types::MemoryEntry,
-        storage::Storage,
-        retrieval::RetrievalConfig,
-    },
+    memory::{retrieval::RetrievalConfig, storage::Storage, types::MemoryEntry},
 };
+use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, BinaryHeap, VecDeque},
+    collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 
 /// Configuration for indexing and caching behavior
 #[derive(Debug, Clone)]
@@ -60,7 +56,7 @@ impl AccessTimeIndex {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Add or update an entry in the index
     pub fn update(&mut self, key: String, timestamp: DateTime<Utc>) {
         // Remove old entry if exists
@@ -72,12 +68,12 @@ impl AccessTimeIndex {
                 }
             }
         }
-        
+
         // Add new entry
         self.index.entry(timestamp).or_default().insert(key.clone());
         self.reverse_index.insert(key, timestamp);
     }
-    
+
     /// Remove an entry from the index
     pub fn remove(&mut self, key: &str) {
         if let Some(timestamp) = self.reverse_index.remove(key) {
@@ -89,11 +85,11 @@ impl AccessTimeIndex {
             }
         }
     }
-    
+
     /// Get the most recently accessed keys
     pub fn get_most_recent_keys(&self, limit: usize) -> Vec<String> {
         let mut result = Vec::new();
-        
+
         // Iterate in reverse order (most recent first)
         for (_, keys) in self.index.iter().rev() {
             for key in keys {
@@ -103,18 +99,18 @@ impl AccessTimeIndex {
                 }
             }
         }
-        
+
         result
     }
-    
+
     /// Get keys within a time range
     pub fn get_keys_in_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<String> {
         let mut result = Vec::new();
-        
+
         for (_timestamp, keys) in self.index.range(start..=end) {
             result.extend(keys.iter().cloned());
         }
-        
+
         result
     }
 }
@@ -144,18 +140,18 @@ impl AccessFrequencyIndex {
             updates_since_rebuild: 0,
         }
     }
-    
+
     /// Update access count for a key
     pub fn update(&mut self, key: String, count: u32) {
         let old_count = self.key_to_count.insert(key.clone(), count);
-        
+
         // Mark as dirty if this is a significant change
         if old_count.map_or(true, |old| old != count) {
             self.dirty = true;
             self.updates_since_rebuild += 1;
         }
     }
-    
+
     /// Remove a key from the index
     pub fn remove(&mut self, key: &str) {
         if self.key_to_count.remove(key).is_some() {
@@ -163,18 +159,18 @@ impl AccessFrequencyIndex {
             self.updates_since_rebuild += 1;
         }
     }
-    
+
     /// Get the most frequently accessed keys
     pub fn get_most_frequent_keys(&mut self, limit: usize) -> Vec<String> {
         // Rebuild heap if dirty and threshold exceeded
         if self.dirty && self.updates_since_rebuild >= self.rebuild_threshold {
             self.rebuild_heap();
         }
-        
+
         // Extract top k elements without consuming the heap
         let mut temp_heap = self.frequency_heap.clone();
         let mut result = Vec::new();
-        
+
         for _ in 0..limit {
             if let Some((_, key)) = temp_heap.pop() {
                 result.push(key);
@@ -182,22 +178,22 @@ impl AccessFrequencyIndex {
                 break;
             }
         }
-        
+
         result
     }
-    
+
     /// Rebuild the heap from current counts
     fn rebuild_heap(&mut self) {
         self.frequency_heap.clear();
-        
+
         for (key, count) in &self.key_to_count {
             self.frequency_heap.push((*count, key.clone()));
         }
-        
+
         self.dirty = false;
         self.updates_since_rebuild = 0;
     }
-    
+
     /// Get access count for a key
     pub fn get_count(&self, key: &str) -> u32 {
         self.key_to_count.get(key).copied().unwrap_or(0)
@@ -217,7 +213,7 @@ impl TagIndex {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Update tags for a key
     pub fn update(&mut self, key: String, tags: HashSet<String>) {
         // Remove old associations
@@ -231,15 +227,18 @@ impl TagIndex {
                 }
             }
         }
-        
+
         // Add new associations
         for tag in &tags {
-            self.tag_to_keys.entry(tag.clone()).or_default().insert(key.clone());
+            self.tag_to_keys
+                .entry(tag.clone())
+                .or_default()
+                .insert(key.clone());
         }
-        
+
         self.key_to_tags.insert(key, tags);
     }
-    
+
     /// Remove a key from the index
     pub fn remove(&mut self, key: &str) {
         if let Some(tags) = self.key_to_tags.remove(key) {
@@ -253,33 +252,33 @@ impl TagIndex {
             }
         }
     }
-    
+
     /// Get keys that have any of the specified tags
     pub fn get_keys_with_any_tags(&self, tags: &[String]) -> Vec<String> {
         let mut result = HashSet::new();
-        
+
         for tag in tags {
             if let Some(keys) = self.tag_to_keys.get(tag) {
                 result.extend(keys.iter().cloned());
             }
         }
-        
+
         result.into_iter().collect()
     }
-    
+
     /// Get keys that have all of the specified tags
     pub fn get_keys_with_all_tags(&self, tags: &[String]) -> Vec<String> {
         if tags.is_empty() {
             return Vec::new();
         }
-        
+
         // Start with keys that have the first tag
         let mut result: HashSet<String> = if let Some(keys) = self.tag_to_keys.get(&tags[0]) {
             keys.clone()
         } else {
             return Vec::new();
         };
-        
+
         // Intersect with keys that have each subsequent tag
         for tag in &tags[1..] {
             if let Some(keys) = self.tag_to_keys.get(tag) {
@@ -288,7 +287,7 @@ impl TagIndex {
                 return Vec::new();
             }
         }
-        
+
         result.into_iter().collect()
     }
 }
@@ -309,39 +308,39 @@ impl HotDataCache {
             max_size,
         }
     }
-    
+
     /// Get an entry from cache
     pub async fn get(&self, key: &str) -> Option<MemoryEntry> {
         if let Some(entry) = self.entries.get(key) {
             let (memory_entry, _) = entry.value();
-            
+
             // Update access order
             let mut order = self.access_order.write().await;
             if let Some(pos) = order.iter().position(|k| k == key) {
                 order.remove(pos);
             }
             order.push_back(key.to_string());
-            
+
             Some(memory_entry.clone())
         } else {
             None
         }
     }
-    
+
     /// Put an entry in cache
     pub async fn put(&self, key: String, entry: MemoryEntry) {
         let now = Instant::now();
-        
+
         // Add to cache
         self.entries.insert(key.clone(), (entry, now));
-        
+
         // Update access order and evict if necessary
         let mut order = self.access_order.write().await;
         if let Some(pos) = order.iter().position(|k| k == &key) {
             order.remove(pos);
         }
         order.push_back(key);
-        
+
         // Evict oldest entries if over capacity
         while order.len() > self.max_size {
             if let Some(oldest_key) = order.pop_front() {
@@ -349,17 +348,17 @@ impl HotDataCache {
             }
         }
     }
-    
+
     /// Remove an entry from cache
     pub async fn remove(&self, key: &str) {
         self.entries.remove(key);
-        
+
         let mut order = self.access_order.write().await;
         if let Some(pos) = order.iter().position(|k| k == key) {
             order.remove(pos);
         }
     }
-    
+
     /// Clear all entries
     pub async fn clear(&self) {
         self.entries.clear();
@@ -385,7 +384,7 @@ impl QueryResultCache {
             ttl: Duration::from_secs(ttl_seconds),
         }
     }
-    
+
     /// Get cached recent results
     pub async fn get_recent(&self, limit: usize) -> Option<Vec<MemoryEntry>> {
         let cache = self.recent_results.read().await;
@@ -396,13 +395,13 @@ impl QueryResultCache {
         }
         None
     }
-    
+
     /// Cache recent results
     pub async fn put_recent(&self, limit: usize, results: Vec<MemoryEntry>) {
         let mut cache = self.recent_results.write().await;
         cache.insert(limit, (results, Instant::now()));
     }
-    
+
     /// Get cached frequent results
     pub async fn get_frequent(&self, limit: usize) -> Option<Vec<MemoryEntry>> {
         let cache = self.frequent_results.read().await;
@@ -413,27 +412,27 @@ impl QueryResultCache {
         }
         None
     }
-    
+
     /// Cache frequent results
     pub async fn put_frequent(&self, limit: usize, results: Vec<MemoryEntry>) {
         let mut cache = self.frequent_results.write().await;
         cache.insert(limit, (results, Instant::now()));
     }
-    
+
     /// Clean up expired entries
     pub async fn cleanup_expired(&self) {
         let now = Instant::now();
-        
+
         {
             let mut cache = self.recent_results.write().await;
             cache.retain(|_, (_, timestamp)| now.duration_since(*timestamp) < self.ttl);
         }
-        
+
         {
             let mut cache = self.frequent_results.write().await;
             cache.retain(|_, (_, timestamp)| now.duration_since(*timestamp) < self.ttl);
         }
-        
+
         {
             let mut cache = self.tag_results.write().await;
             cache.retain(|_, (_, timestamp)| now.duration_since(*timestamp) < self.ttl);
@@ -486,7 +485,9 @@ impl IndexedMemoryRetriever {
 
     /// Start background maintenance tasks
     pub async fn start_maintenance(&self) {
-        let query_cache = Arc::new(QueryResultCache::new(self.indexing_config.query_cache_ttl_seconds));
+        let query_cache = Arc::new(QueryResultCache::new(
+            self.indexing_config.query_cache_ttl_seconds,
+        ));
         let interval = Duration::from_secs(self.indexing_config.index_maintenance_interval_seconds);
 
         let handle = tokio::spawn(async move {

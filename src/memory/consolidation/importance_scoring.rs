@@ -1,16 +1,16 @@
 //! Memory Importance Scoring Engine
-//! 
+//!
 //! Implements sophisticated algorithms for scoring memory importance based on
 //! access patterns, recency, relationships, and semantic significance.
 
+use super::{ConsolidationConfig, MemoryImportance};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use async_trait::async_trait;
 
 /// Simple key-value storage trait for importance scorer persistence
 #[async_trait]
@@ -48,7 +48,9 @@ impl KeyValueStorage for MemoryKeyValueStorage {
         let data = self.data.read().await;
         data.get(key)
             .cloned()
-            .ok_or_else(|| crate::error::MemoryError::NotFound { key: key.to_string() })
+            .ok_or_else(|| crate::error::MemoryError::NotFound {
+                key: key.to_string(),
+            })
     }
 
     async fn set(&self, key: &str, value: &str) -> Result<()> {
@@ -180,7 +182,10 @@ impl ImportanceScorer {
     }
 
     /// Create a new importance scorer with storage backend
-    pub fn with_storage(config: &ConsolidationConfig, storage: Arc<dyn KeyValueStorage>) -> Result<Self> {
+    pub fn with_storage(
+        config: &ConsolidationConfig,
+        storage: Arc<dyn KeyValueStorage>,
+    ) -> Result<Self> {
         let mut scorer = Self::new(config)?;
         scorer.storage = Some(storage);
         Ok(scorer)
@@ -191,14 +196,17 @@ impl ImportanceScorer {
         if let Some(storage) = &self.storage {
             // Load access patterns
             if let Ok(data) = storage.get("importance_scorer:access_patterns").await {
-                if let Ok(patterns) = serde_json::from_str::<HashMap<String, AccessPattern>>(&data) {
+                if let Ok(patterns) = serde_json::from_str::<HashMap<String, AccessPattern>>(&data)
+                {
                     self.access_patterns = patterns;
                 }
             }
 
             // Load relationship cache
             if let Ok(data) = storage.get("importance_scorer:relationship_cache").await {
-                if let Ok(cache) = serde_json::from_str::<HashMap<String, RelationshipMetrics>>(&data) {
+                if let Ok(cache) =
+                    serde_json::from_str::<HashMap<String, RelationshipMetrics>>(&data)
+                {
                     self.relationship_cache = cache;
                 }
             }
@@ -225,25 +233,36 @@ impl ImportanceScorer {
         if let Some(storage) = &self.storage {
             // Save access patterns
             let patterns_json = serde_json::to_string(&self.access_patterns)?;
-            storage.set("importance_scorer:access_patterns", &patterns_json).await?;
+            storage
+                .set("importance_scorer:access_patterns", &patterns_json)
+                .await?;
 
             // Save relationship cache
             let relationships_json = serde_json::to_string(&self.relationship_cache)?;
-            storage.set("importance_scorer:relationship_cache", &relationships_json).await?;
+            storage
+                .set("importance_scorer:relationship_cache", &relationships_json)
+                .await?;
 
             // Save content cache
             let content_json = serde_json::to_string(&self.content_cache)?;
-            storage.set("importance_scorer:content_cache", &content_json).await?;
+            storage
+                .set("importance_scorer:content_cache", &content_json)
+                .await?;
 
             // Save global statistics
             let stats_json = serde_json::to_string(&self.global_stats)?;
-            storage.set("importance_scorer:global_stats", &stats_json).await?;
+            storage
+                .set("importance_scorer:global_stats", &stats_json)
+                .await?;
         }
         Ok(())
     }
 
     /// Calculate importance scores for a batch of memories
-    pub async fn calculate_batch_importance(&mut self, memories: &[MemoryEntry]) -> Result<Vec<MemoryImportance>> {
+    pub async fn calculate_batch_importance(
+        &mut self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<MemoryImportance>> {
         let mut importance_scores = Vec::new();
 
         // Update global statistics
@@ -261,7 +280,10 @@ impl ImportanceScorer {
     }
 
     /// Calculate importance score for a single memory
-    async fn calculate_single_importance(&mut self, memory: &MemoryEntry) -> Result<MemoryImportance> {
+    async fn calculate_single_importance(
+        &mut self,
+        memory: &MemoryEntry,
+    ) -> Result<MemoryImportance> {
         let memory_key = &memory.key;
 
         // Calculate component scores
@@ -304,13 +326,14 @@ impl ImportanceScorer {
     async fn calculate_access_frequency_score(&mut self, memory: &MemoryEntry) -> Result<f64> {
         let access_count = memory.access_count() as f64;
         let days_since_creation = (Utc::now() - memory.created_at()).num_days().max(1) as f64;
-        
+
         // Calculate frequency (accesses per day)
         let frequency = access_count / days_since_creation;
-        
+
         // Normalize using z-score with global statistics
         let normalized_frequency = if self.global_stats.std_access_frequency > 0.0 {
-            (frequency - self.global_stats.mean_access_frequency) / self.global_stats.std_access_frequency
+            (frequency - self.global_stats.mean_access_frequency)
+                / self.global_stats.std_access_frequency
         } else {
             0.0
         };
@@ -319,12 +342,15 @@ impl ImportanceScorer {
         let score = 1.0 / (1.0 + (-normalized_frequency).exp());
 
         // Store access pattern for future use
-        self.access_patterns.insert(memory.key.clone(), AccessPattern {
-            access_count: memory.access_count(),
-            last_accessed: memory.last_accessed(),
-            frequency,
-            consistency: self.calculate_access_consistency(memory),
-        });
+        self.access_patterns.insert(
+            memory.key.clone(),
+            AccessPattern {
+                access_count: memory.access_count(),
+                last_accessed: memory.last_accessed(),
+                frequency,
+                consistency: self.calculate_access_consistency(memory),
+            },
+        );
 
         Ok(score)
     }
@@ -368,9 +394,9 @@ impl ImportanceScorer {
 
         // Combine decay models with adaptive weights
         let weights = self.calculate_decay_model_weights(memory);
-        let combined_score = (exponential_score * weights.0 +
-                             power_score * weights.1 +
-                             log_score * weights.2) * frequency_factor;
+        let combined_score =
+            (exponential_score * weights.0 + power_score * weights.1 + log_score * weights.2)
+                * frequency_factor;
 
         Ok(combined_score.min(1.0).max(0.0))
     }
@@ -440,13 +466,16 @@ impl ImportanceScorer {
         let weighted_centrality = (relationship_strength / max_strength).min(1.0);
 
         // 3. Betweenness Centrality (approximation based on content analysis)
-        let betweenness_centrality = self.calculate_betweenness_approximation(memory, in_degree, out_degree);
+        let betweenness_centrality =
+            self.calculate_betweenness_approximation(memory, in_degree, out_degree);
 
         // 4. Eigenvector Centrality (approximation based on importance propagation)
-        let eigenvector_centrality = self.calculate_eigenvector_approximation(memory, relationship_strength);
+        let eigenvector_centrality =
+            self.calculate_eigenvector_approximation(memory, relationship_strength);
 
         // 5. PageRank-style centrality (considering access patterns)
-        let pagerank_centrality = self.calculate_pagerank_approximation(memory, in_degree, out_degree);
+        let pagerank_centrality =
+            self.calculate_pagerank_approximation(memory, in_degree, out_degree);
 
         // 6. Closeness Centrality (based on semantic similarity potential)
         let closeness_centrality = self.calculate_closeness_approximation(memory);
@@ -454,28 +483,35 @@ impl ImportanceScorer {
         // Adaptive weight combination based on memory characteristics
         let weights = self.calculate_centrality_weights(memory);
 
-        let centrality_score = (
-            degree_centrality * weights.0 +
-            weighted_centrality * weights.1 +
-            betweenness_centrality * weights.2 +
-            eigenvector_centrality * weights.3 +
-            pagerank_centrality * weights.4 +
-            closeness_centrality * weights.5
-        ).min(1.0);
+        let centrality_score = (degree_centrality * weights.0
+            + weighted_centrality * weights.1
+            + betweenness_centrality * weights.2
+            + eigenvector_centrality * weights.3
+            + pagerank_centrality * weights.4
+            + closeness_centrality * weights.5)
+            .min(1.0);
 
         // Cache comprehensive relationship metrics
-        self.relationship_cache.insert(memory.key.clone(), RelationshipMetrics {
-            in_degree,
-            out_degree,
-            relationship_strength,
-            betweenness: betweenness_centrality,
-        });
+        self.relationship_cache.insert(
+            memory.key.clone(),
+            RelationshipMetrics {
+                in_degree,
+                out_degree,
+                relationship_strength,
+                betweenness: betweenness_centrality,
+            },
+        );
 
         Ok(centrality_score)
     }
 
     /// Calculate betweenness centrality approximation
-    fn calculate_betweenness_approximation(&self, memory: &MemoryEntry, in_degree: usize, out_degree: usize) -> f64 {
+    fn calculate_betweenness_approximation(
+        &self,
+        memory: &MemoryEntry,
+        in_degree: usize,
+        out_degree: usize,
+    ) -> f64 {
         // Betweenness is high when a node connects many other nodes
         let connectivity_potential = (in_degree * out_degree) as f64;
         let max_connectivity = 50.0 * 30.0; // Max in_degree * max out_degree
@@ -483,8 +519,11 @@ impl ImportanceScorer {
         let base_betweenness = (connectivity_potential / max_connectivity).min(1.0);
 
         // Boost based on content characteristics that suggest bridging concepts
-        let content_boost = if memory.value.contains("and") || memory.value.contains("between") ||
-                              memory.value.contains("connects") || memory.value.contains("relates") {
+        let content_boost = if memory.value.contains("and")
+            || memory.value.contains("between")
+            || memory.value.contains("connects")
+            || memory.value.contains("relates")
+        {
             0.2
         } else {
             0.0
@@ -494,7 +533,11 @@ impl ImportanceScorer {
     }
 
     /// Calculate eigenvector centrality approximation
-    fn calculate_eigenvector_approximation(&self, memory: &MemoryEntry, relationship_strength: f64) -> f64 {
+    fn calculate_eigenvector_approximation(
+        &self,
+        memory: &MemoryEntry,
+        relationship_strength: f64,
+    ) -> f64 {
         // Eigenvector centrality considers the importance of connected nodes
         let base_score = relationship_strength / 10.0;
 
@@ -514,7 +557,12 @@ impl ImportanceScorer {
     }
 
     /// Calculate PageRank-style centrality approximation
-    fn calculate_pagerank_approximation(&self, memory: &MemoryEntry, in_degree: usize, _out_degree: usize) -> f64 {
+    fn calculate_pagerank_approximation(
+        &self,
+        memory: &MemoryEntry,
+        in_degree: usize,
+        _out_degree: usize,
+    ) -> f64 {
         // PageRank considers both incoming links and the quality of those links
         let damping_factor = 0.85;
         let base_rank = (1.0 - damping_factor) / 100.0; // Assuming 100 total memories
@@ -578,7 +626,7 @@ impl ImportanceScorer {
     /// Calculate content uniqueness score using multiple factors
     async fn calculate_uniqueness_score(&mut self, memory: &MemoryEntry) -> Result<f64> {
         let content = &memory.value;
-        
+
         // Content length factor
         let length = content.len();
         let length_score = if length < 50 || length > 2000 {
@@ -603,16 +651,22 @@ impl ImportanceScorer {
         let semantic_density = self.calculate_semantic_density(content);
 
         // Combine uniqueness factors
-        let uniqueness_score = (length_score * 0.2 + vocabulary_richness * 0.3 + 
-                               entropy * 0.3 + semantic_density * 0.2).min(1.0);
+        let uniqueness_score = (length_score * 0.2
+            + vocabulary_richness * 0.3
+            + entropy * 0.3
+            + semantic_density * 0.2)
+            .min(1.0);
 
         // Cache content analysis
-        self.content_cache.insert(memory.key.clone(), ContentAnalysis {
-            length,
-            vocabulary_richness,
-            semantic_density,
-            entropy,
-        });
+        self.content_cache.insert(
+            memory.key.clone(),
+            ContentAnalysis {
+                length,
+                vocabulary_richness,
+                semantic_density,
+                entropy,
+            },
+        );
 
         Ok(uniqueness_score)
     }
@@ -621,7 +675,7 @@ impl ImportanceScorer {
     async fn calculate_temporal_consistency_score(&self, memory: &MemoryEntry) -> Result<f64> {
         // Analyze access pattern consistency over time
         let access_pattern = self.access_patterns.get(&memory.key);
-        
+
         if let Some(pattern) = access_pattern {
             Ok(pattern.consistency)
         } else {
@@ -641,7 +695,13 @@ impl ImportanceScorer {
     ) -> f64 {
         // Configurable weights for different importance factors
         let weights = [0.25, 0.20, 0.20, 0.20, 0.15]; // Sum = 1.0
-        let scores = [access_frequency, recency_score, centrality_score, uniqueness_score, temporal_consistency];
+        let scores = [
+            access_frequency,
+            recency_score,
+            centrality_score,
+            uniqueness_score,
+            temporal_consistency,
+        ];
 
         let weighted_sum: f64 = weights.iter().zip(scores.iter()).map(|(w, s)| w * s).sum();
         weighted_sum.min(1.0).max(0.0)
@@ -653,7 +713,7 @@ impl ImportanceScorer {
         // In a real implementation, this would compute the diagonal of the Fisher Information Matrix
         let content_length = memory.value.len() as f64;
         let access_count = memory.access_count() as f64;
-        
+
         // Create a simplified Fisher information vector
         let fisher_info = vec![
             content_length / 1000.0, // Normalized content importance
@@ -671,18 +731,22 @@ impl ImportanceScorer {
         }
 
         // Calculate access frequency statistics
-        let frequencies: Vec<f64> = memories.iter()
+        let frequencies: Vec<f64> = memories
+            .iter()
             .map(|m| {
                 let days = (Utc::now() - m.created_at()).num_days().max(1) as f64;
                 m.access_count() as f64 / days
             })
             .collect();
 
-        self.global_stats.mean_access_frequency = frequencies.iter().sum::<f64>() / frequencies.len() as f64;
-        
-        let variance = frequencies.iter()
+        self.global_stats.mean_access_frequency =
+            frequencies.iter().sum::<f64>() / frequencies.len() as f64;
+
+        let variance = frequencies
+            .iter()
             .map(|f| (f - self.global_stats.mean_access_frequency).powi(2))
-            .sum::<f64>() / frequencies.len() as f64;
+            .sum::<f64>()
+            / frequencies.len() as f64;
         self.global_stats.std_access_frequency = variance.sqrt();
 
         Ok(())
@@ -712,7 +776,8 @@ impl ImportanceScorer {
             (base_degree + length_factor).min(50)
         } else {
             // Fallback based on key characteristics
-            let key_complexity = memory_key.len() + memory_key.chars().filter(|c| c.is_alphanumeric()).count();
+            let key_complexity =
+                memory_key.len() + memory_key.chars().filter(|c| c.is_alphanumeric()).count();
             (key_complexity / 3).min(20)
         }
     }
@@ -732,7 +797,10 @@ impl ImportanceScorer {
             (base_degree + entropy_factor).min(30)
         } else {
             // Fallback based on key characteristics
-            let key_diversity = memory_key.chars().collect::<std::collections::HashSet<_>>().len();
+            let key_diversity = memory_key
+                .chars()
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             (key_diversity / 2).min(15)
         }
     }
@@ -778,7 +846,8 @@ impl ImportanceScorer {
 
         // Consistency score based on how close actual access pattern is to expected
         let consistency_ratio = if expected_hours_between_access > 0.0 {
-            1.0 - (hours_since_last_access - expected_hours_between_access).abs() / expected_hours_between_access
+            1.0 - (hours_since_last_access - expected_hours_between_access).abs()
+                / expected_hours_between_access
         } else {
             0.5
         };
@@ -809,10 +878,15 @@ impl ImportanceScorer {
             return 0.0;
         }
 
-        let entropy = char_counts.values()
+        let entropy = char_counts
+            .values()
             .map(|&count| {
                 let p = count as f64 / total_chars;
-                if p > 0.0 { -p * p.log2() } else { 0.0 }
+                if p > 0.0 {
+                    -p * p.log2()
+                } else {
+                    0.0
+                }
             })
             .sum::<f64>();
 
@@ -851,11 +925,14 @@ mod tests {
         let memory = MemoryEntry::new(
             "test_key".to_string(),
             "This is a test memory with some meaningful content for analysis".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
-        let importance = scorer.calculate_single_importance(&memory).await.expect("await should be present");
-        
+        let importance = scorer
+            .calculate_single_importance(&memory)
+            .await
+            .expect("await should be present");
+
         assert!(importance.importance_score >= 0.0);
         assert!(importance.importance_score <= 1.0);
         assert_eq!(importance.memory_key, "test_key");
@@ -867,11 +944,22 @@ mod tests {
         let mut scorer = ImportanceScorer::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Important content".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "Less important".to_string(), MemoryType::ShortTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "Important content".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "Less important".to_string(),
+                MemoryType::ShortTerm,
+            ),
         ];
 
-        let importance_scores = scorer.calculate_batch_importance(&memories).await.expect("await should be present");
+        let importance_scores = scorer
+            .calculate_batch_importance(&memories)
+            .await
+            .expect("await should be present");
 
         assert_eq!(importance_scores.len(), 2);
         for score in importance_scores {
@@ -884,20 +972,36 @@ mod tests {
     async fn test_storage_persistence() {
         let config = ConsolidationConfig::default();
         let storage = Arc::new(MemoryKeyValueStorage::new());
-        let mut scorer = ImportanceScorer::with_storage(&config, storage.clone()).expect("value should be available");
+        let mut scorer = ImportanceScorer::with_storage(&config, storage.clone())
+            .expect("value should be available");
 
         // Create test memories and calculate importance
         let memories = vec![
-            MemoryEntry::new("persist_key1".to_string(), "Persistent content 1".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("persist_key2".to_string(), "Persistent content 2".to_string(), MemoryType::ShortTerm),
+            MemoryEntry::new(
+                "persist_key1".to_string(),
+                "Persistent content 1".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "persist_key2".to_string(),
+                "Persistent content 2".to_string(),
+                MemoryType::ShortTerm,
+            ),
         ];
 
-        let importance_scores = scorer.calculate_batch_importance(&memories).await.expect("await should be present");
+        let importance_scores = scorer
+            .calculate_batch_importance(&memories)
+            .await
+            .expect("await should be present");
         assert_eq!(importance_scores.len(), 2);
 
         // Create a new scorer and load from storage
-        let mut new_scorer = ImportanceScorer::with_storage(&config, storage).expect("value should be available");
-        new_scorer.load_from_storage().await.expect("await should be present");
+        let mut new_scorer =
+            ImportanceScorer::with_storage(&config, storage).expect("value should be available");
+        new_scorer
+            .load_from_storage()
+            .await
+            .expect("await should be present");
 
         // Verify data was persisted
         assert!(!new_scorer.access_patterns.is_empty());
@@ -956,19 +1060,25 @@ mod tests {
         let mut recent_memory = MemoryEntry::new(
             "recent".to_string(),
             "Recent important content".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
         recent_memory.metadata.importance = 0.9;
 
         let mut old_memory = MemoryEntry::new(
             "old".to_string(),
             "Old content".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
         old_memory.metadata.importance = 0.3;
 
-        let recent_score = scorer.calculate_recency_score(&recent_memory).await.expect("await should be present");
-        let old_score = scorer.calculate_recency_score(&old_memory).await.expect("await should be present");
+        let recent_score = scorer
+            .calculate_recency_score(&recent_memory)
+            .await
+            .expect("await should be present");
+        let old_score = scorer
+            .calculate_recency_score(&old_memory)
+            .await
+            .expect("await should be present");
 
         // Recent memory should have higher recency score
         assert!(recent_score >= old_score);
@@ -984,14 +1094,14 @@ mod tests {
         let mut important_memory = MemoryEntry::new(
             "important".to_string(),
             "Very important content with lots of detail and complexity".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
         important_memory.metadata.importance = 0.9;
 
         let mut simple_memory = MemoryEntry::new(
             "simple".to_string(),
             "Simple".to_string(),
-            MemoryType::ShortTerm
+            MemoryType::ShortTerm,
         );
         simple_memory.metadata.importance = 0.1;
 
@@ -1018,12 +1128,18 @@ mod tests {
         let mut isolated_memory = MemoryEntry::new(
             "isolated".to_string(),
             "Isolated concept".to_string(),
-            MemoryType::ShortTerm
+            MemoryType::ShortTerm,
         );
         isolated_memory.metadata.importance = 0.2;
 
-        let hub_centrality = scorer.calculate_centrality_score(&hub_memory).await.expect("await should be present");
-        let isolated_centrality = scorer.calculate_centrality_score(&isolated_memory).await.expect("await should be present");
+        let hub_centrality = scorer
+            .calculate_centrality_score(&hub_memory)
+            .await
+            .expect("await should be present");
+        let isolated_centrality = scorer
+            .calculate_centrality_score(&isolated_memory)
+            .await
+            .expect("await should be present");
 
         // Hub memory should have higher centrality
         assert!(hub_centrality > isolated_centrality);
@@ -1039,13 +1155,13 @@ mod tests {
         let bridge_memory = MemoryEntry::new(
             "bridge".to_string(),
             "This concept connects different domains and bridges various ideas".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
         let regular_memory = MemoryEntry::new(
             "regular".to_string(),
             "Regular content without bridging concepts".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
         let bridge_betweenness = scorer.calculate_betweenness_approximation(&bridge_memory, 10, 8);
@@ -1064,7 +1180,7 @@ mod tests {
         let mut frequent_memory = MemoryEntry::new(
             "frequent".to_string(),
             "Frequently accessed content".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
         // Simulate frequent access
         for _ in 0..15 {
@@ -1074,7 +1190,7 @@ mod tests {
         let mut rare_memory = MemoryEntry::new(
             "rare".to_string(),
             "Rarely accessed content".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
         rare_memory.mark_accessed(); // Only accessed once
 
@@ -1100,7 +1216,10 @@ mod tests {
         );
 
         // Calculate content analysis first
-        let _ = scorer.calculate_uniqueness_score(&rich_memory).await.expect("await should be present");
+        let _ = scorer
+            .calculate_uniqueness_score(&rich_memory)
+            .await
+            .expect("await should be present");
 
         let in_degree = scorer.estimate_in_degree("rich_content");
         let out_degree = scorer.estimate_out_degree("rich_content");
@@ -1124,7 +1243,10 @@ mod tests {
             MemoryType::LongTerm
         );
 
-        let importance = scorer.calculate_single_importance(&comprehensive_memory).await.expect("await should be present");
+        let importance = scorer
+            .calculate_single_importance(&comprehensive_memory)
+            .await
+            .expect("await should be present");
 
         // Verify all importance components are calculated
         assert!(importance.importance_score >= 0.0 && importance.importance_score <= 1.0);

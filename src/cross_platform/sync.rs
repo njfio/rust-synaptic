@@ -15,16 +15,16 @@ use tokio::time::interval;
 pub struct SyncManager {
     /// Sync configuration
     config: SyncConfig,
-    
+
     /// Pending sync operations
     pending_operations: Arc<Mutex<Vec<SyncOperation>>>,
-    
+
     /// Sync state tracking
     sync_state: Arc<RwLock<SyncState>>,
-    
+
     /// Remote endpoints
     remote_endpoints: Vec<RemoteEndpoint>,
-    
+
     /// Conflict resolution strategy
     conflict_resolver: Box<dyn ConflictResolver + Send + Sync>,
 }
@@ -34,25 +34,25 @@ pub struct SyncManager {
 pub struct SyncConfig {
     /// Enable automatic synchronization
     pub auto_sync: bool,
-    
+
     /// Sync interval (seconds)
     pub sync_interval_seconds: u64,
-    
+
     /// Enable real-time sync
     pub enable_realtime_sync: bool,
-    
+
     /// Maximum retry attempts
     pub max_retry_attempts: u32,
-    
+
     /// Retry delay (seconds)
     pub retry_delay_seconds: u64,
-    
+
     /// Enable conflict detection
     pub enable_conflict_detection: bool,
-    
+
     /// Sync timeout (seconds)
     pub sync_timeout_seconds: u64,
-    
+
     /// Batch size for sync operations
     pub batch_size: usize,
 }
@@ -82,24 +82,19 @@ pub enum SyncOperation {
         timestamp: u64,
         checksum: String,
     },
-    
+
     /// Retrieve data from remote
     Retrieve {
         key: String,
         local_timestamp: Option<u64>,
     },
-    
+
     /// Delete data from remote
-    Delete {
-        key: String,
-        timestamp: u64,
-    },
-    
+    Delete { key: String, timestamp: u64 },
+
     /// Sync metadata
-    SyncMetadata {
-        keys: Vec<String>,
-    },
-    
+    SyncMetadata { keys: Vec<String> },
+
     /// Resolve conflict
     ResolveConflict {
         key: String,
@@ -114,13 +109,13 @@ pub enum SyncOperation {
 pub enum ConflictResolution {
     /// Use local version
     UseLocal,
-    
+
     /// Use remote version
     UseRemote,
-    
+
     /// Merge versions
     Merge(Vec<u8>),
-    
+
     /// Create new version with timestamp
     CreateNew(u64),
 }
@@ -130,16 +125,16 @@ pub enum ConflictResolution {
 pub struct SyncState {
     /// Last successful sync timestamp
     pub last_sync: Option<u64>,
-    
+
     /// Currently syncing
     pub is_syncing: bool,
-    
+
     /// Sync statistics
     pub stats: SyncStatistics,
-    
+
     /// Failed operations
     pub failed_operations: Vec<(SyncOperation, u32)>, // (operation, retry_count)
-    
+
     /// Conflict count
     pub conflict_count: u32,
 }
@@ -161,19 +156,19 @@ impl Default for SyncState {
 pub struct SyncStatistics {
     /// Total sync operations
     pub total_operations: u64,
-    
+
     /// Successful operations
     pub successful_operations: u64,
-    
+
     /// Failed operations
     pub failed_operations: u64,
-    
+
     /// Conflicts resolved
     pub conflicts_resolved: u64,
-    
+
     /// Total bytes synced
     pub bytes_synced: u64,
-    
+
     /// Average sync time (milliseconds)
     pub average_sync_time_ms: u64,
 }
@@ -183,16 +178,16 @@ pub struct SyncStatistics {
 pub struct RemoteEndpoint {
     /// Endpoint URL
     pub url: String,
-    
+
     /// Authentication token
     pub auth_token: Option<String>,
-    
+
     /// Endpoint type
     pub endpoint_type: EndpointType,
-    
+
     /// Priority (higher = preferred)
     pub priority: u32,
-    
+
     /// Health status
     pub is_healthy: bool,
 }
@@ -202,16 +197,16 @@ pub struct RemoteEndpoint {
 pub enum EndpointType {
     /// REST API endpoint
     RestApi,
-    
+
     /// WebSocket endpoint
     WebSocket,
-    
+
     /// Cloud storage (S3, etc.)
     CloudStorage,
-    
+
     /// Peer-to-peer connection
     P2P,
-    
+
     /// Custom endpoint
     Custom(String),
 }
@@ -274,7 +269,7 @@ impl ConflictResolver for MergeConflictResolver {
         let mut merged = local_data.to_vec();
         merged.extend_from_slice(b"\n--- MERGE SEPARATOR ---\n");
         merged.extend_from_slice(remote_data);
-        
+
         Ok(ConflictResolution::Merge(merged))
     }
 }
@@ -295,20 +290,24 @@ impl SyncManager {
     pub fn add_endpoint(&mut self, endpoint: RemoteEndpoint) {
         self.remote_endpoints.push(endpoint);
         // Sort by priority (highest first)
-        self.remote_endpoints.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.remote_endpoints
+            .sort_by(|a, b| b.priority.cmp(&a.priority));
     }
 
     /// Queue a sync operation
-    pub async fn queue_sync_operation(&self, operation: SyncOperation) -> Result<(), SynapticError> {
+    pub async fn queue_sync_operation(
+        &self,
+        operation: SyncOperation,
+    ) -> Result<(), SynapticError> {
         let mut pending = self.pending_operations.lock().await;
         pending.push(operation);
-        
+
         // Trigger immediate sync if real-time is enabled
         if self.config.enable_realtime_sync {
             drop(pending);
             self.sync_immediate().await?;
         }
-        
+
         Ok(())
     }
 
@@ -320,28 +319,26 @@ impl SyncManager {
 
         let sync_interval = Duration::from_secs(self.config.sync_interval_seconds);
         let mut interval_timer = interval(sync_interval);
-        
+
         let pending_operations = Arc::clone(&self.pending_operations);
         let sync_state = Arc::clone(&self.sync_state);
         let config = self.config.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 interval_timer.tick().await;
-                
+
                 // Check if we have pending operations
                 let has_pending = {
                     let pending = pending_operations.lock().await;
                     !pending.is_empty()
                 };
-                
+
                 if has_pending {
                     // Perform sync
-                    if let Err(e) = Self::perform_sync_batch(
-                        &pending_operations,
-                        &sync_state,
-                        &config,
-                    ).await {
+                    if let Err(e) =
+                        Self::perform_sync_batch(&pending_operations, &sync_state, &config).await
+                    {
                         tracing::error!(
                             component = "cross_platform_sync",
                             operation = "auto_sync",
@@ -358,27 +355,25 @@ impl SyncManager {
 
     /// Perform immediate synchronization
     pub async fn sync_immediate(&self) -> Result<(), SynapticError> {
-        Self::perform_sync_batch(
-            &self.pending_operations,
-            &self.sync_state,
-            &self.config,
-        ).await
+        Self::perform_sync_batch(&self.pending_operations, &self.sync_state, &self.config).await
     }
 
     /// Perform full synchronization
     pub async fn sync(&self) -> Result<(), SynapticError> {
         let start_time = SystemTime::now();
-        
+
         {
             let mut state = self.sync_state.write().await;
             if state.is_syncing {
-                return Err(SynapticError::ProcessingError("Sync already in progress".to_string()));
+                return Err(SynapticError::ProcessingError(
+                    "Sync already in progress".to_string(),
+                ));
             }
             state.is_syncing = true;
         }
 
         let result = self.sync_immediate().await;
-        
+
         {
             let mut state = self.sync_state.write().await;
             state.is_syncing = false;
@@ -386,7 +381,9 @@ impl SyncManager {
             if result.is_ok() {
                 let current_time = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+                    .map_err(|e| {
+                        SynapticError::ProcessingError(format!("Failed to get system time: {}", e))
+                    })?
                     .as_secs();
                 state.last_sync = Some(current_time);
 
@@ -434,7 +431,7 @@ impl SyncManager {
                         error = %e,
                         "Sync operation failed"
                     );
-                    
+
                     // Add to failed operations for retry
                     let mut state = sync_state.write().await;
                     state.failed_operations.push((operation, 1));
@@ -456,7 +453,12 @@ impl SyncManager {
     /// Execute a single sync operation
     async fn execute_sync_operation(operation: &SyncOperation) -> Result<(), SynapticError> {
         match operation {
-            SyncOperation::Store { key, data, timestamp, checksum } => {
+            SyncOperation::Store {
+                key,
+                data,
+                timestamp,
+                checksum,
+            } => {
                 // Simulate storing to remote
                 tracing::debug!(
                     component = "cross_platform_sync",
@@ -469,7 +471,10 @@ impl SyncManager {
                 );
                 Ok(())
             }
-            SyncOperation::Retrieve { key, local_timestamp } => {
+            SyncOperation::Retrieve {
+                key,
+                local_timestamp,
+            } => {
                 // Simulate retrieving from remote
                 tracing::debug!(
                     component = "cross_platform_sync",
@@ -501,7 +506,9 @@ impl SyncManager {
                 );
                 Ok(())
             }
-            SyncOperation::ResolveConflict { key, resolution, .. } => {
+            SyncOperation::ResolveConflict {
+                key, resolution, ..
+            } => {
                 // Simulate resolving conflict
                 tracing::info!(
                     component = "cross_platform_sync",
@@ -576,10 +583,15 @@ impl SyncManager {
     }
 
     /// Create sync operation for store
-    pub fn create_store_operation(key: String, data: Vec<u8>) -> Result<SyncOperation, SynapticError> {
+    pub fn create_store_operation(
+        key: String,
+        data: Vec<u8>,
+    ) -> Result<SyncOperation, SynapticError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get system time: {}", e))
+            })?
             .as_secs();
         let checksum = Self::calculate_checksum(&data);
 
@@ -595,7 +607,9 @@ impl SyncManager {
     pub fn create_delete_operation(key: String) -> Result<SyncOperation, SynapticError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get system time: {}", e))
+            })?
             .as_secs();
 
         Ok(SyncOperation::Delete { key, timestamp })
@@ -610,7 +624,7 @@ mod tests {
     async fn test_sync_manager_creation() {
         let config = SyncConfig::default();
         let manager = SyncManager::new(config).expect("value should be available");
-        
+
         let state = manager.get_sync_state().await;
         assert!(!state.is_syncing);
         assert_eq!(state.stats.total_operations, 0);
@@ -620,14 +634,15 @@ mod tests {
     async fn test_queue_sync_operation() {
         let config = SyncConfig::default();
         let manager = SyncManager::new(config).expect("value should be available");
-        
-        let operation = SyncManager::create_store_operation(
-            "test_key".to_string(),
-            b"test_data".to_vec(),
-        );
-        
-        manager.queue_sync_operation(operation).await.expect("await should be present");
-        
+
+        let operation =
+            SyncManager::create_store_operation("test_key".to_string(), b"test_data".to_vec());
+
+        manager
+            .queue_sync_operation(operation)
+            .await
+            .expect("await should be present");
+
         let pending = manager.pending_operations.lock().await;
         assert_eq!(pending.len(), 1);
     }
@@ -635,30 +650,22 @@ mod tests {
     #[test]
     fn test_conflict_resolver() {
         let resolver = LastWriteWinsResolver;
-        
-        let resolution = resolver.resolve_conflict(
-            "test_key",
-            b"local_data",
-            1000,
-            b"remote_data",
-            2000,
-        ).expect("value should be available");
-        
+
+        let resolution = resolver
+            .resolve_conflict("test_key", b"local_data", 1000, b"remote_data", 2000)
+            .expect("value should be available");
+
         assert!(matches!(resolution, ConflictResolution::UseRemote));
     }
 
     #[test]
     fn test_merge_conflict_resolver() {
         let resolver = MergeConflictResolver;
-        
-        let resolution = resolver.resolve_conflict(
-            "test_key",
-            b"local_data",
-            1000,
-            b"remote_data",
-            2000,
-        ).expect("value should be available");
-        
+
+        let resolution = resolver
+            .resolve_conflict("test_key", b"local_data", 1000, b"remote_data", 2000)
+            .expect("value should be available");
+
         if let ConflictResolution::Merge(merged) = resolution {
             assert!(merged.len() > b"local_data".len() + b"remote_data".len());
         } else {

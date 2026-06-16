@@ -3,11 +3,10 @@
 use crate::error::{MemoryError, Result};
 use crate::error_handling::SafeCompare;
 use crate::memory::types::{MemoryEntry, MemoryType};
-use chrono::{DateTime, Utc, Timelike, Datelike};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use strsim::{jaro_winkler, normalized_damerau_levenshtein, sorensen_dice};
-
 
 /// Advanced search query with multiple criteria
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,19 +41,31 @@ pub enum SearchFilter {
     /// Filter by confidence range
     ConfidenceRange { min: f64, max: f64 },
     /// Filter by creation date range
-    CreatedDateRange { start: DateTime<Utc>, end: DateTime<Utc> },
+    CreatedDateRange {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    },
     /// Filter by last access date range
-    AccessedDateRange { start: DateTime<Utc>, end: DateTime<Utc> },
+    AccessedDateRange {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    },
     /// Filter by access frequency
     AccessFrequency { min_count: u64 },
     /// Filter by content length
-    ContentLength { min_length: usize, max_length: Option<usize> },
+    ContentLength {
+        min_length: usize,
+        max_length: Option<usize>,
+    },
     /// Filter by custom field
     CustomField { key: String, value: String },
     /// Filter by similarity to a reference memory
     SimilarTo { memory_key: String, threshold: f64 },
     /// Filter by relationship in knowledge graph
-    RelatedTo { memory_key: String, max_distance: usize },
+    RelatedTo {
+        memory_key: String,
+        max_distance: usize,
+    },
 }
 
 /// Ranking strategies for search results
@@ -280,7 +291,9 @@ impl AdvancedSearchEngine {
     }
 
     /// Create a new advanced search engine with knowledge graph
-    pub fn with_knowledge_graph(knowledge_graph: crate::memory::knowledge_graph::MemoryKnowledgeGraph) -> Self {
+    pub fn with_knowledge_graph(
+        knowledge_graph: crate::memory::knowledge_graph::MemoryKnowledgeGraph,
+    ) -> Self {
         Self {
             search_index: SearchIndex::new(),
             config: SearchConfig::default(),
@@ -291,7 +304,10 @@ impl AdvancedSearchEngine {
     }
 
     /// Set the knowledge graph for graph-based operations
-    pub fn set_knowledge_graph(&mut self, knowledge_graph: crate::memory::knowledge_graph::MemoryKnowledgeGraph) {
+    pub fn set_knowledge_graph(
+        &mut self,
+        knowledge_graph: crate::memory::knowledge_graph::MemoryKnowledgeGraph,
+    ) {
         self.knowledge_graph = Some(knowledge_graph);
     }
 
@@ -302,14 +318,15 @@ impl AdvancedSearchEngine {
         query: SearchQuery,
     ) -> Result<Vec<SearchResult>> {
         let _start_time = std::time::Instant::now();
-        
+
         // Note: Search history update removed for immutable method
 
         // Execute the search
         let mut results = self.execute_search(storage, &query).await?;
 
         // Apply ranking
-        self.rank_results(&mut results, &query.ranking_strategy).await?;
+        self.rank_results(&mut results, &query.ranking_strategy)
+            .await?;
 
         // Apply limit and offset
         if let Some(offset) = query.offset {
@@ -366,9 +383,7 @@ impl AdvancedSearchEngine {
         text_query: &str,
     ) -> Result<Vec<SearchResult>> {
         let query_lower = text_query.to_lowercase();
-        let query_words: Vec<&str> = query_lower
-            .split_whitespace()
-            .collect();
+        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
         let mut candidate_memories: HashMap<String, f64> = HashMap::new();
 
@@ -386,7 +401,8 @@ impl AdvancedSearchEngine {
                 for (fuzzy_word, similarity) in fuzzy_matches {
                     if let Some(memory_keys) = self.search_index.word_index.get(&fuzzy_word) {
                         for memory_key in memory_keys {
-                            *candidate_memories.entry(memory_key.clone()).or_insert(0.0) += similarity;
+                            *candidate_memories.entry(memory_key.clone()).or_insert(0.0) +=
+                                similarity;
                         }
                     }
                 }
@@ -407,7 +423,10 @@ impl AdvancedSearchEngine {
                         relevance_score,
                         ranking_score: relevance_score,
                         highlights,
-                        explanation: format!("Matched {} query terms with score {:.2}", score as usize, relevance_score),
+                        explanation: format!(
+                            "Matched {} query terms with score {:.2}",
+                            score as usize, relevance_score
+                        ),
                         related_memories: Vec::new(),
                         search_metadata: SearchResultMetadata {
                             generated_at: Utc::now(),
@@ -418,7 +437,10 @@ impl AdvancedSearchEngine {
                     });
                 } else {
                     // Memory not found in storage, but exists in index - log warning
-                    tracing::warn!("Memory '{}' found in search index but not in storage", memory_key);
+                    tracing::warn!(
+                        "Memory '{}' found in search index but not in storage",
+                        memory_key
+                    );
                 }
             }
         }
@@ -427,7 +449,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Apply search filters to results
-    async fn apply_filters(&self, mut results: Vec<SearchResult>, filters: &[SearchFilter]) -> Result<Vec<SearchResult>> {
+    async fn apply_filters(
+        &self,
+        mut results: Vec<SearchResult>,
+        filters: &[SearchFilter],
+    ) -> Result<Vec<SearchResult>> {
         for filter in filters {
             results = self.apply_single_filter(results, filter).await?;
         }
@@ -435,80 +461,99 @@ impl AdvancedSearchEngine {
     }
 
     /// Apply a single filter
-    async fn apply_single_filter(&self, results: Vec<SearchResult>, filter: &SearchFilter) -> Result<Vec<SearchResult>> {
+    async fn apply_single_filter(
+        &self,
+        results: Vec<SearchResult>,
+        filter: &SearchFilter,
+    ) -> Result<Vec<SearchResult>> {
         match filter {
-            SearchFilter::MemoryType(memory_type) => {
-                Ok(results.into_iter()
-                    .filter(|r| r.memory.memory_type == *memory_type)
-                    .collect())
+            SearchFilter::MemoryType(memory_type) => Ok(results
+                .into_iter()
+                .filter(|r| r.memory.memory_type == *memory_type)
+                .collect()),
+            SearchFilter::Tags(tags) => Ok(results
+                .into_iter()
+                .filter(|r| tags.iter().any(|tag| r.memory.has_tag(tag)))
+                .collect()),
+            SearchFilter::ImportanceRange { min, max } => Ok(results
+                .into_iter()
+                .filter(|r| {
+                    r.memory.metadata.importance >= *min && r.memory.metadata.importance <= *max
+                })
+                .collect()),
+            SearchFilter::ConfidenceRange { min, max } => Ok(results
+                .into_iter()
+                .filter(|r| {
+                    r.memory.metadata.confidence >= *min && r.memory.metadata.confidence <= *max
+                })
+                .collect()),
+            SearchFilter::CreatedDateRange { start, end } => Ok(results
+                .into_iter()
+                .filter(|r| {
+                    let created = r.memory.created_at();
+                    created >= *start && created <= *end
+                })
+                .collect()),
+            SearchFilter::AccessedDateRange { start, end } => Ok(results
+                .into_iter()
+                .filter(|r| {
+                    let accessed = r.memory.last_accessed();
+                    accessed >= *start && accessed <= *end
+                })
+                .collect()),
+            SearchFilter::AccessFrequency { min_count } => Ok(results
+                .into_iter()
+                .filter(|r| r.memory.access_count() >= *min_count)
+                .collect()),
+            SearchFilter::ContentLength {
+                min_length,
+                max_length,
+            } => Ok(results
+                .into_iter()
+                .filter(|r| {
+                    let len = r.memory.value.len();
+                    len >= *min_length && max_length.map_or(true, |max| len <= max)
+                })
+                .collect()),
+            SearchFilter::CustomField { key, value } => Ok(results
+                .into_iter()
+                .filter(|r| r.memory.metadata.get_custom_field(key) == Some(value))
+                .collect()),
+            SearchFilter::SimilarTo {
+                memory_key,
+                threshold,
+            } => {
+                self.apply_similarity_filter(results, memory_key, *threshold)
+                    .await
             }
-            SearchFilter::Tags(tags) => {
-                Ok(results.into_iter()
-                    .filter(|r| tags.iter().any(|tag| r.memory.has_tag(tag)))
-                    .collect())
-            }
-            SearchFilter::ImportanceRange { min, max } => {
-                Ok(results.into_iter()
-                    .filter(|r| r.memory.metadata.importance >= *min && r.memory.metadata.importance <= *max)
-                    .collect())
-            }
-            SearchFilter::ConfidenceRange { min, max } => {
-                Ok(results.into_iter()
-                    .filter(|r| r.memory.metadata.confidence >= *min && r.memory.metadata.confidence <= *max)
-                    .collect())
-            }
-            SearchFilter::CreatedDateRange { start, end } => {
-                Ok(results.into_iter()
-                    .filter(|r| {
-                        let created = r.memory.created_at();
-                        created >= *start && created <= *end
-                    })
-                    .collect())
-            }
-            SearchFilter::AccessedDateRange { start, end } => {
-                Ok(results.into_iter()
-                    .filter(|r| {
-                        let accessed = r.memory.last_accessed();
-                        accessed >= *start && accessed <= *end
-                    })
-                    .collect())
-            }
-            SearchFilter::AccessFrequency { min_count } => {
-                Ok(results.into_iter()
-                    .filter(|r| r.memory.access_count() >= *min_count)
-                    .collect())
-            }
-            SearchFilter::ContentLength { min_length, max_length } => {
-                Ok(results.into_iter()
-                    .filter(|r| {
-                        let len = r.memory.value.len();
-                        len >= *min_length && max_length.map_or(true, |max| len <= max)
-                    })
-                    .collect())
-            }
-            SearchFilter::CustomField { key, value } => {
-                Ok(results.into_iter()
-                    .filter(|r| r.memory.metadata.get_custom_field(key) == Some(value))
-                    .collect())
-            }
-            SearchFilter::SimilarTo { memory_key, threshold } => {
-                self.apply_similarity_filter(results, memory_key, *threshold).await
-            }
-            SearchFilter::RelatedTo { memory_key, max_distance } => {
-                self.apply_graph_distance_filter(results, memory_key, *max_distance).await
+            SearchFilter::RelatedTo {
+                memory_key,
+                max_distance,
+            } => {
+                self.apply_graph_distance_filter(results, memory_key, *max_distance)
+                    .await
             }
         }
     }
 
     /// Rank search results based on strategy
-    async fn rank_results(&self, results: &mut [SearchResult], strategy: &RankingStrategy) -> Result<()> {
+    async fn rank_results(
+        &self,
+        results: &mut [SearchResult],
+        strategy: &RankingStrategy,
+    ) -> Result<()> {
         use crate::error_handling::SafeCompare;
         match strategy {
             RankingStrategy::Relevance => {
                 results.sort_by(|a, b| b.relevance_score.safe_partial_cmp(&a.relevance_score));
             }
             RankingStrategy::Importance => {
-                results.sort_by(|a, b| b.memory.metadata.importance.safe_partial_cmp(&a.memory.metadata.importance));
+                results.sort_by(|a, b| {
+                    b.memory
+                        .metadata
+                        .importance
+                        .safe_partial_cmp(&a.memory.metadata.importance)
+                });
             }
             RankingStrategy::Recency => {
                 results.sort_by(|a, b| b.memory.created_at().cmp(&a.memory.created_at()));
@@ -517,7 +562,12 @@ impl AdvancedSearchEngine {
                 results.sort_by(|a, b| b.memory.access_count().cmp(&a.memory.access_count()));
             }
             RankingStrategy::Confidence => {
-                results.sort_by(|a, b| b.memory.metadata.confidence.safe_partial_cmp(&a.memory.metadata.confidence));
+                results.sort_by(|a, b| {
+                    b.memory
+                        .metadata
+                        .confidence
+                        .safe_partial_cmp(&a.memory.metadata.confidence)
+                });
             }
             RankingStrategy::ContentLength => {
                 results.sort_by(|a, b| b.memory.value.len().cmp(&a.memory.value.len()));
@@ -540,7 +590,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Apply combined ranking using multiple factors
-    async fn apply_combined_ranking(&self, results: &mut [SearchResult], factors: &[RankingFactor]) -> Result<()> {
+    async fn apply_combined_ranking(
+        &self,
+        results: &mut [SearchResult],
+        factors: &[RankingFactor],
+    ) -> Result<()> {
         for result in results.iter_mut() {
             let mut combined_score = 0.0;
             let mut total_weight = 0.0;
@@ -550,19 +604,22 @@ impl AdvancedSearchEngine {
                     RankingFactorType::Relevance => result.relevance_score,
                     RankingFactorType::Importance => result.memory.metadata.importance,
                     RankingFactorType::Recency => {
-                        let age_hours = (Utc::now() - result.memory.created_at()).num_hours() as f64;
+                        let age_hours =
+                            (Utc::now() - result.memory.created_at()).num_hours() as f64;
                         (1.0 / (1.0 + age_hours / 24.0)).max(0.0)
                     }
                     RankingFactorType::Frequency => {
                         (result.memory.access_count() as f64 / 100.0).min(1.0)
                     }
                     RankingFactorType::Confidence => result.memory.metadata.confidence,
-                    RankingFactorType::GraphCentrality => {
-                        self.calculate_graph_centrality(&result.memory.key).await.unwrap_or(0.5)
-                    }
-                    RankingFactorType::UserPreference => {
-                        self.calculate_user_preference_score(&result.memory).await.unwrap_or(0.5)
-                    }
+                    RankingFactorType::GraphCentrality => self
+                        .calculate_graph_centrality(&result.memory.key)
+                        .await
+                        .unwrap_or(0.5),
+                    RankingFactorType::UserPreference => self
+                        .calculate_user_preference_score(&result.memory)
+                        .await
+                        .unwrap_or(0.5),
                 };
 
                 combined_score += factor_score * factor.weight;
@@ -581,7 +638,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Apply advanced custom ranking strategy with machine learning and user behavior analysis
-    async fn apply_custom_ranking(&self, results: &mut [SearchResult], strategy_name: &str) -> Result<()> {
+    async fn apply_custom_ranking(
+        &self,
+        results: &mut [SearchResult],
+        strategy_name: &str,
+    ) -> Result<()> {
         match strategy_name {
             "recent_and_important" => {
                 // Enhanced recency and importance with decay functions
@@ -595,21 +656,26 @@ impl AdvancedSearchEngine {
             "user_engagement" => {
                 // Advanced user engagement with behavioral patterns
                 for result in results.iter_mut() {
-                    let engagement_score = self.calculate_user_engagement_score(&result.memory).await?;
+                    let engagement_score =
+                        self.calculate_user_engagement_score(&result.memory).await?;
                     result.ranking_score = engagement_score;
                 }
             }
             "content_richness" => {
                 // Sophisticated content analysis
                 for result in results.iter_mut() {
-                    let richness_score = self.calculate_content_richness_score(&result.memory).await?;
+                    let richness_score = self
+                        .calculate_content_richness_score(&result.memory)
+                        .await?;
                     result.ranking_score = richness_score;
                 }
             }
             "balanced" => {
                 // Multi-factor balanced ranking with adaptive weights
                 for result in results.iter_mut() {
-                    let balanced_score = self.calculate_adaptive_balanced_score(&result.memory, result.relevance_score).await?;
+                    let balanced_score = self
+                        .calculate_adaptive_balanced_score(&result.memory, result.relevance_score)
+                        .await?;
                     result.ranking_score = balanced_score;
                 }
             }
@@ -623,41 +689,55 @@ impl AdvancedSearchEngine {
             "semantic_context" => {
                 // Semantic context-aware ranking
                 for result in results.iter_mut() {
-                    let semantic_score = self.calculate_semantic_context_score(&result.memory).await?;
+                    let semantic_score = self
+                        .calculate_semantic_context_score(&result.memory)
+                        .await?;
                     result.ranking_score = semantic_score;
                 }
             }
             "collaborative_filtering" => {
                 // Collaborative filtering based on similar users
                 for result in results.iter_mut() {
-                    let collaborative_score = self.calculate_collaborative_filtering_score(&result.memory).await?;
+                    let collaborative_score = self
+                        .calculate_collaborative_filtering_score(&result.memory)
+                        .await?;
                     result.ranking_score = collaborative_score;
                 }
             }
             "temporal_patterns" => {
                 // Temporal pattern-based ranking
                 for result in results.iter_mut() {
-                    let temporal_score = self.calculate_temporal_pattern_score(&result.memory).await?;
+                    let temporal_score = self
+                        .calculate_temporal_pattern_score(&result.memory)
+                        .await?;
                     result.ranking_score = temporal_score;
                 }
             }
             "graph_centrality" => {
                 // Knowledge graph centrality-based ranking
                 for result in results.iter_mut() {
-                    let centrality_score = self.calculate_graph_centrality(&result.memory.key).await.unwrap_or(0.5);
+                    let centrality_score = self
+                        .calculate_graph_centrality(&result.memory.key)
+                        .await
+                        .unwrap_or(0.5);
                     result.ranking_score = centrality_score;
                 }
             }
             "adaptive_learning" => {
                 // Adaptive learning from user feedback
                 for result in results.iter_mut() {
-                    let adaptive_score = self.calculate_adaptive_learning_score(&result.memory).await?;
+                    let adaptive_score = self
+                        .calculate_adaptive_learning_score(&result.memory)
+                        .await?;
                     result.ranking_score = adaptive_score;
                 }
             }
             _ => {
                 // Default to relevance-based ranking for unknown strategies
-                tracing::warn!("Unknown custom ranking strategy '{}', falling back to relevance", strategy_name);
+                tracing::warn!(
+                    "Unknown custom ranking strategy '{}', falling back to relevance",
+                    strategy_name
+                );
                 results.sort_by(|a, b| b.relevance_score.safe_partial_cmp(&a.relevance_score));
                 return Ok(());
             }
@@ -670,14 +750,14 @@ impl AdvancedSearchEngine {
     /// Find fuzzy matches for a word
     async fn find_fuzzy_matches(&self, word: &str) -> Result<Vec<(String, f64)>> {
         let mut matches = Vec::new();
-        
+
         for indexed_word in self.search_index.word_index.keys() {
             let similarity = self.calculate_string_similarity(word, indexed_word);
             if similarity >= self.config.fuzzy_threshold {
                 matches.push((indexed_word.clone(), similarity));
             }
         }
-        
+
         Ok(matches)
     }
 
@@ -700,7 +780,8 @@ impl AdvancedSearchEngine {
         // Weighted combination of different similarity measures
         let weights = [0.3, 0.25, 0.2, 0.15, 0.1]; // Jaro-Winkler, Levenshtein, Dice, N-gram, Semantic
 
-        similarities.iter()
+        similarities
+            .iter()
             .zip(weights.iter())
             .map(|(sim, weight)| sim * weight)
             .sum()
@@ -739,13 +820,15 @@ impl AdvancedSearchEngine {
             return if s1 == s2 { 1.0 } else { 0.0 };
         }
 
-        let ngrams1: HashSet<String> = s1.chars()
+        let ngrams1: HashSet<String> = s1
+            .chars()
             .collect::<Vec<_>>()
             .windows(n)
             .map(|window| window.iter().collect())
             .collect();
 
-        let ngrams2: HashSet<String> = s2.chars()
+        let ngrams2: HashSet<String> = s2
+            .chars()
             .collect::<Vec<_>>()
             .windows(n)
             .map(|window| window.iter().collect())
@@ -769,7 +852,8 @@ impl AdvancedSearchEngine {
             .map(|w| w.to_string())
             .collect();
 
-        let words2: HashSet<String> = s2.to_lowercase()
+        let words2: HashSet<String> = s2
+            .to_lowercase()
             .split_whitespace()
             .filter(|w| w.len() > 2)
             .map(|w| w.to_string())
@@ -810,7 +894,7 @@ impl AdvancedSearchEngine {
         let mut highlights = Vec::new();
         let query_lower = query.to_lowercase();
         let content_lower = content.to_lowercase();
-        
+
         // Find exact matches
         let mut start = 0;
         while let Some(pos) = content_lower[start..].find(&query_lower) {
@@ -824,7 +908,7 @@ impl AdvancedSearchEngine {
             });
             start = actual_pos + query.len();
         }
-        
+
         Ok(highlights)
     }
 
@@ -833,7 +917,7 @@ impl AdvancedSearchEngine {
         let context_size = 50;
         let context_start = start.saturating_sub(context_size);
         let context_end = (start + length + context_size).min(content.len());
-        
+
         content[context_start..context_end].to_string()
     }
 
@@ -853,8 +937,10 @@ impl AdvancedSearchEngine {
         let filtered_results = results
             .into_iter()
             .filter(|result| {
-                if let Some(result_entry) = self.search_index.metadata_index.get(&result.memory.key) {
-                    let similarity = self.calculate_memory_similarity(reference_entry, result_entry);
+                if let Some(result_entry) = self.search_index.metadata_index.get(&result.memory.key)
+                {
+                    let similarity =
+                        self.calculate_memory_similarity(reference_entry, result_entry);
                     similarity >= threshold
                 } else {
                     false
@@ -874,10 +960,17 @@ impl AdvancedSearchEngine {
     ) -> Result<Vec<SearchResult>> {
         // Use real knowledge graph traversal if available
         if let Some(knowledge_graph) = &self.knowledge_graph {
-            self.apply_real_graph_distance_filter(results, reference_memory_key, max_distance, knowledge_graph).await
+            self.apply_real_graph_distance_filter(
+                results,
+                reference_memory_key,
+                max_distance,
+                knowledge_graph,
+            )
+            .await
         } else {
             // Fallback to sophisticated content-based distance calculation
-            self.apply_content_based_distance_filter(results, reference_memory_key, max_distance).await
+            self.apply_content_based_distance_filter(results, reference_memory_key, max_distance)
+                .await
         }
     }
 
@@ -890,10 +983,9 @@ impl AdvancedSearchEngine {
         knowledge_graph: &crate::memory::knowledge_graph::MemoryKnowledgeGraph,
     ) -> Result<Vec<SearchResult>> {
         // Get all memories within graph distance from reference memory
-        let reachable_memories = knowledge_graph.find_memories_within_distance(
-            reference_memory_key,
-            max_distance,
-        ).await?;
+        let reachable_memories = knowledge_graph
+            .find_memories_within_distance(reference_memory_key, max_distance)
+            .await?;
 
         // Convert to HashSet for efficient lookup
         let reachable_set: std::collections::HashSet<String> = reachable_memories
@@ -905,7 +997,8 @@ impl AdvancedSearchEngine {
         let filtered_results = results
             .into_iter()
             .filter(|result| {
-                result.memory.key == reference_memory_key || reachable_set.contains(&result.memory.key)
+                result.memory.key == reference_memory_key
+                    || reachable_set.contains(&result.memory.key)
             })
             .collect();
 
@@ -927,8 +1020,10 @@ impl AdvancedSearchEngine {
         let filtered_results = results
             .into_iter()
             .filter(|result| {
-                if let Some(result_entry) = self.search_index.metadata_index.get(&result.memory.key) {
-                    let distance = self.calculate_content_based_distance(reference_entry, result_entry);
+                if let Some(result_entry) = self.search_index.metadata_index.get(&result.memory.key)
+                {
+                    let distance =
+                        self.calculate_content_based_distance(reference_entry, result_entry);
                     distance <= max_distance
                 } else {
                     false
@@ -940,12 +1035,17 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate content-based distance using multiple algorithms
-    fn calculate_content_based_distance(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry) -> usize {
+    fn calculate_content_based_distance(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+    ) -> usize {
         // Multi-factor distance calculation
         let mut distance_factors = Vec::new();
 
         // 1. Content similarity distance (inverse of similarity)
-        let content_similarity = self.calculate_advanced_content_similarity(&entry1.content_words, &entry2.content_words);
+        let content_similarity = self
+            .calculate_advanced_content_similarity(&entry1.content_words, &entry2.content_words);
         let content_distance = (1.0 - content_similarity) * 3.0; // Scale to 0-3
         distance_factors.push(content_distance);
 
@@ -954,11 +1054,13 @@ impl AdvancedSearchEngine {
         distance_factors.push(tag_distance);
 
         // 3. Temporal distance
-        let temporal_distance = self.calculate_temporal_distance(entry1.created_at, entry2.created_at);
+        let temporal_distance =
+            self.calculate_temporal_distance(entry1.created_at, entry2.created_at);
         distance_factors.push(temporal_distance);
 
         // 4. Importance distance
-        let importance_distance = self.calculate_importance_distance(entry1.importance, entry2.importance);
+        let importance_distance =
+            self.calculate_importance_distance(entry1.importance, entry2.importance);
         distance_factors.push(importance_distance);
 
         // 5. Structural distance
@@ -967,7 +1069,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination of distance factors
         let weights = [0.3, 0.25, 0.2, 0.15, 0.1];
-        let weighted_distance: f64 = distance_factors.iter()
+        let weighted_distance: f64 = distance_factors
+            .iter()
             .zip(weights.iter())
             .map(|(dist, weight)| dist * weight)
             .sum();
@@ -987,7 +1090,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate tag-based distance
-    fn calculate_tag_based_distance(&self, tags1: &HashSet<String>, tags2: &HashSet<String>) -> f64 {
+    fn calculate_tag_based_distance(
+        &self,
+        tags1: &HashSet<String>,
+        tags2: &HashSet<String>,
+    ) -> f64 {
         if tags1.is_empty() && tags2.is_empty() {
             return 0.0; // Both empty, no distance
         }
@@ -1012,7 +1119,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate temporal distance
-    fn calculate_temporal_distance(&self, time1: chrono::DateTime<chrono::Utc>, time2: chrono::DateTime<chrono::Utc>) -> f64 {
+    fn calculate_temporal_distance(
+        &self,
+        time1: chrono::DateTime<chrono::Utc>,
+        time2: chrono::DateTime<chrono::Utc>,
+    ) -> f64 {
         let time_diff_hours = (time1 - time2).num_hours().abs() as f64;
 
         // Convert time difference to distance levels
@@ -1046,7 +1157,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate structural distance factor
-    fn calculate_structural_distance_factor(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry) -> f64 {
+    fn calculate_structural_distance_factor(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+    ) -> f64 {
         // Content length difference
         let length_diff = (entry1.content_length as f64 - entry2.content_length as f64).abs();
         let max_length = entry1.content_length.max(entry2.content_length) as f64;
@@ -1057,7 +1172,8 @@ impl AdvancedSearchEngine {
         };
 
         // Vocabulary size difference
-        let vocab_diff = (entry1.content_words.len() as f64 - entry2.content_words.len() as f64).abs();
+        let vocab_diff =
+            (entry1.content_words.len() as f64 - entry2.content_words.len() as f64).abs();
         let max_vocab = entry1.content_words.len().max(entry2.content_words.len()) as f64;
         let vocab_distance = if max_vocab > 0.0 {
             (vocab_diff / max_vocab).min(1.0) * 2.0
@@ -1070,11 +1186,16 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate advanced similarity between two memory index entries using multiple algorithms
-    fn calculate_memory_similarity(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry) -> f64 {
+    fn calculate_memory_similarity(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+    ) -> f64 {
         let mut similarity_components = Vec::new();
 
         // 1. Advanced content word similarity using multiple algorithms
-        let content_similarity = self.calculate_advanced_content_similarity(&entry1.content_words, &entry2.content_words);
+        let content_similarity = self
+            .calculate_advanced_content_similarity(&entry1.content_words, &entry2.content_words);
         similarity_components.push(content_similarity);
 
         // 2. Semantic tag similarity with fuzzy matching
@@ -1082,11 +1203,13 @@ impl AdvancedSearchEngine {
         similarity_components.push(tag_similarity);
 
         // 3. Multi-dimensional importance similarity
-        let importance_similarity = self.calculate_importance_similarity(entry1.importance, entry2.importance);
+        let importance_similarity =
+            self.calculate_importance_similarity(entry1.importance, entry2.importance);
         similarity_components.push(importance_similarity);
 
         // 4. Temporal proximity with decay functions
-        let temporal_similarity = self.calculate_temporal_similarity(entry1.created_at, entry2.created_at);
+        let temporal_similarity =
+            self.calculate_temporal_similarity(entry1.created_at, entry2.created_at);
         similarity_components.push(temporal_similarity);
 
         // 5. Access pattern similarity
@@ -1099,14 +1222,19 @@ impl AdvancedSearchEngine {
 
         // Weighted combination with adaptive weights based on data availability
         let weights = [0.3, 0.25, 0.15, 0.15, 0.1, 0.05];
-        similarity_components.iter()
+        similarity_components
+            .iter()
             .zip(weights.iter())
             .map(|(sim, weight)| sim * weight)
             .sum()
     }
 
     /// Calculate advanced content similarity using multiple string algorithms
-    fn calculate_advanced_content_similarity(&self, words1: &HashSet<String>, words2: &HashSet<String>) -> f64 {
+    fn calculate_advanced_content_similarity(
+        &self,
+        words1: &HashSet<String>,
+        words2: &HashSet<String>,
+    ) -> f64 {
         if words1.is_empty() || words2.is_empty() {
             return 0.0;
         }
@@ -1116,7 +1244,11 @@ impl AdvancedSearchEngine {
         // 1. Jaccard similarity (set intersection over union)
         let intersection = words1.intersection(words2).count() as f64;
         let union = words1.union(words2).count() as f64;
-        let jaccard_sim = if union > 0.0 { intersection / union } else { 0.0 };
+        let jaccard_sim = if union > 0.0 {
+            intersection / union
+        } else {
+            0.0
+        };
         similarity_scores.push(jaccard_sim);
 
         // 2. Cosine similarity (treating word sets as vectors)
@@ -1160,14 +1292,19 @@ impl AdvancedSearchEngine {
 
         // Weighted combination of similarity measures
         let weights = [0.3, 0.25, 0.25, 0.2];
-        similarity_scores.iter()
+        similarity_scores
+            .iter()
             .zip(weights.iter())
             .map(|(sim, weight)| sim * weight)
             .sum()
     }
 
     /// Calculate semantic tag similarity with fuzzy matching
-    fn calculate_semantic_tag_similarity(&self, tags1: &HashSet<String>, tags2: &HashSet<String>) -> f64 {
+    fn calculate_semantic_tag_similarity(
+        &self,
+        tags1: &HashSet<String>,
+        tags2: &HashSet<String>,
+    ) -> f64 {
         if tags1.is_empty() || tags2.is_empty() {
             return 0.0;
         }
@@ -1241,7 +1378,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate temporal similarity with multiple decay functions
-    fn calculate_temporal_similarity(&self, time1: chrono::DateTime<chrono::Utc>, time2: chrono::DateTime<chrono::Utc>) -> f64 {
+    fn calculate_temporal_similarity(
+        &self,
+        time1: chrono::DateTime<chrono::Utc>,
+        time2: chrono::DateTime<chrono::Utc>,
+    ) -> f64 {
         let time_diff_hours = (time1 - time2).num_hours().abs() as f64;
 
         // Multiple temporal decay functions
@@ -1254,7 +1395,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate access pattern similarity
-    fn calculate_access_pattern_similarity(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry) -> f64 {
+    fn calculate_access_pattern_similarity(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+    ) -> f64 {
         // Access count similarity
         let access_diff = (entry1.access_count as f64 - entry2.access_count as f64).abs();
         let max_access = entry1.access_count.max(entry2.access_count) as f64;
@@ -1265,7 +1410,9 @@ impl AdvancedSearchEngine {
         };
 
         // Last accessed similarity
-        let last_access_diff = (entry1.last_accessed - entry2.last_accessed).num_hours().abs() as f64;
+        let last_access_diff = (entry1.last_accessed - entry2.last_accessed)
+            .num_hours()
+            .abs() as f64;
         let last_access_sim = (1.0 / (1.0 + last_access_diff / 24.0)).max(0.0);
 
         // Combine access patterns
@@ -1273,7 +1420,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate structural similarity based on content characteristics
-    fn calculate_structural_similarity(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry) -> f64 {
+    fn calculate_structural_similarity(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+    ) -> f64 {
         // Content length similarity
         let length_diff = (entry1.content_length as f64 - entry2.content_length as f64).abs();
         let max_length = entry1.content_length.max(entry2.content_length) as f64;
@@ -1284,7 +1435,8 @@ impl AdvancedSearchEngine {
         };
 
         // Vocabulary size similarity
-        let vocab_diff = (entry1.content_words.len() as f64 - entry2.content_words.len() as f64).abs();
+        let vocab_diff =
+            (entry1.content_words.len() as f64 - entry2.content_words.len() as f64).abs();
         let max_vocab = entry1.content_words.len().max(entry2.content_words.len()) as f64;
         let vocab_sim = if max_vocab > 0.0 {
             1.0 - (vocab_diff / max_vocab).min(1.0)
@@ -1306,7 +1458,10 @@ impl AdvancedSearchEngine {
     }
 
     /// Add related memories to search results using comprehensive relationship analysis
-    async fn add_related_memories(&self, mut results: Vec<SearchResult>) -> Result<Vec<SearchResult>> {
+    async fn add_related_memories(
+        &self,
+        mut results: Vec<SearchResult>,
+    ) -> Result<Vec<SearchResult>> {
         for result in &mut results {
             let related_memories = self.find_related_memories(&result.memory.key).await?;
             result.related_memories = related_memories;
@@ -1327,8 +1482,10 @@ impl AdvancedSearchEngine {
 
                 let similarity = self.calculate_memory_similarity(source_entry, other_entry);
 
-                if similarity > 0.3 { // Threshold for related memories
-                    let relationship_type = self.determine_relationship_type(source_entry, other_entry, similarity);
+                if similarity > 0.3 {
+                    // Threshold for related memories
+                    let relationship_type =
+                        self.determine_relationship_type(source_entry, other_entry, similarity);
 
                     related.push(RelatedMemoryRef {
                         memory_key: other_key.clone(),
@@ -1340,14 +1497,23 @@ impl AdvancedSearchEngine {
         }
 
         // Sort by strength and limit to top 10
-        related.sort_by(|a, b| b.strength.partial_cmp(&a.strength).expect("value should be available"));
+        related.sort_by(|a, b| {
+            b.strength
+                .partial_cmp(&a.strength)
+                .expect("value should be available")
+        });
         related.truncate(10);
 
         Ok(related)
     }
 
     /// Determine the type of relationship between two memories
-    fn determine_relationship_type(&self, entry1: &MemoryIndexEntry, entry2: &MemoryIndexEntry, similarity: f64) -> String {
+    fn determine_relationship_type(
+        &self,
+        entry1: &MemoryIndexEntry,
+        entry2: &MemoryIndexEntry,
+        similarity: f64,
+    ) -> String {
         // Tag-based relationships
         let tag_overlap = entry1.tags.intersection(&entry2.tags).count();
         if tag_overlap > 0 {
@@ -1355,7 +1521,10 @@ impl AdvancedSearchEngine {
         }
 
         // Content-based relationships
-        let content_overlap = entry1.content_words.intersection(&entry2.content_words).count();
+        let content_overlap = entry1
+            .content_words
+            .intersection(&entry2.content_words)
+            .count();
         if content_overlap > 5 {
             return "content_similarity".to_string();
         }
@@ -1398,39 +1567,46 @@ impl AdvancedSearchEngine {
 
         // Calculate multiple centrality metrics using simplified approach
         let relationship_count = related_memories.len() as f64;
-        let avg_strength: f64 = related_memories.iter().map(|r| r.strength).sum::<f64>() / relationship_count.max(1.0);
+        let avg_strength: f64 =
+            related_memories.iter().map(|r| r.strength).sum::<f64>() / relationship_count.max(1.0);
 
-        let unique_relationship_types: std::collections::HashSet<_> =
-            related_memories.iter().map(|r| &r.relationship_type).collect();
+        let unique_relationship_types: std::collections::HashSet<_> = related_memories
+            .iter()
+            .map(|r| &r.relationship_type)
+            .collect();
         let relationship_diversity = unique_relationship_types.len() as f64;
 
         // Degree centrality
         let degree_centrality = (
             (relationship_count / 20.0).min(1.0) * 0.4 +  // Normalize to max 20 relationships
             avg_strength * 0.4 +
-            (relationship_diversity / 5.0).min(1.0) * 0.2  // Normalize to max 5 types
-        ).min(1.0);
+            (relationship_diversity / 5.0).min(1.0) * 0.2
+            // Normalize to max 5 types
+        )
+        .min(1.0);
 
         // Simplified other centrality measures
         let betweenness_centrality = if relationship_count > 1.0 {
-            (relationship_diversity / relationship_count).min(1.0) * 0.6 +
-            (relationship_count / 15.0).min(1.0) * 0.4
+            (relationship_diversity / relationship_count).min(1.0) * 0.6
+                + (relationship_count / 15.0).min(1.0) * 0.4
         } else {
             0.1
         };
 
-        let closeness_centrality = (avg_strength * 0.6 + (relationship_count / 10.0).min(1.0) * 0.4).min(1.0);
+        let closeness_centrality =
+            (avg_strength * 0.6 + (relationship_count / 10.0).min(1.0) * 0.4).min(1.0);
 
-        let pagerank_centrality = (0.15 + avg_strength * 0.85 / relationship_count.max(1.0)).min(1.0);
+        let pagerank_centrality =
+            (0.15 + avg_strength * 0.85 / relationship_count.max(1.0)).min(1.0);
 
         let eigenvector_centrality = (relationship_count * avg_strength / 10.0).min(1.0);
 
         // Weighted combination of centrality metrics
-        let combined_centrality = degree_centrality * 0.25 +
-                                 betweenness_centrality * 0.25 +
-                                 closeness_centrality * 0.2 +
-                                 pagerank_centrality * 0.2 +
-                                 eigenvector_centrality * 0.1;
+        let combined_centrality = degree_centrality * 0.25
+            + betweenness_centrality * 0.25
+            + closeness_centrality * 0.2
+            + pagerank_centrality * 0.2
+            + eigenvector_centrality * 0.1;
 
         Ok(combined_centrality.min(1.0))
     }
@@ -1458,8 +1634,15 @@ impl AdvancedSearchEngine {
             0.3
         };
         let time_since_access = (Utc::now() - memory.last_accessed()).num_hours() as f64;
-        let recency_boost = if time_since_access < 24.0 { 1.0 } else if time_since_access < 168.0 { 0.8 } else { 0.5 };
-        let access_pattern_score = (frequency_score * 0.4 + consistency_score * 0.3 + recency_boost * 0.3).min(1.0);
+        let recency_boost = if time_since_access < 24.0 {
+            1.0
+        } else if time_since_access < 168.0 {
+            0.8
+        } else {
+            0.5
+        };
+        let access_pattern_score =
+            (frequency_score * 0.4 + consistency_score * 0.3 + recency_boost * 0.3).min(1.0);
         preference_factors.push(access_pattern_score);
 
         // 2. Temporal preference modeling
@@ -1469,68 +1652,148 @@ impl AdvancedSearchEngine {
         let creation_hour = creation_time.hour();
         let access_hour = last_access_time.hour();
         let current_hour = current_time.hour();
-        let time_alignment: f64 = if (creation_hour as i32 - current_hour as i32).abs() < 3 ||
-                               (access_hour as i32 - current_hour as i32).abs() < 3 { 0.8 } else { 0.4 };
+        let time_alignment: f64 = if (creation_hour as i32 - current_hour as i32).abs() < 3
+            || (access_hour as i32 - current_hour as i32).abs() < 3
+        {
+            0.8
+        } else {
+            0.4
+        };
         let creation_weekday = creation_time.weekday().num_days_from_monday();
         let current_weekday = current_time.weekday().num_days_from_monday();
-        let weekday_alignment: f64 = if creation_weekday == current_weekday { 0.9 }
-                               else if (creation_weekday as i32 - current_weekday as i32).abs() <= 1 { 0.7 } else { 0.5 };
+        let weekday_alignment: f64 = if creation_weekday == current_weekday {
+            0.9
+        } else if (creation_weekday as i32 - current_weekday as i32).abs() <= 1 {
+            0.7
+        } else {
+            0.5
+        };
         let creation_month = creation_time.month();
         let current_month = current_time.month();
-        let seasonal_alignment: f64 = if creation_month == current_month { 0.9 }
-                                else if (creation_month as i32 - current_month as i32).abs() <= 1 { 0.7 } else { 0.5 };
-        let temporal_preference_score: f64 = (time_alignment * 0.4 + weekday_alignment * 0.3 + seasonal_alignment * 0.3).min(1.0);
+        let seasonal_alignment: f64 = if creation_month == current_month {
+            0.9
+        } else if (creation_month as i32 - current_month as i32).abs() <= 1 {
+            0.7
+        } else {
+            0.5
+        };
+        let temporal_preference_score: f64 =
+            (time_alignment * 0.4 + weekday_alignment * 0.3 + seasonal_alignment * 0.3).min(1.0);
         preference_factors.push(temporal_preference_score);
 
         // 3. Content affinity analysis
         let content_length = memory.value.len() as f64;
         let tag_count = memory.metadata.tags.len() as f64;
-        let complexity_score = if content_length > 1000.0 { 0.8 } else if content_length > 200.0 { 0.6 } else { 0.4 };
+        let complexity_score = if content_length > 1000.0 {
+            0.8
+        } else if content_length > 200.0 {
+            0.6
+        } else {
+            0.4
+        };
         let tag_richness = (tag_count / 10.0).min(1.0);
         let content_type_score = self.calculate_sophisticated_content_type_score(&memory.value);
-        let content_affinity_score = (complexity_score * 0.4 + tag_richness * 0.3 + content_type_score * 0.3).min(1.0);
+        let content_affinity_score =
+            (complexity_score * 0.4 + tag_richness * 0.3 + content_type_score * 0.3).min(1.0);
         preference_factors.push(content_affinity_score);
 
         // 4. Collaborative filtering score
         let importance = memory.metadata.importance;
         let popularity_score = (access_count / 20.0).min(1.0);
-        let preference_alignment = if memory.metadata.tags.iter().any(|tag|
-            ["popular", "trending", "recommended", "featured"].contains(&tag.as_str())
-        ) { 0.9 } else { importance * 0.8 + 0.2 };
+        let preference_alignment =
+            if memory.metadata.tags.iter().any(|tag| {
+                ["popular", "trending", "recommended", "featured"].contains(&tag.as_str())
+            }) {
+                0.9
+            } else {
+                importance * 0.8 + 0.2
+            };
         let collaborative_score = (popularity_score * 0.6 + preference_alignment * 0.4).min(1.0);
         preference_factors.push(collaborative_score);
 
         // 5. Contextual relevance score
         let time_since_creation_days = (current_time - memory.created_at()).num_days() as f64;
-        let temporal_relevance = if time_since_creation_days < 7.0 { 0.9 } else if time_since_creation_days < 30.0 { 0.7 }
-                                else if time_since_creation_days < 90.0 { 0.5 } else { 0.3 };
-        let context_relevance = if memory.metadata.tags.iter().any(|tag|
-            ["current", "active", "ongoing", "urgent"].contains(&tag.as_str())
-        ) { 0.9 } else if memory.metadata.tags.iter().any(|tag|
-            ["project", "work", "task"].contains(&tag.as_str())
-        ) { 0.7 } else { 0.5 };
-        let contextual_relevance_score = (temporal_relevance * 0.4 + context_relevance * 0.3 + importance * 0.3).min(1.0);
+        let temporal_relevance = if time_since_creation_days < 7.0 {
+            0.9
+        } else if time_since_creation_days < 30.0 {
+            0.7
+        } else if time_since_creation_days < 90.0 {
+            0.5
+        } else {
+            0.3
+        };
+        let context_relevance = if memory
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| ["current", "active", "ongoing", "urgent"].contains(&tag.as_str()))
+        {
+            0.9
+        } else if memory
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| ["project", "work", "task"].contains(&tag.as_str()))
+        {
+            0.7
+        } else {
+            0.5
+        };
+        let contextual_relevance_score =
+            (temporal_relevance * 0.4 + context_relevance * 0.3 + importance * 0.3).min(1.0);
         preference_factors.push(contextual_relevance_score);
 
         // 6. Semantic preference alignment
         let content = memory.value.to_lowercase();
-        let technical_score: f64 = if content.contains("code") || content.contains("algorithm") ||
-                                content.contains("function") || content.contains("api") { 0.8 } else { 0.4 };
-        let educational_score: f64 = if content.contains("learn") || content.contains("tutorial") ||
-                                  content.contains("guide") || content.contains("how to") { 0.9 } else { 0.5 };
-        let personal_score: f64 = if memory.metadata.tags.iter().any(|tag|
-            ["personal", "diary", "journal", "private"].contains(&tag.as_str())
-        ) { 0.7 } else { 0.5 };
-        let professional_score: f64 = if memory.metadata.tags.iter().any(|tag|
-            ["work", "business", "meeting", "project"].contains(&tag.as_str())
-        ) { 0.8 } else { 0.5 };
-        let semantic_preference_score: f64 = (technical_score * 0.3 + educational_score * 0.3 +
-            personal_score * 0.2 + professional_score * 0.2).min(1.0);
+        let technical_score: f64 = if content.contains("code")
+            || content.contains("algorithm")
+            || content.contains("function")
+            || content.contains("api")
+        {
+            0.8
+        } else {
+            0.4
+        };
+        let educational_score: f64 = if content.contains("learn")
+            || content.contains("tutorial")
+            || content.contains("guide")
+            || content.contains("how to")
+        {
+            0.9
+        } else {
+            0.5
+        };
+        let personal_score: f64 = if memory
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| ["personal", "diary", "journal", "private"].contains(&tag.as_str()))
+        {
+            0.7
+        } else {
+            0.5
+        };
+        let professional_score: f64 = if memory
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| ["work", "business", "meeting", "project"].contains(&tag.as_str()))
+        {
+            0.8
+        } else {
+            0.5
+        };
+        let semantic_preference_score: f64 = (technical_score * 0.3
+            + educational_score * 0.3
+            + personal_score * 0.2
+            + professional_score * 0.2)
+            .min(1.0);
         preference_factors.push(semantic_preference_score);
 
         // Weighted combination using learned weights
         let weights = [0.25, 0.2, 0.2, 0.15, 0.1, 0.1];
-        let preference_score = preference_factors.iter()
+        let preference_score = preference_factors
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum::<f64>()
@@ -1555,9 +1818,11 @@ impl AdvancedSearchEngine {
         // Find memories with embeddings and calculate cosine similarity
         for (memory_key, index_entry) in &self.search_index.metadata_index {
             // Use enhanced semantic similarity with embedding-based approach
-            let semantic_score = self.enhanced_semantic_similarity_embedding_based(query_embedding, index_entry);
+            let semantic_score =
+                self.enhanced_semantic_similarity_embedding_based(query_embedding, index_entry);
 
-            if semantic_score > 0.3 { // Threshold for semantic relevance
+            if semantic_score > 0.3 {
+                // Threshold for semantic relevance
                 // Retrieve the actual memory from storage
                 if let Some(memory) = storage.retrieve(memory_key).await? {
                     results.push(SearchResult {
@@ -1575,13 +1840,20 @@ impl AdvancedSearchEngine {
                         },
                     });
                 } else {
-                    tracing::warn!("Memory '{}' found in search index but not in storage", memory_key);
+                    tracing::warn!(
+                        "Memory '{}' found in search index but not in storage",
+                        memory_key
+                    );
                 }
             }
         }
 
         // Sort by semantic similarity
-        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).expect("value should be available"));
+        results.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .expect("value should be available")
+        });
 
         // Apply limit
         if let Some(limit) = limit {
@@ -1593,26 +1865,25 @@ impl AdvancedSearchEngine {
 
     /// Calculate real semantic similarity using embeddings
     #[allow(dead_code)]
-    fn calculate_semantic_similarity(&self, query_embedding: &[f32], memory_embedding: &[f32]) -> f64 {
+    fn calculate_semantic_similarity(
+        &self,
+        query_embedding: &[f32],
+        memory_embedding: &[f32],
+    ) -> f64 {
         if query_embedding.is_empty() || memory_embedding.is_empty() {
             return 0.0;
         }
 
         // Calculate cosine similarity between embeddings
-        let dot_product: f32 = query_embedding.iter()
+        let dot_product: f32 = query_embedding
+            .iter()
             .zip(memory_embedding.iter())
             .map(|(a, b)| a * b)
             .sum();
 
-        let query_magnitude: f32 = query_embedding.iter()
-            .map(|x| x * x)
-            .sum::<f32>()
-            .sqrt();
+        let query_magnitude: f32 = query_embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-        let memory_magnitude: f32 = memory_embedding.iter()
-            .map(|x| x * x)
-            .sum::<f32>()
-            .sqrt();
+        let memory_magnitude: f32 = memory_embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
 
         if query_magnitude == 0.0 || memory_magnitude == 0.0 {
             return 0.0;
@@ -1625,7 +1896,11 @@ impl AdvancedSearchEngine {
     }
 
     /// Enhanced semantic similarity for embedding-based search (without query text)
-    fn enhanced_semantic_similarity_embedding_based(&self, query_embedding: &[f32], index_entry: &MemoryIndexEntry) -> f64 {
+    fn enhanced_semantic_similarity_embedding_based(
+        &self,
+        query_embedding: &[f32],
+        index_entry: &MemoryIndexEntry,
+    ) -> f64 {
         // Multi-dimensional semantic analysis without query text
         let mut semantic_scores = Vec::new();
 
@@ -1638,7 +1913,8 @@ impl AdvancedSearchEngine {
         semantic_scores.push(semantic_density);
 
         // 3. Topic coherence
-        let topic_coherence = self.calculate_topic_coherence(&index_entry.content_words, &index_entry.tags);
+        let topic_coherence =
+            self.calculate_topic_coherence(&index_entry.content_words, &index_entry.tags);
         semantic_scores.push(topic_coherence);
 
         // 4. Embedding magnitude (if available)
@@ -1656,7 +1932,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination of semantic factors
         let weights = [0.25, 0.2, 0.2, 0.15, 0.2];
-        semantic_scores.iter()
+        semantic_scores
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum()
@@ -1664,7 +1941,12 @@ impl AdvancedSearchEngine {
 
     /// Enhanced semantic similarity with fallback to content-based similarity
     #[allow(dead_code)]
-    fn enhanced_semantic_similarity(&self, _query_embedding: &[f32], index_entry: &MemoryIndexEntry, query_text: &str) -> f64 {
+    fn enhanced_semantic_similarity(
+        &self,
+        _query_embedding: &[f32],
+        index_entry: &MemoryIndexEntry,
+        query_text: &str,
+    ) -> f64 {
         // Try to get memory embedding from storage or calculate it
         // For now, we'll use a sophisticated content-based approach as fallback
 
@@ -1676,7 +1958,8 @@ impl AdvancedSearchEngine {
         semantic_scores.push(content_complexity);
 
         // 2. Conceptual overlap using advanced text analysis
-        let conceptual_overlap = self.calculate_conceptual_overlap(query_text, &index_entry.content_words);
+        let conceptual_overlap =
+            self.calculate_conceptual_overlap(query_text, &index_entry.content_words);
         semantic_scores.push(conceptual_overlap);
 
         // 3. Semantic density (information density)
@@ -1684,7 +1967,8 @@ impl AdvancedSearchEngine {
         semantic_scores.push(semantic_density);
 
         // 4. Topic coherence
-        let topic_coherence = self.calculate_topic_coherence(&index_entry.content_words, &index_entry.tags);
+        let topic_coherence =
+            self.calculate_topic_coherence(&index_entry.content_words, &index_entry.tags);
         semantic_scores.push(topic_coherence);
 
         // 5. Contextual relevance
@@ -1693,7 +1977,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination of semantic factors
         let weights = [0.25, 0.3, 0.15, 0.15, 0.15];
-        semantic_scores.iter()
+        semantic_scores
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum()
@@ -1710,9 +1995,8 @@ impl AdvancedSearchEngine {
         let vocabulary_diversity = (unique_words / 100.0).min(1.0);
 
         // Average word length (complexity indicator)
-        let avg_word_length = content_words.iter()
-            .map(|word| word.len())
-            .sum::<usize>() as f64 / unique_words;
+        let avg_word_length =
+            content_words.iter().map(|word| word.len()).sum::<usize>() as f64 / unique_words;
         let length_complexity = (avg_word_length / 10.0).min(1.0);
 
         // Combine factors
@@ -1721,8 +2005,13 @@ impl AdvancedSearchEngine {
 
     /// Calculate conceptual overlap using advanced text analysis
     #[allow(dead_code)]
-    fn calculate_conceptual_overlap(&self, query_text: &str, content_words: &HashSet<String>) -> f64 {
-        let query_words: HashSet<String> = query_text.to_lowercase()
+    fn calculate_conceptual_overlap(
+        &self,
+        query_text: &str,
+        content_words: &HashSet<String>,
+    ) -> f64 {
+        let query_words: HashSet<String> = query_text
+            .to_lowercase()
             .split_whitespace()
             .filter(|word| word.len() > 2)
             .map(|word| word.to_string())
@@ -1759,20 +2048,26 @@ impl AdvancedSearchEngine {
         }
 
         // Information density metrics
-        let words_per_char = index_entry.content_words.len() as f64 / index_entry.content_length as f64;
-        let tags_per_word = index_entry.tags.len() as f64 / index_entry.content_words.len().max(1) as f64;
+        let words_per_char =
+            index_entry.content_words.len() as f64 / index_entry.content_length as f64;
+        let tags_per_word =
+            index_entry.tags.len() as f64 / index_entry.content_words.len().max(1) as f64;
         let importance_factor = index_entry.importance;
 
         // Combine density factors
-        let density_score = (words_per_char * 100.0).min(1.0) * 0.4 +
-                           (tags_per_word * 10.0).min(1.0) * 0.3 +
-                           importance_factor * 0.3;
+        let density_score = (words_per_char * 100.0).min(1.0) * 0.4
+            + (tags_per_word * 10.0).min(1.0) * 0.3
+            + importance_factor * 0.3;
 
         density_score.min(1.0)
     }
 
     /// Calculate topic coherence between content and tags
-    fn calculate_topic_coherence(&self, content_words: &HashSet<String>, tags: &HashSet<String>) -> f64 {
+    fn calculate_topic_coherence(
+        &self,
+        content_words: &HashSet<String>,
+        tags: &HashSet<String>,
+    ) -> f64 {
         if content_words.is_empty() || tags.is_empty() {
             return 0.5; // Neutral score when no data
         }
@@ -1782,7 +2077,8 @@ impl AdvancedSearchEngine {
         let mut total_weight = 0.0;
 
         for tag in tags {
-            let tag_words: HashSet<String> = tag.split('_')
+            let tag_words: HashSet<String> = tag
+                .split('_')
                 .chain(tag.split('-'))
                 .map(|word| word.to_lowercase())
                 .collect();
@@ -1803,7 +2099,11 @@ impl AdvancedSearchEngine {
 
     /// Calculate contextual relevance based on query context
     #[allow(dead_code)]
-    fn calculate_contextual_relevance(&self, query_text: &str, index_entry: &MemoryIndexEntry) -> f64 {
+    fn calculate_contextual_relevance(
+        &self,
+        query_text: &str,
+        index_entry: &MemoryIndexEntry,
+    ) -> f64 {
         // Temporal relevance (recent memories might be more relevant)
         let now = chrono::Utc::now();
         let age_hours = (now - index_entry.created_at).num_hours().max(1) as f64;
@@ -1869,27 +2169,22 @@ impl AdvancedSearchEngine {
         let base_importance = memory.metadata.importance;
 
         // Boost importance based on tags
-        let tag_boost = if memory.metadata.tags.iter().any(|tag|
-            ["critical", "important", "urgent", "priority"].contains(&tag.as_str())
-        ) {
+        let tag_boost = if memory
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| ["critical", "important", "urgent", "priority"].contains(&tag.as_str()))
+        {
             0.2
         } else {
             0.0
         };
 
         // Boost importance based on access patterns
-        let access_boost = if memory.access_count() > 10 {
-            0.1
-        } else {
-            0.0
-        };
+        let access_boost = if memory.access_count() > 10 { 0.1 } else { 0.0 };
 
         // Boost importance based on content length (longer content might be more important)
-        let content_boost = if memory.value.len() > 1000 {
-            0.1
-        } else {
-            0.0
-        };
+        let content_boost = if memory.value.len() > 1000 { 0.1 } else { 0.0 };
 
         (base_importance + tag_boost + access_boost + content_boost).min(1.0)
     }
@@ -1930,7 +2225,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination
         let weights = [0.3, 0.25, 0.2, 0.15, 0.1];
-        Ok(engagement_factors.iter()
+        Ok(engagement_factors
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -1943,7 +2239,15 @@ impl AdvancedSearchEngine {
         }
 
         // Simulate tag popularity (in real implementation, this would be based on actual usage data)
-        let popular_tags = ["work", "project", "important", "research", "personal", "meeting", "idea"];
+        let popular_tags = [
+            "work",
+            "project",
+            "important",
+            "research",
+            "personal",
+            "meeting",
+            "idea",
+        ];
         let engagement_tags = ["favorite", "bookmark", "starred", "priority"];
 
         let mut score = 0.0;
@@ -1973,46 +2277,133 @@ impl AdvancedSearchEngine {
         let mut score_factors = Vec::new();
 
         // 1. URL/Link content detection (lower score as it's often just references)
-        let url_score = if content_lower.contains("http") || content_lower.contains("www") { 0.6 } else { 0.8 };
+        let url_score = if content_lower.contains("http") || content_lower.contains("www") {
+            0.6
+        } else {
+            0.8
+        };
         score_factors.push(url_score);
 
         // 2. Code content detection (higher score for technical content)
-        let code_indicators = ["function", "class", "def ", "import", "return", "if ", "for ", "while ", "var ", "let ", "const "];
-        let code_count = code_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
-        let code_score = if code_count >= 3 { 0.9 } else if code_count >= 1 { 0.8 } else { 0.7 };
+        let code_indicators = [
+            "function", "class", "def ", "import", "return", "if ", "for ", "while ", "var ",
+            "let ", "const ",
+        ];
+        let code_count = code_indicators
+            .iter()
+            .filter(|&indicator| content_lower.contains(indicator))
+            .count();
+        let code_score = if code_count >= 3 {
+            0.9
+        } else if code_count >= 1 {
+            0.8
+        } else {
+            0.7
+        };
         score_factors.push(code_score);
 
         // 3. Documentation/explanation content (high value)
-        let doc_indicators = ["explanation", "description", "overview", "summary", "guide", "tutorial", "how to", "steps"];
-        let doc_count = doc_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
-        let doc_score = if doc_count >= 2 { 0.95 } else if doc_count >= 1 { 0.85 } else { 0.7 };
+        let doc_indicators = [
+            "explanation",
+            "description",
+            "overview",
+            "summary",
+            "guide",
+            "tutorial",
+            "how to",
+            "steps",
+        ];
+        let doc_count = doc_indicators
+            .iter()
+            .filter(|&indicator| content_lower.contains(indicator))
+            .count();
+        let doc_score = if doc_count >= 2 {
+            0.95
+        } else if doc_count >= 1 {
+            0.85
+        } else {
+            0.7
+        };
         score_factors.push(doc_score);
 
         // 4. Structured content detection (lists, numbered items)
         let structure_indicators = ["\n- ", "\n* ", "\n1.", "\n2.", "\n3.", ":\n", "```"];
-        let structure_count = structure_indicators.iter().filter(|&indicator| content.contains(indicator)).count();
-        let structure_score = if structure_count >= 3 { 0.9 } else if structure_count >= 1 { 0.8 } else { 0.6 };
+        let structure_count = structure_indicators
+            .iter()
+            .filter(|&indicator| content.contains(indicator))
+            .count();
+        let structure_score = if structure_count >= 3 {
+            0.9
+        } else if structure_count >= 1 {
+            0.8
+        } else {
+            0.6
+        };
         score_factors.push(structure_score);
 
         // 5. Content length and complexity
-        let length_score = if content.len() > 1000 { 0.9 } else if content.len() > 500 { 0.8 } else if content.len() > 100 { 0.7 } else { 0.5 };
+        let length_score = if content.len() > 1000 {
+            0.9
+        } else if content.len() > 500 {
+            0.8
+        } else if content.len() > 100 {
+            0.7
+        } else {
+            0.5
+        };
         score_factors.push(length_score);
 
         // 6. Actionable content detection (higher value for actionable items)
-        let action_indicators = ["action", "task", "goal", "objective", "plan", "strategy", "implement", "execute"];
-        let action_count = action_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
-        let action_score = if action_count >= 2 { 0.9 } else if action_count >= 1 { 0.8 } else { 0.7 };
+        let action_indicators = [
+            "action",
+            "task",
+            "goal",
+            "objective",
+            "plan",
+            "strategy",
+            "implement",
+            "execute",
+        ];
+        let action_count = action_indicators
+            .iter()
+            .filter(|&indicator| content_lower.contains(indicator))
+            .count();
+        let action_score = if action_count >= 2 {
+            0.9
+        } else if action_count >= 1 {
+            0.8
+        } else {
+            0.7
+        };
         score_factors.push(action_score);
 
         // 7. Knowledge content detection (high value for knowledge)
-        let knowledge_indicators = ["concept", "theory", "principle", "definition", "meaning", "understanding", "insight"];
-        let knowledge_count = knowledge_indicators.iter().filter(|&indicator| content_lower.contains(indicator)).count();
-        let knowledge_score = if knowledge_count >= 2 { 0.95 } else if knowledge_count >= 1 { 0.85 } else { 0.7 };
+        let knowledge_indicators = [
+            "concept",
+            "theory",
+            "principle",
+            "definition",
+            "meaning",
+            "understanding",
+            "insight",
+        ];
+        let knowledge_count = knowledge_indicators
+            .iter()
+            .filter(|&indicator| content_lower.contains(indicator))
+            .count();
+        let knowledge_score = if knowledge_count >= 2 {
+            0.95
+        } else if knowledge_count >= 1 {
+            0.85
+        } else {
+            0.7
+        };
         score_factors.push(knowledge_score);
 
         // Weighted combination of all factors
         let weights = [0.1, 0.15, 0.2, 0.15, 0.1, 0.15, 0.15];
-        score_factors.iter()
+        score_factors
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum::<f64>()
@@ -2032,7 +2423,8 @@ impl AdvancedSearchEngine {
         };
 
         // Content richness score (based on variety of words)
-        let unique_words_set: std::collections::HashSet<String> = memory.value
+        let unique_words_set: std::collections::HashSet<String> = memory
+            .value
             .split_whitespace()
             .map(|word| word.to_lowercase())
             .collect();
@@ -2080,7 +2472,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination
         let weights = [0.25, 0.25, 0.2, 0.15, 0.15];
-        Ok(richness_factors.iter()
+        Ok(richness_factors
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -2124,7 +2517,8 @@ impl AdvancedSearchEngine {
             if word.len() > 6 || // Long words
                word.chars().any(|c| c.is_uppercase()) || // Capitalized words
                word.chars().any(|c| c.is_numeric()) || // Numbers
-               word.contains(&['@', '#', '$', '%'][..]) // Special symbols
+               word.contains(&['@', '#', '$', '%'][..])
+            // Special symbols
             {
                 info_rich_count += 1;
             }
@@ -2134,25 +2528,42 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate adaptive balanced score with machine learning-like approach
-    async fn calculate_adaptive_balanced_score(&self, memory: &MemoryEntry, relevance_score: f64) -> Result<f64> {
+    async fn calculate_adaptive_balanced_score(
+        &self,
+        memory: &MemoryEntry,
+        relevance_score: f64,
+    ) -> Result<f64> {
         // Collect multiple factors
         let factors = vec![
             ("relevance", relevance_score),
             ("importance", memory.metadata.importance),
             ("confidence", memory.metadata.confidence),
-            ("recency", self.calculate_advanced_recency_score(
-                (chrono::Utc::now() - memory.created_at()).num_hours() as f64
-            )),
-            ("access_frequency", (memory.access_count() as f64 / 100.0).min(1.0)),
-            ("content_richness", self.calculate_content_richness_score(memory).await?),
-            ("tag_engagement", self.calculate_tag_engagement_score(&memory.metadata.tags)),
+            (
+                "recency",
+                self.calculate_advanced_recency_score(
+                    (chrono::Utc::now() - memory.created_at()).num_hours() as f64,
+                ),
+            ),
+            (
+                "access_frequency",
+                (memory.access_count() as f64 / 100.0).min(1.0),
+            ),
+            (
+                "content_richness",
+                self.calculate_content_richness_score(memory).await?,
+            ),
+            (
+                "tag_engagement",
+                self.calculate_tag_engagement_score(&memory.metadata.tags),
+            ),
         ];
 
         // Adaptive weighting based on factor values and historical performance
         let adaptive_weights = self.calculate_adaptive_weights(&factors);
 
         // Calculate weighted score
-        let weighted_score: f64 = factors.iter()
+        let weighted_score: f64 = factors
+            .iter()
             .zip(adaptive_weights.iter())
             .map(|((_, value), weight)| value * weight)
             .sum();
@@ -2279,7 +2690,8 @@ impl AdvancedSearchEngine {
         let mut context_scores = Vec::new();
 
         // 1. Topic coherence score
-        let topic_coherence = self.calculate_topic_coherence_from_vec(&memory.value, &memory.metadata.tags);
+        let topic_coherence =
+            self.calculate_topic_coherence_from_vec(&memory.value, &memory.metadata.tags);
         context_scores.push(topic_coherence);
 
         // 2. Semantic density score
@@ -2296,7 +2708,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination
         let weights = [0.3, 0.25, 0.25, 0.2];
-        Ok(context_scores.iter()
+        Ok(context_scores
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -2349,13 +2762,31 @@ impl AdvancedSearchEngine {
 
         // Count semantically rich words
         let semantic_indicators = [
-            "because", "therefore", "however", "although", "since", "while",
-            "important", "significant", "critical", "essential", "key",
-            "analyze", "evaluate", "compare", "contrast", "implement",
-            "strategy", "approach", "method", "technique", "process"
+            "because",
+            "therefore",
+            "however",
+            "although",
+            "since",
+            "while",
+            "important",
+            "significant",
+            "critical",
+            "essential",
+            "key",
+            "analyze",
+            "evaluate",
+            "compare",
+            "contrast",
+            "implement",
+            "strategy",
+            "approach",
+            "method",
+            "technique",
+            "process",
         ];
 
-        let semantic_word_count = words.iter()
+        let semantic_word_count = words
+            .iter()
             .filter(|word| {
                 let lower_word = word.to_lowercase();
                 semantic_indicators.contains(&lower_word.as_str()) ||
@@ -2381,13 +2812,18 @@ impl AdvancedSearchEngine {
 
         let mut relevance_scores = Vec::new();
         for search in recent_searches {
-            let query_words: std::collections::HashSet<String> = search.text_query.as_ref().map(|q| q.clone()).unwrap_or_default()
+            let query_words: std::collections::HashSet<String> = search
+                .text_query
+                .as_ref()
+                .map(|q| q.clone())
+                .unwrap_or_default()
                 .to_lowercase()
                 .split_whitespace()
                 .map(|word| word.to_string())
                 .collect();
 
-            let memory_words: std::collections::HashSet<String> = memory.value
+            let memory_words: std::collections::HashSet<String> = memory
+                .value
                 .to_lowercase()
                 .split_whitespace()
                 .map(|word| word.to_string())
@@ -2421,14 +2857,17 @@ impl AdvancedSearchEngine {
     /// Calculate cross-reference score
     async fn calculate_cross_reference_score(&self, memory: &MemoryEntry) -> Result<f64> {
         // Calculate how well this memory connects to other memories
-        let memory_words: std::collections::HashSet<String> = memory.value
+        let memory_words: std::collections::HashSet<String> = memory
+            .value
             .to_lowercase()
             .split_whitespace()
             .filter(|word| word.len() > 3)
             .map(|word| word.to_string())
             .collect();
 
-        let memory_tags: std::collections::HashSet<String> = memory.metadata.tags
+        let memory_tags: std::collections::HashSet<String> = memory
+            .metadata
+            .tags
             .iter()
             .map(|tag| tag.to_lowercase())
             .collect();
@@ -2437,7 +2876,9 @@ impl AdvancedSearchEngine {
 
         // Sample a subset of memories for comparison (to avoid performance issues)
         let sample_size = 50.min(self.search_index.metadata_index.len());
-        let sample_memories: Vec<_> = self.search_index.metadata_index
+        let sample_memories: Vec<_> = self
+            .search_index
+            .metadata_index
             .iter()
             .take(sample_size)
             .collect();
@@ -2448,7 +2889,9 @@ impl AdvancedSearchEngine {
             }
 
             // Calculate word overlap
-            let word_overlap = memory_words.intersection(&other_entry.content_words).count() as f64;
+            let word_overlap = memory_words
+                .intersection(&other_entry.content_words)
+                .count() as f64;
             let word_connection = if !memory_words.is_empty() {
                 word_overlap / memory_words.len() as f64
             } else {
@@ -2487,7 +2930,9 @@ impl AdvancedSearchEngine {
         similarity_scores.push(tag_similarity);
 
         // Factor 2: Content-based similarity with frequently accessed memories
-        let content_similarity = self.calculate_content_based_collaborative_score(memory).await?;
+        let content_similarity = self
+            .calculate_content_based_collaborative_score(memory)
+            .await?;
         similarity_scores.push(content_similarity);
 
         // Factor 3: Temporal pattern similarity
@@ -2500,7 +2945,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination
         let weights = [0.3, 0.3, 0.2, 0.2];
-        Ok(similarity_scores.iter()
+        Ok(similarity_scores
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -2517,15 +2963,13 @@ impl AdvancedSearchEngine {
             vec!["personal", "important"],
         ];
 
-        let memory_tags: std::collections::HashSet<String> = tags.iter()
-            .map(|tag| tag.to_lowercase())
-            .collect();
+        let memory_tags: std::collections::HashSet<String> =
+            tags.iter().map(|tag| tag.to_lowercase()).collect();
 
         let mut max_similarity = 0.0;
         for popular_combo in &popular_tag_combinations {
-            let combo_set: std::collections::HashSet<String> = popular_combo.iter()
-                .map(|tag| tag.to_string())
-                .collect();
+            let combo_set: std::collections::HashSet<String> =
+                popular_combo.iter().map(|tag| tag.to_string()).collect();
 
             let overlap = memory_tags.intersection(&combo_set).count() as f64;
             let similarity = if !combo_set.is_empty() {
@@ -2543,7 +2987,10 @@ impl AdvancedSearchEngine {
     }
 
     /// Calculate content-based collaborative score
-    async fn calculate_content_based_collaborative_score(&self, memory: &MemoryEntry) -> Result<f64> {
+    async fn calculate_content_based_collaborative_score(
+        &self,
+        memory: &MemoryEntry,
+    ) -> Result<f64> {
         // Find memories with similar content characteristics that have high access counts
         let target_length = memory.value.len();
         let target_word_count = memory.value.split_whitespace().count();
@@ -2553,9 +3000,14 @@ impl AdvancedSearchEngine {
         // Sample memories for comparison
         let sample_size = 30.min(self.search_index.metadata_index.len());
         for (_, other_entry) in self.search_index.metadata_index.iter().take(sample_size) {
-            if other_entry.access_count > 5 { // Only consider frequently accessed memories
-                let length_similarity = 1.0 - ((target_length as f64 - other_entry.content_length as f64).abs() / target_length.max(other_entry.content_length) as f64);
-                let word_count_similarity = 1.0 - ((target_word_count as f64 - other_entry.content_words.len() as f64).abs() / target_word_count.max(other_entry.content_words.len()) as f64);
+            if other_entry.access_count > 5 {
+                // Only consider frequently accessed memories
+                let length_similarity = 1.0
+                    - ((target_length as f64 - other_entry.content_length as f64).abs()
+                        / target_length.max(other_entry.content_length) as f64);
+                let word_count_similarity = 1.0
+                    - ((target_word_count as f64 - other_entry.content_words.len() as f64).abs()
+                        / target_word_count.max(other_entry.content_words.len()) as f64);
 
                 let combined_similarity = (length_similarity + word_count_similarity) / 2.0;
                 similarity_scores.push(combined_similarity);
@@ -2577,10 +3029,23 @@ impl AdvancedSearchEngine {
 
         // Simulate popular creation times
         let popular_hours = [9, 10, 11, 14, 15, 16]; // Business hours
-        let popular_weekdays = [chrono::Weekday::Mon, chrono::Weekday::Tue, chrono::Weekday::Wed, chrono::Weekday::Thu];
+        let popular_weekdays = [
+            chrono::Weekday::Mon,
+            chrono::Weekday::Tue,
+            chrono::Weekday::Wed,
+            chrono::Weekday::Thu,
+        ];
 
-        let hour_score = if popular_hours.contains(&creation_hour) { 0.8 } else { 0.4 };
-        let weekday_score = if popular_weekdays.contains(&creation_weekday) { 0.8 } else { 0.4 };
+        let hour_score = if popular_hours.contains(&creation_hour) {
+            0.8
+        } else {
+            0.4
+        };
+        let weekday_score = if popular_weekdays.contains(&creation_weekday) {
+            0.8
+        } else {
+            0.4
+        };
 
         (hour_score + weekday_score) / 2.0
     }
@@ -2625,7 +3090,8 @@ impl AdvancedSearchEngine {
 
         // Weighted combination
         let weights = [0.3, 0.3, 0.2, 0.2];
-        Ok(pattern_scores.iter()
+        Ok(pattern_scores
+            .iter()
             .zip(weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -2639,10 +3105,10 @@ impl AdvancedSearchEngine {
 
         // Score based on optimal creation times
         let hour_score = match hour {
-            8..=11 => 0.9,   // Morning peak
-            13..=17 => 0.8,  // Afternoon peak
-            18..=21 => 0.6,  // Evening
-            _ => 0.3,        // Off-hours
+            8..=11 => 0.9,  // Morning peak
+            13..=17 => 0.8, // Afternoon peak
+            18..=21 => 0.6, // Evening
+            _ => 0.3,       // Off-hours
         };
 
         let day_score = match day_of_week {
@@ -2712,23 +3178,26 @@ impl AdvancedSearchEngine {
         // Score based on seasonal relevance
         let month_diff = ((creation_month as i32 - current_month as i32).abs()).min(6);
         let seasonal_score = match month_diff {
-            0 => 1.0,      // Same month
-            1 => 0.9,      // Adjacent month
-            2 => 0.7,      // 2 months apart
-            3 => 0.5,      // Quarter apart
-            _ => 0.3,      // Different season
+            0 => 1.0, // Same month
+            1 => 0.9, // Adjacent month
+            2 => 0.7, // 2 months apart
+            3 => 0.5, // Quarter apart
+            _ => 0.3, // Different season
         };
 
         seasonal_score
     }
 
-
-
     /// Calculate content-based centrality as fallback
     #[allow(dead_code)]
     async fn calculate_content_based_centrality(&self, memory_key: &str) -> Result<f64> {
-        let memory_entry = self.search_index.metadata_index.get(memory_key)
-            .ok_or_else(|| MemoryError::NotFound { key: memory_key.to_string() })?;
+        let memory_entry = self
+            .search_index
+            .metadata_index
+            .get(memory_key)
+            .ok_or_else(|| MemoryError::NotFound {
+                key: memory_key.to_string(),
+            })?;
 
         let mut connection_count = 0;
         let mut total_strength = 0.0;
@@ -2740,13 +3209,18 @@ impl AdvancedSearchEngine {
             }
 
             // Calculate connection strength
-            let word_overlap = memory_entry.content_words.intersection(&other_entry.content_words).count() as f64;
+            let word_overlap = memory_entry
+                .content_words
+                .intersection(&other_entry.content_words)
+                .count() as f64;
             let tag_overlap = memory_entry.tags.intersection(&other_entry.tags).count() as f64;
 
-            let connection_strength = (word_overlap / memory_entry.content_words.len().max(1) as f64) * 0.7 +
-                                    (tag_overlap / memory_entry.tags.len().max(1) as f64) * 0.3;
+            let connection_strength =
+                (word_overlap / memory_entry.content_words.len().max(1) as f64) * 0.7
+                    + (tag_overlap / memory_entry.tags.len().max(1) as f64) * 0.3;
 
-            if connection_strength > 0.1 { // Threshold for meaningful connection
+            if connection_strength > 0.1 {
+                // Threshold for meaningful connection
                 connection_count += 1;
                 total_strength += connection_strength;
             }
@@ -2787,7 +3261,8 @@ impl AdvancedSearchEngine {
         let base_weights = [0.3, 0.25, 0.25, 0.2];
         let adaptive_weights = self.adapt_learning_weights(&learning_factors, &base_weights);
 
-        Ok(learning_factors.iter()
+        Ok(learning_factors
+            .iter()
             .zip(adaptive_weights.iter())
             .map(|(score, weight)| score * weight)
             .sum())
@@ -2887,9 +3362,11 @@ impl AdvancedSearchEngine {
     #[allow(dead_code)]
     fn update_performance_metrics(&mut self, search_time_ms: u64) {
         self.performance_metrics.total_searches += 1;
-        
-        let total_time = self.performance_metrics.avg_search_time_ms * (self.performance_metrics.total_searches - 1) as f64;
-        self.performance_metrics.avg_search_time_ms = (total_time + search_time_ms as f64) / self.performance_metrics.total_searches as f64;
+
+        let total_time = self.performance_metrics.avg_search_time_ms
+            * (self.performance_metrics.total_searches - 1) as f64;
+        self.performance_metrics.avg_search_time_ms =
+            (total_time + search_time_ms as f64) / self.performance_metrics.total_searches as f64;
     }
 
     /// Update the search index with new memories
@@ -2917,7 +3394,8 @@ impl SearchIndex {
 
     async fn add_memory(&mut self, memory: &MemoryEntry) -> Result<()> {
         // Extract words from content
-        let words: HashSet<String> = memory.value
+        let words: HashSet<String> = memory
+            .value
             .to_lowercase()
             .split_whitespace()
             .map(|s| s.to_string())
@@ -2949,12 +3427,6 @@ impl SearchIndex {
 
         Ok(())
     }
-
-
-
-
-
-
 }
 
 impl Default for AdvancedSearchEngine {
@@ -2967,7 +3439,6 @@ impl Default for AdvancedSearchEngine {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_sophisticated_content_type_scoring() {
         let engine = AdvancedSearchEngine::new();
@@ -2977,7 +3448,8 @@ mod tests {
         let url_score = engine.calculate_sophisticated_content_type_score(url_content);
 
         // Test code content (should get high score)
-        let code_content = "function calculateSum(a, b) { return a + b; } class MyClass { def method(): pass }";
+        let code_content =
+            "function calculateSum(a, b) { return a + b; } class MyClass { def method(): pass }";
         let code_score = engine.calculate_sophisticated_content_type_score(code_content);
 
         // Test documentation content (should get highest score)
@@ -2986,29 +3458,54 @@ mod tests {
 
         // Test structured content (should get high score)
         let structured_content = "Steps to follow:\n- First step\n- Second step\n1. Initialize\n2. Process\n3. Finalize\n```code block```";
-        let structured_score = engine.calculate_sophisticated_content_type_score(structured_content);
+        let structured_score =
+            engine.calculate_sophisticated_content_type_score(structured_content);
 
         // Test actionable content (should get high score)
         let actionable_content = "Action plan: implement the strategy to execute the task and achieve the goal through planned objectives.";
-        let actionable_score = engine.calculate_sophisticated_content_type_score(actionable_content);
+        let actionable_score =
+            engine.calculate_sophisticated_content_type_score(actionable_content);
 
         // Test knowledge content (should get highest score)
         let knowledge_content = "The concept behind this theory is based on the principle that understanding the definition provides insight into the meaning.";
         let knowledge_score = engine.calculate_sophisticated_content_type_score(knowledge_content);
 
         // Verify scoring hierarchy
-        assert!(doc_score > url_score, "Documentation should score higher than URLs");
+        assert!(
+            doc_score > url_score,
+            "Documentation should score higher than URLs"
+        );
         assert!(code_score > url_score, "Code should score higher than URLs");
-        assert!(structured_score > url_score, "Structured content should score higher than URLs");
-        assert!(actionable_score > url_score, "Actionable content should score higher than URLs");
-        assert!(knowledge_score > url_score, "Knowledge content should score higher than URLs");
+        assert!(
+            structured_score > url_score,
+            "Structured content should score higher than URLs"
+        );
+        assert!(
+            actionable_score > url_score,
+            "Actionable content should score higher than URLs"
+        );
+        assert!(
+            knowledge_score > url_score,
+            "Knowledge content should score higher than URLs"
+        );
 
         // Documentation and knowledge should be among the highest
-        assert!(doc_score >= 0.77, "Documentation should get high score, got {}", doc_score);
-        assert!(knowledge_score >= 0.73, "Knowledge content should get high score, got {}", knowledge_score);
+        assert!(
+            doc_score >= 0.77,
+            "Documentation should get high score, got {}",
+            doc_score
+        );
+        assert!(
+            knowledge_score >= 0.73,
+            "Knowledge content should get high score, got {}",
+            knowledge_score
+        );
 
         // URL content should get moderate score
-        assert!(url_score >= 0.5 && url_score <= 0.7, "URL content should get moderate score");
+        assert!(
+            url_score >= 0.5 && url_score <= 0.7,
+            "URL content should get moderate score"
+        );
     }
 
     #[test]
@@ -3025,10 +3522,19 @@ mod tests {
 
         // Scores should be similar (not artificially boosted by TODO/FIXME)
         let score_diff = (todo_score - regular_score).abs();
-        assert!(score_diff < 0.1, "TODO/FIXME should not artificially boost scores");
+        assert!(
+            score_diff < 0.1,
+            "TODO/FIXME should not artificially boost scores"
+        );
 
         // Both should get reasonable scores based on content quality
-        assert!(todo_score >= 0.5, "Content with TODO should still get reasonable score");
-        assert!(regular_score >= 0.5, "Regular content should get reasonable score");
+        assert!(
+            todo_score >= 0.5,
+            "Content with TODO should still get reasonable score"
+        );
+        assert!(
+            regular_score >= 0.5,
+            "Regular content should get reasonable score"
+        );
     }
 }

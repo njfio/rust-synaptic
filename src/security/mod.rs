@@ -1,22 +1,22 @@
 //! Security and Privacy Module
-//! 
+//!
 //! This module implements state-of-the-art security and privacy features for the Synaptic
 //! AI agent memory system, including zero-knowledge architecture, homomorphic encryption,
 //! differential privacy, and advanced access control.
 
-use crate::error::{Result, MemoryError};
+use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-pub mod encryption;
-pub mod privacy;
 pub mod access_control;
 pub mod audit;
+pub mod encryption;
 pub mod key_management;
+pub mod privacy;
 pub mod zero_knowledge;
 
 /// Comprehensive security configuration for the Synaptic memory system.
@@ -287,12 +287,16 @@ impl SecurityContext {
     pub fn validate_comprehensive(&self, require_mfa: bool) -> Result<()> {
         // Check session validity
         if !self.is_session_valid() {
-            return Err(MemoryError::access_denied("Session has expired".to_string()));
+            return Err(MemoryError::access_denied(
+                "Session has expired".to_string(),
+            ));
         }
 
         // Check MFA requirements
         if !self.is_mfa_satisfied(require_mfa) {
-            return Err(MemoryError::access_denied("MFA verification required".to_string()));
+            return Err(MemoryError::access_denied(
+                "MFA verification required".to_string(),
+            ));
         }
 
         // Validate user ID is not empty
@@ -330,7 +334,8 @@ impl SecurityManager {
     /// Create a new security manager
     pub async fn new(config: SecurityConfig) -> Result<Self> {
         let key_manager = key_management::KeyManager::new(&config).await?;
-        let encryption_manager = encryption::EncryptionManager::new(&config, key_manager.clone()).await?;
+        let encryption_manager =
+            encryption::EncryptionManager::new(&config, key_manager.clone()).await?;
         let privacy_manager = privacy::PrivacyManager::new(&config).await?;
         let access_control = access_control::AccessControlManager::new(&config).await?;
         let audit_logger = audit::AuditLogger::new(&config.audit_config).await?;
@@ -353,47 +358,63 @@ impl SecurityManager {
     }
 
     /// Encrypt a memory entry with zero-knowledge architecture
-    pub async fn encrypt_memory(&mut self, 
-        entry: &MemoryEntry, 
-        context: &SecurityContext
+    pub async fn encrypt_memory(
+        &mut self,
+        entry: &MemoryEntry,
+        context: &SecurityContext,
     ) -> Result<EncryptedMemoryEntry> {
         // Check permissions
-        self.access_control.check_permission(context, Permission::WriteMemory).await?;
+        self.access_control
+            .check_permission(context, Permission::WriteMemory)
+            .await?;
 
         // Apply differential privacy if enabled
         let processed_entry = if self.config.enable_differential_privacy {
-            self.privacy_manager.apply_differential_privacy(entry, context).await?
+            self.privacy_manager
+                .apply_differential_privacy(entry, context)
+                .await?
         } else {
             entry.clone()
         };
 
         // Encrypt with homomorphic encryption if enabled
         let encrypted_entry = if self.config.enable_homomorphic_encryption {
-            self.encryption_manager.homomorphic_encrypt(&processed_entry, context).await?
+            self.encryption_manager
+                .homomorphic_encrypt(&processed_entry, context)
+                .await?
         } else {
-            self.encryption_manager.standard_encrypt(&processed_entry, context).await?
+            self.encryption_manager
+                .standard_encrypt(&processed_entry, context)
+                .await?
         };
 
         // Log the operation
-        self.audit_logger.log_encryption_operation(context, "encrypt_memory", true).await?;
+        self.audit_logger
+            .log_encryption_operation(context, "encrypt_memory", true)
+            .await?;
 
         Ok(encrypted_entry)
     }
 
     /// Decrypt a memory entry
-    pub async fn decrypt_memory(&mut self,
+    pub async fn decrypt_memory(
+        &mut self,
         encrypted_entry: &EncryptedMemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<MemoryEntry> {
         // Check permissions
-        self.access_control.check_permission(context, Permission::ReadMemory).await?;
+        self.access_control
+            .check_permission(context, Permission::ReadMemory)
+            .await?;
 
         // Verify zero-knowledge proof if enabled
         if self.config.enable_zero_knowledge {
             if let Some(ref mut zkm) = self.zero_knowledge_manager {
                 if let Some(proof_json) = context.attributes.get("zk_access_proof") {
-                    let proof: zero_knowledge::ZKProof = serde_json::from_str(proof_json)
-                        .map_err(|_| MemoryError::access_denied("Invalid proof format".to_string()))?;
+                    let proof: zero_knowledge::ZKProof =
+                        serde_json::from_str(proof_json).map_err(|_| {
+                            MemoryError::access_denied("Invalid proof format".to_string())
+                        })?;
                     let statement = zero_knowledge::AccessStatement {
                         memory_key: encrypted_entry.id.clone(),
                         user_id: context.user_id.clone(),
@@ -402,76 +423,98 @@ impl SecurityManager {
                     };
                     let valid = zkm.verify_access_proof(&proof, &statement).await?;
                     if !valid {
-                        return Err(MemoryError::access_denied("Zero-knowledge verification failed".to_string()));
+                        return Err(MemoryError::access_denied(
+                            "Zero-knowledge verification failed".to_string(),
+                        ));
                     }
                 } else {
-                    return Err(MemoryError::access_denied("Access proof required".to_string()));
+                    return Err(MemoryError::access_denied(
+                        "Access proof required".to_string(),
+                    ));
                 }
             }
         }
 
         // Decrypt based on encryption type
         let decrypted_entry = if encrypted_entry.is_homomorphic {
-            self.encryption_manager.homomorphic_decrypt(encrypted_entry, context).await?
+            self.encryption_manager
+                .homomorphic_decrypt(encrypted_entry, context)
+                .await?
         } else {
-            self.encryption_manager.standard_decrypt(encrypted_entry, context).await?
+            self.encryption_manager
+                .standard_decrypt(encrypted_entry, context)
+                .await?
         };
 
         // Log the operation
-        self.audit_logger.log_encryption_operation(context, "decrypt_memory", true).await?;
+        self.audit_logger
+            .log_encryption_operation(context, "decrypt_memory", true)
+            .await?;
 
         Ok(decrypted_entry)
     }
 
     /// Perform secure computation on encrypted data
-    pub async fn secure_compute(&mut self,
+    pub async fn secure_compute(
+        &mut self,
         encrypted_entries: &[EncryptedMemoryEntry],
         operation: SecureOperation,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<EncryptedComputationResult> {
         // Check permissions
-        self.access_control.check_permission(context, Permission::ExecuteQueries).await?;
+        self.access_control
+            .check_permission(context, Permission::ExecuteQueries)
+            .await?;
 
         // Perform homomorphic computation
-        let result = self.encryption_manager.homomorphic_compute(
-            encrypted_entries,
-            operation.clone(),
-            context
-        ).await?;
+        let result = self
+            .encryption_manager
+            .homomorphic_compute(encrypted_entries, operation.clone(), context)
+            .await?;
 
         // Log the operation
-        self.audit_logger.log_computation_operation(context, &operation, true).await?;
+        self.audit_logger
+            .log_computation_operation(context, &operation, true)
+            .await?;
 
         Ok(result)
     }
 
     /// Generate zero-knowledge proof for memory access
-    pub async fn generate_access_proof(&mut self,
+    pub async fn generate_access_proof(
+        &mut self,
         memory_key: &str,
         context: &SecurityContext,
         access_type: zero_knowledge::AccessType,
     ) -> Result<zero_knowledge::ZKProof> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_access_proof(memory_key, context, access_type).await
+            zkm.generate_access_proof(memory_key, context, access_type)
+                .await
         } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+            Err(MemoryError::access_denied(
+                "Zero-knowledge features not enabled",
+            ))
         }
     }
 
     /// Verify zero-knowledge proof
-    pub async fn verify_access_proof(&mut self,
+    pub async fn verify_access_proof(
+        &mut self,
         proof: &zero_knowledge::ZKProof,
         statement: &zero_knowledge::AccessStatement,
     ) -> Result<bool> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
             zkm.verify_access_proof(proof, statement).await
         } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+            Err(MemoryError::access_denied(
+                "Zero-knowledge features not enabled",
+            ))
         }
     }
 
     /// Generate content proof without revealing content
-    pub async fn generate_content_proof(&mut self,
+    pub async fn generate_content_proof(
+        &mut self,
         entry: &MemoryEntry,
         predicate: zero_knowledge::ContentPredicate,
         context: &SecurityContext,
@@ -479,14 +522,21 @@ impl SecurityManager {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
             zkm.generate_content_proof(entry, predicate, context).await
         } else {
-            Err(MemoryError::access_denied("Zero-knowledge features not enabled"))
+            Err(MemoryError::access_denied(
+                "Zero-knowledge features not enabled",
+            ))
         }
     }
 
     /// Get security metrics
-    pub async fn get_security_metrics(&mut self, context: &SecurityContext) -> Result<SecurityMetrics> {
+    pub async fn get_security_metrics(
+        &mut self,
+        context: &SecurityContext,
+    ) -> Result<SecurityMetrics> {
         // Check permissions
-        self.access_control.check_permission(context, Permission::ViewAuditLogs).await?;
+        self.access_control
+            .check_permission(context, Permission::ViewAuditLogs)
+            .await?;
 
         let encryption_metrics = self.encryption_manager.get_metrics().await?;
         let privacy_metrics = self.privacy_manager.get_metrics().await?;

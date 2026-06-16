@@ -5,13 +5,15 @@
 //! and detailed metrics collection with visualization.
 
 use crate::error::Result;
-use crate::performance::metrics::{PerformanceMetrics, MetricsCollector};
-use crate::performance::real_time_monitoring::{RealTimePerformanceMonitor, RealTimeMonitoringConfig};
+use crate::performance::metrics::{MetricsCollector, PerformanceMetrics};
+use crate::performance::real_time_monitoring::{
+    RealTimeMonitoringConfig, RealTimePerformanceMonitor,
+};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use chrono::{DateTime, Utc};
 use tokio::time::interval;
 
 /// Performance profiler for CLI operations
@@ -525,7 +527,7 @@ impl Default for SessionConfig {
     fn default() -> Self {
         Self {
             target_operations: vec!["*".to_string()], // Profile all operations
-            sampling_rate: 1.0, // 100% sampling
+            sampling_rate: 1.0,                       // 100% sampling
             include_memory: true,
             include_cpu: true,
             include_io: true,
@@ -558,7 +560,11 @@ impl PerformanceProfiler {
     }
 
     /// Start a new profiling session
-    pub async fn start_session(&mut self, name: String, session_config: SessionConfig) -> Result<String> {
+    pub async fn start_session(
+        &mut self,
+        name: String,
+        session_config: SessionConfig,
+    ) -> Result<String> {
         let session_id = uuid::Uuid::new_v4().to_string();
         let session = ProfilingSession {
             id: session_id.clone(),
@@ -583,10 +589,11 @@ impl PerformanceProfiler {
 
     /// Stop a profiling session and generate report
     pub async fn stop_session(&mut self, session_id: &str) -> Result<ProfileReport> {
-        let mut session = self.active_sessions.remove(session_id)
-            .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
+        let mut session = self.active_sessions.remove(session_id).ok_or_else(|| {
+            crate::error::MemoryError::InvalidConfiguration {
                 message: format!("Session not found: {}", session_id),
-            })?;
+            }
+        })?;
 
         session.status = SessionStatus::Completed;
         let duration = session.start_time.elapsed();
@@ -605,7 +612,11 @@ impl PerformanceProfiler {
         // Save report to file
         self.save_report(&report).await?;
 
-        tracing::info!("Completed profiling session '{}' in {:.2}s", session.name, duration.as_secs_f64());
+        tracing::info!(
+            "Completed profiling session '{}' in {:.2}s",
+            session.name,
+            duration.as_secs_f64()
+        );
         Ok(report)
     }
 
@@ -657,7 +668,11 @@ impl PerformanceProfiler {
     }
 
     /// Run continuous profiling for a specified duration
-    pub async fn run_continuous_profiling(&mut self, session_id: &str, duration: Duration) -> Result<()> {
+    pub async fn run_continuous_profiling(
+        &mut self,
+        session_id: &str,
+        duration: Duration,
+    ) -> Result<()> {
         let mut interval = interval(Duration::from_millis(self.config.sampling_interval_ms));
         let end_time = Instant::now() + duration;
 
@@ -681,11 +696,17 @@ impl PerformanceProfiler {
     }
 
     /// Generate comprehensive performance report
-    async fn generate_report(&self, session: &ProfilingSession, duration: Duration) -> Result<ProfileReport> {
+    async fn generate_report(
+        &self,
+        session: &ProfilingSession,
+        duration: Duration,
+    ) -> Result<ProfileReport> {
         let report_id = uuid::Uuid::new_v4().to_string();
 
         // Calculate summary statistics
-        let summary = self.calculate_summary_statistics(&session.metrics, duration).await?;
+        let summary = self
+            .calculate_summary_statistics(&session.metrics, duration)
+            .await?;
 
         // Identify bottlenecks
         let bottlenecks = if self.config.enable_bottleneck_detection {
@@ -696,7 +717,8 @@ impl PerformanceProfiler {
 
         // Generate recommendations
         let recommendations = if self.config.enable_recommendations {
-            self.generate_recommendations(&summary, &bottlenecks).await?
+            self.generate_recommendations(&summary, &bottlenecks)
+                .await?
         } else {
             Vec::new()
         };
@@ -705,7 +727,9 @@ impl PerformanceProfiler {
         let detailed_metrics = self.create_detailed_metrics(&session.metrics).await?;
 
         // Generate visualizations
-        let visualizations = self.generate_visualizations(&session.metrics, &detailed_metrics).await?;
+        let visualizations = self
+            .generate_visualizations(&session.metrics, &detailed_metrics)
+            .await?;
 
         Ok(ProfileReport {
             id: report_id,
@@ -721,7 +745,11 @@ impl PerformanceProfiler {
     }
 
     /// Calculate summary statistics
-    async fn calculate_summary_statistics(&self, metrics: &[PerformanceMetrics], _duration: Duration) -> Result<ProfileSummary> {
+    async fn calculate_summary_statistics(
+        &self,
+        metrics: &[PerformanceMetrics],
+        _duration: Duration,
+    ) -> Result<ProfileSummary> {
         if metrics.is_empty() {
             return Ok(ProfileSummary {
                 total_operations: 0,
@@ -736,11 +764,18 @@ impl PerformanceProfiler {
         }
 
         let total_operations = metrics.len() as u64;
-        let avg_latency_ms = metrics.iter().map(|m| m.avg_latency_ms).sum::<f64>() / metrics.len() as f64;
+        let avg_latency_ms =
+            metrics.iter().map(|m| m.avg_latency_ms).sum::<f64>() / metrics.len() as f64;
         let peak_latency_ms = metrics.iter().map(|m| m.avg_latency_ms).fold(0.0, f64::max);
-        let throughput = metrics.iter().map(|m| m.throughput_ops_per_sec).sum::<f64>() / metrics.len() as f64;
-        let cpu_utilization = metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64;
-        let memory_usage_mb = metrics.iter().map(|m| m.memory_usage_percent).sum::<f64>() / metrics.len() as f64;
+        let throughput = metrics
+            .iter()
+            .map(|m| m.throughput_ops_per_sec)
+            .sum::<f64>()
+            / metrics.len() as f64;
+        let cpu_utilization =
+            metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64;
+        let memory_usage_mb =
+            metrics.iter().map(|m| m.memory_usage_percent).sum::<f64>() / metrics.len() as f64;
         let error_rate = metrics.iter().map(|m| m.error_rate).sum::<f64>() / metrics.len() as f64;
 
         // Calculate performance score (0-100, higher is better)
@@ -765,7 +800,14 @@ impl PerformanceProfiler {
     }
 
     /// Calculate performance score
-    fn calculate_performance_score(&self, latency: f64, throughput: f64, cpu: f64, memory: f64, error_rate: f64) -> f64 {
+    fn calculate_performance_score(
+        &self,
+        latency: f64,
+        throughput: f64,
+        cpu: f64,
+        memory: f64,
+        error_rate: f64,
+    ) -> f64 {
         // Weighted scoring algorithm
         let latency_score = (100.0 - (latency / 10.0).min(100.0)).max(0.0);
         let throughput_score = (throughput / 100.0).min(100.0);
@@ -774,11 +816,18 @@ impl PerformanceProfiler {
         let error_score = (100.0 - (error_rate * 1000.0)).max(0.0);
 
         // Weighted average
-        latency_score * 0.3 + throughput_score * 0.2 + cpu_score * 0.2 + memory_score * 0.2 + error_score * 0.1
+        latency_score * 0.3
+            + throughput_score * 0.2
+            + cpu_score * 0.2
+            + memory_score * 0.2
+            + error_score * 0.1
     }
 
     /// Identify performance bottlenecks
-    async fn identify_bottlenecks(&self, metrics: &[PerformanceMetrics]) -> Result<Vec<Bottleneck>> {
+    async fn identify_bottlenecks(
+        &self,
+        metrics: &[PerformanceMetrics],
+    ) -> Result<Vec<Bottleneck>> {
         let mut bottlenecks = Vec::new();
 
         if metrics.is_empty() {
@@ -786,11 +835,18 @@ impl PerformanceProfiler {
         }
 
         // Analyze CPU bottlenecks
-        let avg_cpu = metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64;
+        let avg_cpu =
+            metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64;
         if avg_cpu > 80.0 {
             bottlenecks.push(Bottleneck {
                 bottleneck_type: BottleneckType::Cpu,
-                severity: if avg_cpu > 95.0 { Severity::Critical } else if avg_cpu > 90.0 { Severity::High } else { Severity::Medium },
+                severity: if avg_cpu > 95.0 {
+                    Severity::Critical
+                } else if avg_cpu > 90.0 {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                },
                 description: format!("High CPU utilization detected: {:.1}%", avg_cpu),
                 impact: Impact {
                     performance_degradation: (avg_cpu - 50.0).max(0.0),
@@ -813,11 +869,16 @@ impl PerformanceProfiler {
         }
 
         // Analyze memory bottlenecks
-        let avg_memory = metrics.iter().map(|m| m.memory_usage_percent).sum::<f64>() / metrics.len() as f64;
+        let avg_memory =
+            metrics.iter().map(|m| m.memory_usage_percent).sum::<f64>() / metrics.len() as f64;
         if avg_memory > 85.0 {
             bottlenecks.push(Bottleneck {
                 bottleneck_type: BottleneckType::Memory,
-                severity: if avg_memory > 95.0 { Severity::Critical } else { Severity::High },
+                severity: if avg_memory > 95.0 {
+                    Severity::Critical
+                } else {
+                    Severity::High
+                },
                 description: format!("High memory utilization detected: {:.1}%", avg_memory),
                 impact: Impact {
                     performance_degradation: (avg_memory - 60.0).max(0.0),
@@ -840,11 +901,18 @@ impl PerformanceProfiler {
         }
 
         // Analyze latency bottlenecks
-        let avg_latency = metrics.iter().map(|m| m.avg_latency_ms).sum::<f64>() / metrics.len() as f64;
+        let avg_latency =
+            metrics.iter().map(|m| m.avg_latency_ms).sum::<f64>() / metrics.len() as f64;
         if avg_latency > 100.0 {
             bottlenecks.push(Bottleneck {
                 bottleneck_type: BottleneckType::Algorithm,
-                severity: if avg_latency > 1000.0 { Severity::Critical } else if avg_latency > 500.0 { Severity::High } else { Severity::Medium },
+                severity: if avg_latency > 1000.0 {
+                    Severity::Critical
+                } else if avg_latency > 500.0 {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                },
                 description: format!("High latency detected: {:.1}ms", avg_latency),
                 impact: Impact {
                     performance_degradation: (avg_latency / 10.0).min(100.0),
@@ -870,7 +938,11 @@ impl PerformanceProfiler {
     }
 
     /// Generate optimization recommendations
-    async fn generate_recommendations(&self, summary: &ProfileSummary, bottlenecks: &[Bottleneck]) -> Result<Vec<Recommendation>> {
+    async fn generate_recommendations(
+        &self,
+        summary: &ProfileSummary,
+        bottlenecks: &[Bottleneck],
+    ) -> Result<Vec<Recommendation>> {
         let mut recommendations = Vec::new();
 
         // Generate recommendations based on bottlenecks
@@ -909,7 +981,7 @@ let results: Vec<_> = data.par_iter().map(|item| process_item(item)).collect();"
                             }
                         ],
                     });
-                },
+                }
                 BottleneckType::Memory => {
                     recommendations.push(Recommendation {
                         recommendation_type: RecommendationType::MemoryOptimization,
@@ -954,13 +1026,14 @@ impl<T> ObjectPool<T> {
                             }
                         ],
                     });
-                },
+                }
                 BottleneckType::Algorithm => {
                     recommendations.push(Recommendation {
                         recommendation_type: RecommendationType::CacheImprovement,
                         priority: Priority::Medium,
                         title: "Implement intelligent caching".to_string(),
-                        description: "Add caching layers to reduce computation and I/O overhead".to_string(),
+                        description: "Add caching layers to reduce computation and I/O overhead"
+                            .to_string(),
                         expected_improvement: ExpectedImprovement {
                             performance_gain: 40.0,
                             latency_reduction_ms: summary.avg_latency_ms * 0.4,
@@ -973,11 +1046,10 @@ impl<T> ObjectPool<T> {
                             required_skills: vec!["Caching strategies".to_string()],
                             dependencies: vec!["Cache library".to_string()],
                         },
-                        code_examples: vec![
-                            CodeExample {
-                                title: "LRU Cache implementation".to_string(),
-                                language: "rust".to_string(),
-                                code: r#"use lru::LruCache;
+                        code_examples: vec![CodeExample {
+                            title: "LRU Cache implementation".to_string(),
+                            language: "rust".to_string(),
+                            code: r#"use lru::LruCache;
 use std::sync::Mutex;
 
 struct CachedService {
@@ -997,12 +1069,13 @@ impl CachedService {
         cache.put(key.to_string(), value.clone());
         Ok(value)
     }
-}"#.to_string(),
-                                explanation: "Cache expensive computations to avoid redundant work".to_string(),
-                            }
-                        ],
+}"#
+                            .to_string(),
+                            explanation: "Cache expensive computations to avoid redundant work"
+                                .to_string(),
+                        }],
                     });
-                },
+                }
                 _ => {
                     // Generic recommendation for other bottleneck types
                     recommendations.push(Recommendation {
@@ -1034,7 +1107,9 @@ impl CachedService {
                 recommendation_type: RecommendationType::ArchitecturalChange,
                 priority: Priority::Critical,
                 title: "Consider architectural improvements".to_string(),
-                description: "The overall performance score is low. Consider major architectural changes".to_string(),
+                description:
+                    "The overall performance score is low. Consider major architectural changes"
+                        .to_string(),
                 expected_improvement: ExpectedImprovement {
                     performance_gain: 100.0,
                     latency_reduction_ms: summary.avg_latency_ms * 0.5,
@@ -1044,7 +1119,10 @@ impl CachedService {
                 implementation_effort: ImplementationEffort {
                     estimated_hours: 80.0,
                     complexity: ComplexityLevel::Expert,
-                    required_skills: vec!["Architecture design".to_string(), "System design".to_string()],
+                    required_skills: vec![
+                        "Architecture design".to_string(),
+                        "System design".to_string(),
+                    ],
                     dependencies: vec!["Team consensus".to_string(), "Budget approval".to_string()],
                 },
                 code_examples: vec![],
@@ -1055,7 +1133,10 @@ impl CachedService {
     }
 
     /// Create detailed metrics analysis
-    async fn create_detailed_metrics(&self, metrics: &[PerformanceMetrics]) -> Result<DetailedMetrics> {
+    async fn create_detailed_metrics(
+        &self,
+        metrics: &[PerformanceMetrics],
+    ) -> Result<DetailedMetrics> {
         if metrics.is_empty() {
             return Ok(DetailedMetrics {
                 latency_distribution: LatencyDistribution {
@@ -1093,50 +1174,60 @@ impl CachedService {
         let latency_distribution = self.calculate_latency_distribution(&latencies);
 
         // Create timeline data
-        let throughput_timeline: Vec<TimePoint> = metrics.iter().enumerate().map(|(i, m)| {
-            TimePoint {
+        let throughput_timeline: Vec<TimePoint> = metrics
+            .iter()
+            .enumerate()
+            .map(|(i, m)| TimePoint {
                 timestamp: Utc::now() - chrono::Duration::seconds((metrics.len() - i) as i64),
                 value: m.throughput_ops_per_sec,
                 metadata: HashMap::new(),
-            }
-        }).collect();
+            })
+            .collect();
 
         // Create resource utilization timelines
-        let cpu_timeline: Vec<TimePoint> = metrics.iter().enumerate().map(|(i, m)| {
-            TimePoint {
+        let cpu_timeline: Vec<TimePoint> = metrics
+            .iter()
+            .enumerate()
+            .map(|(i, m)| TimePoint {
                 timestamp: Utc::now() - chrono::Duration::seconds((metrics.len() - i) as i64),
                 value: m.cpu_usage_percent,
                 metadata: HashMap::new(),
-            }
-        }).collect();
+            })
+            .collect();
 
-        let memory_timeline: Vec<TimePoint> = metrics.iter().enumerate().map(|(i, m)| {
-            TimePoint {
+        let memory_timeline: Vec<TimePoint> = metrics
+            .iter()
+            .enumerate()
+            .map(|(i, m)| TimePoint {
                 timestamp: Utc::now() - chrono::Duration::seconds((metrics.len() - i) as i64),
                 value: m.memory_usage_percent,
                 metadata: HashMap::new(),
-            }
-        }).collect();
+            })
+            .collect();
 
         let resource_utilization = ResourceUtilization {
             cpu_timeline,
             memory_timeline,
-            io_timeline: Vec::new(), // Placeholder
+            io_timeline: Vec::new(),      // Placeholder
             network_timeline: Vec::new(), // Placeholder
         };
 
         // Create operation breakdown (simplified)
         let mut operation_breakdown = HashMap::new();
-        operation_breakdown.insert("query_execution".to_string(), OperationMetrics {
-            operation_name: "Query Execution".to_string(),
-            call_count: metrics.len() as u64,
-            total_time_ms: latencies.iter().sum(),
-            avg_time_ms: latencies.iter().sum::<f64>() / latencies.len() as f64,
-            min_time_ms: latencies.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
-            max_time_ms: latencies.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
-            success_rate: 1.0 - (metrics.iter().map(|m| m.error_rate).sum::<f64>() / metrics.len() as f64),
-            resource_consumption: HashMap::new(),
-        });
+        operation_breakdown.insert(
+            "query_execution".to_string(),
+            OperationMetrics {
+                operation_name: "Query Execution".to_string(),
+                call_count: metrics.len() as u64,
+                total_time_ms: latencies.iter().sum(),
+                avg_time_ms: latencies.iter().sum::<f64>() / latencies.len() as f64,
+                min_time_ms: latencies.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
+                max_time_ms: latencies.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
+                success_rate: 1.0
+                    - (metrics.iter().map(|m| m.error_rate).sum::<f64>() / metrics.len() as f64),
+                resource_consumption: HashMap::new(),
+            },
+        );
 
         // Create error analysis
         let total_errors = metrics.iter().map(|m| (m.error_rate * 1000.0) as u64).sum();
@@ -1146,8 +1237,8 @@ impl CachedService {
             total_errors,
             error_rate,
             error_types: HashMap::new(), // Placeholder
-            error_timeline: Vec::new(), // Placeholder
-            top_errors: Vec::new(), // Placeholder
+            error_timeline: Vec::new(),  // Placeholder
+            top_errors: Vec::new(),      // Placeholder
         };
 
         Ok(DetailedMetrics {
@@ -1192,9 +1283,8 @@ impl CachedService {
         let mean = latencies.iter().sum::<f64>() / latencies.len() as f64;
         let median = sorted_latencies[sorted_latencies.len() / 2];
 
-        let variance = latencies.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / latencies.len() as f64;
+        let variance =
+            latencies.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / latencies.len() as f64;
         let std_dev = variance.sqrt();
 
         // Create histogram
@@ -1208,7 +1298,8 @@ impl CachedService {
             let lower_bound = min_val + (i as f64 * bucket_size);
             let upper_bound = lower_bound + bucket_size;
 
-            let count = latencies.iter()
+            let count = latencies
+                .iter()
                 .filter(|&&x| x >= lower_bound && x < upper_bound)
                 .count() as u64;
 
@@ -1235,7 +1326,11 @@ impl CachedService {
     }
 
     /// Generate visualizations
-    async fn generate_visualizations(&self, metrics: &[PerformanceMetrics], detailed_metrics: &DetailedMetrics) -> Result<Vec<Visualization>> {
+    async fn generate_visualizations(
+        &self,
+        metrics: &[PerformanceMetrics],
+        detailed_metrics: &DetailedMetrics,
+    ) -> Result<Vec<Visualization>> {
         let mut visualizations = Vec::new();
 
         if !self.config.visualization.enable_ascii_charts {
@@ -1245,59 +1340,78 @@ impl CachedService {
         // Generate latency timeline chart
         let latency_chart = self.create_ascii_line_chart(
             "Latency Over Time",
-            &metrics.iter().enumerate().map(|(i, m)| DataPoint {
-                x: i as f64,
-                y: m.avg_latency_ms,
-                label: Some(format!("Sample {}", i)),
-                color: None,
-                size: None,
-            }).collect::<Vec<_>>(),
+            &metrics
+                .iter()
+                .enumerate()
+                .map(|(i, m)| DataPoint {
+                    x: i as f64,
+                    y: m.avg_latency_ms,
+                    label: Some(format!("Sample {}", i)),
+                    color: None,
+                    size: None,
+                })
+                .collect::<Vec<_>>(),
         );
 
         visualizations.push(Visualization {
             viz_type: VisualizationType::LineChart,
             title: "Latency Timeline".to_string(),
             ascii_art: latency_chart,
-            data_points: metrics.iter().enumerate().map(|(i, m)| DataPoint {
-                x: i as f64,
-                y: m.avg_latency_ms,
-                label: Some(format!("Sample {}", i)),
-                color: None,
-                size: None,
-            }).collect(),
+            data_points: metrics
+                .iter()
+                .enumerate()
+                .map(|(i, m)| DataPoint {
+                    x: i as f64,
+                    y: m.avg_latency_ms,
+                    label: Some(format!("Sample {}", i)),
+                    color: None,
+                    size: None,
+                })
+                .collect(),
             config: self.config.visualization.clone(),
         });
 
         // Generate throughput chart
         let throughput_chart = self.create_ascii_line_chart(
             "Throughput Over Time",
-            &metrics.iter().enumerate().map(|(i, m)| DataPoint {
-                x: i as f64,
-                y: m.throughput_ops_per_sec,
-                label: Some(format!("Sample {}", i)),
-                color: None,
-                size: None,
-            }).collect::<Vec<_>>(),
+            &metrics
+                .iter()
+                .enumerate()
+                .map(|(i, m)| DataPoint {
+                    x: i as f64,
+                    y: m.throughput_ops_per_sec,
+                    label: Some(format!("Sample {}", i)),
+                    color: None,
+                    size: None,
+                })
+                .collect::<Vec<_>>(),
         );
 
         visualizations.push(Visualization {
             viz_type: VisualizationType::LineChart,
             title: "Throughput Timeline".to_string(),
             ascii_art: throughput_chart,
-            data_points: metrics.iter().enumerate().map(|(i, m)| DataPoint {
-                x: i as f64,
-                y: m.throughput_ops_per_sec,
-                label: Some(format!("Sample {}", i)),
-                color: None,
-                size: None,
-            }).collect(),
+            data_points: metrics
+                .iter()
+                .enumerate()
+                .map(|(i, m)| DataPoint {
+                    x: i as f64,
+                    y: m.throughput_ops_per_sec,
+                    label: Some(format!("Sample {}", i)),
+                    color: None,
+                    size: None,
+                })
+                .collect(),
             config: self.config.visualization.clone(),
         });
 
         // Generate resource utilization chart
         let cpu_chart = self.create_ascii_bar_chart(
             "CPU Utilization",
-            &[("CPU", metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64)],
+            &[(
+                "CPU",
+                metrics.iter().map(|m| m.cpu_usage_percent).sum::<f64>() / metrics.len() as f64,
+            )],
         );
 
         visualizations.push(Visualization {
@@ -1324,13 +1438,21 @@ impl CachedService {
             viz_type: VisualizationType::Histogram,
             title: "Latency Distribution".to_string(),
             ascii_art: histogram_chart,
-            data_points: detailed_metrics.latency_distribution.histogram.iter().map(|bucket| DataPoint {
-                x: (bucket.lower_bound + bucket.upper_bound) / 2.0,
-                y: bucket.count as f64,
-                label: Some(format!("{:.1}-{:.1}ms", bucket.lower_bound, bucket.upper_bound)),
-                color: None,
-                size: None,
-            }).collect(),
+            data_points: detailed_metrics
+                .latency_distribution
+                .histogram
+                .iter()
+                .map(|bucket| DataPoint {
+                    x: (bucket.lower_bound + bucket.upper_bound) / 2.0,
+                    y: bucket.count as f64,
+                    label: Some(format!(
+                        "{:.1}-{:.1}ms",
+                        bucket.lower_bound, bucket.upper_bound
+                    )),
+                    color: None,
+                    size: None,
+                })
+                .collect(),
             config: self.config.visualization.clone(),
         });
 
@@ -1346,8 +1468,14 @@ impl CachedService {
         let width = self.config.visualization.chart_width;
         let height = self.config.visualization.chart_height;
 
-        let min_y = data_points.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
-        let max_y = data_points.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = data_points
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::INFINITY, f64::min);
+        let max_y = data_points
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max);
         let y_range = max_y - min_y;
 
         let mut chart = String::new();
@@ -1399,7 +1527,10 @@ impl CachedService {
         }
 
         let width = self.config.visualization.chart_width;
-        let max_value = data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+        let max_value = data
+            .iter()
+            .map(|(_, v)| *v)
+            .fold(f64::NEG_INFINITY, f64::max);
 
         let mut chart = String::new();
         chart.push_str(&format!("{}\n", title));
@@ -1434,7 +1565,11 @@ impl CachedService {
             let bar_length = ((bucket.count as f64 / max_count as f64) * width as f64) as usize;
             chart.push_str(&format!("{:>8.1} |", bucket.lower_bound));
             chart.push_str(&"█".repeat(bar_length));
-            chart.push_str(&format!(" {} ({:.1}%)\n", bucket.count, bucket.frequency * 100.0));
+            chart.push_str(&format!(
+                " {} ({:.1}%)\n",
+                bucket.count,
+                bucket.frequency * 100.0
+            ));
         }
 
         chart
@@ -1445,7 +1580,8 @@ impl CachedService {
         let output_dir = Path::new(&self.config.output_directory);
         tokio::fs::create_dir_all(output_dir).await?;
 
-        let filename = format!("profile_report_{}_{}.{}",
+        let filename = format!(
+            "profile_report_{}_{}.{}",
             report.session_name.replace(' ', "_"),
             report.generated_at.format("%Y%m%d_%H%M%S"),
             match self.config.report_format {
@@ -1479,28 +1615,66 @@ impl CachedService {
         output.push_str(&format!("Performance Profile Report\n"));
         output.push_str(&format!("==========================\n\n"));
         output.push_str(&format!("Session: {}\n", report.session_name));
-        output.push_str(&format!("Generated: {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
-        output.push_str(&format!("Duration: {:.2} seconds\n\n", report.duration_secs));
+        output.push_str(&format!(
+            "Generated: {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        output.push_str(&format!(
+            "Duration: {:.2} seconds\n\n",
+            report.duration_secs
+        ));
 
         // Summary
         output.push_str("Summary Statistics\n");
         output.push_str("------------------\n");
-        output.push_str(&format!("Total Operations: {}\n", report.summary.total_operations));
-        output.push_str(&format!("Average Latency: {:.2} ms\n", report.summary.avg_latency_ms));
-        output.push_str(&format!("Peak Latency: {:.2} ms\n", report.summary.peak_latency_ms));
-        output.push_str(&format!("Throughput: {:.2} ops/sec\n", report.summary.throughput));
-        output.push_str(&format!("CPU Utilization: {:.1}%\n", report.summary.cpu_utilization));
-        output.push_str(&format!("Memory Usage: {:.1}%\n", report.summary.memory_usage_mb));
-        output.push_str(&format!("Error Rate: {:.3}%\n", report.summary.error_rate * 100.0));
-        output.push_str(&format!("Performance Score: {:.1}/100\n\n", report.summary.performance_score));
+        output.push_str(&format!(
+            "Total Operations: {}\n",
+            report.summary.total_operations
+        ));
+        output.push_str(&format!(
+            "Average Latency: {:.2} ms\n",
+            report.summary.avg_latency_ms
+        ));
+        output.push_str(&format!(
+            "Peak Latency: {:.2} ms\n",
+            report.summary.peak_latency_ms
+        ));
+        output.push_str(&format!(
+            "Throughput: {:.2} ops/sec\n",
+            report.summary.throughput
+        ));
+        output.push_str(&format!(
+            "CPU Utilization: {:.1}%\n",
+            report.summary.cpu_utilization
+        ));
+        output.push_str(&format!(
+            "Memory Usage: {:.1}%\n",
+            report.summary.memory_usage_mb
+        ));
+        output.push_str(&format!(
+            "Error Rate: {:.3}%\n",
+            report.summary.error_rate * 100.0
+        ));
+        output.push_str(&format!(
+            "Performance Score: {:.1}/100\n\n",
+            report.summary.performance_score
+        ));
 
         // Bottlenecks
         if !report.bottlenecks.is_empty() {
             output.push_str("Identified Bottlenecks\n");
             output.push_str("----------------------\n");
             for (i, bottleneck) in report.bottlenecks.iter().enumerate() {
-                output.push_str(&format!("{}. {} ({:?})\n", i + 1, bottleneck.description, bottleneck.severity));
-                output.push_str(&format!("   Impact: {:.1}% performance degradation\n", bottleneck.impact.performance_degradation));
+                output.push_str(&format!(
+                    "{}. {} ({:?})\n",
+                    i + 1,
+                    bottleneck.description,
+                    bottleneck.severity
+                ));
+                output.push_str(&format!(
+                    "   Impact: {:.1}% performance degradation\n",
+                    bottleneck.impact.performance_degradation
+                ));
                 output.push_str(&format!("   Suggested fixes:\n"));
                 for fix in &bottleneck.suggested_fixes {
                     output.push_str(&format!("   - {}\n", fix));
@@ -1514,10 +1688,21 @@ impl CachedService {
             output.push_str("Optimization Recommendations\n");
             output.push_str("----------------------------\n");
             for (i, rec) in report.recommendations.iter().enumerate() {
-                output.push_str(&format!("{}. {} ({:?} priority)\n", i + 1, rec.title, rec.priority));
+                output.push_str(&format!(
+                    "{}. {} ({:?} priority)\n",
+                    i + 1,
+                    rec.title,
+                    rec.priority
+                ));
                 output.push_str(&format!("   {}\n", rec.description));
-                output.push_str(&format!("   Expected improvement: {:.1}% performance gain\n", rec.expected_improvement.performance_gain));
-                output.push_str(&format!("   Implementation effort: {:.1} hours ({:?})\n", rec.implementation_effort.estimated_hours, rec.implementation_effort.complexity));
+                output.push_str(&format!(
+                    "   Expected improvement: {:.1}% performance gain\n",
+                    rec.expected_improvement.performance_gain
+                ));
+                output.push_str(&format!(
+                    "   Implementation effort: {:.1} hours ({:?})\n",
+                    rec.implementation_effort.estimated_hours, rec.implementation_effort.complexity
+                ));
                 output.push('\n');
             }
         }
@@ -1538,28 +1723,66 @@ impl CachedService {
 
         output.push_str(&format!("# Performance Profile Report\n\n"));
         output.push_str(&format!("**Session:** {}\n", report.session_name));
-        output.push_str(&format!("**Generated:** {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
-        output.push_str(&format!("**Duration:** {:.2} seconds\n\n", report.duration_secs));
+        output.push_str(&format!(
+            "**Generated:** {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        output.push_str(&format!(
+            "**Duration:** {:.2} seconds\n\n",
+            report.duration_secs
+        ));
 
         // Summary
         output.push_str("## Summary Statistics\n\n");
         output.push_str("| Metric | Value |\n");
         output.push_str("|--------|-------|\n");
-        output.push_str(&format!("| Total Operations | {} |\n", report.summary.total_operations));
-        output.push_str(&format!("| Average Latency | {:.2} ms |\n", report.summary.avg_latency_ms));
-        output.push_str(&format!("| Peak Latency | {:.2} ms |\n", report.summary.peak_latency_ms));
-        output.push_str(&format!("| Throughput | {:.2} ops/sec |\n", report.summary.throughput));
-        output.push_str(&format!("| CPU Utilization | {:.1}% |\n", report.summary.cpu_utilization));
-        output.push_str(&format!("| Memory Usage | {:.1}% |\n", report.summary.memory_usage_mb));
-        output.push_str(&format!("| Error Rate | {:.3}% |\n", report.summary.error_rate * 100.0));
-        output.push_str(&format!("| Performance Score | {:.1}/100 |\n\n", report.summary.performance_score));
+        output.push_str(&format!(
+            "| Total Operations | {} |\n",
+            report.summary.total_operations
+        ));
+        output.push_str(&format!(
+            "| Average Latency | {:.2} ms |\n",
+            report.summary.avg_latency_ms
+        ));
+        output.push_str(&format!(
+            "| Peak Latency | {:.2} ms |\n",
+            report.summary.peak_latency_ms
+        ));
+        output.push_str(&format!(
+            "| Throughput | {:.2} ops/sec |\n",
+            report.summary.throughput
+        ));
+        output.push_str(&format!(
+            "| CPU Utilization | {:.1}% |\n",
+            report.summary.cpu_utilization
+        ));
+        output.push_str(&format!(
+            "| Memory Usage | {:.1}% |\n",
+            report.summary.memory_usage_mb
+        ));
+        output.push_str(&format!(
+            "| Error Rate | {:.3}% |\n",
+            report.summary.error_rate * 100.0
+        ));
+        output.push_str(&format!(
+            "| Performance Score | {:.1}/100 |\n\n",
+            report.summary.performance_score
+        ));
 
         // Bottlenecks
         if !report.bottlenecks.is_empty() {
             output.push_str("## Identified Bottlenecks\n\n");
             for (i, bottleneck) in report.bottlenecks.iter().enumerate() {
-                output.push_str(&format!("### {}. {} ({:?})\n\n", i + 1, bottleneck.description, bottleneck.severity));
-                output.push_str(&format!("**Impact:** {:.1}% performance degradation\n\n", bottleneck.impact.performance_degradation));
+                output.push_str(&format!(
+                    "### {}. {} ({:?})\n\n",
+                    i + 1,
+                    bottleneck.description,
+                    bottleneck.severity
+                ));
+                output.push_str(&format!(
+                    "**Impact:** {:.1}% performance degradation\n\n",
+                    bottleneck.impact.performance_degradation
+                ));
                 output.push_str("**Suggested fixes:**\n");
                 for fix in &bottleneck.suggested_fixes {
                     output.push_str(&format!("- {}\n", fix));
@@ -1572,15 +1795,29 @@ impl CachedService {
         if !report.recommendations.is_empty() {
             output.push_str("## Optimization Recommendations\n\n");
             for (i, rec) in report.recommendations.iter().enumerate() {
-                output.push_str(&format!("### {}. {} ({:?} priority)\n\n", i + 1, rec.title, rec.priority));
+                output.push_str(&format!(
+                    "### {}. {} ({:?} priority)\n\n",
+                    i + 1,
+                    rec.title,
+                    rec.priority
+                ));
                 output.push_str(&format!("{}\n\n", rec.description));
-                output.push_str(&format!("**Expected improvement:** {:.1}% performance gain\n", rec.expected_improvement.performance_gain));
-                output.push_str(&format!("**Implementation effort:** {:.1} hours ({:?})\n\n", rec.implementation_effort.estimated_hours, rec.implementation_effort.complexity));
+                output.push_str(&format!(
+                    "**Expected improvement:** {:.1}% performance gain\n",
+                    rec.expected_improvement.performance_gain
+                ));
+                output.push_str(&format!(
+                    "**Implementation effort:** {:.1} hours ({:?})\n\n",
+                    rec.implementation_effort.estimated_hours, rec.implementation_effort.complexity
+                ));
 
                 // Add code examples if available
                 for example in &rec.code_examples {
                     output.push_str(&format!("#### {}\n\n", example.title));
-                    output.push_str(&format!("```{}\n{}\n```\n\n", example.language, example.code));
+                    output.push_str(&format!(
+                        "```{}\n{}\n```\n\n",
+                        example.language, example.code
+                    ));
                     output.push_str(&format!("{}\n\n", example.explanation));
                 }
             }

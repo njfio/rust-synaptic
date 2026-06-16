@@ -3,16 +3,16 @@
 // Provides comprehensive profiling capabilities including CPU, memory,
 // I/O, and custom metric profiling with real-time analysis.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::error::Result;
 use super::PerformanceConfig;
+use crate::error::Result;
 
 /// Advanced profiler for comprehensive performance analysis
 #[derive(Debug)]
@@ -41,48 +41,48 @@ impl AdvancedProfiler {
             is_running: Arc::new(RwLock::new(false)),
         })
     }
-    
+
     /// Start profiling
     pub async fn start(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
             return Ok(());
         }
-        
+
         *is_running = true;
-        
+
         // Start CPU profiling
         self.cpu_profiler.write().await.start().await?;
-        
+
         // Start memory profiling
         self.memory_profiler.write().await.start().await?;
-        
+
         // Start I/O profiling
         self.io_profiler.write().await.start().await?;
-        
+
         // Start background profiling task
         self.start_background_profiling().await?;
-        
+
         Ok(())
     }
-    
+
     /// Stop profiling
     pub async fn stop(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if !*is_running {
             return Ok(());
         }
-        
+
         *is_running = false;
-        
+
         // Stop all profilers
         self.cpu_profiler.write().await.stop().await?;
         self.memory_profiler.write().await.stop().await?;
         self.io_profiler.write().await.stop().await?;
-        
+
         Ok(())
     }
-    
+
     /// Start a profiling session
     pub async fn start_session(&self, name: String) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
@@ -98,34 +98,41 @@ impl AdvancedProfiler {
             io_samples: Vec::new(),
             custom_metrics: HashMap::new(),
         };
-        
-        self.active_sessions.write().await.insert(session_id.clone(), session);
+
+        self.active_sessions
+            .write()
+            .await
+            .insert(session_id.clone(), session);
         Ok(session_id)
     }
-    
+
     /// End a profiling session
     pub async fn end_session(&self, session_id: &str) -> Result<ProfilingSessionResult> {
         let mut sessions = self.active_sessions.write().await;
-        
+
         if let Some(mut session) = sessions.remove(session_id) {
             session.end_time = Some(Instant::now());
             session.end_timestamp = Some(Utc::now());
-            
+
             // Collect final samples
             let cpu_data = self.cpu_profiler.read().await.get_current_data().await?;
             let memory_data = self.memory_profiler.read().await.get_current_data().await?;
             let io_data = self.io_profiler.read().await.get_current_data().await?;
-            
+
             session.cpu_samples.push(cpu_data);
             session.memory_samples.push(memory_data);
             session.io_samples.push(io_data);
-            
+
             // Generate session result
             let result = self.generate_session_result(&session).await?;
-            
+
             // Store in profiling data
-            self.profiling_data.write().await.add_session_result(result.clone()).await?;
-            
+            self.profiling_data
+                .write()
+                .await
+                .add_session_result(result.clone())
+                .await?;
+
             Ok(result)
         } else {
             Err(crate::error::MemoryError::NotFound {
@@ -133,41 +140,45 @@ impl AdvancedProfiler {
             })
         }
     }
-    
+
     /// Get current profiling data
     pub async fn get_profiling_data(&self) -> Result<ProfilingData> {
         Ok(self.profiling_data.read().await.clone())
     }
-    
+
     /// Record custom metric
     pub async fn record_metric(&self, session_id: &str, name: String, value: f64) -> Result<()> {
         let mut sessions = self.active_sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             session.custom_metrics.insert(name.clone(), value);
         }
 
         // Also record in custom profiler
-        self.custom_profiler.write().await.record_metric(name, value).await?;
-        
+        self.custom_profiler
+            .write()
+            .await
+            .record_metric(name, value)
+            .await?;
+
         Ok(())
     }
-    
+
     /// Start background profiling task
     async fn start_background_profiling(&self) -> Result<()> {
         let profiler = Arc::new(self.clone());
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let is_running = *profiler.is_running.read().await;
                 if !is_running {
                     break;
                 }
-                
+
                 // Collect samples from all profilers
                 if let Err(e) = profiler.collect_samples().await {
                     tracing::error!(
@@ -179,16 +190,16 @@ impl AdvancedProfiler {
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Collect samples from all profilers
     async fn collect_samples(&self) -> Result<()> {
         let cpu_data = self.cpu_profiler.read().await.get_current_data().await?;
         let memory_data = self.memory_profiler.read().await.get_current_data().await?;
         let io_data = self.io_profiler.read().await.get_current_data().await?;
-        
+
         // Add samples to active sessions
         let mut sessions = self.active_sessions.write().await;
         for session in sessions.values_mut() {
@@ -196,63 +207,82 @@ impl AdvancedProfiler {
             session.memory_samples.push(memory_data.clone());
             session.io_samples.push(io_data.clone());
         }
-        
+
         // Add to global profiling data
-        self.profiling_data.write().await.add_sample(
-            cpu_data,
-            memory_data,
-            io_data,
-        ).await?;
-        
+        self.profiling_data
+            .write()
+            .await
+            .add_sample(cpu_data, memory_data, io_data)
+            .await?;
+
         Ok(())
     }
-    
+
     /// Generate session result
-    async fn generate_session_result(&self, session: &ProfilingSession) -> Result<ProfilingSessionResult> {
-        let end_time = session.end_time
-            .ok_or_else(|| crate::error::MemoryError::validation("Session has no end time".to_string()))?;
+    async fn generate_session_result(
+        &self,
+        session: &ProfilingSession,
+    ) -> Result<ProfilingSessionResult> {
+        let end_time = session.end_time.ok_or_else(|| {
+            crate::error::MemoryError::validation("Session has no end time".to_string())
+        })?;
         let duration = end_time - session.start_time;
-        
+
         // Calculate averages and statistics
-        let avg_cpu_usage = session.cpu_samples.iter()
+        let avg_cpu_usage = session
+            .cpu_samples
+            .iter()
             .map(|s| s.usage_percent)
-            .sum::<f64>() / session.cpu_samples.len() as f64;
-            
-        let avg_memory_usage = session.memory_samples.iter()
+            .sum::<f64>()
+            / session.cpu_samples.len() as f64;
+
+        let avg_memory_usage = session
+            .memory_samples
+            .iter()
             .map(|s| s.used_bytes)
-            .sum::<u64>() / session.memory_samples.len() as u64;
-            
-        let total_io_operations = session.io_samples.iter()
+            .sum::<u64>()
+            / session.memory_samples.len() as u64;
+
+        let total_io_operations = session
+            .io_samples
+            .iter()
             .map(|s| s.read_operations + s.write_operations)
             .sum::<u64>();
-        
+
         Ok(ProfilingSessionResult {
             session_id: session.id.clone(),
             session_name: session.name.clone(),
             duration,
             start_timestamp: session.start_timestamp,
-            end_timestamp: session.end_timestamp
-                .ok_or_else(|| crate::error::MemoryError::validation("Session has no end timestamp".to_string()))?,
+            end_timestamp: session.end_timestamp.ok_or_else(|| {
+                crate::error::MemoryError::validation("Session has no end timestamp".to_string())
+            })?,
             avg_cpu_usage,
-            peak_cpu_usage: session.cpu_samples.iter()
+            peak_cpu_usage: session
+                .cpu_samples
+                .iter()
                 .map(|s| s.usage_percent)
                 .fold(0.0, f64::max),
             avg_memory_usage,
-            peak_memory_usage: session.memory_samples.iter()
+            peak_memory_usage: session
+                .memory_samples
+                .iter()
                 .map(|s| s.used_bytes)
                 .max()
                 .unwrap_or(0),
             total_io_operations,
             custom_metrics: session.custom_metrics.clone(),
-            performance_score: self.calculate_performance_score(
-                avg_cpu_usage,
-                avg_memory_usage,
-                total_io_operations,
-                duration,
-            ).await?,
+            performance_score: self
+                .calculate_performance_score(
+                    avg_cpu_usage,
+                    avg_memory_usage,
+                    total_io_operations,
+                    duration,
+                )
+                .await?,
         })
     }
-    
+
     /// Calculate performance score
     async fn calculate_performance_score(
         &self,
@@ -266,7 +296,7 @@ impl AdvancedProfiler {
         let memory_score = 1.0 - (avg_memory as f64 / (1024.0 * 1024.0 * 1024.0)); // Lower memory = higher score
         let io_efficiency = io_ops as f64 / duration.as_secs_f64(); // Higher I/O rate = higher score
         let io_score = (io_efficiency / 1000.0).min(1.0); // Normalize to 0-1
-        
+
         // Weighted average
         let score = (cpu_score * 0.4 + memory_score * 0.3 + io_score * 0.3) * 100.0;
         Ok(score.max(0.0).min(100.0))
@@ -342,13 +372,13 @@ impl ProfilingData {
             last_updated: Utc::now(),
         }
     }
-    
+
     pub async fn add_session_result(&mut self, result: ProfilingSessionResult) -> Result<()> {
         self.session_results.push(result);
         self.last_updated = Utc::now();
         Ok(())
     }
-    
+
     pub async fn add_sample(
         &mut self,
         cpu: CpuSample,
@@ -365,12 +395,12 @@ impl ProfilingData {
         if self.io_samples.len() >= 1000 {
             self.io_samples.pop_front();
         }
-        
+
         self.cpu_samples.push_back(cpu);
         self.memory_samples.push_back(memory);
         self.io_samples.push_back(io);
         self.last_updated = Utc::now();
-        
+
         Ok(())
     }
 }
@@ -419,19 +449,19 @@ impl CpuProfiler {
     pub fn new() -> Self {
         Self { is_running: false }
     }
-    
+
     /// Start CPU profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
-    
+
     /// Stop CPU profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
-    
+
     /// Get current CPU profiling data
     pub async fn get_current_data(&self) -> Result<CpuSample> {
         // In a real implementation, this would collect actual CPU metrics
@@ -455,27 +485,27 @@ impl MemoryProfiler {
     pub fn new() -> Self {
         Self { is_running: false }
     }
-    
+
     /// Start memory profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
-    
+
     /// Stop memory profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
-    
+
     /// Get current memory profiling data
     pub async fn get_current_data(&self) -> Result<MemorySample> {
         // In a real implementation, this would collect actual memory metrics
         Ok(MemorySample {
             timestamp: Utc::now(),
-            used_bytes: 512 * 1024 * 1024, // 512MB mock data
+            used_bytes: 512 * 1024 * 1024,       // 512MB mock data
             available_bytes: 1024 * 1024 * 1024, // 1GB
-            cached_bytes: 256 * 1024 * 1024, // 256MB
+            cached_bytes: 256 * 1024 * 1024,     // 256MB
             swap_used_bytes: 0,
         })
     }
@@ -492,19 +522,19 @@ impl IoProfiler {
     pub fn new() -> Self {
         Self { is_running: false }
     }
-    
+
     /// Start I/O profiling
     pub async fn start(&mut self) -> Result<()> {
         self.is_running = true;
         Ok(())
     }
-    
+
     /// Stop I/O profiling
     pub async fn stop(&mut self) -> Result<()> {
         self.is_running = false;
         Ok(())
     }
-    
+
     /// Get current I/O profiling data
     pub async fn get_current_data(&self) -> Result<IoSample> {
         // In a real implementation, this would collect actual I/O metrics
@@ -531,16 +561,16 @@ impl CustomProfiler {
             metrics: HashMap::new(),
         }
     }
-    
+
     /// Record a custom metric value
     pub async fn record_metric(&mut self, name: String, value: f64) -> Result<()> {
         let entry = self.metrics.entry(name).or_insert_with(VecDeque::new);
-        
+
         // Keep only last 1000 values
         if entry.len() >= 1000 {
             entry.pop_front();
         }
-        
+
         entry.push_back(value);
         Ok(())
     }

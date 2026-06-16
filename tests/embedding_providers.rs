@@ -3,21 +3,20 @@
 //! These tests verify that embedding providers work correctly with the
 //! retrieval pipeline and can be used for semantic search.
 
+use std::sync::Arc;
 use synaptic::{
-    AgentMemory, MemoryConfig, StorageBackend,
     memory::{
         embeddings::{
-            EmbeddingProvider, TfIdfProvider, TfIdfConfig, Embedding,
-            EmbedOptions, EmbeddingCache, CacheStats, compute_content_hash,
-            normalize_vector,
+            compute_content_hash, normalize_vector, CacheStats, EmbedOptions, Embedding,
+            EmbeddingCache, EmbeddingProvider, TfIdfConfig, TfIdfProvider,
         },
         retrieval::{
-            RetrievalPipeline, HybridRetriever, PipelineConfig, FusionStrategy,
-            KeywordRetriever, DenseVectorRetriever, RetrievalSignal,
+            DenseVectorRetriever, FusionStrategy, HybridRetriever, KeywordRetriever,
+            PipelineConfig, RetrievalPipeline, RetrievalSignal,
         },
     },
+    AgentMemory, MemoryConfig, StorageBackend,
 };
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tfidf_provider_basic() {
@@ -48,7 +47,10 @@ async fn test_tfidf_provider_with_options() {
 
     // Check normalization (L2 norm should be ~1.0)
     let norm: f32 = embedding.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-    assert!((norm - 1.0).abs() < 0.01, "Normalized vector should have L2 norm ≈ 1.0");
+    assert!(
+        (norm - 1.0).abs() < 0.01,
+        "Normalized vector should have L2 norm ≈ 1.0"
+    );
 }
 
 #[tokio::test]
@@ -79,8 +81,14 @@ async fn test_embedding_cosine_similarity() {
     let sim_12 = emb1.cosine_similarity(&emb2);
     let sim_13 = emb1.cosine_similarity(&emb3);
 
-    assert!(sim_12 > sim_13, "Similar texts should have higher similarity score");
-    assert!(sim_12 > 0.5, "Related texts should have positive similarity");
+    assert!(
+        sim_12 > sim_13,
+        "Similar texts should have higher similarity score"
+    );
+    assert!(
+        sim_12 > 0.5,
+        "Related texts should have positive similarity"
+    );
 }
 
 #[tokio::test]
@@ -92,7 +100,10 @@ async fn test_embedding_identical_content() {
     let emb2 = provider.embed(text, None).await.unwrap();
 
     let similarity = emb1.cosine_similarity(&emb2);
-    assert!((similarity - 1.0).abs() < 0.01, "Identical content should have similarity ≈ 1.0");
+    assert!(
+        (similarity - 1.0).abs() < 0.01,
+        "Identical content should have similarity ≈ 1.0"
+    );
 }
 
 #[tokio::test]
@@ -139,10 +150,7 @@ async fn test_batch_embedding() {
 async fn test_batch_embedding_normalized() {
     let provider = TfIdfProvider::default();
 
-    let texts = vec![
-        "machine learning".to_string(),
-        "deep learning".to_string(),
-    ];
+    let texts = vec!["machine learning".to_string(), "deep learning".to_string()];
 
     let options = EmbedOptions {
         normalize: true,
@@ -188,7 +196,10 @@ async fn test_embedding_cache_eviction() {
 
     let stats = cache.stats();
     assert!(stats.entry_count <= 2, "Cache should respect max size");
-    assert_eq!(stats.entry_count, 2, "Should have evicted one entry, keeping max_size");
+    assert_eq!(
+        stats.entry_count, 2,
+        "Should have evicted one entry, keeping max_size"
+    );
 }
 
 #[tokio::test]
@@ -250,8 +261,8 @@ async fn test_dense_vector_retriever_threshold() {
     let agent = AgentMemory::new(config).await.unwrap();
     let provider = Arc::new(TfIdfProvider::default());
 
-    let retriever = DenseVectorRetriever::new(agent.storage().clone(), provider)
-        .with_threshold(0.5);
+    let retriever =
+        DenseVectorRetriever::new(agent.storage().clone(), provider).with_threshold(0.5);
 
     // Threshold is private, but we can test that it was created successfully
     assert!(retriever.is_available());
@@ -267,22 +278,38 @@ async fn test_dense_vector_search() {
     let mut agent = AgentMemory::new(config).await.unwrap();
 
     // Store test memories
-    agent.store("ml1", "machine learning neural networks").await.unwrap();
-    agent.store("ml2", "deep learning artificial intelligence").await.unwrap();
-    agent.store("cook1", "cooking recipes food preparation").await.unwrap();
+    agent
+        .store("ml1", "machine learning neural networks")
+        .await
+        .unwrap();
+    agent
+        .store("ml2", "deep learning artificial intelligence")
+        .await
+        .unwrap();
+    agent
+        .store("cook1", "cooking recipes food preparation")
+        .await
+        .unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
-    let retriever = DenseVectorRetriever::new(agent.storage().clone(), provider)
-        .with_threshold(0.1);
+    let retriever =
+        DenseVectorRetriever::new(agent.storage().clone(), provider).with_threshold(0.1);
 
     // Search for ML-related content
-    let results = retriever.search("machine learning AI", 10, None).await.unwrap();
+    let results = retriever
+        .search("machine learning AI", 10, None)
+        .await
+        .unwrap();
 
     // Should find ML-related memories
     assert!(!results.is_empty());
 
     // Top results should be ML-related
-    let top_keys: Vec<&str> = results.iter().take(2).map(|r| r.memory.entry.key.as_str()).collect();
+    let top_keys: Vec<&str> = results
+        .iter()
+        .take(2)
+        .map(|r| r.memory.entry.key.as_str())
+        .collect();
     assert!(top_keys.contains(&"ml1") || top_keys.contains(&"ml2"));
 }
 
@@ -296,15 +323,27 @@ async fn test_dense_vector_search_ranking() {
     let mut agent = AgentMemory::new(config).await.unwrap();
 
     // Store memories with varying relevance
-    agent.store("exact", "rust programming language").await.unwrap();
-    agent.store("related", "rust systems programming").await.unwrap();
-    agent.store("distant", "python scripting language").await.unwrap();
+    agent
+        .store("exact", "rust programming language")
+        .await
+        .unwrap();
+    agent
+        .store("related", "rust systems programming")
+        .await
+        .unwrap();
+    agent
+        .store("distant", "python scripting language")
+        .await
+        .unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
-    let retriever = DenseVectorRetriever::new(agent.storage().clone(), provider)
-        .with_threshold(0.1);
+    let retriever =
+        DenseVectorRetriever::new(agent.storage().clone(), provider).with_threshold(0.1);
 
-    let results = retriever.search("rust programming", 10, None).await.unwrap();
+    let results = retriever
+        .search("rust programming", 10, None)
+        .await
+        .unwrap();
 
     // Results should be ranked by similarity
     for i in 1..results.len() {
@@ -324,14 +363,20 @@ async fn test_dense_vector_high_threshold() {
 
     let mut agent = AgentMemory::new(config).await.unwrap();
 
-    agent.store("unrelated", "cooking recipes food").await.unwrap();
+    agent
+        .store("unrelated", "cooking recipes food")
+        .await
+        .unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
-    let retriever = DenseVectorRetriever::new(agent.storage().clone(), provider)
-        .with_threshold(0.9); // Very high threshold
+    let retriever =
+        DenseVectorRetriever::new(agent.storage().clone(), provider).with_threshold(0.9); // Very high threshold
 
     // Search with unrelated query
-    let results = retriever.search("machine learning AI", 10, None).await.unwrap();
+    let results = retriever
+        .search("machine learning AI", 10, None)
+        .await
+        .unwrap();
 
     // High threshold should filter out low-similarity results
     for result in results {
@@ -349,25 +394,32 @@ async fn test_hybrid_with_dense_vector() {
     let mut agent = AgentMemory::new(config).await.unwrap();
 
     // Store diverse memories
-    agent.store("rust_lang", "rust programming language").await.unwrap();
-    agent.store("rust_sys", "rust systems programming").await.unwrap();
+    agent
+        .store("rust_lang", "rust programming language")
+        .await
+        .unwrap();
+    agent
+        .store("rust_sys", "rust systems programming")
+        .await
+        .unwrap();
     agent.store("python", "python scripting").await.unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
 
     let pipeline_config = PipelineConfig::semantic_focus();
     let retriever = HybridRetriever::new(pipeline_config)
-        .add_pipeline(Arc::new(DenseVectorRetriever::new(
-            agent.storage().clone(),
-            provider.clone()
-        ).with_threshold(0.1)))
+        .add_pipeline(Arc::new(
+            DenseVectorRetriever::new(agent.storage().clone(), provider.clone())
+                .with_threshold(0.1),
+        ))
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())));
 
     let results = retriever.search("rust", 10).await.unwrap();
 
     // Should find rust-related memories
     assert!(!results.is_empty());
-    let rust_count = results.iter()
+    let rust_count = results
+        .iter()
         .filter(|r| r.entry.key.contains("rust"))
         .count();
     assert!(rust_count >= 1, "Should find rust-related memories");
@@ -383,20 +435,27 @@ async fn test_hybrid_dense_vs_keyword() {
     let mut agent = AgentMemory::new(config).await.unwrap();
 
     // Store memories
-    agent.store("ml", "machine learning deep learning neural networks").await.unwrap();
-    agent.store("ai", "artificial intelligence ML algorithms").await.unwrap();
+    agent
+        .store("ml", "machine learning deep learning neural networks")
+        .await
+        .unwrap();
+    agent
+        .store("ai", "artificial intelligence ML algorithms")
+        .await
+        .unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
 
     // Test with semantic focus
     let semantic_config = PipelineConfig::semantic_focus();
-    let semantic_retriever = HybridRetriever::new(semantic_config)
-        .add_pipeline(Arc::new(DenseVectorRetriever::new(
-            agent.storage().clone(),
-            provider.clone()
-        ).with_threshold(0.1)));
+    let semantic_retriever = HybridRetriever::new(semantic_config).add_pipeline(Arc::new(
+        DenseVectorRetriever::new(agent.storage().clone(), provider.clone()).with_threshold(0.1),
+    ));
 
-    let semantic_results = semantic_retriever.search("deep neural nets", 10).await.unwrap();
+    let semantic_results = semantic_retriever
+        .search("deep neural nets", 10)
+        .await
+        .unwrap();
 
     // Should find related content even without exact keyword matches
     assert!(!semantic_results.is_empty());
@@ -419,31 +478,33 @@ async fn test_fusion_strategies_with_dense_vector() {
 
     let mut agent = AgentMemory::new(config).await.unwrap();
 
-    agent.store("test", "rust programming systems").await.unwrap();
+    agent
+        .store("test", "rust programming systems")
+        .await
+        .unwrap();
 
     let provider = Arc::new(TfIdfProvider::default());
 
     // Test ReciprocRankFusion
-    let rrf_config = PipelineConfig::default()
-        .with_fusion_strategy(FusionStrategy::ReciprocRankFusion);
+    let rrf_config =
+        PipelineConfig::default().with_fusion_strategy(FusionStrategy::ReciprocRankFusion);
     let rrf_retriever = HybridRetriever::new(rrf_config)
-        .add_pipeline(Arc::new(DenseVectorRetriever::new(
-            agent.storage().clone(),
-            provider.clone()
-        ).with_threshold(0.1)))
+        .add_pipeline(Arc::new(
+            DenseVectorRetriever::new(agent.storage().clone(), provider.clone())
+                .with_threshold(0.1),
+        ))
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())));
 
     let rrf_results = rrf_retriever.search("rust programming", 5).await.unwrap();
     assert!(!rrf_results.is_empty());
 
     // Test WeightedAverage
-    let wa_config = PipelineConfig::default()
-        .with_fusion_strategy(FusionStrategy::WeightedAverage);
+    let wa_config = PipelineConfig::default().with_fusion_strategy(FusionStrategy::WeightedAverage);
     let wa_retriever = HybridRetriever::new(wa_config)
-        .add_pipeline(Arc::new(DenseVectorRetriever::new(
-            agent.storage().clone(),
-            provider.clone()
-        ).with_threshold(0.1)))
+        .add_pipeline(Arc::new(
+            DenseVectorRetriever::new(agent.storage().clone(), provider.clone())
+                .with_threshold(0.1),
+        ))
         .add_pipeline(Arc::new(KeywordRetriever::new(agent.storage().clone())));
 
     let wa_results = wa_retriever.search("rust programming", 5).await.unwrap();
@@ -454,9 +515,7 @@ async fn test_fusion_strategies_with_dense_vector() {
 async fn test_embedding_provider_batch_efficiency() {
     let provider = TfIdfProvider::default();
 
-    let texts: Vec<String> = (0..100)
-        .map(|i| format!("test content {}", i))
-        .collect();
+    let texts: Vec<String> = (0..100).map(|i| format!("test content {}", i)).collect();
 
     let start = std::time::Instant::now();
     let _embeddings = provider.embed_batch(&texts, None).await.unwrap();
@@ -464,7 +523,10 @@ async fn test_embedding_provider_batch_efficiency() {
 
     // Batch should be faster than individual embeds
     // (This is a basic smoke test - real perf test would be in benches/)
-    assert!(batch_duration.as_secs() < 10, "Batch embedding should complete reasonably quickly");
+    assert!(
+        batch_duration.as_secs() < 10,
+        "Batch embedding should complete reasonably quickly"
+    );
 }
 
 #[tokio::test]
@@ -473,7 +535,10 @@ async fn test_normalize_vector_helper() {
     normalize_vector(&mut vector);
 
     let norm: f32 = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-    assert!((norm - 1.0).abs() < 0.01, "Normalized vector should have L2 norm = 1.0");
+    assert!(
+        (norm - 1.0).abs() < 0.01,
+        "Normalized vector should have L2 norm = 1.0"
+    );
 }
 
 #[tokio::test]
@@ -494,7 +559,10 @@ async fn test_compute_content_hash_uniqueness() {
     let hash1 = compute_content_hash(text1);
     let hash2 = compute_content_hash(text2);
 
-    assert_ne!(hash1, hash2, "Different content should produce different hashes");
+    assert_ne!(
+        hash1, hash2,
+        "Different content should produce different hashes"
+    );
 }
 
 #[tokio::test]

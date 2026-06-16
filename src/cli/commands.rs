@@ -4,8 +4,8 @@
 //! graph operations, and system administration.
 
 use crate::error::Result;
-use crate::AgentMemory;
 use crate::memory::types::{MemoryEntry, MemoryType};
+use crate::AgentMemory;
 
 use uuid::Uuid;
 
@@ -14,7 +14,11 @@ pub struct MemoryCommands;
 
 impl MemoryCommands {
     /// List memories
-    pub async fn list(agent_memory: &mut AgentMemory, limit: usize, memory_type: Option<String>) -> Result<()> {
+    pub async fn list(
+        agent_memory: &mut AgentMemory,
+        limit: usize,
+        memory_type: Option<String>,
+    ) -> Result<()> {
         tracing::info!(
             limit = limit,
             memory_type = ?memory_type,
@@ -35,7 +39,10 @@ impl MemoryCommands {
                 // Filter by type if specified
                 if let Some(ref filter_type) = memory_type {
                     let entry_type = format!("{:?}", entry.memory_type);
-                    if !entry_type.to_lowercase().contains(&filter_type.to_lowercase()) {
+                    if !entry_type
+                        .to_lowercase()
+                        .contains(&filter_type.to_lowercase())
+                    {
                         continue;
                     }
                 }
@@ -44,7 +51,8 @@ impl MemoryCommands {
                 let size = entry.value.len();
                 let type_str = format!("{:?}", entry.memory_type);
 
-                crate::cli_outln!("│ {:<39} │ {:<12} │ {} │ {:<20} │",
+                crate::cli_outln!(
+                    "│ {:<39} │ {:<12} │ {} │ {:<20} │",
                     key.chars().take(39).collect::<String>(),
                     type_str.chars().take(12).collect::<String>(),
                     created,
@@ -59,7 +67,11 @@ impl MemoryCommands {
         }
 
         crate::cli_outln!("└─────────────────────────────────────────┴──────────────┴─────────────────────┴──────────────────────┘");
-        crate::cli_outln!("📊 Displayed {} of {} total memories", displayed, keys.len());
+        crate::cli_outln!(
+            "📊 Displayed {} of {} total memories",
+            displayed,
+            keys.len()
+        );
 
         Ok(())
     }
@@ -75,8 +87,14 @@ impl MemoryCommands {
                 crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                 crate::cli_outln!("│ Key: {:<83} │", entry.key);
                 crate::cli_outln!("│ Type: {:<82} │", format!("{:?}", entry.memory_type));
-                crate::cli_outln!("│ Created: {:<79} │", entry.created_at().format("%Y-%m-%d %H:%M:%S UTC"));
-                crate::cli_outln!("│ Last Accessed: {:<74} │", entry.last_accessed().format("%Y-%m-%d %H:%M:%S UTC"));
+                crate::cli_outln!(
+                    "│ Created: {:<79} │",
+                    entry.created_at().format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                crate::cli_outln!(
+                    "│ Last Accessed: {:<74} │",
+                    entry.last_accessed().format("%Y-%m-%d %H:%M:%S UTC")
+                );
                 crate::cli_outln!("│ Size: {:<82} │", format!("{} bytes", entry.value.len()));
                 crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                 crate::cli_outln!("│ Content:                                                                                │");
@@ -84,7 +102,8 @@ impl MemoryCommands {
                 // Display content with word wrapping
                 let content_lines: Vec<&str> = entry.value.lines().collect();
                 for (i, line) in content_lines.iter().enumerate() {
-                    if i < 10 { // Limit to first 10 lines
+                    if i < 10 {
+                        // Limit to first 10 lines
                         let truncated = if line.len() > 83 {
                             format!("{}...", &line[..80])
                         } else {
@@ -103,16 +122,29 @@ impl MemoryCommands {
                     crate::cli_outln!("│ Metadata:                                                                               │");
 
                     if !entry.metadata.tags.is_empty() {
-                        crate::cli_outln!("│ Tags: {:<80} │", entry.metadata.tags.join(", ").chars().take(80).collect::<String>());
+                        crate::cli_outln!(
+                            "│ Tags: {:<80} │",
+                            entry
+                                .metadata
+                                .tags
+                                .join(", ")
+                                .chars()
+                                .take(80)
+                                .collect::<String>()
+                        );
                     }
 
                     for (key, value) in entry.metadata.custom_fields.iter().take(3) {
-                        crate::cli_outln!("│ {}: {:<75} │", key, value.chars().take(75).collect::<String>());
+                        crate::cli_outln!(
+                            "│ {}: {:<75} │",
+                            key,
+                            value.chars().take(75).collect::<String>()
+                        );
                     }
                 }
 
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-            },
+            }
             None => {
                 tracing::warn!(memory_id = %id, "Memory not found");
                 crate::cli_outln!("❌ Memory not found: {}", id);
@@ -123,7 +155,12 @@ impl MemoryCommands {
     }
 
     /// Create new memory
-    pub async fn create(agent_memory: &mut AgentMemory, content: &str, memory_type: &str, tags: &[String]) -> Result<()> {
+    pub async fn create(
+        agent_memory: &mut AgentMemory,
+        content: &str,
+        memory_type: &str,
+        tags: &[String],
+    ) -> Result<()> {
         tracing::info!(
             memory_type = memory_type,
             content_length = content.len(),
@@ -148,8 +185,8 @@ impl MemoryCommands {
             crate::memory::types::MemoryMetadata::new()
         };
 
-        let _entry = MemoryEntry::new(key.clone(), content.to_string(), mem_type)
-            .with_metadata(metadata);
+        let _entry =
+            MemoryEntry::new(key.clone(), content.to_string(), mem_type).with_metadata(metadata);
 
         // Store the memory
         agent_memory.store(&key, content).await?;
@@ -173,7 +210,12 @@ impl MemoryCommands {
     }
 
     /// Update memory
-    pub async fn update(agent_memory: &mut AgentMemory, id: &str, content: Option<&str>, tags: Option<&[String]>) -> Result<()> {
+    pub async fn update(
+        agent_memory: &mut AgentMemory,
+        id: &str,
+        content: Option<&str>,
+        tags: Option<&[String]>,
+    ) -> Result<()> {
         crate::cli_outln!("🔄 Updating memory: {}", id);
 
         // Check if memory exists
@@ -203,7 +245,7 @@ impl MemoryCommands {
                 } else {
                     crate::cli_outln!("ℹ️  No changes specified");
                 }
-            },
+            }
             None => {
                 crate::cli_outln!("❌ Memory not found: {}", id);
             }
@@ -222,13 +264,16 @@ impl MemoryCommands {
                 // Show what will be deleted
                 crate::cli_outln!("   Type: {:?}", entry.memory_type);
                 crate::cli_outln!("   Size: {} bytes", entry.value.len());
-                crate::cli_outln!("   Created: {}", entry.created_at().format("%Y-%m-%d %H:%M:%S"));
+                crate::cli_outln!(
+                    "   Created: {}",
+                    entry.created_at().format("%Y-%m-%d %H:%M:%S")
+                );
 
                 // Delete the memory - using the storage directly since AgentMemory doesn't expose delete
                 // For now, we'll just indicate success since we can't actually delete through the public API
                 crate::cli_outln!("⚠️  Note: Delete operation would require direct storage access");
                 crate::cli_outln!("✅ Memory deletion requested (implementation pending)");
-            },
+            }
             None => {
                 crate::cli_outln!("❌ Memory not found: {}", id);
             }
@@ -257,11 +302,19 @@ impl MemoryCommands {
         for result in results.iter() {
             let key_display = result.entry.key.chars().take(39).collect::<String>();
             let score_display = format!("{:.3}", result.relevance_score);
-            let type_display = format!("{:?}", result.entry.memory_type).chars().take(19).collect::<String>();
+            let type_display = format!("{:?}", result.entry.memory_type)
+                .chars()
+                .take(19)
+                .collect::<String>();
             let preview = result.entry.value.chars().take(19).collect::<String>();
 
-            crate::cli_outln!("│ {:<39} │ {:<8} │ {:<19} │ {:<19} │",
-                key_display, score_display, type_display, preview);
+            crate::cli_outln!(
+                "│ {:<39} │ {:<8} │ {:<19} │ {:<19} │",
+                key_display,
+                score_display,
+                type_display,
+                preview
+            );
         }
 
         crate::cli_outln!("└─────────────────────────────────────────┴──────────┴─────────────────────┴─────────────────────┘");
@@ -275,8 +328,17 @@ pub struct GraphCommands;
 
 impl GraphCommands {
     /// Visualize graph
-    pub async fn visualize(agent_memory: &mut AgentMemory, format: &str, depth: usize, start: Option<&str>) -> Result<()> {
-        crate::cli_outln!("📊 Visualizing knowledge graph (format: {}, depth: {})", format, depth);
+    pub async fn visualize(
+        agent_memory: &mut AgentMemory,
+        format: &str,
+        depth: usize,
+        start: Option<&str>,
+    ) -> Result<()> {
+        crate::cli_outln!(
+            "📊 Visualizing knowledge graph (format: {}, depth: {})",
+            format,
+            depth
+        );
 
         // Get knowledge graph statistics
         if let Some(stats) = agent_memory.knowledge_graph_stats() {
@@ -285,9 +347,15 @@ impl GraphCommands {
             crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
             crate::cli_outln!("│ Nodes: {:<82} │", stats.node_count);
             crate::cli_outln!("│ Edges: {:<82} │", stats.edge_count);
-            crate::cli_outln!("│ Average Degree: {:<74} │", format!("{:.2}", stats.average_degree));
+            crate::cli_outln!(
+                "│ Average Degree: {:<74} │",
+                format!("{:.2}", stats.average_degree)
+            );
             crate::cli_outln!("│ Density: {:<80} │", format!("{:.4}", stats.density));
-            crate::cli_outln!("│ Connected Components: {:<68} │", stats.connected_components);
+            crate::cli_outln!(
+                "│ Connected Components: {:<68} │",
+                stats.connected_components
+            );
             crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
 
             if let Some(start_node) = start {
@@ -296,9 +364,14 @@ impl GraphCommands {
                 // Find related memories from the starting point
                 match agent_memory.find_related_memories(start_node, depth).await {
                     Ok(related) => {
-                        crate::cli_outln!("📈 Found {} related memories within depth {}:", related.len(), depth);
+                        crate::cli_outln!(
+                            "📈 Found {} related memories within depth {}:",
+                            related.len(),
+                            depth
+                        );
                         for (i, memory) in related.iter().take(10).enumerate() {
-                            crate::cli_outln!("  {}. {} (strength: {:.3})",
+                            crate::cli_outln!(
+                                "  {}. {} (strength: {:.3})",
                                 i + 1,
                                 memory.memory_key,
                                 memory.relationship_strength
@@ -307,7 +380,7 @@ impl GraphCommands {
                         if related.len() > 10 {
                             crate::cli_outln!("  ... and {} more", related.len() - 10);
                         }
-                    },
+                    }
                     Err(e) => {
                         crate::cli_outln!("⚠️  Could not find related memories: {}", e);
                     }
@@ -338,15 +411,18 @@ impl GraphCommands {
                     }
 
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
                 "dot" => {
                     crate::cli_outln!("\n📄 DOT format export would be generated here");
                     crate::cli_outln!("   (GraphViz .dot file for external visualization)");
-                },
+                }
                 "svg" | "png" => {
-                    crate::cli_outln!("\n🖼️  {} image export would be generated here", format.to_uppercase());
+                    crate::cli_outln!(
+                        "\n🖼️  {} image export would be generated here",
+                        format.to_uppercase()
+                    );
                     crate::cli_outln!("   (Requires visualization feature to be enabled)");
-                },
+                }
                 _ => {
                     crate::cli_outln!("❌ Unsupported format: {}", format);
                     crate::cli_outln!("   Supported formats: ascii, dot, svg, png");
@@ -360,10 +436,25 @@ impl GraphCommands {
     }
 
     /// Find paths between nodes
-    pub async fn find_path(agent_memory: &mut AgentMemory, from: &str, to: &str, max_length: usize, algorithm: &str) -> Result<()> {
-        crate::cli_outln!("🔍 Finding path from '{}' to '{}' (max length: {}, algorithm: {})", from, to, max_length, algorithm);
+    pub async fn find_path(
+        agent_memory: &mut AgentMemory,
+        from: &str,
+        to: &str,
+        max_length: usize,
+        algorithm: &str,
+    ) -> Result<()> {
+        crate::cli_outln!(
+            "🔍 Finding path from '{}' to '{}' (max length: {}, algorithm: {})",
+            from,
+            to,
+            max_length,
+            algorithm
+        );
 
-        match agent_memory.find_path_between_memories(from, to, Some(max_length)).await {
+        match agent_memory
+            .find_path_between_memories(from, to, Some(max_length))
+            .await
+        {
             Ok(Some(path)) => {
                 crate::cli_outln!("✅ Path found!");
                 crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
@@ -398,17 +489,21 @@ impl GraphCommands {
 
                 // Show algorithm used
                 match algorithm {
-                    "shortest" => crate::cli_outln!("📊 Used shortest path algorithm (Dijkstra-based)"),
+                    "shortest" => {
+                        crate::cli_outln!("📊 Used shortest path algorithm (Dijkstra-based)")
+                    }
                     "all" => crate::cli_outln!("📊 Found one of potentially multiple paths"),
                     "dijkstra" => crate::cli_outln!("📊 Used Dijkstra's algorithm"),
-                    "astar" => crate::cli_outln!("📊 A* algorithm requested (fallback to shortest path)"),
+                    "astar" => {
+                        crate::cli_outln!("📊 A* algorithm requested (fallback to shortest path)")
+                    }
                     _ => crate::cli_outln!("📊 Used default shortest path algorithm"),
                 }
-            },
+            }
             Ok(None) => {
                 crate::cli_outln!("❌ No path found between '{}' and '{}'", from, to);
                 crate::cli_outln!("   The memories may not be connected within the specified maximum length of {}", max_length);
-            },
+            }
             Err(e) => {
                 crate::cli_outln!("❌ Error finding path: {}", e);
                 crate::cli_outln!("   Make sure both memory keys exist in the knowledge graph");
@@ -420,7 +515,10 @@ impl GraphCommands {
 
     /// Analyze graph structure
     pub async fn analyze(agent_memory: &mut AgentMemory, analysis_type: &str) -> Result<()> {
-        crate::cli_outln!("📊 Analyzing knowledge graph structure (type: {})", analysis_type);
+        crate::cli_outln!(
+            "📊 Analyzing knowledge graph structure (type: {})",
+            analysis_type
+        );
 
         if let Some(stats) = agent_memory.knowledge_graph_stats() {
             match analysis_type {
@@ -431,36 +529,70 @@ impl GraphCommands {
                     crate::cli_outln!("│ Basic Metrics:                                                                          │");
                     crate::cli_outln!("│   • Total Nodes: {:<74} │", stats.node_count);
                     crate::cli_outln!("│   • Total Edges: {:<74} │", stats.edge_count);
-                    crate::cli_outln!("│   • Average Degree: {:<70} │", format!("{:.2}", stats.average_degree));
-                    crate::cli_outln!("│   • Graph Density: {:<71} │", format!("{:.4}", stats.density));
-                    crate::cli_outln!("│   • Connected Components: {:<64} │", stats.connected_components);
+                    crate::cli_outln!(
+                        "│   • Average Degree: {:<70} │",
+                        format!("{:.2}", stats.average_degree)
+                    );
+                    crate::cli_outln!(
+                        "│   • Graph Density: {:<71} │",
+                        format!("{:.4}", stats.density)
+                    );
+                    crate::cli_outln!(
+                        "│   • Connected Components: {:<64} │",
+                        stats.connected_components
+                    );
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Graph Properties:                                                                       │");
 
                     // Calculate additional metrics
-                    let connectivity = if stats.connected_components == 1 { "Fully Connected" } else { "Disconnected" };
-                    let sparsity = if stats.density < 0.1 { "Sparse" } else if stats.density < 0.5 { "Medium" } else { "Dense" };
+                    let connectivity = if stats.connected_components == 1 {
+                        "Fully Connected"
+                    } else {
+                        "Disconnected"
+                    };
+                    let sparsity = if stats.density < 0.1 {
+                        "Sparse"
+                    } else if stats.density < 0.5 {
+                        "Medium"
+                    } else {
+                        "Dense"
+                    };
 
                     crate::cli_outln!("│   • Connectivity: {:<72} │", connectivity);
                     crate::cli_outln!("│   • Sparsity: {:<76} │", sparsity);
-                    crate::cli_outln!("│   • Scale: {:<79} │",
-                        if stats.node_count < 100 { "Small" }
-                        else if stats.node_count < 1000 { "Medium" }
-                        else { "Large" }
+                    crate::cli_outln!(
+                        "│   • Scale: {:<79} │",
+                        if stats.node_count < 100 {
+                            "Small"
+                        } else if stats.node_count < 1000 {
+                            "Medium"
+                        } else {
+                            "Large"
+                        }
                     );
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
 
                 "centrality" => {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
                     crate::cli_outln!("│ Centrality Analysis                                                                     │");
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Node Importance Metrics:                                                                │");
-                    crate::cli_outln!("│   • Average Degree: {:<70} │", format!("{:.2}", stats.average_degree));
-                    crate::cli_outln!("│   • Max Possible Degree: {:<64} │", stats.node_count.saturating_sub(1));
+                    crate::cli_outln!(
+                        "│   • Average Degree: {:<70} │",
+                        format!("{:.2}", stats.average_degree)
+                    );
+                    crate::cli_outln!(
+                        "│   • Max Possible Degree: {:<64} │",
+                        stats.node_count.saturating_sub(1)
+                    );
 
-                    let centralization = stats.average_degree / (stats.node_count.saturating_sub(1) as f64).max(1.0);
-                    crate::cli_outln!("│   • Degree Centralization: {:<62} │", format!("{:.3}", centralization));
+                    let centralization =
+                        stats.average_degree / (stats.node_count.saturating_sub(1) as f64).max(1.0);
+                    crate::cli_outln!(
+                        "│   • Degree Centralization: {:<62} │",
+                        format!("{:.3}", centralization)
+                    );
 
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Hub Analysis:                                                                           │");
@@ -470,21 +602,28 @@ impl GraphCommands {
                         crate::cli_outln!("│   • Graph has relatively uniform connectivity (no major hubs)                         │");
                     }
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
 
                 "clustering" => {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
                     crate::cli_outln!("│ Clustering Analysis                                                                     │");
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Community Structure:                                                                    │");
-                    crate::cli_outln!("│   • Connected Components: {:<64} │", stats.connected_components);
+                    crate::cli_outln!(
+                        "│   • Connected Components: {:<64} │",
+                        stats.connected_components
+                    );
 
                     if stats.connected_components == 1 {
                         crate::cli_outln!("│   • Graph is fully connected - single large component                                  │");
                     } else {
                         crate::cli_outln!("│   • Graph has multiple disconnected components                                         │");
-                        crate::cli_outln!("│   • Average component size: {:<59} │",
-                            format!("{:.1}", stats.node_count as f64 / stats.connected_components as f64)
+                        crate::cli_outln!(
+                            "│   • Average component size: {:<59} │",
+                            format!(
+                                "{:.1}",
+                                stats.node_count as f64 / stats.connected_components as f64
+                            )
                         );
                     }
 
@@ -495,18 +634,28 @@ impl GraphCommands {
                         0.0
                     };
 
-                    crate::cli_outln!("│   • Estimated Clustering Coefficient: {:<52} │", format!("{:.3}", estimated_clustering));
+                    crate::cli_outln!(
+                        "│   • Estimated Clustering Coefficient: {:<52} │",
+                        format!("{:.3}", estimated_clustering)
+                    );
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
 
                 "components" => {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
                     crate::cli_outln!("│ Connected Components Analysis                                                           │");
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Component Statistics:                                                                   │");
-                    crate::cli_outln!("│   • Total Components: {:<68} │", stats.connected_components);
-                    crate::cli_outln!("│   • Average Component Size: {:<59} │",
-                        format!("{:.1}", stats.node_count as f64 / stats.connected_components.max(1) as f64)
+                    crate::cli_outln!(
+                        "│   • Total Components: {:<68} │",
+                        stats.connected_components
+                    );
+                    crate::cli_outln!(
+                        "│   • Average Component Size: {:<59} │",
+                        format!(
+                            "{:.1}",
+                            stats.node_count as f64 / stats.connected_components.max(1) as f64
+                        )
                     );
 
                     if stats.connected_components == 1 {
@@ -527,7 +676,7 @@ impl GraphCommands {
                         crate::cli_outln!("│   • Moderate connectivity - some isolated memory clusters exist                       │");
                     }
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
 
                 "metrics" => {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
@@ -541,45 +690,73 @@ impl GraphCommands {
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Density Metrics:                                                                        │");
                     crate::cli_outln!("│   • Density: {:<77} │", format!("{:.6}", stats.density));
-                    crate::cli_outln!("│   • Average Degree: {:<70} │", format!("{:.3}", stats.average_degree));
+                    crate::cli_outln!(
+                        "│   • Average Degree: {:<70} │",
+                        format!("{:.3}", stats.average_degree)
+                    );
 
                     let max_edges = stats.node_count * (stats.node_count.saturating_sub(1)) / 2;
-                    let edge_ratio = if max_edges > 0 { stats.edge_count as f64 / max_edges as f64 } else { 0.0 };
+                    let edge_ratio = if max_edges > 0 {
+                        stats.edge_count as f64 / max_edges as f64
+                    } else {
+                        0.0
+                    };
                     crate::cli_outln!("│   • Edge Ratio: {:<74} │", format!("{:.6}", edge_ratio));
 
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Structural Metrics:                                                                     │");
-                    crate::cli_outln!("│   • Connected Components: {:<64} │", stats.connected_components);
+                    crate::cli_outln!(
+                        "│   • Connected Components: {:<64} │",
+                        stats.connected_components
+                    );
 
-                    let diameter_estimate = if stats.connected_components == 1 && stats.node_count > 1 {
-                        ((stats.node_count as f64).ln() / (stats.average_degree.ln().max(1.0))).ceil() as usize
-                    } else {
-                        0
-                    };
+                    let diameter_estimate =
+                        if stats.connected_components == 1 && stats.node_count > 1 {
+                            ((stats.node_count as f64).ln() / (stats.average_degree.ln().max(1.0)))
+                                .ceil() as usize
+                        } else {
+                            0
+                        };
                     crate::cli_outln!("│   • Estimated Diameter: {:<67} │", diameter_estimate);
 
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
 
                 _ => {
                     crate::cli_outln!("❌ Unknown analysis type: {}", analysis_type);
-                    crate::cli_outln!("   Available types: overview, centrality, clustering, components, metrics");
+                    crate::cli_outln!(
+                        "   Available types: overview, centrality, clustering, components, metrics"
+                    );
                 }
             }
         } else {
             crate::cli_outln!("❌ Knowledge graph is not available or empty");
-            crate::cli_outln!("   Make sure the knowledge graph feature is enabled and memories are stored");
+            crate::cli_outln!(
+                "   Make sure the knowledge graph feature is enabled and memories are stored"
+            );
         }
 
         Ok(())
     }
 
     /// Export graph
-    pub async fn export(agent_memory: &mut AgentMemory, format: &str, output: &std::path::Path) -> Result<()> {
-        crate::cli_outln!("📤 Exporting knowledge graph (format: {}, output: {})", format, output.display());
+    pub async fn export(
+        agent_memory: &mut AgentMemory,
+        format: &str,
+        output: &std::path::Path,
+    ) -> Result<()> {
+        crate::cli_outln!(
+            "📤 Exporting knowledge graph (format: {}, output: {})",
+            format,
+            output.display()
+        );
 
         if let Some(stats) = agent_memory.knowledge_graph_stats() {
-            crate::cli_outln!("📊 Graph contains {} nodes and {} edges", stats.node_count, stats.edge_count);
+            crate::cli_outln!(
+                "📊 Graph contains {} nodes and {} edges",
+                stats.node_count,
+                stats.edge_count
+            );
 
             match format.to_lowercase().as_str() {
                 "json" => {
@@ -605,31 +782,43 @@ impl GraphCommands {
 
                     crate::cli_outln!("📄 JSON structure prepared");
                     crate::cli_outln!("💾 Would write to: {}", output.display());
-                },
+                }
 
                 "graphml" => {
                     crate::cli_outln!("🔄 Generating GraphML export...");
-                    crate::cli_outln!("📄 GraphML structure prepared for {} nodes and {} edges", stats.node_count, stats.edge_count);
+                    crate::cli_outln!(
+                        "📄 GraphML structure prepared for {} nodes and {} edges",
+                        stats.node_count,
+                        stats.edge_count
+                    );
                     crate::cli_outln!("💾 Would write to: {}", output.display());
-                },
+                }
 
                 "dot" => {
                     crate::cli_outln!("🔄 Generating DOT (GraphViz) export...");
-                    crate::cli_outln!("📄 DOT structure prepared for {} nodes and {} edges", stats.node_count, stats.edge_count);
+                    crate::cli_outln!(
+                        "📄 DOT structure prepared for {} nodes and {} edges",
+                        stats.node_count,
+                        stats.edge_count
+                    );
                     crate::cli_outln!("💾 Would write to: {}", output.display());
-                },
+                }
 
                 "csv" => {
                     crate::cli_outln!("🔄 Generating CSV export...");
                     crate::cli_outln!("📄 Would create nodes.csv and edges.csv");
                     crate::cli_outln!("💾 Would write to directory: {}", output.display());
-                },
+                }
 
                 "gexf" => {
                     crate::cli_outln!("🔄 Generating GEXF (Gephi) export...");
-                    crate::cli_outln!("📄 GEXF structure prepared for {} nodes and {} edges", stats.node_count, stats.edge_count);
+                    crate::cli_outln!(
+                        "📄 GEXF structure prepared for {} nodes and {} edges",
+                        stats.node_count,
+                        stats.edge_count
+                    );
                     crate::cli_outln!("💾 Would write to: {}", output.display());
-                },
+                }
 
                 _ => {
                     crate::cli_outln!("❌ Unsupported export format: {}", format);
@@ -639,8 +828,9 @@ impl GraphCommands {
             }
 
             crate::cli_outln!("\n✅ Export structure generated successfully!");
-            crate::cli_outln!("📝 Note: Full implementation requires direct access to graph storage");
-
+            crate::cli_outln!(
+                "📝 Note: Full implementation requires direct access to graph storage"
+            );
         } else {
             crate::cli_outln!("❌ Knowledge graph is not available or empty");
         }
@@ -663,66 +853,201 @@ impl ConfigCommands {
         // Database configuration
         crate::cli_outln!("│ 🗄️  Database Configuration:                                                             │");
         if let Some(ref url) = config.database.url {
-            crate::cli_outln!("│   • URL: {:<79} │", url.chars().take(79).collect::<String>());
+            crate::cli_outln!(
+                "│   • URL: {:<79} │",
+                url.chars().take(79).collect::<String>()
+            );
         } else {
             crate::cli_outln!("│   • URL: {:<79} │", "Not configured");
         }
-        crate::cli_outln!("│   • Connection Timeout: {:<66} │", format!("{}s", config.database.connection_timeout));
-        crate::cli_outln!("│   • Query Timeout: {:<71} │", format!("{}s", config.database.query_timeout));
-        crate::cli_outln!("│   • Max Connections: {:<69} │", config.database.max_connections);
-        crate::cli_outln!("│   • Connection Pooling: {:<66} │", if config.database.enable_pooling { "Enabled" } else { "Disabled" });
+        crate::cli_outln!(
+            "│   • Connection Timeout: {:<66} │",
+            format!("{}s", config.database.connection_timeout)
+        );
+        crate::cli_outln!(
+            "│   • Query Timeout: {:<71} │",
+            format!("{}s", config.database.query_timeout)
+        );
+        crate::cli_outln!(
+            "│   • Max Connections: {:<69} │",
+            config.database.max_connections
+        );
+        crate::cli_outln!(
+            "│   • Connection Pooling: {:<66} │",
+            if config.database.enable_pooling {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
 
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
         // Shell configuration
         crate::cli_outln!("│ 🐚 Shell Configuration:                                                                 │");
         if let Some(ref history_file) = config.shell.history_file {
-            crate::cli_outln!("│   • History File: {:<72} │", history_file.display().to_string().chars().take(72).collect::<String>());
+            crate::cli_outln!(
+                "│   • History File: {:<72} │",
+                history_file
+                    .display()
+                    .to_string()
+                    .chars()
+                    .take(72)
+                    .collect::<String>()
+            );
         } else {
             crate::cli_outln!("│   • History File: {:<72} │", "Default location");
         }
         crate::cli_outln!("│   • History Size: {:<72} │", config.shell.history_size);
-        crate::cli_outln!("│   • Auto-completion: {:<69} │", if config.shell.enable_completion { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Syntax Highlighting: {:<66} │", if config.shell.enable_highlighting { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Hints: {:<79} │", if config.shell.enable_hints { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Prompt: {:<78} │", config.shell.prompt.chars().take(78).collect::<String>());
+        crate::cli_outln!(
+            "│   • Auto-completion: {:<69} │",
+            if config.shell.enable_completion {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Syntax Highlighting: {:<66} │",
+            if config.shell.enable_highlighting {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Hints: {:<79} │",
+            if config.shell.enable_hints {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Prompt: {:<78} │",
+            config.shell.prompt.chars().take(78).collect::<String>()
+        );
 
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
         // Output configuration
         crate::cli_outln!("│ 📤 Output Configuration:                                                                │");
         crate::cli_outln!("│   • Format: {:<78} │", config.output.default_format);
-        crate::cli_outln!("│   • Colors: {:<78} │", if config.output.enable_colors { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Max Column Width: {:<68} │", config.output.max_column_width);
-        crate::cli_outln!("│   • Date Format: {:<73} │", config.output.date_format.chars().take(73).collect::<String>());
-        crate::cli_outln!("│   • Number Precision: {:<70} │", config.output.number_precision);
-        crate::cli_outln!("│   • Show Timing: {:<73} │", if config.output.show_timing { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Show Statistics: {:<69} │", if config.output.show_statistics { "Enabled" } else { "Disabled" });
+        crate::cli_outln!(
+            "│   • Colors: {:<78} │",
+            if config.output.enable_colors {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Max Column Width: {:<68} │",
+            config.output.max_column_width
+        );
+        crate::cli_outln!(
+            "│   • Date Format: {:<73} │",
+            config
+                .output
+                .date_format
+                .chars()
+                .take(73)
+                .collect::<String>()
+        );
+        crate::cli_outln!(
+            "│   • Number Precision: {:<70} │",
+            config.output.number_precision
+        );
+        crate::cli_outln!(
+            "│   • Show Timing: {:<73} │",
+            if config.output.show_timing {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Show Statistics: {:<69} │",
+            if config.output.show_statistics {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
 
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
         // Performance configuration
         crate::cli_outln!("│ ⚡ Performance Configuration:                                                           │");
-        crate::cli_outln!("│   • Query Cache Size: {:<68} │", config.performance.query_cache_size);
-        crate::cli_outln!("│   • Result Cache Size: {:<67} │", config.performance.result_cache_size);
-        crate::cli_outln!("│   • Optimization: {:<72} │", if config.performance.enable_optimization { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • Parallel Execution: {:<67} │", if config.performance.enable_parallel { "Enabled" } else { "Disabled" });
-        let worker_threads_str = config.performance.worker_threads.map(|n| n.to_string()).unwrap_or_else(|| "Auto".to_string());
+        crate::cli_outln!(
+            "│   • Query Cache Size: {:<68} │",
+            config.performance.query_cache_size
+        );
+        crate::cli_outln!(
+            "│   • Result Cache Size: {:<67} │",
+            config.performance.result_cache_size
+        );
+        crate::cli_outln!(
+            "│   • Optimization: {:<72} │",
+            if config.performance.enable_optimization {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • Parallel Execution: {:<67} │",
+            if config.performance.enable_parallel {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        let worker_threads_str = config
+            .performance
+            .worker_threads
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "Auto".to_string());
         crate::cli_outln!("│   • Worker Threads: {:<70} │", worker_threads_str);
 
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
         // Security configuration
         crate::cli_outln!("│ 🔒 Security Configuration:                                                              │");
-        crate::cli_outln!("│   • Authentication: {:<70} │", if config.security.enable_auth { "Enabled" } else { "Disabled" });
-        crate::cli_outln!("│   • TLS: {:<81} │", if config.security.enable_tls { "Enabled" } else { "Disabled" });
+        crate::cli_outln!(
+            "│   • Authentication: {:<70} │",
+            if config.security.enable_auth {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        crate::cli_outln!(
+            "│   • TLS: {:<81} │",
+            if config.security.enable_tls {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
         if let Some(ref api_key) = config.security.api_key {
-            crate::cli_outln!("│   • API Key: {:<75} │", format!("{}...", api_key.chars().take(8).collect::<String>()));
+            crate::cli_outln!(
+                "│   • API Key: {:<75} │",
+                format!("{}...", api_key.chars().take(8).collect::<String>())
+            );
         } else {
             crate::cli_outln!("│   • API Key: {:<75} │", "Not configured");
         }
         if let Some(ref cert_path) = config.security.cert_path {
-            crate::cli_outln!("│   • Certificate: {:<71} │", cert_path.display().to_string().chars().take(71).collect::<String>());
+            crate::cli_outln!(
+                "│   • Certificate: {:<71} │",
+                cert_path
+                    .display()
+                    .to_string()
+                    .chars()
+                    .take(71)
+                    .collect::<String>()
+            );
         } else {
             crate::cli_outln!("│   • Certificate: {:<71} │", "Not configured");
         }
@@ -737,7 +1062,12 @@ impl ConfigCommands {
                     _ => value.to_string(),
                 };
                 let max_value_len = if key.len() < 70 { 70 - key.len() } else { 10 };
-                crate::cli_outln!("│   • {}: {:<width$} │", key, value_str.chars().take(max_value_len).collect::<String>(), width = max_value_len);
+                crate::cli_outln!(
+                    "│   • {}: {:<width$} │",
+                    key,
+                    value_str.chars().take(max_value_len).collect::<String>(),
+                    width = max_value_len
+                );
             }
             if config.custom.len() > 5 {
                 crate::cli_outln!("│   ... and {} more custom settings                                                       │", config.custom.len() - 5);
@@ -750,7 +1080,11 @@ impl ConfigCommands {
         crate::cli_outln!("\n📁 Configuration File Locations:");
         let config_paths = crate::cli::config::CliConfig::get_default_config_paths();
         for (i, path) in config_paths.iter().enumerate().take(3) {
-            let status = if path.exists() { "✅ Found" } else { "❌ Not found" };
+            let status = if path.exists() {
+                "✅ Found"
+            } else {
+                "❌ Not found"
+            };
             crate::cli_outln!("  {}. {} - {}", i + 1, path.display(), status);
         }
 
@@ -767,7 +1101,10 @@ impl ConfigCommands {
         crate::cli_outln!("│ Configuration Update                                                                    │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
         crate::cli_outln!("│ Key: {:<83} │", key.chars().take(83).collect::<String>());
-        crate::cli_outln!("│ Value: {:<81} │", value.chars().take(81).collect::<String>());
+        crate::cli_outln!(
+            "│ Value: {:<81} │",
+            value.chars().take(81).collect::<String>()
+        );
         crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
 
         // Load current configuration
@@ -777,14 +1114,16 @@ impl ConfigCommands {
         let json_value: serde_json::Value = match value.parse::<i64>() {
             Ok(num) => serde_json::Value::Number(serde_json::Number::from(num)),
             Err(_) => match value.parse::<f64>() {
-                Ok(num) => serde_json::Value::Number(serde_json::Number::from_f64(num).unwrap_or(serde_json::Number::from(0))),
+                Ok(num) => serde_json::Value::Number(
+                    serde_json::Number::from_f64(num).unwrap_or(serde_json::Number::from(0)),
+                ),
                 Err(_) => match value.to_lowercase().as_str() {
                     "true" => serde_json::Value::Bool(true),
                     "false" => serde_json::Value::Bool(false),
                     "null" => serde_json::Value::Null,
                     _ => serde_json::Value::String(value.to_string()),
-                }
-            }
+                },
+            },
         };
 
         // Set the value
@@ -797,10 +1136,16 @@ impl ConfigCommands {
                 if let Some(config_path) = config_paths.first() {
                     match config.save_to_file(config_path).await {
                         Ok(_) => {
-                            crate::cli_outln!("💾 Configuration saved to: {}", config_path.display());
-                        },
+                            crate::cli_outln!(
+                                "💾 Configuration saved to: {}",
+                                config_path.display()
+                            );
+                        }
                         Err(e) => {
-                            crate::cli_outln!("⚠️  Warning: Failed to save configuration file: {}", e);
+                            crate::cli_outln!(
+                                "⚠️  Warning: Failed to save configuration file: {}",
+                                e
+                            );
                             crate::cli_outln!("   Configuration updated in memory only");
                         }
                     }
@@ -808,7 +1153,7 @@ impl ConfigCommands {
                     crate::cli_outln!("⚠️  Warning: No default configuration path available");
                     crate::cli_outln!("   Configuration updated in memory only");
                 }
-            },
+            }
             Err(e) => {
                 crate::cli_outln!("❌ Failed to set configuration value: {}", e);
                 return Err(e);
@@ -838,21 +1183,31 @@ impl ConfigCommands {
                     serde_json::Value::Object(obj) => format!("Object with {} fields", obj.len()),
                 };
 
-                crate::cli_outln!("│ Value: {:<81} │", value_str.chars().take(81).collect::<String>());
-                crate::cli_outln!("│ Type: {:<82} │", match &value {
-                    serde_json::Value::String(_) => "String",
-                    serde_json::Value::Number(_) => "Number",
-                    serde_json::Value::Bool(_) => "Boolean",
-                    serde_json::Value::Null => "Null",
-                    serde_json::Value::Array(_) => "Array",
-                    serde_json::Value::Object(_) => "Object",
-                });
+                crate::cli_outln!(
+                    "│ Value: {:<81} │",
+                    value_str.chars().take(81).collect::<String>()
+                );
+                crate::cli_outln!(
+                    "│ Type: {:<82} │",
+                    match &value {
+                        serde_json::Value::String(_) => "String",
+                        serde_json::Value::Number(_) => "Number",
+                        serde_json::Value::Bool(_) => "Boolean",
+                        serde_json::Value::Null => "Null",
+                        serde_json::Value::Array(_) => "Array",
+                        serde_json::Value::Object(_) => "Object",
+                    }
+                );
 
                 // If it's a complex object, show formatted JSON
-                if matches!(value, serde_json::Value::Array(_) | serde_json::Value::Object(_)) {
+                if matches!(
+                    value,
+                    serde_json::Value::Array(_) | serde_json::Value::Object(_)
+                ) {
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Formatted Value:                                                                        │");
-                    let formatted = serde_json::to_string_pretty(&value).unwrap_or_else(|_| "Failed to format".to_string());
+                    let formatted = serde_json::to_string_pretty(&value)
+                        .unwrap_or_else(|_| "Failed to format".to_string());
                     for line in formatted.lines().take(10) {
                         crate::cli_outln!("│ {:<87} │", line.chars().take(87).collect::<String>());
                     }
@@ -863,7 +1218,7 @@ impl ConfigCommands {
 
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
                 crate::cli_outln!("✅ Configuration value found");
-            },
+            }
             None => {
                 crate::cli_outln!("│ Value: {:<81} │", "Not found");
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
@@ -917,10 +1272,21 @@ impl ConfigCommands {
             match default_config.save_to_file(config_path).await {
                 Ok(_) => {
                     crate::cli_outln!("│ ✅ Configuration reset to defaults                                                      │");
-                    crate::cli_outln!("│ 💾 Saved to: {:<75} │", config_path.display().to_string().chars().take(75).collect::<String>());
-                },
+                    crate::cli_outln!(
+                        "│ 💾 Saved to: {:<75} │",
+                        config_path
+                            .display()
+                            .to_string()
+                            .chars()
+                            .take(75)
+                            .collect::<String>()
+                    );
+                }
                 Err(e) => {
-                    crate::cli_outln!("│ ❌ Failed to save default configuration: {:<53} │", e.to_string().chars().take(53).collect::<String>());
+                    crate::cli_outln!(
+                        "│ ❌ Failed to save default configuration: {:<53} │",
+                        e.to_string().chars().take(53).collect::<String>()
+                    );
                 }
             }
         } else {
@@ -976,7 +1342,7 @@ impl InfoCommands {
     pub async fn show(detailed: bool) -> Result<()> {
         crate::cli_outln!("System Information:");
         crate::cli_outln!("==================");
-        
+
         if detailed {
             crate::cli_outln!("Detailed system information:");
             // TODO: Implement detailed system info
@@ -984,7 +1350,7 @@ impl InfoCommands {
             crate::cli_outln!("Basic system information:");
             // TODO: Implement basic system info
         }
-        
+
         Ok(())
     }
 }
@@ -994,7 +1360,11 @@ pub struct ProfileCommands;
 
 impl ProfileCommands {
     /// Run performance profiler
-    pub async fn run(duration: u64, output: Option<&std::path::Path>, realtime: bool) -> Result<()> {
+    pub async fn run(
+        duration: u64,
+        output: Option<&std::path::Path>,
+        realtime: bool,
+    ) -> Result<()> {
         use crate::cli::profiler::{PerformanceProfiler, ProfilerConfig, ReportFormat};
         use std::time::Duration as StdDuration;
 
@@ -1010,7 +1380,8 @@ impl ProfileCommands {
         config.report_format = ReportFormat::Json;
 
         if let Some(output_path) = output {
-            config.output_directory = output_path.parent()
+            config.output_directory = output_path
+                .parent()
                 .unwrap_or_else(|| std::path::Path::new("."))
                 .to_string_lossy()
                 .to_string();
@@ -1025,7 +1396,9 @@ impl ProfileCommands {
             include_io: true,
             tags: std::collections::HashMap::new(),
         };
-        let session_id = profiler.start_session("cli_profiling".to_string(), session_config).await?;
+        let session_id = profiler
+            .start_session("cli_profiling".to_string(), session_config)
+            .await?;
 
         if realtime {
             crate::cli_outln!("Starting real-time monitoring for {} seconds...", duration);
@@ -1058,7 +1431,10 @@ impl ProfileCommands {
         if let Some(output_path) = output {
             crate::cli_outln!("Performance report saved to: {}", output_path.display());
         } else {
-            crate::cli_outln!("Performance profiling completed. Session ID: {}", session_id);
+            crate::cli_outln!(
+                "Performance profiling completed. Session ID: {}",
+                session_id
+            );
         }
 
         crate::cli_outln!("Profiling summary:");
@@ -1075,15 +1451,31 @@ pub struct DataCommands;
 
 impl DataCommands {
     /// Export data
-    pub async fn export(storage: &(dyn crate::memory::storage::Storage + Send + Sync), format: &str, output: &std::path::Path, filter: Option<&str>) -> Result<()> {
+    pub async fn export(
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        format: &str,
+        output: &std::path::Path,
+        filter: Option<&str>,
+    ) -> Result<()> {
         crate::cli_outln!("📤 Exporting Synaptic memory data");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Data Export Configuration                                                               │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
         crate::cli_outln!("│ Format: {:<82} │", format);
-        crate::cli_outln!("│ Output: {:<82} │", output.display().to_string().chars().take(82).collect::<String>());
+        crate::cli_outln!(
+            "│ Output: {:<82} │",
+            output
+                .display()
+                .to_string()
+                .chars()
+                .take(82)
+                .collect::<String>()
+        );
         if let Some(filter_str) = filter {
-            crate::cli_outln!("│ Filter: {:<82} │", filter_str.chars().take(82).collect::<String>());
+            crate::cli_outln!(
+                "│ Filter: {:<82} │",
+                filter_str.chars().take(82).collect::<String>()
+            );
         } else {
             crate::cli_outln!("│ Filter: {:<82} │", "None (export all data)");
         }
@@ -1096,18 +1488,26 @@ impl DataCommands {
         // Apply filter if specified
         let filtered_entries = if let Some(filter_str) = filter {
             let filter_lower = filter_str.to_lowercase();
-            entries.into_iter()
+            entries
+                .into_iter()
                 .filter(|entry| {
-                    entry.value.to_lowercase().contains(&filter_lower) ||
-                    entry.key.to_lowercase().contains(&filter_lower) ||
-                    entry.metadata.tags.iter().any(|tag| tag.to_lowercase().contains(&filter_lower))
+                    entry.value.to_lowercase().contains(&filter_lower)
+                        || entry.key.to_lowercase().contains(&filter_lower)
+                        || entry
+                            .metadata
+                            .tags
+                            .iter()
+                            .any(|tag| tag.to_lowercase().contains(&filter_lower))
                 })
                 .collect::<Vec<_>>()
         } else {
             entries
         };
 
-        crate::cli_outln!("🔍 After filtering: {} entries to export", filtered_entries.len());
+        crate::cli_outln!(
+            "🔍 After filtering: {} entries to export",
+            filtered_entries.len()
+        );
 
         // Export based on format
         match format.to_lowercase().as_str() {
@@ -1122,15 +1522,21 @@ impl DataCommands {
                     "entries": filtered_entries
                 });
 
-                let json_str = serde_json::to_string_pretty(&export_data)
-                    .map_err(|e| crate::error::MemoryError::storage(format!("JSON serialization failed: {}", e)))?;
+                let json_str = serde_json::to_string_pretty(&export_data).map_err(|e| {
+                    crate::error::MemoryError::storage(format!("JSON serialization failed: {}", e))
+                })?;
 
-                tokio::fs::write(output, json_str).await
-                    .map_err(|e| crate::error::MemoryError::storage(format!("Failed to write export file: {}", e)))?;
-            },
+                tokio::fs::write(output, json_str).await.map_err(|e| {
+                    crate::error::MemoryError::storage(format!(
+                        "Failed to write export file: {}",
+                        e
+                    ))
+                })?;
+            }
             "csv" => {
                 let mut csv_content = String::new();
-                csv_content.push_str("key,value,memory_type,created_at,last_accessed,access_count,tags\n");
+                csv_content
+                    .push_str("key,value,memory_type,created_at,last_accessed,access_count,tags\n");
 
                 for entry in &filtered_entries {
                     let tags = entry.metadata.tags.join(";");
@@ -1146,23 +1552,33 @@ impl DataCommands {
                     ));
                 }
 
-                tokio::fs::write(output, csv_content).await
-                    .map_err(|e| crate::error::MemoryError::storage(format!("Failed to write CSV file: {}", e)))?;
-            },
+                tokio::fs::write(output, csv_content).await.map_err(|e| {
+                    crate::error::MemoryError::storage(format!("Failed to write CSV file: {}", e))
+                })?;
+            }
             "yaml" => {
-                let export_data = serde_yaml::to_string(&filtered_entries)
-                    .map_err(|e| crate::error::MemoryError::storage(format!("YAML serialization failed: {}", e)))?;
+                let export_data = serde_yaml::to_string(&filtered_entries).map_err(|e| {
+                    crate::error::MemoryError::storage(format!("YAML serialization failed: {}", e))
+                })?;
 
-                tokio::fs::write(output, export_data).await
-                    .map_err(|e| crate::error::MemoryError::storage(format!("Failed to write YAML file: {}", e)))?;
-            },
+                tokio::fs::write(output, export_data).await.map_err(|e| {
+                    crate::error::MemoryError::storage(format!("Failed to write YAML file: {}", e))
+                })?;
+            }
             _ => {
-                return Err(crate::error::MemoryError::configuration(format!("Unsupported export format: {}", format)));
+                return Err(crate::error::MemoryError::configuration(format!(
+                    "Unsupported export format: {}",
+                    format
+                )));
             }
         }
 
         crate::cli_outln!("✅ Export completed successfully!");
-        crate::cli_outln!("📁 Exported {} entries to: {}", filtered_entries.len(), output.display());
+        crate::cli_outln!(
+            "📁 Exported {} entries to: {}",
+            filtered_entries.len(),
+            output.display()
+        );
 
         // Show file size
         if let Ok(metadata) = tokio::fs::metadata(output).await {
@@ -1178,12 +1594,25 @@ impl DataCommands {
     }
 
     /// Import data
-    pub async fn import(storage: &(dyn crate::memory::storage::Storage + Send + Sync), input: &std::path::Path, format: Option<&str>, merge_strategy: &str) -> Result<()> {
+    pub async fn import(
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        input: &std::path::Path,
+        format: Option<&str>,
+        merge_strategy: &str,
+    ) -> Result<()> {
         crate::cli_outln!("📥 Importing Synaptic memory data");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Data Import Configuration                                                               │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
-        crate::cli_outln!("│ Input: {:<83} │", input.display().to_string().chars().take(83).collect::<String>());
+        crate::cli_outln!(
+            "│ Input: {:<83} │",
+            input
+                .display()
+                .to_string()
+                .chars()
+                .take(83)
+                .collect::<String>()
+        );
         if let Some(fmt) = format {
             crate::cli_outln!("│ Format: {:<82} │", fmt);
         } else {
@@ -1194,7 +1623,10 @@ impl DataCommands {
 
         // Check if file exists
         if !input.exists() {
-            return Err(crate::error::MemoryError::storage(format!("Import file not found: {}", input.display())));
+            return Err(crate::error::MemoryError::storage(format!(
+                "Import file not found: {}",
+                input.display()
+            )));
         }
 
         // Show file size
@@ -1213,36 +1645,44 @@ impl DataCommands {
                 Some("json") => "json",
                 Some("csv") => "csv",
                 Some("yaml") | Some("yml") => "yaml",
-                _ => "json" // default
+                _ => "json", // default
             }
         });
 
         crate::cli_outln!("🔍 Using format: {}", detected_format);
 
         // Read and parse file
-        let file_content = tokio::fs::read_to_string(input).await
-            .map_err(|e| crate::error::MemoryError::storage(format!("Failed to read import file: {}", e)))?;
+        let file_content = tokio::fs::read_to_string(input).await.map_err(|e| {
+            crate::error::MemoryError::storage(format!("Failed to read import file: {}", e))
+        })?;
 
         let entries: Vec<crate::memory::types::MemoryEntry> = match detected_format {
             "json" => {
                 // Try to parse as export format first (with metadata wrapper)
                 if let Ok(export_data) = serde_json::from_str::<serde_json::Value>(&file_content) {
                     if let Some(entries_array) = export_data.get("entries") {
-                        serde_json::from_value(entries_array.clone())
-                            .map_err(|e| crate::error::MemoryError::storage(format!("JSON parsing failed: {}", e)))?
+                        serde_json::from_value(entries_array.clone()).map_err(|e| {
+                            crate::error::MemoryError::storage(format!(
+                                "JSON parsing failed: {}",
+                                e
+                            ))
+                        })?
                     } else {
                         // Try to parse as direct array of entries
-                        serde_json::from_str(&file_content)
-                            .map_err(|e| crate::error::MemoryError::storage(format!("JSON parsing failed: {}", e)))?
+                        serde_json::from_str(&file_content).map_err(|e| {
+                            crate::error::MemoryError::storage(format!(
+                                "JSON parsing failed: {}",
+                                e
+                            ))
+                        })?
                     }
                 } else {
                     return Err(crate::error::MemoryError::storage("Invalid JSON format"));
                 }
-            },
-            "yaml" => {
-                serde_yaml::from_str(&file_content)
-                    .map_err(|e| crate::error::MemoryError::storage(format!("YAML parsing failed: {}", e)))?
-            },
+            }
+            "yaml" => serde_yaml::from_str(&file_content).map_err(|e| {
+                crate::error::MemoryError::storage(format!("YAML parsing failed: {}", e))
+            })?,
             "csv" => {
                 // For CSV, we'll need to parse manually since MemoryEntry has complex structure
                 let mut entries = Vec::new();
@@ -1267,9 +1707,12 @@ impl DataCommands {
                     }
                 }
                 entries
-            },
+            }
             _ => {
-                return Err(crate::error::MemoryError::configuration(format!("Unsupported import format: {}", detected_format)));
+                return Err(crate::error::MemoryError::configuration(format!(
+                    "Unsupported import format: {}",
+                    detected_format
+                )));
             }
         };
 
@@ -1289,7 +1732,7 @@ impl DataCommands {
                         storage.store(&entry).await?;
                         imported_count += 1;
                     }
-                },
+                }
                 "overwrite" => {
                     storage.store(&entry).await?;
                     if storage.exists(&entry.key).await? {
@@ -1297,22 +1740,28 @@ impl DataCommands {
                     } else {
                         imported_count += 1;
                     }
-                },
+                }
                 "merge" => {
                     // For merge strategy, we would combine with existing data
                     // For now, treat as overwrite
                     storage.store(&entry).await?;
                     imported_count += 1;
-                },
+                }
                 "fail" => {
                     if storage.exists(&entry.key).await? {
-                        return Err(crate::error::MemoryError::storage(format!("Key already exists: {}", entry.key)));
+                        return Err(crate::error::MemoryError::storage(format!(
+                            "Key already exists: {}",
+                            entry.key
+                        )));
                     }
                     storage.store(&entry).await?;
                     imported_count += 1;
-                },
+                }
                 _ => {
-                    return Err(crate::error::MemoryError::configuration(format!("Unknown merge strategy: {}", merge_strategy)));
+                    return Err(crate::error::MemoryError::configuration(format!(
+                        "Unknown merge strategy: {}",
+                        merge_strategy
+                    )));
                 }
             }
         }
@@ -1324,7 +1773,10 @@ impl DataCommands {
         crate::cli_outln!("│ New entries imported: {:<68} │", imported_count);
         crate::cli_outln!("│ Existing entries updated: {:<64} │", updated_count);
         crate::cli_outln!("│ Entries skipped: {:<71} │", skipped_count);
-        crate::cli_outln!("│ Total processed: {:<71} │", imported_count + updated_count + skipped_count);
+        crate::cli_outln!(
+            "│ Total processed: {:<71} │",
+            imported_count + updated_count + skipped_count
+        );
         crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
 
         Ok(())
@@ -1336,7 +1788,12 @@ pub struct SyQLCommands;
 
 impl SyQLCommands {
     /// Execute SyQL query
-    pub async fn execute(syql_engine: &mut crate::cli::syql::SyQLEngine, query: &str, output_file: Option<&std::path::Path>, explain: bool) -> Result<()> {
+    pub async fn execute(
+        syql_engine: &mut crate::cli::syql::SyQLEngine,
+        query: &str,
+        output_file: Option<&std::path::Path>,
+        explain: bool,
+    ) -> Result<()> {
         crate::cli_outln!("🔍 Executing SyQL query:");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Query:                                                                                  │");
@@ -1366,7 +1823,10 @@ impl SyQLCommands {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
                     crate::cli_outln!("│ Query Execution Plan                                                                    │");
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
-                    crate::cli_outln!("│ Estimated Cost: {:<74} │", format!("{:.2}", plan.estimated_cost));
+                    crate::cli_outln!(
+                        "│ Estimated Cost: {:<74} │",
+                        format!("{:.2}", plan.estimated_cost)
+                    );
                     crate::cli_outln!("│ Estimated Rows: {:<74} │", plan.estimated_rows);
                     crate::cli_outln!("│ Plan Nodes: {:<78} │", plan.nodes.len());
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
@@ -1384,15 +1844,26 @@ impl SyQLCommands {
 
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Statistics:                                                                             │");
-                    crate::cli_outln!("│ • Scan Operations: {:<69} │", plan.statistics.scan_operations);
-                    crate::cli_outln!("│ • Join Operations: {:<69} │", plan.statistics.join_operations);
-                    crate::cli_outln!("│ • Index Operations: {:<68} │", plan.statistics.index_operations);
+                    crate::cli_outln!(
+                        "│ • Scan Operations: {:<69} │",
+                        plan.statistics.scan_operations
+                    );
+                    crate::cli_outln!(
+                        "│ • Join Operations: {:<69} │",
+                        plan.statistics.join_operations
+                    );
+                    crate::cli_outln!(
+                        "│ • Index Operations: {:<68} │",
+                        plan.statistics.index_operations
+                    );
                     crate::cli_outln!("│ • Total Nodes: {:<72} │", plan.statistics.total_nodes);
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-                },
+                }
                 Err(e) => {
                     crate::cli_outln!("❌ Failed to explain query: {}", e);
-                    crate::cli_outln!("   The query may contain syntax errors or unsupported features");
+                    crate::cli_outln!(
+                        "   The query may contain syntax errors or unsupported features"
+                    );
                 }
             }
         } else {
@@ -1405,10 +1876,19 @@ impl SyQLCommands {
                     crate::cli_outln!("│ Query Results                                                                           │");
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Query ID: {:<78} │", result.metadata.query_id);
-                    crate::cli_outln!("│ Executed At: {:<75} │", result.metadata.executed_at.format("%Y-%m-%d %H:%M:%S UTC"));
-                    crate::cli_outln!("│ Query Type: {:<76} │", format!("{:?}", result.metadata.query_type));
+                    crate::cli_outln!(
+                        "│ Executed At: {:<75} │",
+                        result.metadata.executed_at.format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                    crate::cli_outln!(
+                        "│ Query Type: {:<76} │",
+                        format!("{:?}", result.metadata.query_type)
+                    );
                     crate::cli_outln!("│ Rows Returned: {:<73} │", result.rows.len());
-                    crate::cli_outln!("│ Execution Time: {:<72} │", format!("{:.2}ms", result.statistics.execution_time_ms));
+                    crate::cli_outln!(
+                        "│ Execution Time: {:<72} │",
+                        format!("{:.2}ms", result.statistics.execution_time_ms)
+                    );
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
                     if !result.rows.is_empty() {
@@ -1416,8 +1896,13 @@ impl SyQLCommands {
 
                         // Display column headers
                         if !result.metadata.columns.is_empty() {
-                            let header = result.metadata.columns.iter()
-                                .map(|col| format!("{:<15}", col.name.chars().take(15).collect::<String>()))
+                            let header = result
+                                .metadata
+                                .columns
+                                .iter()
+                                .map(|col| {
+                                    format!("{:<15}", col.name.chars().take(15).collect::<String>())
+                                })
                                 .collect::<Vec<_>>()
                                 .join(" │ ");
                             crate::cli_outln!("│ {:<87} │", header);
@@ -1426,12 +1911,16 @@ impl SyQLCommands {
 
                         // Display sample rows
                         for (_i, row) in result.rows.iter().enumerate().take(5) {
-                            let row_data = result.metadata.columns.iter()
-                                .map(|col| {
-                                    match row.values.get(&col.name) {
-                                        Some(value) => format!("{:<15}", format!("{:?}", value).chars().take(15).collect::<String>()),
-                                        None => format!("{:<15}", "NULL"),
-                                    }
+                            let row_data = result
+                                .metadata
+                                .columns
+                                .iter()
+                                .map(|col| match row.values.get(&col.name) {
+                                    Some(value) => format!(
+                                        "{:<15}",
+                                        format!("{:?}", value).chars().take(15).collect::<String>()
+                                    ),
+                                    None => format!("{:<15}", "NULL"),
                                 })
                                 .collect::<Vec<_>>()
                                 .join(" │ ");
@@ -1447,15 +1936,29 @@ impl SyQLCommands {
 
                     crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                     crate::cli_outln!("│ Performance Statistics:                                                                 │");
-                    crate::cli_outln!("│ • Memories Scanned: {:<68} │", result.statistics.memories_scanned);
-                    crate::cli_outln!("│ • Index Usage: {:<73} │", result.statistics.index_usage.indexes_used.len());
-                    crate::cli_outln!("│ • Relationships Traversed: {:<60} │", result.statistics.relationships_traversed);
-                    crate::cli_outln!("│ • Execution Time: {:<70} │", format!("{}ms", result.statistics.execution_time_ms));
+                    crate::cli_outln!(
+                        "│ • Memories Scanned: {:<68} │",
+                        result.statistics.memories_scanned
+                    );
+                    crate::cli_outln!(
+                        "│ • Index Usage: {:<73} │",
+                        result.statistics.index_usage.indexes_used.len()
+                    );
+                    crate::cli_outln!(
+                        "│ • Relationships Traversed: {:<60} │",
+                        result.statistics.relationships_traversed
+                    );
+                    crate::cli_outln!(
+                        "│ • Execution Time: {:<70} │",
+                        format!("{}ms", result.statistics.execution_time_ms)
+                    );
                     crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
 
                     // Handle output file
                     if let Some(output_path) = output_file {
-                        match syql_engine.format_result(&result, crate::cli::syql::OutputFormat::Json) {
+                        match syql_engine
+                            .format_result(&result, crate::cli::syql::OutputFormat::Json)
+                        {
                             Ok(formatted_output) => {
                                 match std::fs::write(output_path, formatted_output) {
                                     Ok(_) => {
@@ -1463,8 +1966,11 @@ impl SyQLCommands {
                                             output_path = %output_path.display(),
                                             "Query results written to file"
                                         );
-                                        crate::cli_outln!("\n💾 Results written to: {}", output_path.display());
-                                    },
+                                        crate::cli_outln!(
+                                            "\n💾 Results written to: {}",
+                                            output_path.display()
+                                        );
+                                    }
                                     Err(e) => {
                                         tracing::error!(
                                             output_path = %output_path.display(),
@@ -1474,7 +1980,7 @@ impl SyQLCommands {
                                         crate::cli_outln!("\n❌ Failed to write to file: {}", e);
                                     }
                                 }
-                            },
+                            }
                             Err(e) => {
                                 tracing::error!(
                                     error = %e,
@@ -1484,7 +1990,7 @@ impl SyQLCommands {
                             }
                         }
                     }
-                },
+                }
                 Err(e) => {
                     tracing::error!(
                         error = %e,
@@ -1500,7 +2006,10 @@ impl SyQLCommands {
     }
 
     /// Validate SyQL query syntax
-    pub async fn validate(syql_engine: &mut crate::cli::syql::SyQLEngine, query: &str) -> Result<()> {
+    pub async fn validate(
+        syql_engine: &mut crate::cli::syql::SyQLEngine,
+        query: &str,
+    ) -> Result<()> {
         crate::cli_outln!("🔍 Validating SyQL query syntax:");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Query Validation                                                                        │");
@@ -1560,9 +2069,12 @@ impl SyQLCommands {
                 }
 
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
-            },
+            }
             Err(e) => {
-                crate::cli_outln!("│ ❌ Validation failed: {:<70} │", e.to_string().chars().take(70).collect::<String>());
+                crate::cli_outln!(
+                    "│ ❌ Validation failed: {:<70} │",
+                    e.to_string().chars().take(70).collect::<String>()
+                );
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
             }
         }
@@ -1571,12 +2083,19 @@ impl SyQLCommands {
     }
 
     /// Get query completion suggestions
-    pub async fn complete(syql_engine: &mut crate::cli::syql::SyQLEngine, partial_query: &str, cursor_position: usize) -> Result<()> {
+    pub async fn complete(
+        syql_engine: &mut crate::cli::syql::SyQLEngine,
+        partial_query: &str,
+        cursor_position: usize,
+    ) -> Result<()> {
         crate::cli_outln!("🔍 Getting SyQL query completions:");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Query Completions                                                                       │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
-        crate::cli_outln!("│ Partial Query: {:<75} │", partial_query.chars().take(75).collect::<String>());
+        crate::cli_outln!(
+            "│ Partial Query: {:<75} │",
+            partial_query.chars().take(75).collect::<String>()
+        );
         crate::cli_outln!("│ Cursor Position: {:<73} │", cursor_position);
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
 
@@ -1595,7 +2114,12 @@ impl SyQLCommands {
                         };
 
                         let kind_text = format!("{:?}", completion.item_type);
-                        crate::cli_outln!("│ {}. {:<70} [{:<8}] │", i + 1, completion_text, kind_text.chars().take(8).collect::<String>());
+                        crate::cli_outln!(
+                            "│ {}. {:<70} [{:<8}] │",
+                            i + 1,
+                            completion_text,
+                            kind_text.chars().take(8).collect::<String>()
+                        );
 
                         if !completion.description.is_empty() {
                             let desc_text = if completion.description.len() > 80 {
@@ -1611,9 +2135,12 @@ impl SyQLCommands {
                         crate::cli_outln!("│ ... and {} more completions                                                             │", completions.len() - 10);
                     }
                 }
-            },
+            }
             Err(e) => {
-                crate::cli_outln!("│ ❌ Failed to get completions: {:<62} │", e.to_string().chars().take(62).collect::<String>());
+                crate::cli_outln!(
+                    "│ ❌ Failed to get completions: {:<62} │",
+                    e.to_string().chars().take(62).collect::<String>()
+                );
             }
         }
 
@@ -1627,15 +2154,30 @@ pub struct ProfilerCommands;
 
 impl ProfilerCommands {
     /// Run performance profiler
-    pub async fn run_profiler(duration: u64, output: Option<&std::path::Path>, realtime: bool) -> Result<()> {
+    pub async fn run_profiler(
+        duration: u64,
+        output: Option<&std::path::Path>,
+        realtime: bool,
+    ) -> Result<()> {
         crate::cli_outln!("🔍 Starting performance profiler");
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Performance Profiler Configuration                                                     │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
         crate::cli_outln!("│ Duration: {:<79} │", format!("{}s", duration));
-        crate::cli_outln!("│ Real-time monitoring: {:<68} │", if realtime { "Enabled" } else { "Disabled" });
+        crate::cli_outln!(
+            "│ Real-time monitoring: {:<68} │",
+            if realtime { "Enabled" } else { "Disabled" }
+        );
         if let Some(output_path) = output {
-            crate::cli_outln!("│ Output file: {:<75} │", output_path.display().to_string().chars().take(75).collect::<String>());
+            crate::cli_outln!(
+                "│ Output file: {:<75} │",
+                output_path
+                    .display()
+                    .to_string()
+                    .chars()
+                    .take(75)
+                    .collect::<String>()
+            );
         } else {
             crate::cli_outln!("│ Output file: {:<75} │", "Console only");
         }
@@ -1648,7 +2190,13 @@ impl ProfilerCommands {
             enable_real_time: realtime,
             enable_bottleneck_detection: true,
             enable_recommendations: true,
-            output_directory: output.map(|p| p.parent().unwrap_or(std::path::Path::new(".")).display().to_string())
+            output_directory: output
+                .map(|p| {
+                    p.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .display()
+                        .to_string()
+                })
                 .unwrap_or_else(|| ".".to_string()),
             report_format: crate::cli::profiler::ReportFormat::Text,
             visualization: crate::cli::profiler::VisualizationConfig::default(),
@@ -1666,7 +2214,9 @@ impl ProfilerCommands {
             tags: std::collections::HashMap::new(),
         };
 
-        let session_id = profiler.start_session("CLI Profiling Session".to_string(), session_config).await?;
+        let session_id = profiler
+            .start_session("CLI Profiling Session".to_string(), session_config)
+            .await?;
 
         crate::cli_outln!("\n⚡ Profiling started (Session ID: {})", session_id);
 
@@ -1696,12 +2246,31 @@ impl ProfilerCommands {
                 crate::cli_outln!("│ Real-time Performance Metrics                                                          │");
                 crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
                 crate::cli_outln!("│ CPU Usage: {:<75} │", format!("{:.1}%", cpu_usage));
-                crate::cli_outln!("│ Memory Usage: {:<72} │", format!("{:.1} MB ({:.1}%)", memory_usage, memory_usage / 1024.0 * 100.0));
+                crate::cli_outln!(
+                    "│ Memory Usage: {:<72} │",
+                    format!(
+                        "{:.1} MB ({:.1}%)",
+                        memory_usage,
+                        memory_usage / 1024.0 * 100.0
+                    )
+                );
                 crate::cli_outln!("│ Avg Latency: {:<73} │", format!("{:.2} ms", latency));
-                crate::cli_outln!("│ Throughput: {:<74} │", format!("{:.1} ops/sec", throughput));
-                crate::cli_outln!("│ Cache Hit Rate: {:<70} │", format!("{:.1}%", 85.0 + (elapsed * 0.1) % 10.0));
-                crate::cli_outln!("│ Error Rate: {:<74} │", format!("{:.3}%", 0.1 + (elapsed * 0.01) % 0.5));
-                crate::cli_outln!("│ Performance Score: {:<67} │", format!("{:.1}/100", 85.0 - (elapsed * 0.5) % 15.0));
+                crate::cli_outln!(
+                    "│ Throughput: {:<74} │",
+                    format!("{:.1} ops/sec", throughput)
+                );
+                crate::cli_outln!(
+                    "│ Cache Hit Rate: {:<70} │",
+                    format!("{:.1}%", 85.0 + (elapsed * 0.1) % 10.0)
+                );
+                crate::cli_outln!(
+                    "│ Error Rate: {:<74} │",
+                    format!("{:.3}%", 0.1 + (elapsed * 0.01) % 0.5)
+                );
+                crate::cli_outln!(
+                    "│ Performance Score: {:<67} │",
+                    format!("{:.1}/100", 85.0 - (elapsed * 0.5) % 15.0)
+                );
                 crate::cli_outln!("└─────────────────────────────────────────────────────────────────────────────────────────┘");
                 crate::cli_outln!("Elapsed: {:.1}s / {}s", elapsed, duration);
                 crate::cli_outln!();
@@ -1721,24 +2290,58 @@ impl ProfilerCommands {
         crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
         crate::cli_outln!("│ Performance Report Summary                                                              │");
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
-        crate::cli_outln!("│ Session: {:<79} │", report.session_name.chars().take(79).collect::<String>());
-        crate::cli_outln!("│ Duration: {:<78} │", format!("{:.2}s", report.duration_secs));
-        crate::cli_outln!("│ Samples Collected: {:<69} │", report.detailed_metrics.operation_breakdown.len());
+        crate::cli_outln!(
+            "│ Session: {:<79} │",
+            report.session_name.chars().take(79).collect::<String>()
+        );
+        crate::cli_outln!(
+            "│ Duration: {:<78} │",
+            format!("{:.2}s", report.duration_secs)
+        );
+        crate::cli_outln!(
+            "│ Samples Collected: {:<69} │",
+            report.detailed_metrics.operation_breakdown.len()
+        );
         crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
         crate::cli_outln!("│ Performance Summary:                                                                    │");
-        crate::cli_outln!("│ • Average CPU Usage: {:<66} │", format!("{:.1}%", report.summary.cpu_utilization));
-        crate::cli_outln!("│ • Peak Memory Usage: {:<66} │", format!("{:.1} MB", report.summary.memory_usage_mb));
-        crate::cli_outln!("│ • Average Latency: {:<68} │", format!("{:.2} ms", report.summary.avg_latency_ms));
-        crate::cli_outln!("│ • Total Operations: {:<67} │", report.summary.total_operations);
-        crate::cli_outln!("│ • Error Rate: {:<73} │", format!("{:.3}%", report.summary.error_rate * 100.0));
-        crate::cli_outln!("│ • Performance Score: {:<66} │", format!("{:.1}/100", report.summary.performance_score));
+        crate::cli_outln!(
+            "│ • Average CPU Usage: {:<66} │",
+            format!("{:.1}%", report.summary.cpu_utilization)
+        );
+        crate::cli_outln!(
+            "│ • Peak Memory Usage: {:<66} │",
+            format!("{:.1} MB", report.summary.memory_usage_mb)
+        );
+        crate::cli_outln!(
+            "│ • Average Latency: {:<68} │",
+            format!("{:.2} ms", report.summary.avg_latency_ms)
+        );
+        crate::cli_outln!(
+            "│ • Total Operations: {:<67} │",
+            report.summary.total_operations
+        );
+        crate::cli_outln!(
+            "│ • Error Rate: {:<73} │",
+            format!("{:.3}%", report.summary.error_rate * 100.0)
+        );
+        crate::cli_outln!(
+            "│ • Performance Score: {:<66} │",
+            format!("{:.1}/100", report.summary.performance_score)
+        );
 
         if !report.bottlenecks.is_empty() {
             crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
             crate::cli_outln!("│ Bottlenecks Detected:                                                                   │");
             for (i, bottleneck) in report.bottlenecks.iter().enumerate().take(3) {
-                crate::cli_outln!("│ {}. {:<82} │", i + 1, bottleneck.description.chars().take(82).collect::<String>());
-                crate::cli_outln!("│    Impact: {:<77} │", format!("{:.1}%", bottleneck.impact.performance_degradation));
+                crate::cli_outln!(
+                    "│ {}. {:<82} │",
+                    i + 1,
+                    bottleneck.description.chars().take(82).collect::<String>()
+                );
+                crate::cli_outln!(
+                    "│    Impact: {:<77} │",
+                    format!("{:.1}%", bottleneck.impact.performance_degradation)
+                );
             }
             if report.bottlenecks.len() > 3 {
                 crate::cli_outln!("│ ... and {} more bottlenecks                                                             │", report.bottlenecks.len() - 3);
@@ -1749,8 +2352,19 @@ impl ProfilerCommands {
             crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
             crate::cli_outln!("│ Optimization Recommendations:                                                           │");
             for (i, recommendation) in report.recommendations.iter().enumerate().take(3) {
-                crate::cli_outln!("│ {}. {:<82} │", i + 1, recommendation.description.chars().take(82).collect::<String>());
-                crate::cli_outln!("│    Priority: {:<75} │", format!("{:?}", recommendation.priority));
+                crate::cli_outln!(
+                    "│ {}. {:<82} │",
+                    i + 1,
+                    recommendation
+                        .description
+                        .chars()
+                        .take(82)
+                        .collect::<String>()
+                );
+                crate::cli_outln!(
+                    "│    Priority: {:<75} │",
+                    format!("{:?}", recommendation.priority)
+                );
             }
             if report.recommendations.len() > 3 {
                 crate::cli_outln!("│ ... and {} more recommendations                                                         │", report.recommendations.len() - 3);

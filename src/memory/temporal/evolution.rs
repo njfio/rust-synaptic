@@ -1,9 +1,9 @@
 //! Memory evolution tracking and analysis
 
 use crate::error::{MemoryError, Result};
-use crate::memory::types::MemoryEntry;
 use crate::memory::temporal::ChangeType;
-use chrono::{DateTime, Utc, Duration};
+use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -168,7 +168,8 @@ impl EvolutionTracker {
         change_type: ChangeType,
     ) -> Result<()> {
         // Get or create evolution for this memory
-        let evolution = self.evolutions
+        let evolution = self
+            .evolutions
             .entry(memory_key.to_string())
             .or_insert_with(|| MemoryEvolution {
                 memory_key: memory_key.to_string(),
@@ -198,7 +199,7 @@ impl EvolutionTracker {
 
         // Calculate change impact
         let impact_score = Self::calculate_impact_score_static(evolution, &snapshot, &change_type);
-        
+
         // Calculate change size
         let change_size = if let Some(ref current) = evolution.current_state {
             snapshot.size_bytes as i64 - current.size_bytes as i64
@@ -253,14 +254,16 @@ impl EvolutionTracker {
 
         // Size change impact
         if let Some(ref current) = evolution.current_state {
-            let size_change_ratio = (new_snapshot.size_bytes as f64 - current.size_bytes as f64).abs() 
+            let size_change_ratio = (new_snapshot.size_bytes as f64 - current.size_bytes as f64)
+                .abs()
                 / current.size_bytes.max(1) as f64;
             impact += size_change_ratio * 0.3;
         }
 
         // Importance change impact
         if let Some(ref current) = evolution.current_state {
-            let importance_change = (new_snapshot.metadata.importance - current.metadata.importance).abs();
+            let importance_change =
+                (new_snapshot.metadata.importance - current.metadata.importance).abs();
             impact += importance_change * 0.2;
         }
 
@@ -271,24 +274,31 @@ impl EvolutionTracker {
     async fn recalculate_metrics(&mut self, memory_key: &str) -> Result<()> {
         if let Some(evolution) = self.evolutions.get_mut(memory_key) {
             let total_changes = evolution.timeline.len();
-            
+
             // Calculate average change interval
             let avg_change_interval = if total_changes > 1 {
-                let first_time = evolution.timeline.first()
+                let first_time = evolution
+                    .timeline
+                    .first()
                     .ok_or_else(|| MemoryError::validation("Empty timeline"))?
                     .timestamp;
-                let last_time = evolution.timeline.last()
+                let last_time = evolution
+                    .timeline
+                    .last()
                     .ok_or_else(|| MemoryError::validation("Empty timeline"))?
                     .timestamp;
                 let total_duration = last_time - first_time;
-                Duration::milliseconds(total_duration.num_milliseconds() / (total_changes - 1) as i64)
+                Duration::milliseconds(
+                    total_duration.num_milliseconds() / (total_changes - 1) as i64,
+                )
             } else {
                 Duration::zero()
             };
 
             // Calculate growth rate
-            let growth_rate = if let (Some(ref initial), Some(ref current)) = 
-                (&evolution.initial_state, &evolution.current_state) {
+            let growth_rate = if let (Some(ref initial), Some(ref current)) =
+                (&evolution.initial_state, &evolution.current_state)
+            {
                 let time_diff = (current.timestamp - initial.timestamp).num_days() as f64;
                 if time_diff > 0.0 {
                     (current.size_bytes as f64 - initial.size_bytes as f64) / time_diff
@@ -301,8 +311,9 @@ impl EvolutionTracker {
 
             // Calculate stability score (inverse of change frequency)
             let stability_score = if total_changes > 0 {
-                let days_tracked = if let (Some(ref initial), Some(ref current)) = 
-                    (&evolution.initial_state, &evolution.current_state) {
+                let days_tracked = if let (Some(ref initial), Some(ref current)) =
+                    (&evolution.initial_state, &evolution.current_state)
+                {
                     (current.timestamp - initial.timestamp).num_days().max(1) as f64
                 } else {
                     1.0
@@ -324,7 +335,9 @@ impl EvolutionTracker {
             // Count change frequency by type
             let mut change_frequency = HashMap::new();
             for event in &evolution.timeline {
-                *change_frequency.entry(event.change_type.clone()).or_insert(0) += 1;
+                *change_frequency
+                    .entry(event.change_type.clone())
+                    .or_insert(0) += 1;
             }
 
             // Detect most active period
@@ -345,7 +358,9 @@ impl EvolutionTracker {
     }
 
     /// Detect the most active period in a timeline of events
-    fn detect_most_active_period(timeline: &[EvolutionEvent]) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    fn detect_most_active_period(
+        timeline: &[EvolutionEvent],
+    ) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
         if timeline.len() < 2 {
             return None;
         }
@@ -375,7 +390,9 @@ impl EvolutionTracker {
                     _total_impact += event.impact_score;
 
                     // Weight recent events more heavily
-                    let recency_factor = 1.0 - (event.timestamp - window_start).num_hours() as f64 / (window_duration.num_hours() as f64);
+                    let recency_factor = 1.0
+                        - (event.timestamp - window_start).num_hours() as f64
+                            / (window_duration.num_hours() as f64);
                     activity_score += event.impact_score * recency_factor.max(0.1);
                 } else {
                     break;
@@ -397,7 +414,9 @@ impl EvolutionTracker {
                     .take_while(|e| e.timestamp <= window_end)
                     .collect();
 
-                if let (Some(first), Some(last)) = (events_in_window.first(), events_in_window.last()) {
+                if let (Some(first), Some(last)) =
+                    (events_in_window.first(), events_in_window.last())
+                {
                     most_active_period = Some((first.timestamp, last.timestamp));
                 }
             }
@@ -409,26 +428,35 @@ impl EvolutionTracker {
     /// Update global metrics
     async fn update_global_metrics(&mut self) -> Result<()> {
         let total_memories = self.evolutions.len();
-        let total_events: usize = self.evolutions.values()
-            .map(|e| e.timeline.len())
-            .sum();
+        let total_events: usize = self.evolutions.values().map(|e| e.timeline.len()).sum();
 
         let avg_evolution_rate = if total_memories > 0 {
-            self.evolutions.values()
+            self.evolutions
+                .values()
                 .map(|e| e.metrics.growth_rate)
-                .sum::<f64>() / total_memories as f64
+                .sum::<f64>()
+                / total_memories as f64
         } else {
             0.0
         };
 
         // Find most evolved memory (highest number of changes)
-        let most_evolved_memory = self.evolutions.iter()
+        let most_evolved_memory = self
+            .evolutions
+            .iter()
             .max_by_key(|(_, e)| e.timeline.len())
             .map(|(key, _)| key.clone());
 
         // Find most stable memory (highest stability score)
-        let most_stable_memory = self.evolutions.iter()
-            .max_by(|(_, a), (_, b)| a.metrics.stability_score.partial_cmp(&b.metrics.stability_score).unwrap_or(std::cmp::Ordering::Equal))
+        let most_stable_memory = self
+            .evolutions
+            .iter()
+            .max_by(|(_, a), (_, b)| {
+                a.metrics
+                    .stability_score
+                    .partial_cmp(&b.metrics.stability_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(key, _)| key.clone());
 
         let system_growth_rate = avg_evolution_rate;
@@ -452,7 +480,8 @@ impl EvolutionTracker {
 
     /// Get metrics for a specific memory
     pub async fn get_metrics(&self, memory_key: &str) -> Result<EvolutionMetrics> {
-        self.evolutions.get(memory_key)
+        self.evolutions
+            .get(memory_key)
             .map(|e| e.metrics.clone())
             .ok_or_else(|| MemoryError::NotFound {
                 key: memory_key.to_string(),
@@ -466,10 +495,12 @@ impl EvolutionTracker {
 
     /// Get the most evolved memories
     pub fn get_most_evolved_memories(&self, limit: usize) -> Vec<(String, usize)> {
-        let mut memories: Vec<_> = self.evolutions.iter()
+        let mut memories: Vec<_> = self
+            .evolutions
+            .iter()
             .map(|(key, evolution)| (key.clone(), evolution.timeline.len()))
             .collect();
-        
+
         memories.sort_by(|a, b| b.1.cmp(&a.1));
         memories.truncate(limit);
         memories
@@ -477,10 +508,12 @@ impl EvolutionTracker {
 
     /// Get the most stable memories
     pub fn get_most_stable_memories(&self, limit: usize) -> Vec<(String, f64)> {
-        let mut memories: Vec<_> = self.evolutions.iter()
+        let mut memories: Vec<_> = self
+            .evolutions
+            .iter()
             .map(|(key, evolution)| (key.clone(), evolution.metrics.stability_score))
             .collect();
-        
+
         memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         memories.truncate(limit);
         memories

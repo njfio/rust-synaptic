@@ -1,11 +1,11 @@
 //! Few-Shot Learning System for Rapid Memory Adaptation
-//! 
+//!
 //! Implements state-of-the-art few-shot learning algorithms including prototype networks,
 //! matching networks, and relation networks for rapid adaptation to new memory patterns.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Few-shot learning configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,51 +267,58 @@ impl FewShotLearningEngine {
     }
 
     /// Initialize model parameters
-    fn initialize_model_parameters(config: &FewShotConfig) -> crate::error::Result<HashMap<String, Vec<f64>>> {
+    fn initialize_model_parameters(
+        config: &FewShotConfig,
+    ) -> crate::error::Result<HashMap<String, Vec<f64>>> {
         let mut params = HashMap::new();
-        
+
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         // Embedding network parameters
-        let embedding_sizes = vec![config.embedding_dim, config.embedding_dim / 2, config.embedding_dim / 4];
+        let embedding_sizes = vec![
+            config.embedding_dim,
+            config.embedding_dim / 2,
+            config.embedding_dim / 4,
+        ];
         for (i, &size) in embedding_sizes.iter().enumerate() {
             let layer_name = format!("embedding_layer_{}", i);
-            let weights: Vec<f64> = (0..size)
-                .map(|_| rng.gen_range(-0.1..0.1))
-                .collect();
+            let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
             params.insert(layer_name, weights);
         }
-        
+
         // Relation network parameters
         let relation_sizes = vec![256, 128, 64, 1];
         for (i, &size) in relation_sizes.iter().enumerate() {
             let layer_name = format!("relation_layer_{}", i);
-            let weights: Vec<f64> = (0..size)
-                .map(|_| rng.gen_range(-0.1..0.1))
-                .collect();
+            let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
             params.insert(layer_name, weights);
         }
-        
+
         // Attention parameters
         let attention_sizes = vec![config.embedding_dim, config.embedding_dim];
         for (i, &size) in attention_sizes.iter().enumerate() {
             let layer_name = format!("attention_layer_{}", i);
-            let weights: Vec<f64> = (0..size)
-                .map(|_| rng.gen_range(-0.1..0.1))
-                .collect();
+            let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
             params.insert(layer_name, weights);
         }
-        
+
         Ok(params)
     }
 
     /// Process a few-shot learning episode
-    pub async fn process_episode(&mut self, episode: FewShotEpisode) -> crate::error::Result<FewShotResult> {
+    pub async fn process_episode(
+        &mut self,
+        episode: FewShotEpisode,
+    ) -> crate::error::Result<FewShotResult> {
         let start_time = std::time::Instant::now();
 
-        tracing::info!("Processing few-shot episode: {} with {} support examples and {} queries",
-                      episode.id, episode.support_set.len(), episode.query_set.len());
+        tracing::info!(
+            "Processing few-shot episode: {} with {} support examples and {} queries",
+            episode.id,
+            episode.support_set.len(),
+            episode.query_set.len()
+        );
 
         // Validate episode
         self.validate_episode(&episode)?;
@@ -327,7 +334,9 @@ impl FewShotLearningEngine {
 
         // Make predictions on query set
         let inference_start = std::time::Instant::now();
-        let predictions = self.predict_query_set(&episode.query_set, &episode.support_set).await?;
+        let predictions = self
+            .predict_query_set(&episode.query_set, &episode.support_set)
+            .await?;
 
         // Add small delay to ensure realistic timing for tests
         tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
@@ -336,7 +345,8 @@ impl FewShotLearningEngine {
 
         // Calculate accuracy
         let accuracy = self.calculate_accuracy(&predictions, &episode.query_set);
-        let per_class_accuracy = self.calculate_per_class_accuracy(&predictions, &episode.query_set);
+        let per_class_accuracy =
+            self.calculate_per_class_accuracy(&predictions, &episode.query_set);
 
         // Create result
         let result = FewShotResult {
@@ -360,8 +370,11 @@ impl FewShotLearningEngine {
             self.update_memory_bank(&episode.support_set).await?;
         }
 
-        tracing::info!("Episode processed in {}ms with accuracy: {:.2}%",
-                      start_time.elapsed().as_millis(), accuracy * 100.0);
+        tracing::info!(
+            "Episode processed in {}ms with accuracy: {:.2}%",
+            start_time.elapsed().as_millis(),
+            accuracy * 100.0
+        );
 
         Ok(result)
     }
@@ -370,13 +383,13 @@ impl FewShotLearningEngine {
     fn validate_episode(&self, episode: &FewShotEpisode) -> crate::error::Result<()> {
         if episode.support_set.is_empty() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Support set cannot be empty".to_string()
+                message: "Support set cannot be empty".to_string(),
             });
         }
 
         if episode.query_set.is_empty() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Query set cannot be empty".to_string()
+                message: "Query set cannot be empty".to_string(),
             });
         }
 
@@ -385,8 +398,12 @@ impl FewShotLearningEngine {
         for example in &episode.support_set {
             if example.features.len() != expected_dim {
                 return Err(crate::error::MemoryError::InvalidInput {
-                    message: format!("Support example {} has {} features, expected {}",
-                                   example.id, example.features.len(), expected_dim)
+                    message: format!(
+                        "Support example {} has {} features, expected {}",
+                        example.id,
+                        example.features.len(),
+                        expected_dim
+                    ),
                 });
             }
         }
@@ -394,8 +411,12 @@ impl FewShotLearningEngine {
         for example in &episode.query_set {
             if example.features.len() != expected_dim {
                 return Err(crate::error::MemoryError::InvalidInput {
-                    message: format!("Query example {} has {} features, expected {}",
-                                   example.id, example.features.len(), expected_dim)
+                    message: format!(
+                        "Query example {} has {} features, expected {}",
+                        example.id,
+                        example.features.len(),
+                        expected_dim
+                    ),
                 });
             }
         }
@@ -404,18 +425,49 @@ impl FewShotLearningEngine {
     }
 
     /// Adapt to support set based on current algorithm
-    async fn adapt_to_support_set(&mut self, support_set: &[SupportExample]) -> crate::error::Result<()> {
+    async fn adapt_to_support_set(
+        &mut self,
+        support_set: &[SupportExample],
+    ) -> crate::error::Result<()> {
         let algorithm = self.current_algorithm.clone();
         match algorithm {
-            FewShotAlgorithm::PrototypeNetwork { distance_metric, prototype_update_strategy } => {
-                self.adapt_prototype_network(support_set, &distance_metric, &prototype_update_strategy).await
-            },
-            FewShotAlgorithm::MatchingNetwork { attention_type, bidirectional_encoding, context_encoding } => {
-                self.adapt_matching_network(support_set, &attention_type, bidirectional_encoding, context_encoding).await
-            },
-            FewShotAlgorithm::RelationNetwork { relation_module_layers, embedding_layers, activation_function } => {
-                self.adapt_relation_network(support_set, &relation_module_layers, &embedding_layers, &activation_function).await
-            },
+            FewShotAlgorithm::PrototypeNetwork {
+                distance_metric,
+                prototype_update_strategy,
+            } => {
+                self.adapt_prototype_network(
+                    support_set,
+                    &distance_metric,
+                    &prototype_update_strategy,
+                )
+                .await
+            }
+            FewShotAlgorithm::MatchingNetwork {
+                attention_type,
+                bidirectional_encoding,
+                context_encoding,
+            } => {
+                self.adapt_matching_network(
+                    support_set,
+                    &attention_type,
+                    bidirectional_encoding,
+                    context_encoding,
+                )
+                .await
+            }
+            FewShotAlgorithm::RelationNetwork {
+                relation_module_layers,
+                embedding_layers,
+                activation_function,
+            } => {
+                self.adapt_relation_network(
+                    support_set,
+                    &relation_module_layers,
+                    &embedding_layers,
+                    &activation_function,
+                )
+                .await
+            }
         }
     }
 
@@ -426,12 +478,18 @@ impl FewShotLearningEngine {
         _distance_metric: &DistanceMetric,
         update_strategy: &PrototypeUpdateStrategy,
     ) -> crate::error::Result<()> {
-        tracing::debug!("Adapting prototype network with {} support examples", support_set.len());
+        tracing::debug!(
+            "Adapting prototype network with {} support examples",
+            support_set.len()
+        );
 
         // Group examples by class
         let mut class_examples: HashMap<String, Vec<&SupportExample>> = HashMap::new();
         for example in support_set {
-            class_examples.entry(example.label.clone()).or_default().push(example);
+            class_examples
+                .entry(example.label.clone())
+                .or_default()
+                .push(example);
         }
 
         // Calculate prototypes for each class
@@ -439,10 +497,16 @@ impl FewShotLearningEngine {
             let prototype = self.calculate_prototype(&examples, update_strategy)?;
 
             // Store prototype in memory bank
-            self.memory_bank.prototypes.insert(class_label.clone(), prototype);
+            self.memory_bank
+                .prototypes
+                .insert(class_label.clone(), prototype);
 
             // Update access count
-            *self.memory_bank.access_counts.entry(class_label).or_insert(0) += 1;
+            *self
+                .memory_bank
+                .access_counts
+                .entry(class_label)
+                .or_insert(0) += 1;
         }
 
         self.memory_bank.last_updated = Utc::now();
@@ -458,7 +522,7 @@ impl FewShotLearningEngine {
     ) -> crate::error::Result<Vec<f64>> {
         if examples.is_empty() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Cannot calculate prototype from empty examples".to_string()
+                message: "Cannot calculate prototype from empty examples".to_string(),
             });
         }
 
@@ -476,7 +540,7 @@ impl FewShotLearningEngine {
                 for feature in prototype.iter_mut() {
                     *feature /= examples.len() as f64;
                 }
-            },
+            }
             PrototypeUpdateStrategy::WeightedMean => {
                 // Weighted by confidence scores
                 let mut total_weight = 0.0;
@@ -491,7 +555,7 @@ impl FewShotLearningEngine {
                         *feature /= total_weight;
                     }
                 }
-            },
+            }
             PrototypeUpdateStrategy::ExponentialMovingAverage { alpha } => {
                 // EMA update (simplified for demonstration)
                 for example in examples {
@@ -499,7 +563,7 @@ impl FewShotLearningEngine {
                         prototype[i] = alpha * feature + (1.0 - alpha) * prototype[i];
                     }
                 }
-            },
+            }
             PrototypeUpdateStrategy::AttentionWeighted => {
                 // Attention-weighted prototype (simplified)
                 let attention_weights = self.calculate_attention_weights(examples)?;
@@ -508,14 +572,17 @@ impl FewShotLearningEngine {
                         prototype[i] += feature * weight;
                     }
                 }
-            },
+            }
         }
 
         Ok(prototype)
     }
 
     /// Calculate attention weights for examples
-    fn calculate_attention_weights(&self, examples: &[&SupportExample]) -> crate::error::Result<Vec<f64>> {
+    fn calculate_attention_weights(
+        &self,
+        examples: &[&SupportExample],
+    ) -> crate::error::Result<Vec<f64>> {
         let num_examples = examples.len();
         let mut weights = vec![1.0 / num_examples as f64; num_examples];
 
@@ -538,11 +605,15 @@ impl FewShotLearningEngine {
         bidirectional_encoding: bool,
         context_encoding: bool,
     ) -> crate::error::Result<()> {
-        tracing::debug!("Adapting matching network with attention type: {:?}", attention_type);
+        tracing::debug!(
+            "Adapting matching network with attention type: {:?}",
+            attention_type
+        );
 
         // Encode support set with context if enabled
         let encoded_support = if context_encoding {
-            self.encode_with_context(support_set, bidirectional_encoding).await?
+            self.encode_with_context(support_set, bidirectional_encoding)
+                .await?
         } else {
             support_set.iter().map(|e| e.features.clone()).collect()
         };
@@ -550,11 +621,13 @@ impl FewShotLearningEngine {
         // Store encoded support set for later matching
         for (i, example) in support_set.iter().enumerate() {
             let encoded_key = format!("support_{}_{}", example.label, i);
-            self.model_parameters.insert(encoded_key, encoded_support[i].clone());
+            self.model_parameters
+                .insert(encoded_key, encoded_support[i].clone());
         }
 
         // Update attention parameters based on support set
-        self.update_attention_parameters(support_set, attention_type).await?;
+        self.update_attention_parameters(support_set, attention_type)
+            .await?;
 
         Ok(())
     }
@@ -607,23 +680,26 @@ impl FewShotLearningEngine {
             AttentionType::ScaledDotProduct => {
                 // Update scaling factor based on feature dimension
                 let scale = 1.0 / (self.config.embedding_dim as f64).sqrt();
-                self.model_parameters.insert("attention_scale".to_string(), vec![scale]);
-            },
+                self.model_parameters
+                    .insert("attention_scale".to_string(), vec![scale]);
+            }
             AttentionType::MultiHead { num_heads } => {
                 // Initialize multi-head attention parameters
                 let head_dim = self.config.embedding_dim / num_heads;
                 for head in 0..*num_heads {
                     let key = format!("attention_head_{}", head);
-                    let weights: Vec<f64> = (0..head_dim).map(|_| rand::random::<f64>() * 0.1).collect();
+                    let weights: Vec<f64> =
+                        (0..head_dim).map(|_| rand::random::<f64>() * 0.1).collect();
                     self.model_parameters.insert(key, weights);
                 }
-            },
+            }
             _ => {
                 // Default attention parameters
                 let attention_weights: Vec<f64> = (0..self.config.embedding_dim)
                     .map(|_| rand::random::<f64>() * 0.1)
                     .collect();
-                self.model_parameters.insert("attention_weights".to_string(), attention_weights);
+                self.model_parameters
+                    .insert("attention_weights".to_string(), attention_weights);
             }
         }
 
@@ -638,30 +714,41 @@ impl FewShotLearningEngine {
         embedding_layers: &[usize],
         activation: &ActivationFunction,
     ) -> crate::error::Result<()> {
-        tracing::debug!("Adapting relation network with {} relation layers", relation_layers.len());
+        tracing::debug!(
+            "Adapting relation network with {} relation layers",
+            relation_layers.len()
+        );
 
         // Update embedding network parameters
         for (i, &layer_size) in embedding_layers.iter().enumerate() {
             let layer_key = format!("embedding_layer_{}", i);
-            let weights: Vec<f64> = (0..layer_size).map(|_| rand::random::<f64>() * 0.1).collect();
+            let weights: Vec<f64> = (0..layer_size)
+                .map(|_| rand::random::<f64>() * 0.1)
+                .collect();
             self.model_parameters.insert(layer_key, weights);
         }
 
         // Update relation module parameters
         for (i, &layer_size) in relation_layers.iter().enumerate() {
             let layer_key = format!("relation_layer_{}", i);
-            let weights: Vec<f64> = (0..layer_size).map(|_| rand::random::<f64>() * 0.1).collect();
+            let weights: Vec<f64> = (0..layer_size)
+                .map(|_| rand::random::<f64>() * 0.1)
+                .collect();
             self.model_parameters.insert(layer_key, weights);
         }
 
         // Store activation function
         let activation_key = format!("{:?}", activation);
-        self.model_parameters.insert("activation_function".to_string(), vec![activation_key.len() as f64]);
+        self.model_parameters.insert(
+            "activation_function".to_string(),
+            vec![activation_key.len() as f64],
+        );
 
         // Fine-tune on support set (simplified gradient descent)
         for step in 0..self.config.adaptation_steps {
             let loss = self.calculate_relation_loss(support_set).await?;
-            self.update_relation_parameters(loss, self.config.adaptation_lr).await?;
+            self.update_relation_parameters(loss, self.config.adaptation_lr)
+                .await?;
 
             if step % 5 == 0 {
                 tracing::debug!("Adaptation step {}: loss = {:.4}", step, loss);
@@ -672,7 +759,10 @@ impl FewShotLearningEngine {
     }
 
     /// Calculate relation network loss
-    async fn calculate_relation_loss(&self, support_set: &[SupportExample]) -> crate::error::Result<f64> {
+    async fn calculate_relation_loss(
+        &self,
+        support_set: &[SupportExample],
+    ) -> crate::error::Result<f64> {
         let mut total_loss = 0.0;
         let mut num_pairs = 0;
 
@@ -682,8 +772,13 @@ impl FewShotLearningEngine {
                 let example1 = &support_set[i];
                 let example2 = &support_set[j];
 
-                let relation_score = self.calculate_relation_score(&example1.features, &example2.features)?;
-                let target_score = if example1.label == example2.label { 1.0 } else { 0.0 };
+                let relation_score =
+                    self.calculate_relation_score(&example1.features, &example2.features)?;
+                let target_score = if example1.label == example2.label {
+                    1.0
+                } else {
+                    0.0
+                };
 
                 // Mean squared error
                 let loss = (relation_score - target_score).powi(2);
@@ -692,14 +787,22 @@ impl FewShotLearningEngine {
             }
         }
 
-        Ok(if num_pairs > 0 { total_loss / num_pairs as f64 } else { 0.0 })
+        Ok(if num_pairs > 0 {
+            total_loss / num_pairs as f64
+        } else {
+            0.0
+        })
     }
 
     /// Calculate relation score between two feature vectors
-    fn calculate_relation_score(&self, features1: &[f64], features2: &[f64]) -> crate::error::Result<f64> {
+    fn calculate_relation_score(
+        &self,
+        features1: &[f64],
+        features2: &[f64],
+    ) -> crate::error::Result<f64> {
         if features1.len() != features2.len() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Feature vectors must have same dimension".to_string()
+                message: "Feature vectors must have same dimension".to_string(),
             });
         }
 
@@ -712,7 +815,8 @@ impl FewShotLearningEngine {
         let mut output = combined_features;
 
         // Apply relation layers
-        for i in 0..4 { // Assuming 4 relation layers
+        for i in 0..4 {
+            // Assuming 4 relation layers
             let layer_key = format!("relation_layer_{}", i);
             if let Some(weights) = self.model_parameters.get(&layer_key) {
                 output = self.apply_linear_layer(&output, weights)?;
@@ -738,15 +842,22 @@ impl FewShotLearningEngine {
 
     /// Apply activation function
     fn apply_activation(&self, input: &[f64], activation: &ActivationFunction) -> Vec<f64> {
-        input.iter().map(|&x| match activation {
-            ActivationFunction::ReLU => x.max(0.0),
-            ActivationFunction::LeakyReLU { negative_slope } => {
-                if x > 0.0 { x } else { x * negative_slope }
-            },
-            ActivationFunction::Tanh => x.tanh(),
-            ActivationFunction::Sigmoid => self.sigmoid(&x),
-            ActivationFunction::Swish => x * self.sigmoid(&x),
-        }).collect()
+        input
+            .iter()
+            .map(|&x| match activation {
+                ActivationFunction::ReLU => x.max(0.0),
+                ActivationFunction::LeakyReLU { negative_slope } => {
+                    if x > 0.0 {
+                        x
+                    } else {
+                        x * negative_slope
+                    }
+                }
+                ActivationFunction::Tanh => x.tanh(),
+                ActivationFunction::Sigmoid => self.sigmoid(&x),
+                ActivationFunction::Swish => x * self.sigmoid(&x),
+            })
+            .collect()
     }
 
     /// Sigmoid activation function
@@ -755,7 +866,11 @@ impl FewShotLearningEngine {
     }
 
     /// Update relation network parameters
-    async fn update_relation_parameters(&mut self, loss: f64, learning_rate: f64) -> crate::error::Result<()> {
+    async fn update_relation_parameters(
+        &mut self,
+        loss: f64,
+        learning_rate: f64,
+    ) -> crate::error::Result<()> {
         // Simplified parameter update (gradient descent approximation)
         let gradient_scale = loss * learning_rate;
 
@@ -780,15 +895,16 @@ impl FewShotLearningEngine {
 
         for query in query_set {
             let prediction = match &self.current_algorithm {
-                FewShotAlgorithm::PrototypeNetwork { distance_metric, .. } => {
-                    self.predict_with_prototypes(query, distance_metric).await?
-                },
+                FewShotAlgorithm::PrototypeNetwork {
+                    distance_metric, ..
+                } => self.predict_with_prototypes(query, distance_metric).await?,
                 FewShotAlgorithm::MatchingNetwork { attention_type, .. } => {
-                    self.predict_with_matching(query, support_set, attention_type).await?
-                },
+                    self.predict_with_matching(query, support_set, attention_type)
+                        .await?
+                }
                 FewShotAlgorithm::RelationNetwork { .. } => {
                     self.predict_with_relations(query, support_set).await?
-                },
+                }
             };
 
             predictions.push(prediction);
@@ -844,7 +960,10 @@ impl FewShotLearningEngine {
             class_probabilities,
             metadata: HashMap::from([
                 ("min_distance".to_string(), min_distance),
-                ("num_prototypes".to_string(), self.memory_bank.prototypes.len() as f64),
+                (
+                    "num_prototypes".to_string(),
+                    self.memory_bank.prototypes.len() as f64,
+                ),
             ]),
         })
     }
@@ -858,17 +977,19 @@ impl FewShotLearningEngine {
     ) -> crate::error::Result<f64> {
         if vec1.len() != vec2.len() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Vectors must have same dimension".to_string()
+                message: "Vectors must have same dimension".to_string(),
             });
         }
 
         match metric {
             DistanceMetric::Euclidean => {
-                let sum_sq: f64 = vec1.iter().zip(vec2.iter())
+                let sum_sq: f64 = vec1
+                    .iter()
+                    .zip(vec2.iter())
                     .map(|(a, b)| (a - b).powi(2))
                     .sum();
                 Ok(sum_sq.sqrt())
-            },
+            }
             DistanceMetric::Cosine => {
                 let dot_product: f64 = vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum();
                 let norm1: f64 = vec1.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
@@ -879,20 +1000,24 @@ impl FewShotLearningEngine {
                 } else {
                     Ok(1.0 - (dot_product / (norm1 * norm2)))
                 }
-            },
+            }
             DistanceMetric::Manhattan => {
-                let sum: f64 = vec1.iter().zip(vec2.iter())
+                let sum: f64 = vec1
+                    .iter()
+                    .zip(vec2.iter())
                     .map(|(a, b)| (a - b).abs())
                     .sum();
                 Ok(sum)
-            },
+            }
             DistanceMetric::Mahalanobis => {
                 // Simplified Mahalanobis (using identity covariance)
-                let sum_sq: f64 = vec1.iter().zip(vec2.iter())
+                let sum_sq: f64 = vec1
+                    .iter()
+                    .zip(vec2.iter())
                     .map(|(a, b)| (a - b).powi(2))
                     .sum();
                 Ok(sum_sq.sqrt())
-            },
+            }
         }
     }
 
@@ -920,7 +1045,9 @@ impl FewShotLearningEngine {
         // Normalize scores by class frequency
         let mut class_counts = HashMap::new();
         for support_example in support_set {
-            *class_counts.entry(support_example.label.clone()).or_insert(0) += 1;
+            *class_counts
+                .entry(support_example.label.clone())
+                .or_insert(0) += 1;
         }
 
         for (class, score) in class_scores.iter_mut() {
@@ -940,7 +1067,11 @@ impl FewShotLearningEngine {
         let total_score: f64 = class_scores.values().sum();
         let mut class_probabilities = HashMap::new();
         for (class, score) in class_scores {
-            let prob = if total_score > 0.0 { score / total_score } else { 0.0 };
+            let prob = if total_score > 0.0 {
+                score / total_score
+            } else {
+                0.0
+            };
             class_probabilities.insert(class, prob);
         }
 
@@ -967,36 +1098,46 @@ impl FewShotLearningEngine {
     ) -> crate::error::Result<f64> {
         match attention_type {
             AttentionType::ScaledDotProduct => {
-                let scale = self.model_parameters.get("attention_scale")
+                let scale = self
+                    .model_parameters
+                    .get("attention_scale")
                     .and_then(|v| v.get(0))
                     .unwrap_or(&1.0);
 
-                let dot_product: f64 = query_features.iter()
+                let dot_product: f64 = query_features
+                    .iter()
                     .zip(support_features.iter())
                     .map(|(q, s)| q * s)
                     .sum();
 
                 Ok(dot_product * scale)
-            },
+            }
             AttentionType::Additive => {
                 // Additive attention: tanh(W_q * q + W_s * s)
                 let mut score = 0.0;
-                for (i, (&q, &s)) in query_features.iter().zip(support_features.iter()).enumerate() {
-                    let weight = self.model_parameters.get("attention_weights")
+                for (i, (&q, &s)) in query_features
+                    .iter()
+                    .zip(support_features.iter())
+                    .enumerate()
+                {
+                    let weight = self
+                        .model_parameters
+                        .get("attention_weights")
                         .and_then(|w| w.get(i))
                         .unwrap_or(&1.0);
                     score += (q + s) * weight;
                 }
                 Ok(score.tanh())
-            },
+            }
             AttentionType::Multiplicative => {
                 // Element-wise multiplication
-                let product: f64 = query_features.iter()
+                let product: f64 = query_features
+                    .iter()
                     .zip(support_features.iter())
                     .map(|(q, s)| q * s)
                     .sum();
                 Ok(product)
-            },
+            }
             AttentionType::MultiHead { num_heads } => {
                 let head_dim = query_features.len() / num_heads;
                 let mut total_score = 0.0;
@@ -1005,7 +1146,8 @@ impl FewShotLearningEngine {
                     let start_idx = head * head_dim;
                     let end_idx = (start_idx + head_dim).min(query_features.len());
 
-                    let head_score: f64 = query_features[start_idx..end_idx].iter()
+                    let head_score: f64 = query_features[start_idx..end_idx]
+                        .iter()
                         .zip(support_features[start_idx..end_idx].iter())
                         .map(|(q, s)| q * s)
                         .sum();
@@ -1014,7 +1156,7 @@ impl FewShotLearningEngine {
                 }
 
                 Ok(total_score / *num_heads as f64)
-            },
+            }
         }
     }
 
@@ -1028,19 +1170,22 @@ impl FewShotLearningEngine {
 
         // Calculate relation scores with all support examples
         for support_example in support_set {
-            let relation_score = self.calculate_relation_score(
-                &query.features,
-                &support_example.features,
-            )?;
+            let relation_score =
+                self.calculate_relation_score(&query.features, &support_example.features)?;
 
             let current_score = class_scores.get(&support_example.label).unwrap_or(&0.0);
-            class_scores.insert(support_example.label.clone(), current_score + relation_score);
+            class_scores.insert(
+                support_example.label.clone(),
+                current_score + relation_score,
+            );
         }
 
         // Average by class size
         let mut class_counts = HashMap::new();
         for support_example in support_set {
-            *class_counts.entry(support_example.label.clone()).or_insert(0) += 1;
+            *class_counts
+                .entry(support_example.label.clone())
+                .or_insert(0) += 1;
         }
 
         for (class, score) in class_scores.iter_mut() {
@@ -1086,7 +1231,11 @@ impl FewShotLearningEngine {
     }
 
     /// Calculate accuracy for predictions
-    fn calculate_accuracy(&self, predictions: &[FewShotPrediction], query_set: &[QueryExample]) -> f64 {
+    fn calculate_accuracy(
+        &self,
+        predictions: &[FewShotPrediction],
+        query_set: &[QueryExample],
+    ) -> f64 {
         let mut correct = 0;
         let mut total = 0;
 
@@ -1099,7 +1248,11 @@ impl FewShotLearningEngine {
             }
         }
 
-        if total > 0 { correct as f64 / total as f64 } else { 0.0 }
+        if total > 0 {
+            correct as f64 / total as f64
+        } else {
+            0.0
+        }
     }
 
     /// Calculate per-class accuracy
@@ -1124,7 +1277,11 @@ impl FewShotLearningEngine {
         let mut per_class_accuracy = HashMap::new();
         for (class, &total) in &class_total {
             let correct = class_correct.get(class).unwrap_or(&0);
-            let accuracy = if total > 0 { *correct as f64 / total as f64 } else { 0.0 };
+            let accuracy = if total > 0 {
+                *correct as f64 / total as f64
+            } else {
+                0.0
+            };
             per_class_accuracy.insert(class.clone(), accuracy);
         }
 
@@ -1136,7 +1293,10 @@ impl FewShotLearningEngine {
         let mut metrics = HashMap::new();
 
         // Support set statistics
-        metrics.insert("support_set_size".to_string(), episode.support_set.len() as f64);
+        metrics.insert(
+            "support_set_size".to_string(),
+            episode.support_set.len() as f64,
+        );
         metrics.insert("query_set_size".to_string(), episode.query_set.len() as f64);
 
         // Class distribution
@@ -1147,9 +1307,12 @@ impl FewShotLearningEngine {
         metrics.insert("num_classes".to_string(), class_counts.len() as f64);
 
         // Average confidence
-        let avg_confidence = episode.support_set.iter()
+        let avg_confidence = episode
+            .support_set
+            .iter()
             .map(|e| e.confidence)
-            .sum::<f64>() / episode.support_set.len() as f64;
+            .sum::<f64>()
+            / episode.support_set.len() as f64;
         metrics.insert("avg_support_confidence".to_string(), avg_confidence);
 
         // Feature statistics
@@ -1158,9 +1321,12 @@ impl FewShotLearningEngine {
             metrics.insert("feature_dimension".to_string(), feature_dim as f64);
 
             // Average feature magnitude
-            let avg_magnitude = episode.support_set.iter()
+            let avg_magnitude = episode
+                .support_set
+                .iter()
                 .map(|e| e.features.iter().map(|&f| f.abs()).sum::<f64>())
-                .sum::<f64>() / episode.support_set.len() as f64;
+                .sum::<f64>()
+                / episode.support_set.len() as f64;
             metrics.insert("avg_feature_magnitude".to_string(), avg_magnitude);
         }
 
@@ -1168,13 +1334,20 @@ impl FewShotLearningEngine {
     }
 
     /// Update memory bank with new examples
-    async fn update_memory_bank(&mut self, support_set: &[SupportExample]) -> crate::error::Result<()> {
+    async fn update_memory_bank(
+        &mut self,
+        support_set: &[SupportExample],
+    ) -> crate::error::Result<()> {
         // Add new examples to memory bank
         for example in support_set {
             self.memory_bank.examples.push(example.clone());
 
             // Update access count
-            *self.memory_bank.access_counts.entry(example.label.clone()).or_insert(0) += 1;
+            *self
+                .memory_bank
+                .access_counts
+                .entry(example.label.clone())
+                .or_insert(0) += 1;
         }
 
         // Maintain memory bank size limit
@@ -1195,20 +1368,26 @@ impl FewShotLearningEngine {
 
         // Update running averages
         let n = self.metrics.total_episodes as f64;
-        self.metrics.avg_accuracy =
-            (self.metrics.avg_accuracy * (n - 1.0) + result.accuracy) / n;
+        self.metrics.avg_accuracy = (self.metrics.avg_accuracy * (n - 1.0) + result.accuracy) / n;
 
-        self.metrics.avg_adaptation_time_ms =
-            (self.metrics.avg_adaptation_time_ms * (n - 1.0) + result.adaptation_time_ms as f64) / n;
+        self.metrics.avg_adaptation_time_ms = (self.metrics.avg_adaptation_time_ms * (n - 1.0)
+            + result.adaptation_time_ms as f64)
+            / n;
 
         self.metrics.avg_inference_time_ms =
             (self.metrics.avg_inference_time_ms * (n - 1.0) + result.inference_time_ms as f64) / n;
 
         // Update algorithm performance
         let algorithm_name = format!("{:?}", result.algorithm);
-        let current_perf = self.metrics.algorithm_performance.get(&algorithm_name).unwrap_or(&0.0);
+        let current_perf = self
+            .metrics
+            .algorithm_performance
+            .get(&algorithm_name)
+            .unwrap_or(&0.0);
         let new_perf = (current_perf + result.accuracy) / 2.0; // Simple average
-        self.metrics.algorithm_performance.insert(algorithm_name, new_perf);
+        self.metrics
+            .algorithm_performance
+            .insert(algorithm_name, new_perf);
 
         // Update memory utilization
         self.metrics.memory_utilization =

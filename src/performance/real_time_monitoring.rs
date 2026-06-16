@@ -5,14 +5,14 @@
 //! trend analysis, and predictive monitoring capabilities.
 
 use crate::error::Result;
-use crate::performance::metrics::{PerformanceMetrics, MetricsCollector};
+use crate::performance::metrics::{MetricsCollector, PerformanceMetrics};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
-use chrono::{DateTime, Utc, Duration};
-use uuid::Uuid;
 use std::time::Instant;
+use tokio::sync::{Mutex, RwLock};
+use uuid::Uuid;
 
 /// Real-time monitoring configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,10 +39,10 @@ impl Default for RealTimeMonitoringConfig {
     fn default() -> Self {
         Self {
             collection_interval_ms: 1000, // 1 second
-            max_history_size: 3600, // 1 hour at 1 second intervals
+            max_history_size: 3600,       // 1 hour at 1 second intervals
             anomaly_sensitivity: 0.7,
-            baseline_window_minutes: 60, // 1 hour baseline
-            alert_cooldown_seconds: 300, // 5 minutes
+            baseline_window_minutes: 60,   // 1 hour baseline
+            alert_cooldown_seconds: 300,   // 5 minutes
             prediction_window_minutes: 30, // 30 minutes prediction
             enable_alerting: true,
             enable_predictive_monitoring: true,
@@ -246,8 +246,10 @@ pub struct RealTimePerformanceMonitor {
 impl RealTimePerformanceMonitor {
     /// Create a new real-time performance monitor
     pub async fn new(config: RealTimeMonitoringConfig) -> Result<Self> {
-        let metrics_collector = Arc::new(MetricsCollector::new(crate::performance::PerformanceConfig::default()).await?);
-        
+        let metrics_collector = Arc::new(
+            MetricsCollector::new(crate::performance::PerformanceConfig::default()).await?,
+        );
+
         Ok(Self {
             config,
             metrics_collector,
@@ -266,21 +268,21 @@ impl RealTimePerformanceMonitor {
     /// Start real-time monitoring
     pub async fn start_monitoring(&self) -> Result<()> {
         *self.monitoring_active.write().await = true;
-        
+
         // Start metrics collection loop
         self.start_collection_loop().await?;
-        
+
         // Start anomaly detection loop
         self.start_anomaly_detection_loop().await?;
-        
+
         // Start trend analysis loop
         self.start_trend_analysis_loop().await?;
-        
+
         // Start predictive monitoring if enabled
         if self.config.enable_predictive_monitoring {
             self.start_predictive_monitoring_loop().await?;
         }
-        
+
         tracing::info!("Real-time performance monitoring started");
         Ok(())
     }
@@ -337,15 +339,15 @@ impl RealTimePerformanceMonitor {
     /// Add metrics to history
     async fn add_metrics_to_history(&self, metrics: PerformanceMetrics) -> Result<()> {
         let mut history = self.metrics_history.write().await;
-        
+
         // Add new metrics
         history.push_back(metrics);
-        
+
         // Maintain history size limit
         while history.len() > self.config.max_history_size {
             history.pop_front();
         }
-        
+
         Ok(())
     }
 
@@ -353,20 +355,22 @@ impl RealTimePerformanceMonitor {
     async fn start_collection_loop(&self) -> Result<()> {
         let monitor = Arc::new(self.clone());
         let interval = std::time::Duration::from_millis(self.config.collection_interval_ms);
-        
+
         tokio::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
-            
+
             while *monitor.monitoring_active.read().await {
                 interval_timer.tick().await;
-                
+
                 // Check if enough time has passed since last collection
                 let should_collect = {
                     let mut last_collection = monitor.last_collection.lock().await;
                     let now = Instant::now();
-                    
+
                     if let Some(last) = *last_collection {
-                        if now.duration_since(last).as_millis() >= monitor.config.collection_interval_ms as u128 {
+                        if now.duration_since(last).as_millis()
+                            >= monitor.config.collection_interval_ms as u128
+                        {
                             *last_collection = Some(now);
                             true
                         } else {
@@ -377,7 +381,7 @@ impl RealTimePerformanceMonitor {
                         true
                     }
                 };
-                
+
                 if should_collect {
                     if let Err(e) = monitor.collect_metrics_now().await {
                         tracing::error!("Failed to collect metrics: {}", e);
@@ -385,7 +389,7 @@ impl RealTimePerformanceMonitor {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -456,9 +460,12 @@ impl RealTimePerformanceMonitor {
             return Ok(()); // Need sufficient history
         }
 
-        let latest_metrics = history.back().ok_or_else(|| {
-            crate::error::MemoryError::Unexpected { message: "No metrics history available".to_string() }
-        })?;
+        let latest_metrics =
+            history
+                .back()
+                .ok_or_else(|| crate::error::MemoryError::Unexpected {
+                    message: "No metrics history available".to_string(),
+                })?;
         let baselines = self.baselines.read().await;
 
         let mut new_anomalies = Vec::new();
@@ -466,7 +473,10 @@ impl RealTimePerformanceMonitor {
         // Check each metric for anomalies
         let metrics_to_check = vec![
             ("avg_latency_ms", latest_metrics.avg_latency_ms),
-            ("throughput_ops_per_sec", latest_metrics.throughput_ops_per_sec),
+            (
+                "throughput_ops_per_sec",
+                latest_metrics.throughput_ops_per_sec,
+            ),
             ("cpu_usage_percent", latest_metrics.cpu_usage_percent),
             ("memory_usage_percent", latest_metrics.memory_usage_percent),
             ("error_rate", latest_metrics.error_rate),
@@ -479,9 +489,17 @@ impl RealTimePerformanceMonitor {
 
                 if deviation.abs() > self.config.anomaly_sensitivity {
                     let anomaly_type = if deviation > 0.0 {
-                        if metric_name == "cache_hit_rate" { AnomalyType::Drop } else { AnomalyType::Spike }
+                        if metric_name == "cache_hit_rate" {
+                            AnomalyType::Drop
+                        } else {
+                            AnomalyType::Spike
+                        }
                     } else {
-                        if metric_name == "cache_hit_rate" { AnomalyType::Spike } else { AnomalyType::Drop }
+                        if metric_name == "cache_hit_rate" {
+                            AnomalyType::Spike
+                        } else {
+                            AnomalyType::Drop
+                        }
                     };
 
                     let severity = match deviation.abs() {
@@ -514,7 +532,8 @@ impl RealTimePerformanceMonitor {
                         deviation_score: deviation.abs(),
                         detected_at: Utc::now(),
                         description: anomaly_description,
-                        recommended_actions: self.get_anomaly_recommendations(metric_name, &anomaly_type),
+                        recommended_actions: self
+                            .get_anomaly_recommendations(metric_name, &anomaly_type),
                     };
 
                     new_anomalies.push(anomaly);
@@ -550,7 +569,11 @@ impl RealTimePerformanceMonitor {
     }
 
     /// Get recommendations for anomaly type
-    fn get_anomaly_recommendations(&self, metric_name: &str, anomaly_type: &AnomalyType) -> Vec<String> {
+    fn get_anomaly_recommendations(
+        &self,
+        metric_name: &str,
+        anomaly_type: &AnomalyType,
+    ) -> Vec<String> {
         match (metric_name, anomaly_type) {
             ("avg_latency_ms", AnomalyType::Spike) => vec![
                 "Check for resource contention".to_string(),
@@ -606,7 +629,8 @@ impl RealTimePerformanceMonitor {
             // Check cooldown
             let cooldown_key = format!("{}_{:?}", anomaly.metric_name, anomaly.anomaly_type);
             if let Some(last_alert) = cooldowns.get(&cooldown_key) {
-                let cooldown_duration = Duration::seconds(self.config.alert_cooldown_seconds as i64);
+                let cooldown_duration =
+                    Duration::seconds(self.config.alert_cooldown_seconds as i64);
                 if now.signed_duration_since(*last_alert) < cooldown_duration {
                     continue; // Still in cooldown
                 }
@@ -663,7 +687,10 @@ impl RealTimePerformanceMonitor {
         ];
 
         for metric_name in metrics_to_analyze {
-            let values: Vec<f64> = history.iter().map(|m| self.extract_metric_value(m, metric_name)).collect();
+            let values: Vec<f64> = history
+                .iter()
+                .map(|m| self.extract_metric_value(m, metric_name))
+                .collect();
             let trend = self.calculate_trend(&values, metric_name).await?;
             trends.insert(metric_name.to_string(), trend);
         }
@@ -715,14 +742,20 @@ impl RealTimePerformanceMonitor {
         // Calculate R-squared
         let y_mean = sum_y / n;
         let ss_tot: f64 = values.iter().map(|y| (y - y_mean).powi(2)).sum();
-        let ss_res: f64 = x_values.iter().zip(values.iter())
+        let ss_res: f64 = x_values
+            .iter()
+            .zip(values.iter())
             .map(|(x, y)| {
                 let predicted = slope * x + intercept;
                 (y - predicted).powi(2)
             })
             .sum();
 
-        let r_squared = if ss_tot != 0.0 { 1.0 - (ss_res / ss_tot) } else { 0.0 };
+        let r_squared = if ss_tot != 0.0 {
+            1.0 - (ss_res / ss_tot)
+        } else {
+            0.0
+        };
 
         // Determine trend direction and strength
         let trend_direction = if slope.abs() < 0.001 {
@@ -776,16 +809,20 @@ impl RealTimePerformanceMonitor {
 
         for (metric_name, trend) in trends.iter() {
             if let Some(predicted_value) = trend.prediction {
-                let risk_level = self.assess_prediction_risk(metric_name, predicted_value, trend).await;
+                let risk_level = self
+                    .assess_prediction_risk(metric_name, predicted_value, trend)
+                    .await;
 
                 let prediction = PredictiveMonitoringResult {
                     metric_name: metric_name.clone(),
                     predicted_value,
                     prediction_time,
                     confidence: trend.confidence,
-                    prediction_interval: self.calculate_prediction_interval(predicted_value, trend.confidence),
+                    prediction_interval: self
+                        .calculate_prediction_interval(predicted_value, trend.confidence),
                     risk_level: risk_level.clone(),
-                    recommended_actions: self.get_prediction_recommendations(metric_name, &risk_level),
+                    recommended_actions: self
+                        .get_prediction_recommendations(metric_name, &risk_level),
                 };
 
                 predictions.push(prediction);
@@ -796,7 +833,12 @@ impl RealTimePerformanceMonitor {
     }
 
     /// Assess risk level for prediction
-    async fn assess_prediction_risk(&self, metric_name: &str, predicted_value: f64, trend: &PerformanceTrend) -> RiskLevel {
+    async fn assess_prediction_risk(
+        &self,
+        metric_name: &str,
+        predicted_value: f64,
+        trend: &PerformanceTrend,
+    ) -> RiskLevel {
         // Define risk thresholds for different metrics
         let (warning_threshold, critical_threshold) = match metric_name {
             "avg_latency_ms" => (10.0, 50.0),
@@ -843,7 +885,11 @@ impl RealTimePerformanceMonitor {
     }
 
     /// Get recommendations for prediction risk level
-    fn get_prediction_recommendations(&self, metric_name: &str, risk_level: &RiskLevel) -> Vec<String> {
+    fn get_prediction_recommendations(
+        &self,
+        metric_name: &str,
+        risk_level: &RiskLevel,
+    ) -> Vec<String> {
         match (metric_name, risk_level) {
             (_, RiskLevel::Critical) => vec![
                 "Immediate action required".to_string(),
@@ -890,7 +936,8 @@ impl RealTimePerformanceMonitor {
         let cutoff_time = Utc::now() - baseline_window;
 
         // Filter recent metrics for baseline calculation
-        let recent_metrics: Vec<&PerformanceMetrics> = history.iter()
+        let recent_metrics: Vec<&PerformanceMetrics> = history
+            .iter()
             .filter(|m| m.timestamp > cutoff_time)
             .collect();
 
@@ -911,7 +958,8 @@ impl RealTimePerformanceMonitor {
         ];
 
         for metric_name in metrics_to_baseline {
-            let values: Vec<f64> = recent_metrics.iter()
+            let values: Vec<f64> = recent_metrics
+                .iter()
                 .map(|m| self.extract_metric_value(m, metric_name))
                 .collect();
 
@@ -925,13 +973,15 @@ impl RealTimePerformanceMonitor {
     }
 
     /// Calculate baseline for a metric
-    async fn calculate_baseline(&self, metric_name: &str, values: &[f64]) -> Result<PerformanceBaseline> {
+    async fn calculate_baseline(
+        &self,
+        metric_name: &str,
+        values: &[f64],
+    ) -> Result<PerformanceBaseline> {
         let n = values.len() as f64;
         let mean = values.iter().sum::<f64>() / n;
 
-        let variance = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>() / n;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
         let std_dev = variance.sqrt();
 
         // Calculate confidence interval (95%)

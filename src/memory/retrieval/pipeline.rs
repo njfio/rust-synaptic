@@ -132,40 +132,72 @@ impl PipelineConfig {
     /// Create a configuration optimized for semantic search
     pub fn semantic_focus() -> Self {
         let mut config = Self::default();
-        config.signal_weights.insert(RetrievalSignal::DenseVector, 0.6);
-        config.signal_weights.insert(RetrievalSignal::SparseKeyword, 0.2);
-        config.signal_weights.insert(RetrievalSignal::GraphRelationship, 0.15);
-        config.signal_weights.insert(RetrievalSignal::TemporalRelevance, 0.05);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::DenseVector, 0.6);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::SparseKeyword, 0.2);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::GraphRelationship, 0.15);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::TemporalRelevance, 0.05);
         config
     }
 
     /// Create a configuration optimized for keyword search
     pub fn keyword_focus() -> Self {
         let mut config = Self::default();
-        config.signal_weights.insert(RetrievalSignal::DenseVector, 0.2);
-        config.signal_weights.insert(RetrievalSignal::SparseKeyword, 0.6);
-        config.signal_weights.insert(RetrievalSignal::GraphRelationship, 0.15);
-        config.signal_weights.insert(RetrievalSignal::TemporalRelevance, 0.05);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::DenseVector, 0.2);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::SparseKeyword, 0.6);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::GraphRelationship, 0.15);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::TemporalRelevance, 0.05);
         config
     }
 
     /// Create a configuration optimized for graph-based discovery
     pub fn graph_focus() -> Self {
         let mut config = Self::default();
-        config.signal_weights.insert(RetrievalSignal::DenseVector, 0.25);
-        config.signal_weights.insert(RetrievalSignal::SparseKeyword, 0.25);
-        config.signal_weights.insert(RetrievalSignal::GraphRelationship, 0.4);
-        config.signal_weights.insert(RetrievalSignal::TemporalRelevance, 0.1);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::DenseVector, 0.25);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::SparseKeyword, 0.25);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::GraphRelationship, 0.4);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::TemporalRelevance, 0.1);
         config
     }
 
     /// Create a configuration optimized for recent/relevant content
     pub fn temporal_focus() -> Self {
         let mut config = Self::default();
-        config.signal_weights.insert(RetrievalSignal::DenseVector, 0.3);
-        config.signal_weights.insert(RetrievalSignal::SparseKeyword, 0.2);
-        config.signal_weights.insert(RetrievalSignal::GraphRelationship, 0.1);
-        config.signal_weights.insert(RetrievalSignal::TemporalRelevance, 0.4);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::DenseVector, 0.3);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::SparseKeyword, 0.2);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::GraphRelationship, 0.1);
+        config
+            .signal_weights
+            .insert(RetrievalSignal::TemporalRelevance, 0.4);
         config
     }
 
@@ -259,10 +291,7 @@ impl HybridRetriever {
 
         for pipeline in &self.pipelines {
             if !pipeline.is_available() {
-                tracing::debug!(
-                    pipeline = pipeline.name(),
-                    "Skipping unavailable pipeline"
-                );
+                tracing::debug!(pipeline = pipeline.name(), "Skipping unavailable pipeline");
                 continue;
             }
 
@@ -292,10 +321,7 @@ impl HybridRetriever {
         // Fuse results
         let fused_results = self.fuse_results(all_results, limit)?;
 
-        tracing::info!(
-            final_count = fused_results.len(),
-            "Hybrid search completed"
-        );
+        tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
 
         // Cache results
         if let Some(ref cache) = self.cache {
@@ -359,7 +385,12 @@ impl HybridRetriever {
                 let mut total_weight = 0.0;
 
                 for (signal, score) in signal_scores {
-                    let weight = self.config.signal_weights.get(signal).copied().unwrap_or(1.0);
+                    let weight = self
+                        .config
+                        .signal_weights
+                        .get(signal)
+                        .copied()
+                        .unwrap_or(1.0);
                     weighted_sum += score * weight;
                     total_weight += weight;
                 }
@@ -370,12 +401,10 @@ impl HybridRetriever {
                     0.0
                 }
             }
-            FusionStrategy::MaxScore => {
-                signal_scores
-                    .iter()
-                    .map(|(_, score)| score)
-                    .fold(0.0, |max, &score| max.max(score))
-            }
+            FusionStrategy::MaxScore => signal_scores
+                .iter()
+                .map(|(_, score)| score)
+                .fold(0.0, |max, &score| max.max(score)),
             FusionStrategy::ReciprocRankFusion => {
                 // RRF: score = sum(1 / (rank + k)) where k=60
                 // For simplicity, we'll use normalized scores as approximation
@@ -389,7 +418,10 @@ impl HybridRetriever {
                 // Borda count: assign points based on ranking
                 // Higher ranked items get more points
                 let max_score = signal_scores.len() as f64;
-                signal_scores.iter().map(|(_, score)| score * max_score).sum()
+                signal_scores
+                    .iter()
+                    .map(|(_, score)| score * max_score)
+                    .sum()
             }
         }
     }
@@ -460,9 +492,8 @@ impl ScoreCache {
         );
 
         // Simple cleanup: remove expired entries
-        self.entries.retain(|_, cached| {
-            cached.cached_at.elapsed().as_secs() < self.ttl_seconds
-        });
+        self.entries
+            .retain(|_, cached| cached.cached_at.elapsed().as_secs() < self.ttl_seconds);
     }
 
     fn clear(&mut self) {
@@ -500,7 +531,10 @@ mod tests {
     #[test]
     fn test_pipeline_config_semantic_focus() {
         let config = PipelineConfig::semantic_focus();
-        let dense_weight = config.signal_weights.get(&RetrievalSignal::DenseVector).expect("value should be available");
+        let dense_weight = config
+            .signal_weights
+            .get(&RetrievalSignal::DenseVector)
+            .expect("value should be available");
         assert_eq!(*dense_weight, 0.6);
     }
 

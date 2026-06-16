@@ -88,7 +88,7 @@ impl SklearnIntegration {
     pub fn new() -> Result<Self> {
         let python_path = Self::find_python_executable()?;
         let temp_dir = std::env::temp_dir().join("synaptic_sklearn");
-        
+
         std::fs::create_dir_all(&temp_dir).map_err(|e| {
             SynapticError::IoError(format!("Failed to create temp directory: {}", e))
         })?;
@@ -102,7 +102,7 @@ impl SklearnIntegration {
     /// Find Python executable with sklearn
     fn find_python_executable() -> Result<String> {
         let candidates = vec!["python3", "python", "python3.8", "python3.9", "python3.10", "python3.11"];
-        
+
         for candidate in candidates {
             if let Ok(output) = std::process::Command::new(candidate)
                 .args(&["-c", "import sklearn; print('OK')"])
@@ -114,7 +114,7 @@ impl SklearnIntegration {
                 }
             }
         }
-        
+
         Err(SynapticError::IntegrationError(
             "Could not find Python executable with scikit-learn installed".to_string()
         ))
@@ -124,7 +124,7 @@ impl SklearnIntegration {
     pub async fn cluster_data(&self, data_path: &str, config: &ModelConfig) -> Result<ClusteringResults> {
         let script = self.generate_clustering_script(data_path, config)?;
         let output = self.execute_python_script(&script).await?;
-        
+
         serde_json::from_str(&output).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to parse clustering results: {}", e))
         })
@@ -134,7 +134,7 @@ impl SklearnIntegration {
     pub async fn train_classifier(&self, data_path: &str, labels_path: &str, config: &ModelConfig) -> Result<TrainingResults> {
         let script = self.generate_classification_script(data_path, labels_path, config)?;
         let output = self.execute_python_script(&script).await?;
-        
+
         serde_json::from_str(&output).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to parse training results: {}", e))
         })
@@ -395,7 +395,7 @@ print(json.dumps(results))
     /// Generate classification script
     fn generate_classification_script(&self, data_path: &str, labels_path: &str, config: &ModelConfig) -> Result<String> {
         let model_path = self.temp_dir.join("trained_model.pkl");
-        
+
         let script = match config.algorithm.as_str() {
             "random_forest" => {
                 let n_estimators = config.parameters.get("n_estimators")

@@ -5,8 +5,8 @@
 
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Trait for embedding providers

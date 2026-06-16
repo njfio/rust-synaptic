@@ -3,13 +3,13 @@
 //! These tests verify that memories are automatically promoted from short-term to
 //! long-term storage based on various criteria.
 
-use synaptic::{AgentMemory, MemoryConfig};
+use chrono::Duration;
 use synaptic::memory::promotion::{
-    PromotionConfig, PromotionPolicyType, AccessFrequencyPolicy, TimeBasedPolicy,
-    ImportancePolicy, HybridPolicy, MemoryPromotionManager, MemoryPromotionPolicy,
+    AccessFrequencyPolicy, HybridPolicy, ImportancePolicy, MemoryPromotionManager,
+    MemoryPromotionPolicy, PromotionConfig, PromotionPolicyType, TimeBasedPolicy,
 };
 use synaptic::memory::types::MemoryType;
-use chrono::Duration;
+use synaptic::{AgentMemory, MemoryConfig};
 
 #[tokio::test]
 async fn test_access_frequency_promotion() {
@@ -33,8 +33,12 @@ async fn test_access_frequency_promotion() {
 
     // On the next access, it should be promoted
     let entry = memory.retrieve("freq_test").await.unwrap().unwrap();
-    assert_eq!(entry.memory_type, MemoryType::LongTerm,
-        "Memory should be promoted to long-term after {} accesses", 3);
+    assert_eq!(
+        entry.memory_type,
+        MemoryType::LongTerm,
+        "Memory should be promoted to long-term after {} accesses",
+        3
+    );
 }
 
 #[tokio::test]
@@ -49,7 +53,10 @@ async fn test_importance_promotion() {
     let mut memory = AgentMemory::new(config).await.unwrap();
 
     // Store a memory
-    memory.store("importance_test", "important content").await.unwrap();
+    memory
+        .store("importance_test", "important content")
+        .await
+        .unwrap();
 
     // Manually set high importance (in real usage, consolidation would set this)
     // For this test, we'll need to retrieve, modify importance, and store again
@@ -59,8 +66,11 @@ async fn test_importance_promotion() {
 
     // Retrieve again - should trigger promotion check
     let entry = memory.retrieve("importance_test").await.unwrap().unwrap();
-    assert_eq!(entry.memory_type, MemoryType::LongTerm,
-        "Memory with high importance should be promoted");
+    assert_eq!(
+        entry.memory_type,
+        MemoryType::LongTerm,
+        "Memory with high importance should be promoted"
+    );
 }
 
 #[tokio::test]
@@ -96,8 +106,11 @@ async fn test_hybrid_policy_promotion() {
     let entry = memory.retrieve("hybrid_test").await.unwrap().unwrap();
     // With 4 accesses (80% of threshold) and 0.7 importance (87.5% of threshold)
     // Weighted: 0.8 * 0.6 + 0.875 * 0.4 = 0.48 + 0.35 = 0.83 > 0.5 threshold
-    assert_eq!(entry.memory_type, MemoryType::LongTerm,
-        "Hybrid policy should promote based on combined metrics");
+    assert_eq!(
+        entry.memory_type,
+        MemoryType::LongTerm,
+        "Hybrid policy should promote based on combined metrics"
+    );
 }
 
 #[tokio::test]
@@ -115,8 +128,11 @@ async fn test_promotion_disabled() {
 
     // Should still be short-term
     let entry = memory.retrieve("no_promote").await.unwrap().unwrap();
-    assert_eq!(entry.memory_type, MemoryType::ShortTerm,
-        "Memory should not be promoted when promotion is disabled");
+    assert_eq!(
+        entry.memory_type,
+        MemoryType::ShortTerm,
+        "Memory should not be promoted when promotion is disabled"
+    );
 }
 
 #[tokio::test]
@@ -138,8 +154,11 @@ async fn test_long_term_not_re_promoted() {
     // Access many more times
     for _ in 0..20 {
         let e = memory.retrieve("already_long").await.unwrap().unwrap();
-        assert_eq!(e.memory_type, MemoryType::LongTerm,
-            "Should remain long-term");
+        assert_eq!(
+            e.memory_type,
+            MemoryType::LongTerm,
+            "Should remain long-term"
+        );
     }
 }
 
@@ -156,7 +175,10 @@ async fn test_multiple_memories_promoted() {
 
     // Store multiple memories
     for i in 0..5 {
-        memory.store(&format!("mem_{}", i), &format!("content {}", i)).await.unwrap();
+        memory
+            .store(&format!("mem_{}", i), &format!("content {}", i))
+            .await
+            .unwrap();
     }
 
     // Access them varying amounts
@@ -168,13 +190,25 @@ async fn test_multiple_memories_promoted() {
 
     // Check promotion status
     for i in 0..5 {
-        let entry = memory.retrieve(&format!("mem_{}", i)).await.unwrap().unwrap();
+        let entry = memory
+            .retrieve(&format!("mem_{}", i))
+            .await
+            .unwrap()
+            .unwrap();
         if i >= 3 {
-            assert_eq!(entry.memory_type, MemoryType::LongTerm,
-                "Memory {} should be promoted", i);
+            assert_eq!(
+                entry.memory_type,
+                MemoryType::LongTerm,
+                "Memory {} should be promoted",
+                i
+            );
         } else {
-            assert_eq!(entry.memory_type, MemoryType::ShortTerm,
-                "Memory {} should not be promoted yet", i);
+            assert_eq!(
+                entry.memory_type,
+                MemoryType::ShortTerm,
+                "Memory {} should not be promoted yet",
+                i
+            );
         }
     }
 }
@@ -199,9 +233,17 @@ async fn test_promotion_updates_storage() {
     }
 
     // Directly check storage (bypassing state)
-    let entry_from_storage = memory.storage().retrieve("storage_test").await.unwrap().unwrap();
-    assert_eq!(entry_from_storage.memory_type, MemoryType::LongTerm,
-        "Promoted memory should be updated in storage");
+    let entry_from_storage = memory
+        .storage()
+        .retrieve("storage_test")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        entry_from_storage.memory_type,
+        MemoryType::LongTerm,
+        "Promoted memory should be updated in storage"
+    );
 }
 
 #[tokio::test]
@@ -372,22 +414,35 @@ async fn test_promotion_preserves_metadata() {
     // Verify metadata preserved
     let promoted = memory.retrieve("metadata_test").await.unwrap().unwrap();
     assert_eq!(promoted.memory_type, MemoryType::LongTerm);
-    assert_eq!(promoted.metadata.importance, 0.75, "Importance should be preserved");
-    assert_eq!(promoted.metadata.tags, vec!["important", "urgent"], "Tags should be preserved");
-    assert_eq!(promoted.created_at(), original_created_at, "Created timestamp should be preserved");
+    assert_eq!(
+        promoted.metadata.importance, 0.75,
+        "Importance should be preserved"
+    );
+    assert_eq!(
+        promoted.metadata.tags,
+        vec!["important", "urgent"],
+        "Tags should be preserved"
+    );
+    assert_eq!(
+        promoted.created_at(),
+        original_created_at,
+        "Created timestamp should be preserved"
+    );
 }
 
 #[tokio::test]
 async fn test_concurrent_promotion_safe() {
     let config = MemoryConfig::default();
     let memory = std::sync::Arc::new(tokio::sync::Mutex::new(
-        AgentMemory::new(config).await.unwrap()
+        AgentMemory::new(config).await.unwrap(),
     ));
 
     // Store memories
     for i in 0..10 {
         let mut m = memory.lock().await;
-        m.store(&format!("concurrent_{}", i), &format!("content_{}", i)).await.unwrap();
+        m.store(&format!("concurrent_{}", i), &format!("content_{}", i))
+            .await
+            .unwrap();
     }
 
     // Access concurrently
@@ -410,7 +465,9 @@ async fn test_concurrent_promotion_safe() {
 
     // Verify no corruption
     for i in 0..10 {
-        let entry = memory.lock().await
+        let entry = memory
+            .lock()
+            .await
             .retrieve(&format!("concurrent_{}", i))
             .await
             .unwrap()

@@ -1,5 +1,10 @@
-use synaptic::{memory::temporal::{TemporalMemoryManager, TemporalConfig, TimeRange, ChangeType, MemoryVersion}, MemoryEntry, MemoryType};
-use chrono::{Utc, Duration, Timelike};
+use chrono::{Duration, Timelike, Utc};
+use synaptic::{
+    memory::temporal::{
+        ChangeType, MemoryVersion, TemporalConfig, TemporalMemoryManager, TimeRange,
+    },
+    MemoryEntry, MemoryType,
+};
 
 #[tokio::test]
 async fn test_most_active_period_daily() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +41,10 @@ async fn test_most_active_period_daily() -> Result<(), Box<dyn std::error::Error
     let summary = manager.calculate_temporal_summary(&versions, &[], &range);
     let active = summary.most_active_period.expect("period");
 
-    let expected_start_naive = (start + Duration::days(1)).date_naive().and_hms_opt(0,0,0).unwrap();
+    let expected_start_naive = (start + Duration::days(1))
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
     let expected_start = expected_start_naive.and_utc();
     assert_eq!(active.start, expected_start);
     assert_eq!(active.end, expected_start + Duration::days(1));
@@ -73,7 +81,10 @@ async fn test_most_active_period_hourly() -> Result<(), Box<dyn std::error::Erro
     let active = summary.most_active_period.expect("period");
 
     let target = start + Duration::hours(3);
-    let expected_start_naive = target.date_naive().and_hms_opt(target.hour(), 0, 0).unwrap();
+    let expected_start_naive = target
+        .date_naive()
+        .and_hms_opt(target.hour(), 0, 0)
+        .unwrap();
     let expected_start = expected_start_naive.and_utc();
     assert_eq!(active.start, expected_start);
     assert_eq!(active.end, expected_start + Duration::hours(1));

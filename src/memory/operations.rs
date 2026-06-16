@@ -5,12 +5,12 @@
 //! that integrates storage, knowledge graphs, analytics, and temporal tracking.
 
 use crate::memory::{
-    MemoryOperations, MemoryEntry, MemoryFragment, CoreMemoryStats, MemoryType,
-    storage::{Storage, create_storage},
-    state::AgentState,
     checkpoint::CheckpointManager,
-    knowledge_graph::{MemoryKnowledgeGraph, GraphConfig},
+    knowledge_graph::{GraphConfig, MemoryKnowledgeGraph},
+    state::AgentState,
+    storage::{create_storage, Storage},
     temporal::TemporalMemoryManager,
+    CoreMemoryStats, MemoryEntry, MemoryFragment, MemoryOperations, MemoryType,
 };
 use crate::{AgentMemory, MemoryConfig, MemoryError, Result, StorageBackend};
 use chrono::Utc;
@@ -243,7 +243,7 @@ impl MemoryOperations for SynapticMemory {
         );
 
         Err(MemoryError::operation(
-            "Delete operation requires AgentMemory enhancement (Phase 5.2)".to_string()
+            "Delete operation requires AgentMemory enhancement (Phase 5.2)".to_string(),
         ))
     }
 
@@ -257,7 +257,7 @@ impl MemoryOperations for SynapticMemory {
         tracing::warn!("List keys operation not yet fully implemented in AgentMemory");
 
         Err(MemoryError::operation(
-            "List keys operation requires AgentMemory enhancement (Phase 5.2)".to_string()
+            "List keys operation requires AgentMemory enhancement (Phase 5.2)".to_string(),
         ))
     }
 
@@ -414,12 +414,17 @@ mod tests {
             .build()
             .await;
 
-        assert!(memory.is_ok(), "Builder should create SynapticMemory successfully");
+        assert!(
+            memory.is_ok(),
+            "Builder should create SynapticMemory successfully"
+        );
     }
 
     #[tokio::test]
     async fn test_store_and_retrieve() {
-        let mut memory = SynapticMemory::new().await.expect("await should be present");
+        let mut memory = SynapticMemory::new()
+            .await
+            .expect("await should be present");
 
         let entry = MemoryEntry::new(
             "test_key".to_string(),
@@ -432,14 +437,22 @@ mod tests {
         assert!(store_result.is_ok(), "Should store memory successfully");
 
         // Retrieve
-        let retrieved = memory.get_memory("test_key").await.expect("await should be present");
+        let retrieved = memory
+            .get_memory("test_key")
+            .await
+            .expect("await should be present");
         assert!(retrieved.is_some(), "Should retrieve stored memory");
-        assert_eq!(retrieved.expect("retrieved should be valid").value, "test_value");
+        assert_eq!(
+            retrieved.expect("retrieved should be valid").value,
+            "test_value"
+        );
     }
 
     #[tokio::test]
     async fn test_update_memory() {
-        let mut memory = SynapticMemory::new().await.expect("await should be present");
+        let mut memory = SynapticMemory::new()
+            .await
+            .expect("await should be present");
 
         // Store initial
         let entry = MemoryEntry::new(
@@ -447,28 +460,42 @@ mod tests {
             "initial_value".to_string(),
             MemoryType::ShortTerm,
         );
-        memory.store_memory(entry).await.expect("await should be present");
+        memory
+            .store_memory(entry)
+            .await
+            .expect("await should be present");
 
         // Update
         let update_result = memory.update_memory("update_test", "updated_value").await;
         assert!(update_result.is_ok(), "Should update memory successfully");
 
         // Verify
-        let retrieved = memory.get_memory("update_test").await.expect("await should be present").expect("unwrap() should succeed");
+        let retrieved = memory
+            .get_memory("update_test")
+            .await
+            .expect("await should be present")
+            .expect("unwrap() should succeed");
         assert_eq!(retrieved.value, "updated_value");
     }
 
     #[tokio::test]
     async fn test_update_nonexistent_memory() {
-        let mut memory = SynapticMemory::new().await.expect("await should be present");
+        let mut memory = SynapticMemory::new()
+            .await
+            .expect("await should be present");
 
         let update_result = memory.update_memory("nonexistent", "value").await;
-        assert!(update_result.is_err(), "Should fail to update non-existent memory");
+        assert!(
+            update_result.is_err(),
+            "Should fail to update non-existent memory"
+        );
     }
 
     #[tokio::test]
     async fn test_search_memories() {
-        let mut memory = SynapticMemory::new().await.expect("await should be present");
+        let mut memory = SynapticMemory::new()
+            .await
+            .expect("await should be present");
 
         // Store multiple memories
         for i in 0..5 {
@@ -477,17 +504,25 @@ mod tests {
                 format!("content about topic {}", i),
                 MemoryType::ShortTerm,
             );
-            memory.store_memory(entry).await.expect("await should be present");
+            memory
+                .store_memory(entry)
+                .await
+                .expect("await should be present");
         }
 
         // Search
-        let results = memory.search_memories("topic", 10).await.expect("await should be present");
+        let results = memory
+            .search_memories("topic", 10)
+            .await
+            .expect("await should be present");
         assert!(!results.is_empty(), "Should find matching memories");
     }
 
     #[tokio::test]
     async fn test_get_stats() {
-        let memory = SynapticMemory::new().await.expect("await should be present");
+        let memory = SynapticMemory::new()
+            .await
+            .expect("await should be present");
         let stats = memory.get_stats();
         assert_eq!(stats.session_id, memory.session_id());
     }

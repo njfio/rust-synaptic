@@ -1,17 +1,17 @@
 //! Memory optimization and performance management
 
 use crate::error::{MemoryError, Result};
-use chrono::{DateTime, Utc, Timelike};
+use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use crate::memory::types::MemoryEntry;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::RwLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "base64")]
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use tokio::sync::RwLock;
 
 /// Memory optimizer for improving performance and efficiency
 pub struct MemoryOptimizer {
@@ -660,7 +660,10 @@ impl MemoryOptimizer {
     }
 
     /// Execute a specific optimization strategy
-    async fn execute_strategy(&mut self, strategy: &OptimizationStrategy) -> Result<OptimizationResult> {
+    async fn execute_strategy(
+        &mut self,
+        strategy: &OptimizationStrategy,
+    ) -> Result<OptimizationResult> {
         let start_time = std::time::Instant::now();
         let mut memories_optimized = 0;
         let mut space_saved = 0;
@@ -734,38 +737,54 @@ impl MemoryOptimizer {
         let (exact_removed, exact_space) = self.deduplicate_exact_matches().await?;
         total_removed += exact_removed;
         total_space_saved += exact_space;
-        tracing::debug!("Exact matching: removed {} duplicates, saved {} bytes", exact_removed, exact_space);
+        tracing::debug!(
+            "Exact matching: removed {} duplicates, saved {} bytes",
+            exact_removed,
+            exact_space
+        );
 
         // Method 2: Normalized content similarity (handles whitespace/formatting differences)
         let (normalized_removed, normalized_space) = self.deduplicate_normalized_content().await?;
         total_removed += normalized_removed;
         total_space_saved += normalized_space;
-        tracing::debug!("Normalized content: removed {} duplicates, saved {} bytes", normalized_removed, normalized_space);
+        tracing::debug!(
+            "Normalized content: removed {} duplicates, saved {} bytes",
+            normalized_removed,
+            normalized_space
+        );
 
         // Method 3: Semantic similarity using embeddings (cosine similarity > 0.95)
         let (semantic_removed, semantic_space) = self.deduplicate_semantic_similarity().await?;
         total_removed += semantic_removed;
         total_space_saved += semantic_space;
-        tracing::debug!("Semantic similarity: removed {} duplicates, saved {} bytes", semantic_removed, semantic_space);
+        tracing::debug!(
+            "Semantic similarity: removed {} duplicates, saved {} bytes",
+            semantic_removed,
+            semantic_space
+        );
 
         // Method 4: Fuzzy string matching (Levenshtein distance with 95% similarity)
         let (fuzzy_removed, fuzzy_space) = self.deduplicate_fuzzy_matching().await?;
         total_removed += fuzzy_removed;
         total_space_saved += fuzzy_space;
-        tracing::debug!("Fuzzy matching: removed {} duplicates, saved {} bytes", fuzzy_removed, fuzzy_space);
+        tracing::debug!(
+            "Fuzzy matching: removed {} duplicates, saved {} bytes",
+            fuzzy_removed,
+            fuzzy_space
+        );
 
         // Method 5: Clustering-based deduplication (group similar memories and keep best representative)
         let (cluster_removed, cluster_space) = self.deduplicate_clustering_based().await?;
         total_removed += cluster_removed;
         total_space_saved += cluster_space;
-        tracing::debug!("Clustering-based: removed {} duplicates, saved {} bytes", cluster_removed, cluster_space);
+        tracing::debug!(
+            "Clustering-based: removed {} duplicates, saved {} bytes",
+            cluster_removed,
+            cluster_space
+        );
 
         // Update metrics
-        self.metrics.memory_usage_bytes = self
-            .entries
-            .values()
-            .map(|e| e.estimated_size())
-            .sum();
+        self.metrics.memory_usage_bytes = self.entries.values().map(|e| e.estimated_size()).sum();
 
         let total_entries = self.entries.len() + total_removed;
         if total_entries > 0 {
@@ -777,7 +796,9 @@ impl MemoryOptimizer {
         let duration = start_time.elapsed();
         tracing::info!(
             "Comprehensive deduplication completed: removed {} duplicates, saved {} bytes in {:?}",
-            total_removed, total_space_saved, duration
+            total_removed,
+            total_space_saved,
+            duration
         );
 
         Ok((total_removed, total_space_saved))
@@ -876,11 +897,15 @@ impl MemoryOptimizer {
         let mut to_remove = Vec::new();
 
         // Group entries by similar length for more efficient comparison
-        let mut length_groups: std::collections::HashMap<usize, Vec<(&String, &MemoryEntry)>> = std::collections::HashMap::new();
+        let mut length_groups: std::collections::HashMap<usize, Vec<(&String, &MemoryEntry)>> =
+            std::collections::HashMap::new();
 
         for (key, entry) in &self.entries {
             let length_bucket = (entry.value.len() / 100) * 100; // Group by 100-char buckets
-            length_groups.entry(length_bucket).or_default().push((key, entry));
+            length_groups
+                .entry(length_bucket)
+                .or_default()
+                .push((key, entry));
         }
 
         // Only compare entries within similar length groups and adjacent groups
@@ -953,7 +978,11 @@ impl MemoryOptimizer {
     }
 
     /// Compare entries within the same length group for fuzzy matching
-    fn compare_entries_in_group(&self, group: &[(&String, &MemoryEntry)], to_remove: &mut Vec<String>) {
+    fn compare_entries_in_group(
+        &self,
+        group: &[(&String, &MemoryEntry)],
+        to_remove: &mut Vec<String>,
+    ) {
         for i in 0..group.len() {
             for j in (i + 1)..group.len() {
                 let (key1, entry1) = group[i];
@@ -973,7 +1002,12 @@ impl MemoryOptimizer {
     }
 
     /// Compare entries between two different length groups for fuzzy matching
-    fn compare_entries_between_groups(&self, group1: &[(&String, &MemoryEntry)], group2: &[(&String, &MemoryEntry)], to_remove: &mut Vec<String>) {
+    fn compare_entries_between_groups(
+        &self,
+        group1: &[(&String, &MemoryEntry)],
+        group2: &[(&String, &MemoryEntry)],
+        to_remove: &mut Vec<String>,
+    ) {
         for (key1, entry1) in group1 {
             for (key2, entry2) in group2 {
                 let similarity = self.calculate_string_similarity(&entry1.value, &entry2.value);
@@ -1047,9 +1081,7 @@ impl MemoryOptimizer {
         }
 
         // Use byte-level comparison for better performance
-        let common_bytes = s1.bytes()
-            .filter(|&b| s2.as_bytes().contains(&b))
-            .count();
+        let common_bytes = s1.bytes().filter(|&b| s2.as_bytes().contains(&b)).count();
 
         let max_len = len1.max(len2);
         let length_penalty = ((len1 as f64 - len2 as f64).abs()) / (max_len as f64);
@@ -1069,7 +1101,10 @@ impl MemoryOptimizer {
             .collect::<Vec<_>>()
             .join(" ");
 
-        format!("len:{}_words:{}_start:{}", length_bucket, word_count, first_words)
+        format!(
+            "len:{}_words:{}_start:{}",
+            length_bucket, word_count, first_words
+        )
     }
 
     /// Perform advanced memory compression using intelligent algorithms
@@ -1091,12 +1126,30 @@ impl MemoryOptimizer {
                 // Only apply compression if it's beneficial (>15% reduction)
                 if compression_result.compression_ratio < 0.85 {
                     // Store compression metadata
-                    entry.metadata.custom_fields.insert("compression_algorithm".to_string(), compression_result.algorithm.clone());
-                    entry.metadata.custom_fields.insert("compressed_size".to_string(), compression_result.compressed_size.to_string());
-                    entry.metadata.custom_fields.insert("compression_ratio".to_string(), compression_result.compression_ratio.to_string());
-                    entry.metadata.custom_fields.insert("original_size".to_string(), original_size.to_string());
-                    entry.metadata.custom_fields.insert("compressed_data".to_string(), compression_result.compressed_data);
-                    entry.metadata.custom_fields.insert("is_compressed".to_string(), "true".to_string());
+                    entry.metadata.custom_fields.insert(
+                        "compression_algorithm".to_string(),
+                        compression_result.algorithm.clone(),
+                    );
+                    entry.metadata.custom_fields.insert(
+                        "compressed_size".to_string(),
+                        compression_result.compressed_size.to_string(),
+                    );
+                    entry.metadata.custom_fields.insert(
+                        "compression_ratio".to_string(),
+                        compression_result.compression_ratio.to_string(),
+                    );
+                    entry
+                        .metadata
+                        .custom_fields
+                        .insert("original_size".to_string(), original_size.to_string());
+                    entry.metadata.custom_fields.insert(
+                        "compressed_data".to_string(),
+                        compression_result.compressed_data,
+                    );
+                    entry
+                        .metadata
+                        .custom_fields
+                        .insert("is_compressed".to_string(), "true".to_string());
 
                     compressed += 1;
                     space_saved += original_size - compression_result.compressed_size;
@@ -1106,11 +1159,7 @@ impl MemoryOptimizer {
         }
 
         // Update memory usage after compression
-        self.metrics.memory_usage_bytes = self
-            .entries
-            .values()
-            .map(|e| e.estimated_size())
-            .sum();
+        self.metrics.memory_usage_bytes = self.entries.values().map(|e| e.estimated_size()).sum();
 
         // Update compression metrics with detailed analysis
         self.update_compression_metrics(compressed, space_saved);
@@ -1140,7 +1189,10 @@ impl MemoryOptimizer {
         let bytes = content.as_bytes();
         if bytes.len() >= 2 {
             for window in bytes.windows(2) {
-                if let (Ok(c1), Ok(c2)) = (std::str::from_utf8(&[window[0]]), std::str::from_utf8(&[window[1]])) {
+                if let (Ok(c1), Ok(c2)) = (
+                    std::str::from_utf8(&[window[0]]),
+                    std::str::from_utf8(&[window[1]]),
+                ) {
                     let bigram = format!("{}{}", c1, c2);
                     *bigram_frequency.entry(bigram).or_insert(0) += 1;
                 }
@@ -1157,8 +1209,16 @@ impl MemoryOptimizer {
             total_word_length += word.len();
         }
 
-        let whitespace_ratio = if content.is_empty() { 0.0 } else { whitespace_count as f64 / content.len() as f64 };
-        let average_word_length = if words.is_empty() { 0.0 } else { total_word_length as f64 / words.len() as f64 };
+        let whitespace_ratio = if content.is_empty() {
+            0.0
+        } else {
+            whitespace_count as f64 / content.len() as f64
+        };
+        let average_word_length = if words.is_empty() {
+            0.0
+        } else {
+            total_word_length as f64 / words.len() as f64
+        };
 
         // Quick content type detection
         let trimmed = content.trim_start();
@@ -1204,11 +1264,14 @@ impl MemoryOptimizer {
         };
 
         // Update memory usage after compression
-        self.metrics.memory_usage_bytes = self.metrics.memory_usage_bytes.saturating_sub(space_saved);
+        self.metrics.memory_usage_bytes =
+            self.metrics.memory_usage_bytes.saturating_sub(space_saved);
 
         tracing::info!(
             "Compression complete: {} entries compressed, {} bytes saved, {:.2}% compression rate",
-            compressed_count, space_saved, compression_rate * 100.0
+            compressed_count,
+            space_saved,
+            compression_rate * 100.0
         );
     }
 
@@ -1221,7 +1284,8 @@ impl MemoryOptimizer {
             let recency_score = self.calculate_recency_score(&entry.metadata.last_accessed);
             let importance_score = entry.metadata.importance;
 
-            let warming_score = access_frequency * 0.4 + recency_score * 0.3 + importance_score * 0.3;
+            let warming_score =
+                access_frequency * 0.4 + recency_score * 0.3 + importance_score * 0.3;
             access_scores.push((key.clone(), warming_score));
         }
 
@@ -1246,19 +1310,23 @@ impl MemoryOptimizer {
             let access_frequency = entry.metadata.access_count as f64;
             let size_penalty = entry.estimated_size() as f64 / 1000.0;
 
-            let eviction_score = time_since_access as f64 * 0.5 +
-                               (1.0 / (access_frequency + 1.0)) * 0.3 +
-                               size_penalty * 0.2;
+            let eviction_score = time_since_access as f64 * 0.5
+                + (1.0 / (access_frequency + 1.0)) * 0.3
+                + size_penalty * 0.2;
 
             eviction_candidates.push((key.clone(), eviction_score));
         }
 
-        eviction_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        eviction_candidates
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let evict_count = (eviction_candidates.len() / 10).max(1);
         for (key, _score) in eviction_candidates.iter().take(evict_count) {
             if let Some(entry) = self.entries.get_mut(key) {
-                entry.metadata.custom_fields.insert("eviction_candidate".to_string(), "true".to_string());
+                entry
+                    .metadata
+                    .custom_fields
+                    .insert("eviction_candidate".to_string(), "true".to_string());
             }
         }
 
@@ -1274,20 +1342,23 @@ impl MemoryOptimizer {
             let temporal_score = self.calculate_temporal_access_score(entry);
             let content_similarity_score = self.calculate_content_similarity_prefetch_score(key);
 
-            let prefetch_score = access_pattern_score * 0.4 +
-                               temporal_score * 0.3 +
-                               content_similarity_score * 0.3;
+            let prefetch_score =
+                access_pattern_score * 0.4 + temporal_score * 0.3 + content_similarity_score * 0.3;
 
             if prefetch_score > 0.6 {
                 prefetch_candidates.push((key.clone(), prefetch_score));
             }
         }
 
-        prefetch_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        prefetch_candidates
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for (key, _score) in prefetch_candidates.iter().take(20) {
             if let Some(entry) = self.entries.get_mut(key) {
-                entry.metadata.custom_fields.insert("prefetch_candidate".to_string(), "true".to_string());
+                entry
+                    .metadata
+                    .custom_fields
+                    .insert("prefetch_candidate".to_string(), "true".to_string());
             }
         }
 
@@ -1307,13 +1378,19 @@ impl MemoryOptimizer {
                 "cold"
             };
 
-            partitions.entry(partition.to_string()).or_insert_with(Vec::new).push(key.clone());
+            partitions
+                .entry(partition.to_string())
+                .or_insert_with(Vec::new)
+                .push(key.clone());
         }
 
         for (partition_name, keys) in partitions {
             for key in keys {
                 if let Some(entry) = self.entries.get_mut(&key) {
-                    entry.metadata.custom_fields.insert("cache_partition".to_string(), partition_name.clone());
+                    entry
+                        .metadata
+                        .custom_fields
+                        .insert("cache_partition".to_string(), partition_name.clone());
                 }
             }
         }
@@ -1348,9 +1425,14 @@ impl MemoryOptimizer {
                 let compression_result = MemoryOptimizer::apply_optimal_compression(&entry.value);
 
                 if compression_result.compression_ratio < 0.8 {
-                    entry.metadata.custom_fields.insert("cache_compressed".to_string(), "true".to_string());
-                    entry.metadata.custom_fields.insert("cache_compression_ratio".to_string(),
-                                        compression_result.compression_ratio.to_string());
+                    entry
+                        .metadata
+                        .custom_fields
+                        .insert("cache_compressed".to_string(), "true".to_string());
+                    entry.metadata.custom_fields.insert(
+                        "cache_compression_ratio".to_string(),
+                        compression_result.compression_ratio.to_string(),
+                    );
                     compressed_entries += 1;
                 }
             }
@@ -1495,20 +1577,30 @@ impl MemoryOptimizer {
         let mut _code_length = 1;
 
         for (ch, freq) in frequency_map.iter() {
-            let code_bits = if *freq > 10 { 2 } else if *freq > 5 { 4 } else { 8 };
+            let code_bits = if *freq > 10 {
+                2
+            } else if *freq > 5 {
+                4
+            } else {
+                8
+            };
             codes.insert(*ch, code_bits);
             _code_length += code_bits;
         }
 
         // Estimate compressed size
-        let estimated_bits = content.chars()
+        let estimated_bits = content
+            .chars()
             .map(|ch| codes.get(&ch).unwrap_or(&8))
             .sum::<usize>();
         let compressed_size = (estimated_bits + 7) / 8; // Convert bits to bytes
 
         CompressionResult {
             #[cfg(feature = "base64")]
-            compressed_data: format!("huffman:{}", general_purpose::STANDARD.encode(content.as_bytes())),
+            compressed_data: format!(
+                "huffman:{}",
+                general_purpose::STANDARD.encode(content.as_bytes())
+            ),
             #[cfg(not(feature = "base64"))]
             compressed_data: format!("huffman:{}", hex::encode(content.as_bytes())),
             compressed_size,
@@ -1557,11 +1649,7 @@ impl MemoryOptimizer {
                 removed += 1;
             }
         }
-        self.metrics.memory_usage_bytes = self
-            .entries
-            .values()
-            .map(|e| e.estimated_size())
-            .sum();
+        self.metrics.memory_usage_bytes = self.entries.values().map(|e| e.estimated_size()).sum();
         Ok((removed, space_saved))
     }
 
@@ -1589,17 +1677,16 @@ impl MemoryOptimizer {
 
     /// Update performance metrics
     async fn update_performance_metrics(&mut self) -> Result<()> {
-        self.metrics.memory_usage_bytes = self
-            .entries
-            .values()
-            .map(|e| e.estimated_size())
-            .sum();
+        self.metrics.memory_usage_bytes = self.entries.values().map(|e| e.estimated_size()).sum();
         self.metrics.last_measured = Utc::now();
         Ok(())
     }
 
     /// Calculate performance improvement
-    fn calculate_performance_improvement(&self, old_metrics: &PerformanceMetrics) -> PerformanceImprovement {
+    fn calculate_performance_improvement(
+        &self,
+        old_metrics: &PerformanceMetrics,
+    ) -> PerformanceImprovement {
         let speed_factor = if old_metrics.avg_retrieval_time_ms > 0.0 {
             old_metrics.avg_retrieval_time_ms / self.metrics.avg_retrieval_time_ms.max(0.1)
         } else {
@@ -1706,11 +1793,12 @@ impl MemoryOptimizer {
         &self.strategies
     }
 
-
-
     /// Find text similarities between memory entries
     #[allow(dead_code)]
-    async fn find_text_similarities(&self, entries: &[MemoryEntry]) -> Result<Vec<Vec<MemoryEntry>>> {
+    async fn find_text_similarities(
+        &self,
+        entries: &[MemoryEntry],
+    ) -> Result<Vec<Vec<MemoryEntry>>> {
         let mut similarity_groups = Vec::new();
         let mut processed = std::collections::HashSet::new();
 
@@ -1748,16 +1836,24 @@ impl MemoryOptimizer {
         }
 
         // Find the best representative (highest importance or most recent)
-        let best_entry = group.iter()
+        let best_entry = group
+            .iter()
             .max_by(|a, b| {
-                a.metadata.importance.partial_cmp(&b.metadata.importance)
+                a.metadata
+                    .importance
+                    .partial_cmp(&b.metadata.importance)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
             })
-            .ok_or_else(|| crate::error::MemoryError::validation("Empty group provided for merging".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::MemoryError::validation(
+                    "Empty group provided for merging".to_string(),
+                )
+            })?;
 
         // Calculate space saved by removing duplicates
-        let space_saved = group.iter()
+        let space_saved = group
+            .iter()
             .filter(|entry| entry.key != best_entry.key)
             .map(|entry| entry.estimated_size())
             .sum();
@@ -1769,7 +1865,10 @@ impl MemoryOptimizer {
 
     /// Deduplicate groups of similar memories
     #[allow(dead_code)]
-    async fn deduplicate_groups(&mut self, groups: Vec<Vec<MemoryEntry>>) -> Result<(usize, usize)> {
+    async fn deduplicate_groups(
+        &mut self,
+        groups: Vec<Vec<MemoryEntry>>,
+    ) -> Result<(usize, usize)> {
         let mut total_removed = 0;
         let mut total_space_saved = 0;
 
@@ -1781,13 +1880,13 @@ impl MemoryOptimizer {
                 total_space_saved += space_saved;
 
                 // Remove duplicates from our entries (keep the best one)
-                if let Some(best_entry) = group.iter()
-                    .max_by(|a, b| {
-                        a.metadata.importance.partial_cmp(&b.metadata.importance)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
-                    }) {
-
+                if let Some(best_entry) = group.iter().max_by(|a, b| {
+                    a.metadata
+                        .importance
+                        .partial_cmp(&b.metadata.importance)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.metadata.last_accessed.cmp(&b.metadata.last_accessed))
+                }) {
                     // Remove all entries in the group except the best one
                     for entry in &group {
                         if entry.key != best_entry.key {
@@ -1861,10 +1960,19 @@ impl PerformanceMonitor {
     }
 
     /// Get historical metrics
-    pub async fn get_metrics_history(&self, limit: Option<usize>) -> Result<Vec<TimestampedMetrics>> {
+    pub async fn get_metrics_history(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<TimestampedMetrics>> {
         let collector = self.metrics_collector.read().await;
         let history = if let Some(limit) = limit {
-            collector.metrics_history.iter().rev().take(limit).cloned().collect()
+            collector
+                .metrics_history
+                .iter()
+                .rev()
+                .take(limit)
+                .cloned()
+                .collect()
         } else {
             collector.metrics_history.iter().cloned().collect()
         };
@@ -1884,15 +1992,30 @@ impl PerformanceMonitor {
     }
 
     /// Record an operation timing
-    pub async fn record_operation(&self, operation_type: String, duration: Duration, success: bool, metadata: HashMap<String, String>) -> Result<()> {
+    pub async fn record_operation(
+        &self,
+        operation_type: String,
+        duration: Duration,
+        success: bool,
+        metadata: HashMap<String, String>,
+    ) -> Result<()> {
         let mut collector = self.metrics_collector.write().await;
-        collector.record_operation(operation_type, duration, success, metadata).await
+        collector
+            .record_operation(operation_type, duration, success, metadata)
+            .await
     }
 
     /// Record memory allocation
-    pub async fn record_allocation(&self, size: usize, allocation_type: AllocationType, location: String) -> Result<()> {
+    pub async fn record_allocation(
+        &self,
+        size: usize,
+        allocation_type: AllocationType,
+        location: String,
+    ) -> Result<()> {
         let mut collector = self.metrics_collector.write().await;
-        collector.record_allocation(size, allocation_type, location).await
+        collector
+            .record_allocation(size, allocation_type, location)
+            .await
     }
 
     /// Record cache hit/miss
@@ -1962,27 +2085,35 @@ impl PerformanceMonitor {
     }
 
     /// Generate performance recommendations
-    async fn generate_recommendations(&self, metrics: &AdvancedPerformanceMetrics) -> Result<Vec<String>> {
+    async fn generate_recommendations(
+        &self,
+        metrics: &AdvancedPerformanceMetrics,
+    ) -> Result<Vec<String>> {
         let mut recommendations = Vec::new();
 
         // Memory usage recommendations
-        if metrics.memory_usage_bytes > 1_000_000_000 { // > 1GB
+        if metrics.memory_usage_bytes > 1_000_000_000 {
+            // > 1GB
             recommendations.push("Consider implementing memory compression or cleanup".to_string());
         }
 
         // Cache performance recommendations
         if metrics.cache_hit_rate < 0.8 {
-            recommendations.push("Cache hit rate is low, consider optimizing cache strategy".to_string());
+            recommendations
+                .push("Cache hit rate is low, consider optimizing cache strategy".to_string());
         }
 
         // Latency recommendations
-        if metrics.retrieval_latency_percentiles.p95_us > 10_000.0 { // > 10ms
-            recommendations.push("High retrieval latency detected, consider index optimization".to_string());
+        if metrics.retrieval_latency_percentiles.p95_us > 10_000.0 {
+            // > 10ms
+            recommendations
+                .push("High retrieval latency detected, consider index optimization".to_string());
         }
 
         // CPU usage recommendations
         if metrics.cpu_usage_percent > 80.0 {
-            recommendations.push("High CPU usage detected, consider algorithm optimization".to_string());
+            recommendations
+                .push("High CPU usage detected, consider algorithm optimization".to_string());
         }
 
         // I/O recommendations
@@ -1991,7 +2122,8 @@ impl PerformanceMonitor {
         }
 
         // Error rate recommendations
-        if metrics.error_rate > 0.01 { // > 1% error rate
+        if metrics.error_rate > 0.01 {
+            // > 1% error rate
             recommendations.push("High error rate detected, investigate error causes".to_string());
         }
 
@@ -2141,23 +2273,53 @@ impl MetricsCollector {
     }
 
     /// Record an operation timing
-    pub async fn record_operation(&mut self, operation_type: String, duration: Duration, success: bool, metadata: HashMap<String, String>) -> Result<()> {
+    pub async fn record_operation(
+        &mut self,
+        operation_type: String,
+        duration: Duration,
+        success: bool,
+        metadata: HashMap<String, String>,
+    ) -> Result<()> {
         // Update counters
-        self.operation_counters.total_operations.fetch_add(1, Ordering::Relaxed);
+        self.operation_counters
+            .total_operations
+            .fetch_add(1, Ordering::Relaxed);
         if success {
-            self.operation_counters.successful_operations.fetch_add(1, Ordering::Relaxed);
+            self.operation_counters
+                .successful_operations
+                .fetch_add(1, Ordering::Relaxed);
         } else {
-            self.operation_counters.failed_operations.fetch_add(1, Ordering::Relaxed);
+            self.operation_counters
+                .failed_operations
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         // Update specific operation counters
         match operation_type.as_str() {
-            "retrieval" => self.operation_counters.retrieval_operations.fetch_add(1, Ordering::Relaxed),
-            "storage" => self.operation_counters.storage_operations.fetch_add(1, Ordering::Relaxed),
-            "update" => self.operation_counters.update_operations.fetch_add(1, Ordering::Relaxed),
-            "delete" => self.operation_counters.delete_operations.fetch_add(1, Ordering::Relaxed),
-            "search" => self.operation_counters.search_operations.fetch_add(1, Ordering::Relaxed),
-            "optimization" => self.operation_counters.optimization_operations.fetch_add(1, Ordering::Relaxed),
+            "retrieval" => self
+                .operation_counters
+                .retrieval_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "storage" => self
+                .operation_counters
+                .storage_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "update" => self
+                .operation_counters
+                .update_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "delete" => self
+                .operation_counters
+                .delete_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "search" => self
+                .operation_counters
+                .search_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "optimization" => self
+                .operation_counters
+                .optimization_operations
+                .fetch_add(1, Ordering::Relaxed),
             _ => 0,
         };
 
@@ -2176,7 +2338,8 @@ impl MetricsCollector {
         }
 
         // Add to timing buckets
-        self.timing_measurements.timing_buckets
+        self.timing_measurements
+            .timing_buckets
             .entry(operation_type)
             .or_default()
             .push(duration);
@@ -2185,14 +2348,25 @@ impl MetricsCollector {
     }
 
     /// Record memory allocation
-    pub async fn record_allocation(&mut self, size: usize, allocation_type: AllocationType, location: String) -> Result<()> {
-        self.memory_tracker.current_usage.fetch_add(size, Ordering::Relaxed);
-        self.memory_tracker.allocation_count.fetch_add(1, Ordering::Relaxed);
+    pub async fn record_allocation(
+        &mut self,
+        size: usize,
+        allocation_type: AllocationType,
+        location: String,
+    ) -> Result<()> {
+        self.memory_tracker
+            .current_usage
+            .fetch_add(size, Ordering::Relaxed);
+        self.memory_tracker
+            .allocation_count
+            .fetch_add(1, Ordering::Relaxed);
 
         let current = self.memory_tracker.current_usage.load(Ordering::Relaxed);
         let peak = self.memory_tracker.peak_usage.load(Ordering::Relaxed);
         if current > peak {
-            self.memory_tracker.peak_usage.store(current, Ordering::Relaxed);
+            self.memory_tracker
+                .peak_usage
+                .store(current, Ordering::Relaxed);
         }
 
         let event = AllocationEvent {
@@ -2240,13 +2414,16 @@ impl MetricsCollector {
         if let Some(retrieval_timings) = self.timing_measurements.timing_buckets.get("retrieval") {
             if !retrieval_timings.is_empty() {
                 let total_us: u128 = retrieval_timings.iter().map(|d| d.as_micros()).sum();
-                self.current_metrics.avg_retrieval_time_us = total_us as f64 / retrieval_timings.len() as f64;
+                self.current_metrics.avg_retrieval_time_us =
+                    total_us as f64 / retrieval_timings.len() as f64;
 
                 // Calculate percentiles
-                let mut sorted_timings: Vec<u128> = retrieval_timings.iter().map(|d| d.as_micros()).collect();
+                let mut sorted_timings: Vec<u128> =
+                    retrieval_timings.iter().map(|d| d.as_micros()).collect();
                 sorted_timings.sort_unstable();
 
-                self.current_metrics.retrieval_latency_percentiles = self.calculate_percentiles(&sorted_timings);
+                self.current_metrics.retrieval_latency_percentiles =
+                    self.calculate_percentiles(&sorted_timings);
             }
         }
 
@@ -2254,13 +2431,16 @@ impl MetricsCollector {
         if let Some(storage_timings) = self.timing_measurements.timing_buckets.get("storage") {
             if !storage_timings.is_empty() {
                 let total_us: u128 = storage_timings.iter().map(|d| d.as_micros()).sum();
-                self.current_metrics.avg_storage_time_us = total_us as f64 / storage_timings.len() as f64;
+                self.current_metrics.avg_storage_time_us =
+                    total_us as f64 / storage_timings.len() as f64;
 
                 // Calculate percentiles
-                let mut sorted_timings: Vec<u128> = storage_timings.iter().map(|d| d.as_micros()).collect();
+                let mut sorted_timings: Vec<u128> =
+                    storage_timings.iter().map(|d| d.as_micros()).collect();
                 sorted_timings.sort_unstable();
 
-                self.current_metrics.storage_latency_percentiles = self.calculate_percentiles(&sorted_timings);
+                self.current_metrics.storage_latency_percentiles =
+                    self.calculate_percentiles(&sorted_timings);
             }
         }
 
@@ -2291,12 +2471,17 @@ impl MetricsCollector {
 
     /// Update memory metrics
     async fn update_memory_metrics(&mut self) -> Result<()> {
-        self.current_metrics.memory_usage_bytes = self.memory_tracker.current_usage.load(Ordering::Relaxed);
-        self.current_metrics.peak_memory_usage_bytes = self.memory_tracker.peak_usage.load(Ordering::Relaxed);
+        self.current_metrics.memory_usage_bytes =
+            self.memory_tracker.current_usage.load(Ordering::Relaxed);
+        self.current_metrics.peak_memory_usage_bytes =
+            self.memory_tracker.peak_usage.load(Ordering::Relaxed);
 
         // Calculate allocation/deallocation rates
         let allocation_count = self.memory_tracker.allocation_count.load(Ordering::Relaxed);
-        let deallocation_count = self.memory_tracker.deallocation_count.load(Ordering::Relaxed);
+        let deallocation_count = self
+            .memory_tracker
+            .deallocation_count
+            .load(Ordering::Relaxed);
 
         // Simple rate calculation (events per second over last measurement period)
         self.current_metrics.memory_allocation_rate = allocation_count as f64;
@@ -2316,7 +2501,8 @@ impl MetricsCollector {
             self.current_metrics.cache_miss_rate = misses as f64 / total as f64;
         }
 
-        self.current_metrics.cache_eviction_rate = self.cache_tracker.evictions.load(Ordering::Relaxed) as f64;
+        self.current_metrics.cache_eviction_rate =
+            self.cache_tracker.evictions.load(Ordering::Relaxed) as f64;
 
         Ok(())
     }
@@ -2336,9 +2522,18 @@ impl MetricsCollector {
     /// Calculate derived metrics
     async fn calculate_derived_metrics(&mut self) -> Result<()> {
         // Calculate throughput
-        let total_ops = self.operation_counters.total_operations.load(Ordering::Relaxed);
-        let _successful_ops = self.operation_counters.successful_operations.load(Ordering::Relaxed);
-        let failed_ops = self.operation_counters.failed_operations.load(Ordering::Relaxed);
+        let total_ops = self
+            .operation_counters
+            .total_operations
+            .load(Ordering::Relaxed);
+        let _successful_ops = self
+            .operation_counters
+            .successful_operations
+            .load(Ordering::Relaxed);
+        let failed_ops = self
+            .operation_counters
+            .failed_operations
+            .load(Ordering::Relaxed);
 
         // Simple throughput calculation (operations per second)
         self.current_metrics.throughput_ops_per_sec = total_ops as f64;
@@ -2371,7 +2566,10 @@ impl MetricsCollector {
         // Group memories by cluster assignment
         for (memory_key, cluster_id) in cluster_assignments {
             if !processed_keys.contains(&memory_key) {
-                clusters.entry(cluster_id).or_default().push(memory_key.clone());
+                clusters
+                    .entry(cluster_id)
+                    .or_default()
+                    .push(memory_key.clone());
                 processed_keys.insert(memory_key);
             }
         }
@@ -2453,13 +2651,17 @@ impl MetricsCollector {
             return vec![0.5; features.len()]; // All values are the same
         }
 
-        features.iter()
+        features
+            .iter()
             .map(|&x| (x - min_val) / (max_val - min_val))
             .collect()
     }
 
     /// Hierarchical clustering implementation
-    async fn hierarchical_clustering(&self, features: &HashMap<String, Vec<f64>>) -> Result<HashMap<String, String>> {
+    async fn hierarchical_clustering(
+        &self,
+        features: &HashMap<String, Vec<f64>>,
+    ) -> Result<HashMap<String, String>> {
         let mut cluster_assignments = HashMap::new();
         let memory_keys: Vec<String> = features.keys().cloned().collect();
 
@@ -2476,7 +2678,8 @@ impl MetricsCollector {
 
         while clusters.len() > 1 {
             // Find closest pair of clusters
-            let (min_i, min_j, _min_distance) = self.find_closest_clusters(&clusters, &distance_matrix, &memory_keys);
+            let (min_i, min_j, _min_distance) =
+                self.find_closest_clusters(&clusters, &distance_matrix, &memory_keys);
 
             if min_i == min_j {
                 break; // No valid merge found
@@ -2504,7 +2707,11 @@ impl MetricsCollector {
     }
 
     /// Calculate distance matrix for clustering
-    fn calculate_distance_matrix(&self, features: &HashMap<String, Vec<f64>>, memory_keys: &[String]) -> Vec<Vec<f64>> {
+    fn calculate_distance_matrix(
+        &self,
+        features: &HashMap<String, Vec<f64>>,
+        memory_keys: &[String],
+    ) -> Vec<Vec<f64>> {
         let n = memory_keys.len();
         let mut matrix = vec![vec![0.0; n]; n];
 
@@ -2513,7 +2720,8 @@ impl MetricsCollector {
                 let key1 = &memory_keys[i];
                 let key2 = &memory_keys[j];
 
-                if let (Some(features1), Some(features2)) = (features.get(key1), features.get(key2)) {
+                if let (Some(features1), Some(features2)) = (features.get(key1), features.get(key2))
+                {
                     let distance = self.calculate_euclidean_distance(features1, features2);
                     matrix[i][j] = distance;
                     matrix[j][i] = distance;
@@ -2530,7 +2738,8 @@ impl MetricsCollector {
             return f64::INFINITY;
         }
 
-        features1.iter()
+        features1
+            .iter()
             .zip(features2.iter())
             .map(|(a, b)| (a - b).powi(2))
             .sum::<f64>()
@@ -2538,14 +2747,24 @@ impl MetricsCollector {
     }
 
     /// Find closest pair of clusters for merging
-    fn find_closest_clusters(&self, clusters: &[Vec<String>], distance_matrix: &[Vec<f64>], memory_keys: &[String]) -> (usize, usize, f64) {
+    fn find_closest_clusters(
+        &self,
+        clusters: &[Vec<String>],
+        distance_matrix: &[Vec<f64>],
+        memory_keys: &[String],
+    ) -> (usize, usize, f64) {
         let mut min_distance = f64::INFINITY;
         let mut min_i = 0;
         let mut min_j = 0;
 
         for i in 0..clusters.len() {
             for j in i + 1..clusters.len() {
-                let distance = self.calculate_cluster_distance(&clusters[i], &clusters[j], distance_matrix, memory_keys);
+                let distance = self.calculate_cluster_distance(
+                    &clusters[i],
+                    &clusters[j],
+                    distance_matrix,
+                    memory_keys,
+                );
                 if distance < min_distance {
                     min_distance = distance;
                     min_i = i;
@@ -2558,7 +2777,13 @@ impl MetricsCollector {
     }
 
     /// Calculate distance between two clusters (average linkage)
-    fn calculate_cluster_distance(&self, cluster1: &[String], cluster2: &[String], distance_matrix: &[Vec<f64>], memory_keys: &[String]) -> f64 {
+    fn calculate_cluster_distance(
+        &self,
+        cluster1: &[String],
+        cluster2: &[String],
+        distance_matrix: &[Vec<f64>],
+        memory_keys: &[String],
+    ) -> f64 {
         let mut total_distance = 0.0;
         let mut count = 0;
 
@@ -2566,7 +2791,7 @@ impl MetricsCollector {
             for key2 in cluster2 {
                 if let (Some(i), Some(j)) = (
                     memory_keys.iter().position(|k| k == key1),
-                    memory_keys.iter().position(|k| k == key2)
+                    memory_keys.iter().position(|k| k == key2),
                 ) {
                     total_distance += distance_matrix[i][j];
                     count += 1;
@@ -2582,7 +2807,10 @@ impl MetricsCollector {
     }
 
     /// Density-based clustering for outlier detection
-    async fn density_based_clustering(&self, features: &HashMap<String, Vec<f64>>) -> Result<HashMap<String, Vec<String>>> {
+    async fn density_based_clustering(
+        &self,
+        features: &HashMap<String, Vec<f64>>,
+    ) -> Result<HashMap<String, Vec<String>>> {
         let mut outlier_clusters = HashMap::new();
         let memory_keys: Vec<String> = features.keys().cloned().collect();
 
@@ -2614,7 +2842,8 @@ impl MetricsCollector {
                 while let Some(neighbor) = neighbor_queue.pop() {
                     if !visited.contains(&neighbor) {
                         visited.insert(neighbor.clone());
-                        let neighbor_neighbors = self.find_neighbors(&neighbor, features, &memory_keys, eps);
+                        let neighbor_neighbors =
+                            self.find_neighbors(&neighbor, features, &memory_keys, eps);
 
                         if neighbor_neighbors.len() >= min_pts {
                             neighbor_queue.extend(neighbor_neighbors);
@@ -2635,14 +2864,21 @@ impl MetricsCollector {
     }
 
     /// Find neighbors within epsilon distance
-    fn find_neighbors(&self, key: &str, features: &HashMap<String, Vec<f64>>, memory_keys: &[String], eps: f64) -> Vec<String> {
+    fn find_neighbors(
+        &self,
+        key: &str,
+        features: &HashMap<String, Vec<f64>>,
+        memory_keys: &[String],
+        eps: f64,
+    ) -> Vec<String> {
         let mut neighbors = Vec::new();
 
         if let Some(key_features) = features.get(key) {
             for other_key in memory_keys {
                 if other_key != key {
                     if let Some(other_features) = features.get(other_key) {
-                        let distance = self.calculate_euclidean_distance(key_features, other_features);
+                        let distance =
+                            self.calculate_euclidean_distance(key_features, other_features);
                         if distance <= eps {
                             neighbors.push(other_key.clone());
                         }
@@ -2721,7 +2957,8 @@ impl MetricsCollector {
             return vec![text.to_string()];
         }
 
-        chars.windows(n)
+        chars
+            .windows(n)
             .map(|window| window.iter().collect())
             .collect()
     }
@@ -2890,7 +3127,8 @@ impl MetricsCollector {
         let mut improvement = 0.0;
 
         // Simulate B-tree optimization improvements
-        if optimal_fanout > 16 { // Current fanout is suboptimal
+        if optimal_fanout > 16 {
+            // Current fanout is suboptimal
             improvement += 0.15; // 15% improvement from better fanout
         }
 
@@ -2976,12 +3214,14 @@ impl MetricsCollector {
         let mut improvement = 0.0;
 
         // Bits per element optimization
-        if optimal_bits_per_element != 10 { // Assuming current is 10
+        if optimal_bits_per_element != 10 {
+            // Assuming current is 10
             improvement += 0.05; // 5% improvement from optimal sizing
         }
 
         // Hash function count optimization
-        if optimal_hash_functions != 7 { // Assuming current is 7
+        if optimal_hash_functions != 7 {
+            // Assuming current is 7
             improvement += 0.03; // 3% improvement from optimal hash count
         }
 
@@ -3016,7 +3256,8 @@ impl MetricsCollector {
             index_type: "adaptive".to_string(),
             improvement: total_improvement.min(0.8),
             operations_optimized: access_patterns.total_operations,
-            memory_saved: (access_patterns.total_operations as f64 * total_improvement * 24.0) as usize,
+            memory_saved: (access_patterns.total_operations as f64 * total_improvement * 24.0)
+                as usize,
         })
     }
 
@@ -3108,7 +3349,9 @@ impl MetricsCollector {
     /// Optimize posting list compression
     fn optimize_posting_list_compression(&self, analysis: &ContentAnalysis) -> f64 {
         // Compression benefit based on term distribution
-        let high_frequency_terms = analysis.term_distribution.values()
+        let high_frequency_terms = analysis
+            .term_distribution
+            .values()
             .filter(|&&freq| freq > 10)
             .count();
 
@@ -3158,7 +3401,7 @@ impl MetricsCollector {
 
         AccessPatternAnalysis {
             total_operations,
-            read_write_ratio: 3.0, // 3:1 read to write ratio
+            read_write_ratio: 3.0,  // 3:1 read to write ratio
             temporal_locality: 0.7, // 70% temporal locality
             spatial_locality: 0.4,  // 40% spatial locality
             access_frequency_distribution: std::collections::HashMap::new(),
@@ -3205,7 +3448,10 @@ impl MetricsCollector {
             ("lz4", self.compress_lz4(content)),
             ("zstd", self.compress_zstd(content)),
             ("brotli", self.compress_brotli(content)),
-            ("dictionary", self.compress_dictionary(content, &content_analysis)),
+            (
+                "dictionary",
+                self.compress_dictionary(content, &content_analysis),
+            ),
             ("huffman", self.compress_huffman(content, &content_analysis)),
         ];
 
@@ -3255,21 +3501,30 @@ impl MetricsCollector {
 
         // Calculate entropy
         let total_chars = content.len() as f64;
-        let entropy = char_frequency.values()
+        let entropy = char_frequency
+            .values()
             .map(|&freq| {
                 let p = freq as f64 / total_chars;
-                if p > 0.0 { -p * p.ln() } else { 0.0 }
+                if p > 0.0 {
+                    -p * p.ln()
+                } else {
+                    0.0
+                }
             })
             .sum::<f64>();
 
         // Detect patterns
         let repetition_ratio = self.calculate_repetition_ratio(content);
-        let whitespace_ratio = content.chars().filter(|c| c.is_whitespace()).count() as f64 / total_chars;
+        let whitespace_ratio =
+            content.chars().filter(|c| c.is_whitespace()).count() as f64 / total_chars;
         let json_like = content.contains('{') && content.contains('}');
         let xml_like = content.contains('<') && content.contains('>');
 
-        let average_word_length = if word_frequency.is_empty() { 0.0 } else {
-            word_frequency.keys().map(|w| w.len()).sum::<usize>() as f64 / word_frequency.len() as f64
+        let average_word_length = if word_frequency.is_empty() {
+            0.0
+        } else {
+            word_frequency.keys().map(|w| w.len()).sum::<usize>() as f64
+                / word_frequency.len() as f64
         };
 
         CompressionAnalysis {
@@ -3325,10 +3580,11 @@ impl MetricsCollector {
             // Find longest match
             for j in window_start..i {
                 let mut match_len = 0;
-                while i + match_len < bytes.len() &&
-                      j + match_len < i &&
-                      bytes[i + match_len] == bytes[j + match_len] &&
-                      match_len < 255 {
+                while i + match_len < bytes.len()
+                    && j + match_len < i
+                    && bytes[i + match_len] == bytes[j + match_len]
+                    && match_len < 255
+                {
                     match_len += 1;
                 }
 
@@ -3374,7 +3630,8 @@ impl MetricsCollector {
         // Simple entropy encoding based on frequency
         for &byte in bytes {
             let freq = freq_table[byte as usize];
-            if freq > bytes.len() as u32 / 20 { // High frequency byte
+            if freq > bytes.len() as u32 / 20 {
+                // High frequency byte
                 compressed.push(0x80 | (byte >> 1)); // Compress high-freq bytes
             } else {
                 compressed.push(byte); // Keep low-freq bytes as-is
@@ -3393,7 +3650,10 @@ impl MetricsCollector {
     fn compress_brotli(&self, content: &str) -> CompressionResult {
         // Simplified Brotli-style compression with static dictionary
         let static_dict = [
-            "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use"
+            "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was",
+            "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now",
+            "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she",
+            "too", "use",
         ];
 
         let mut compressed = content.to_string();
@@ -3437,7 +3697,11 @@ impl MetricsCollector {
     }
 
     /// Dictionary-based compression
-    fn compress_dictionary(&self, content: &str, analysis: &CompressionAnalysis) -> CompressionResult {
+    fn compress_dictionary(
+        &self,
+        content: &str,
+        analysis: &CompressionAnalysis,
+    ) -> CompressionResult {
         let mut compressed = content.to_string();
         let mut dictionary = Vec::new();
 
@@ -3447,7 +3711,8 @@ impl MetricsCollector {
 
         // Use top 64 most frequent words as dictionary
         for (i, (word, freq)) in word_freq.iter().take(64).enumerate() {
-            if word.len() > 3 && **freq > 2 { // Only compress words that appear multiple times
+            if word.len() > 3 && **freq > 2 {
+                // Only compress words that appear multiple times
                 let token = format!("@{:02x}", i);
                 dictionary.push((word.to_string(), token.clone()));
                 compressed = compressed.replace(*word, &token);
@@ -3475,7 +3740,7 @@ impl MetricsCollector {
         // Assign shorter codes to more frequent characters
         for (i, (&ch, _)) in freq_chars.iter().enumerate() {
             let code = match i {
-                0..=7 => format!("{:03b}", i),      // 3 bits for top 8
+                0..=7 => format!("{:03b}", i),       // 3 bits for top 8
                 8..=23 => format!("1{:04b}", i - 8), // 5 bits for next 16
                 _ => format!("11{:06b}", i - 24),    // 8 bits for rest
             };
@@ -3552,8 +3817,6 @@ impl MetricsCollector {
         // Simplified similarity score
         0.5
     }
-
-
 }
 
 impl Default for AdvancedPerformanceMetrics {
@@ -3700,7 +3963,10 @@ impl PerformanceProfiler {
 
     pub async fn start_session(&mut self, session_id: String) -> Result<()> {
         if self.active_sessions.contains_key(&session_id) {
-            return Err(MemoryError::configuration(format!("Profiling session {} already active", session_id)));
+            return Err(MemoryError::configuration(format!(
+                "Profiling session {} already active",
+                session_id
+            )));
         }
 
         let session = ProfilingSession {
@@ -3717,21 +3983,25 @@ impl PerformanceProfiler {
     }
 
     pub async fn stop_session(&mut self, session_id: &str) -> Result<ProfilingResult> {
-        let session = self.active_sessions.remove(session_id)
-            .ok_or_else(|| MemoryError::configuration(format!("Profiling session {} not found", session_id)))?;
+        let session = self.active_sessions.remove(session_id).ok_or_else(|| {
+            MemoryError::configuration(format!("Profiling session {} not found", session_id))
+        })?;
 
         let duration = session.start_time.elapsed();
         let total_operations = session.operation_traces.len();
-        let memory_peak = session.memory_snapshots.iter()
+        let memory_peak = session
+            .memory_snapshots
+            .iter()
             .map(|s| s.total_memory)
             .max()
             .unwrap_or(0);
-        let cpu_average = session.cpu_samples.iter()
+        let cpu_average = session
+            .cpu_samples
+            .iter()
             .map(|s| s.cpu_percent)
-            .sum::<f64>() / session.cpu_samples.len().max(1) as f64;
-        let io_total_bytes = session.io_events.iter()
-            .map(|e| e.bytes)
-            .sum();
+            .sum::<f64>()
+            / session.cpu_samples.len().max(1) as f64;
+        let io_total_bytes = session.io_events.iter().map(|e| e.bytes).sum();
 
         let result = ProfilingResult {
             session_id: session_id.to_string(),
@@ -3752,7 +4022,10 @@ impl PerformanceProfiler {
         Ok(self.profiling_results.clone())
     }
 
-    async fn analyze_bottlenecks(&self, _session: &ProfilingSession) -> Result<Vec<PerformanceBottleneck>> {
+    async fn analyze_bottlenecks(
+        &self,
+        _session: &ProfilingSession,
+    ) -> Result<Vec<PerformanceBottleneck>> {
         // Simplified bottleneck analysis
         let mut bottlenecks = Vec::new();
 
@@ -3768,7 +4041,10 @@ impl PerformanceProfiler {
         Ok(bottlenecks)
     }
 
-    async fn generate_profiling_recommendations(&self, _session: &ProfilingSession) -> Result<Vec<String>> {
+    async fn generate_profiling_recommendations(
+        &self,
+        _session: &ProfilingSession,
+    ) -> Result<Vec<String>> {
         Ok(vec![
             "Consider implementing memory pooling for frequent allocations".to_string(),
             "Optimize hot code paths identified in profiling".to_string(),
@@ -3776,8 +4052,6 @@ impl PerformanceProfiler {
         ])
     }
 }
-
-
 
 impl BenchmarkRunner {
     pub fn new() -> Self {
@@ -3790,13 +4064,15 @@ impl BenchmarkRunner {
     }
 
     pub async fn add_suite(&mut self, suite: BenchmarkSuite) -> Result<()> {
-        self.benchmark_suites.insert(suite.suite_name.clone(), suite);
+        self.benchmark_suites
+            .insert(suite.suite_name.clone(), suite);
         Ok(())
     }
 
     pub async fn run_benchmark_suite(&mut self, suite_name: &str) -> Result<Vec<BenchmarkResult>> {
-        let suite = self.benchmark_suites.get(suite_name)
-            .ok_or_else(|| MemoryError::configuration(format!("Benchmark suite {} not found", suite_name)))?;
+        let suite = self.benchmark_suites.get(suite_name).ok_or_else(|| {
+            MemoryError::configuration(format!("Benchmark suite {} not found", suite_name))
+        })?;
 
         let mut results = Vec::new();
 
@@ -3811,7 +4087,11 @@ impl BenchmarkRunner {
         Ok(results)
     }
 
-    async fn run_single_benchmark(&self, benchmark: &Benchmark, suite_name: &str) -> Result<BenchmarkResult> {
+    async fn run_single_benchmark(
+        &self,
+        benchmark: &Benchmark,
+        suite_name: &str,
+    ) -> Result<BenchmarkResult> {
         let mut durations = Vec::new();
 
         // Warmup iterations
@@ -3855,8 +4135,8 @@ impl BenchmarkRunner {
             percentiles,
             throughput,
             memory_usage: 1024, // Simulated memory usage
-            cpu_usage: 25.0, // Simulated CPU usage
-            success_rate: 1.0, // Simulated success rate
+            cpu_usage: 25.0,    // Simulated CPU usage
+            success_rate: 1.0,  // Simulated success rate
         })
     }
 
@@ -3918,13 +4198,19 @@ impl BenchmarkRunner {
         Ok(self.benchmark_results.clone())
     }
 
-    pub async fn set_baseline(&mut self, baseline_name: String, baseline: PerformanceBaseline) -> Result<()> {
+    pub async fn set_baseline(
+        &mut self,
+        baseline_name: String,
+        baseline: PerformanceBaseline,
+    ) -> Result<()> {
         self.performance_baselines.insert(baseline_name, baseline);
         Ok(())
     }
 
     pub async fn detect_regressions(&self) -> Result<Vec<PerformanceRegression>> {
-        self.regression_detector.detect_regressions(&self.benchmark_results, &self.performance_baselines).await
+        self.regression_detector
+            .detect_regressions(&self.benchmark_results, &self.performance_baselines)
+            .await
     }
 }
 
@@ -3951,7 +4237,8 @@ impl RegressionDetector {
                 let current_latency = result.average_duration.as_micros() as f64;
 
                 if current_latency > baseline_latency * (1.0 + self.regression_threshold) {
-                    let regression_percentage = (current_latency - baseline_latency) / baseline_latency * 100.0;
+                    let regression_percentage =
+                        (current_latency - baseline_latency) / baseline_latency * 100.0;
                     regressions.push(PerformanceRegression {
                         regression_type: RegressionType::LatencyIncrease,
                         metric_name: "average_latency".to_string(),
@@ -3968,7 +4255,8 @@ impl RegressionDetector {
                 let current_throughput = result.throughput;
 
                 if current_throughput < baseline_throughput * (1.0 - self.regression_threshold) {
-                    let regression_percentage = (baseline_throughput - current_throughput) / baseline_throughput * 100.0;
+                    let regression_percentage =
+                        (baseline_throughput - current_throughput) / baseline_throughput * 100.0;
                     regressions.push(PerformanceRegression {
                         regression_type: RegressionType::ThroughputDecrease,
                         metric_name: "throughput".to_string(),
@@ -4006,9 +4294,20 @@ mod tests {
     #[tokio::test]
     async fn test_deduplication() {
         let mut opt = MemoryOptimizer::new();
-        opt.add_entry(MemoryEntry::new("a".into(), "same".into(), MemoryType::ShortTerm));
-        opt.add_entry(MemoryEntry::new("b".into(), "same".into(), MemoryType::ShortTerm));
-        let (removed, _) = opt.perform_deduplication().await.expect("Deduplication should succeed in test");
+        opt.add_entry(MemoryEntry::new(
+            "a".into(),
+            "same".into(),
+            MemoryType::ShortTerm,
+        ));
+        opt.add_entry(MemoryEntry::new(
+            "b".into(),
+            "same".into(),
+            MemoryType::ShortTerm,
+        ));
+        let (removed, _) = opt
+            .perform_deduplication()
+            .await
+            .expect("Deduplication should succeed in test");
         assert_eq!(removed, 1);
         assert_eq!(opt.entry_count(), 1);
     }
@@ -4018,9 +4317,16 @@ mod tests {
         let mut opt = MemoryOptimizer::new();
         // Use content that will definitely compress well (repetitive content)
         let repetitive_content = "aaaaaaaaaa bbbbbbbbbb cccccccccc ".repeat(100);
-        opt.add_entry(MemoryEntry::new("a".into(), repetitive_content, MemoryType::ShortTerm));
+        opt.add_entry(MemoryEntry::new(
+            "a".into(),
+            repetitive_content,
+            MemoryType::ShortTerm,
+        ));
         let before = opt.get_performance_metrics().memory_usage_bytes;
-        let (_count, _) = opt.perform_compression().await.expect("Compression should succeed in test");
+        let (_count, _) = opt
+            .perform_compression()
+            .await
+            .expect("Compression should succeed in test");
         // Count should be non-negative (usize is always >= 0)
         // Memory usage should be updated regardless
         let after = opt.get_performance_metrics().memory_usage_bytes;
@@ -4039,8 +4345,15 @@ mod tests {
             metadata: meta,
             embedding: None,
         });
-        opt.add_entry(MemoryEntry::new("fresh".into(), "f".into(), MemoryType::ShortTerm));
-        let (removed, _) = opt.perform_cleanup().await.expect("Cleanup should succeed in test");
+        opt.add_entry(MemoryEntry::new(
+            "fresh".into(),
+            "f".into(),
+            MemoryType::ShortTerm,
+        ));
+        let (removed, _) = opt
+            .perform_cleanup()
+            .await
+            .expect("Cleanup should succeed in test");
         assert_eq!(removed, 1);
         assert_eq!(opt.entry_count(), 1);
     }
@@ -4050,9 +4363,13 @@ mod tests {
         let mut opt = MemoryOptimizer::new();
         opt.metrics.index_efficiency = 0.5;
         opt.metrics.cache_hit_rate = 0.2;
-        opt.optimize_indexes().await.expect("Index optimization should succeed in test");
+        opt.optimize_indexes()
+            .await
+            .expect("Index optimization should succeed in test");
         assert_eq!(opt.metrics.index_efficiency, 1.0);
-        opt.optimize_cache().await.expect("Cache optimization should succeed in test");
+        opt.optimize_cache()
+            .await
+            .expect("Cache optimization should succeed in test");
         assert!(opt.metrics.cache_hit_rate > 0.2);
     }
 }

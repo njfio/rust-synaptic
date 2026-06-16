@@ -237,15 +237,21 @@ impl GrafanaDashboardManager {
             dashboards: HashMap::new(),
         }
     }
-    
+
     /// Generate the main Synaptic overview dashboard
     pub fn create_synaptic_overview_dashboard(&mut self) -> Result<()> {
         let dashboard = GrafanaDashboard {
             id: None,
             uid: Some("synaptic-overview".to_string()),
             title: "Synaptic Memory System - Overview".to_string(),
-            description: "Comprehensive overview of Synaptic AI Agent Memory System performance and health".to_string(),
-            tags: vec!["synaptic".to_string(), "memory".to_string(), "ai".to_string()],
+            description:
+                "Comprehensive overview of Synaptic AI Agent Memory System performance and health"
+                    .to_string(),
+            tags: vec![
+                "synaptic".to_string(),
+                "memory".to_string(),
+                "ai".to_string(),
+            ],
             timezone: "browser".to_string(),
             refresh: "30s".to_string(),
             time: TimeRange {
@@ -257,12 +263,13 @@ impl GrafanaDashboardManager {
             annotations: self.create_annotations(),
             links: self.create_dashboard_links(),
         };
-        
-        self.dashboards.insert("synaptic-overview".to_string(), dashboard);
+
+        self.dashboards
+            .insert("synaptic-overview".to_string(), dashboard);
         info!("Created Synaptic overview dashboard");
         Ok(())
     }
-    
+
     /// Create panels for the overview dashboard
     fn create_overview_panels(&self) -> Vec<Panel> {
         vec![
@@ -300,7 +307,7 @@ impl GrafanaDashboardManager {
                 }),
                 alert: None,
             },
-            
+
             // Memory Operations Rate
             Panel {
                 id: 2,
@@ -329,7 +336,7 @@ impl GrafanaDashboardManager {
                 }),
                 alert: None,
             },
-            
+
             // Query Performance
             Panel {
                 id: 3,
@@ -395,44 +402,40 @@ impl GrafanaDashboardManager {
             },
         ]
     }
-    
+
     /// Create templating configuration
     fn create_templating(&self) -> Templating {
         Templating {
-            list: vec![
-                Template {
-                    name: "instance".to_string(),
-                    r#type: "query".to_string(),
-                    query: "label_values(up{job=\"synaptic\"}, instance)".to_string(),
-                    refresh: 1,
-                    options: vec![],
-                    current: TemplateOption {
-                        text: "All".to_string(),
-                        value: "$__all".to_string(),
-                        selected: true,
-                    },
-                }
-            ],
+            list: vec![Template {
+                name: "instance".to_string(),
+                r#type: "query".to_string(),
+                query: "label_values(up{job=\"synaptic\"}, instance)".to_string(),
+                refresh: 1,
+                options: vec![],
+                current: TemplateOption {
+                    text: "All".to_string(),
+                    value: "$__all".to_string(),
+                    selected: true,
+                },
+            }],
         }
     }
-    
+
     /// Create annotations configuration
     fn create_annotations(&self) -> Annotations {
         Annotations {
-            list: vec![
-                Annotation {
-                    name: "Deployments".to_string(),
-                    datasource: "prometheus".to_string(),
-                    enable: true,
-                    expr: "synaptic_deployment_info".to_string(),
-                    icon_color: "blue".to_string(),
-                    title_format: "Deployment: {{version}}".to_string(),
-                    tag_keys: "version,environment".to_string(),
-                }
-            ],
+            list: vec![Annotation {
+                name: "Deployments".to_string(),
+                datasource: "prometheus".to_string(),
+                enable: true,
+                expr: "synaptic_deployment_info".to_string(),
+                icon_color: "blue".to_string(),
+                title_format: "Deployment: {{version}}".to_string(),
+                tag_keys: "version,environment".to_string(),
+            }],
         }
     }
-    
+
     /// Create dashboard links
     fn create_dashboard_links(&self) -> Vec<Link> {
         vec![

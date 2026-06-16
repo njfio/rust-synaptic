@@ -490,10 +490,7 @@ impl MemoryError {
 
     /// Check if this is a serialization error
     pub fn is_serialization_error(&self) -> bool {
-        matches!(
-            self,
-            Self::Serialization(_) | Self::BinarySerialization(_)
-        )
+        matches!(self, Self::Serialization(_) | Self::BinarySerialization(_))
     }
 }
 
@@ -639,7 +636,7 @@ where
 #[cfg(feature = "visualization")]
 impl<T> From<plotters::drawing::DrawingAreaErrorKind<T>> for MemoryError
 where
-    T: std::fmt::Debug + Send + Sync + 'static + std::error::Error
+    T: std::fmt::Debug + Send + Sync + 'static + std::error::Error,
 {
     fn from(err: plotters::drawing::DrawingAreaErrorKind<T>) -> Self {
         MemoryError::storage(format!("Visualization error: {:?}", err))
@@ -689,7 +686,10 @@ mod tests {
     fn test_vector_operation_error_creation() {
         let err = MemoryError::vector_operation("dimension mismatch");
         assert!(matches!(err, MemoryError::VectorOperation { .. }));
-        assert_eq!(err.to_string(), "Vector operation error: dimension mismatch");
+        assert_eq!(
+            err.to_string(),
+            "Vector operation error: dimension mismatch"
+        );
     }
 
     #[test]
@@ -750,9 +750,7 @@ mod tests {
     #[test]
     fn test_sled_error_conversion() {
         // Create a sled error by trying to use an invalid path
-        let result = sled::Config::new()
-            .path("\0invalid")
-            .open();
+        let result = sled::Config::new().path("\0invalid").open();
         if let Err(sled_err) = result {
             let mem_err: MemoryError = sled_err.into();
             assert!(matches!(mem_err, MemoryError::Sled(_)));
@@ -776,7 +774,10 @@ mod tests {
         let err = MemoryError::InvalidConfiguration {
             message: "missing required field".to_string(),
         };
-        assert_eq!(err.to_string(), "Invalid configuration: missing required field");
+        assert_eq!(
+            err.to_string(),
+            "Invalid configuration: missing required field"
+        );
     }
 
     #[test]
@@ -800,7 +801,10 @@ mod tests {
         let err = MemoryError::Privacy {
             message: "differential privacy violation".to_string(),
         };
-        assert_eq!(err.to_string(), "Privacy error: differential privacy violation");
+        assert_eq!(
+            err.to_string(),
+            "Privacy error: differential privacy violation"
+        );
     }
 
     #[test]
@@ -824,7 +828,10 @@ mod tests {
         let err = MemoryError::DistributedError {
             message: "shard unavailable".to_string(),
         };
-        assert_eq!(err.to_string(), "Distributed system error: shard unavailable");
+        assert_eq!(
+            err.to_string(),
+            "Distributed system error: shard unavailable"
+        );
     }
 
     #[test]
@@ -868,4 +875,3 @@ mod tests {
         assert_eq!(err.to_string(), "Invalid query: syntax error");
     }
 }
-

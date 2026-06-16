@@ -1,9 +1,11 @@
 // Predictive Analytics Module
 // Advanced memory access pattern prediction and proactive caching
 
+use crate::analytics::{
+    AccessType, AnalyticsConfig, AnalyticsEvent, AnalyticsInsight, InsightPriority, InsightType,
+};
 use crate::error::Result;
-use crate::analytics::{AnalyticsEvent, AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority, AccessType};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
@@ -209,7 +211,7 @@ impl AccessPattern {
 
             if confidence >= confidence_threshold {
                 let most_common_type = self.get_most_common_access_type();
-                
+
                 return Some(AccessPrediction {
                     memory_key: self.memory_key.clone(),
                     predicted_time,
@@ -233,7 +235,8 @@ impl AccessPattern {
         }
 
         // Calculate variance in intervals
-        let intervals: Vec<Duration> = self.access_times
+        let intervals: Vec<Duration> = self
+            .access_times
             .iter()
             .zip(self.access_times.iter().skip(1))
             .map(|(a, b)| *b - *a)
@@ -243,14 +246,16 @@ impl AccessPattern {
             return 0.0;
         }
 
-        let avg_ms = intervals.iter().map(|d| d.num_milliseconds()).sum::<i64>() as f64 / intervals.len() as f64;
+        let avg_ms = intervals.iter().map(|d| d.num_milliseconds()).sum::<i64>() as f64
+            / intervals.len() as f64;
         let variance = intervals
             .iter()
             .map(|d| {
                 let diff = d.num_milliseconds() as f64 - avg_ms;
                 diff * diff
             })
-            .sum::<f64>() / intervals.len() as f64;
+            .sum::<f64>()
+            / intervals.len() as f64;
 
         let std_dev = variance.sqrt();
         let coefficient_of_variation = if avg_ms > 0.0 { std_dev / avg_ms } else { 1.0 };
@@ -312,11 +317,23 @@ impl PredictiveAnalytics {
     /// Process an analytics event
     pub async fn process_event(&mut self, event: &AnalyticsEvent) -> Result<()> {
         match event {
-            AnalyticsEvent::MemoryAccess { memory_key, access_type, timestamp, .. } => {
-                self.record_access(memory_key.clone(), *timestamp, access_type.clone()).await?;
+            AnalyticsEvent::MemoryAccess {
+                memory_key,
+                access_type,
+                timestamp,
+                ..
+            } => {
+                self.record_access(memory_key.clone(), *timestamp, access_type.clone())
+                    .await?;
             }
-            AnalyticsEvent::SearchQuery { query, timestamp, response_time_ms, .. } => {
-                self.analyze_search_pattern(query.clone(), *timestamp, *response_time_ms).await?;
+            AnalyticsEvent::SearchQuery {
+                query,
+                timestamp,
+                response_time_ms,
+                ..
+            } => {
+                self.analyze_search_pattern(query.clone(), *timestamp, *response_time_ms)
+                    .await?;
             }
             _ => {}
         }
@@ -325,8 +342,14 @@ impl PredictiveAnalytics {
     }
 
     /// Record a memory access for pattern analysis
-    async fn record_access(&mut self, memory_key: String, timestamp: DateTime<Utc>, access_type: AccessType) -> Result<()> {
-        let pattern = self.patterns
+    async fn record_access(
+        &mut self,
+        memory_key: String,
+        timestamp: DateTime<Utc>,
+        access_type: AccessType,
+    ) -> Result<()> {
+        let pattern = self
+            .patterns
             .entry(memory_key.clone())
             .or_insert_with(|| AccessPattern::new(memory_key.clone()));
 
@@ -344,7 +367,12 @@ impl PredictiveAnalytics {
     }
 
     /// Analyze search patterns for predictive insights
-    async fn analyze_search_pattern(&mut self, query: String, timestamp: DateTime<Utc>, _response_time_ms: u64) -> Result<()> {
+    async fn analyze_search_pattern(
+        &mut self,
+        query: String,
+        timestamp: DateTime<Utc>,
+        _response_time_ms: u64,
+    ) -> Result<()> {
         // Record search history
         self.search_history.push_back((query.clone(), timestamp));
         if self.search_history.len() > 100 {
@@ -376,12 +404,13 @@ impl PredictiveAnalytics {
         if let Some(pattern) = self.patterns.get(memory_key) {
             if pattern.access_times.len() >= 5 {
                 let trend_direction = pattern.trend.clone().unwrap_or(TrendDirection::Stable);
-                
+
                 // Calculate frequency change over the last week
                 let now = Utc::now();
                 let week_ago = now - Duration::days(7);
-                
-                let recent_accesses = pattern.access_times
+
+                let recent_accesses = pattern
+                    .access_times
                     .iter()
                     .filter(|&&time| time > week_ago)
                     .count();
@@ -437,13 +466,21 @@ impl PredictiveAnalytics {
     }
 
     /// Analyze caching potential for a memory key
-    async fn analyze_caching_potential(&self, memory_key: &str, pattern: &AccessPattern) -> Result<Option<CachingRecommendation>> {
+    async fn analyze_caching_potential(
+        &self,
+        memory_key: &str,
+        pattern: &AccessPattern,
+    ) -> Result<Option<CachingRecommendation>> {
         if pattern.access_times.len() < 3 {
             return Ok(None);
         }
 
         // Calculate access frequency
-        let time_span = *pattern.access_times.back().expect("back() should succeed") - *pattern.access_times.front().expect("front() should succeed");
+        let time_span = *pattern.access_times.back().expect("back() should succeed")
+            - *pattern
+                .access_times
+                .front()
+                .expect("front() should succeed");
         let access_frequency = if time_span.num_hours() > 0 {
             pattern.access_times.len() as f64 / time_span.num_hours() as f64
         } else {
@@ -466,8 +503,7 @@ impl PredictiveAnalytics {
         let expected_hit_rate = confidence * 0.8 + 0.2; // Base hit rate of 20%
 
         // Recommend cache duration based on average interval
-        let cache_duration = pattern.avg_interval
-            .unwrap_or(Duration::hours(1)) * 2; // Cache for twice the average interval
+        let cache_duration = pattern.avg_interval.unwrap_or(Duration::hours(1)) * 2; // Cache for twice the average interval
 
         if priority >= CachePriority::Medium {
             Ok(Some(CachingRecommendation {
@@ -477,7 +513,8 @@ impl PredictiveAnalytics {
                 cache_duration,
                 justification: format!(
                     "High access frequency ({:.2}/hour) with {:.0}% pattern consistency",
-                    access_frequency, confidence * 100.0
+                    access_frequency,
+                    confidence * 100.0
                 ),
             }))
         } else {
@@ -496,17 +533,26 @@ impl PredictiveAnalytics {
                 let insight = AnalyticsInsight {
                     id: Uuid::new_v4(),
                     insight_type: InsightType::PerformanceOptimization,
-                    title: format!("High-Priority Caching Recommendation for {}", rec.memory_key),
+                    title: format!(
+                        "High-Priority Caching Recommendation for {}",
+                        rec.memory_key
+                    ),
                     description: format!(
                         "Memory '{}' should be cached with {} priority. {}",
-                        rec.memory_key, 
+                        rec.memory_key,
                         format!("{:?}", rec.priority).to_lowercase(),
                         rec.justification
                     ),
                     confidence: rec.expected_hit_rate,
                     evidence: vec![
-                        format!("Expected cache hit rate: {:.1}%", rec.expected_hit_rate * 100.0),
-                        format!("Recommended cache duration: {} minutes", rec.cache_duration.num_minutes()),
+                        format!(
+                            "Expected cache hit rate: {:.1}%",
+                            rec.expected_hit_rate * 100.0
+                        ),
+                        format!(
+                            "Recommended cache duration: {} minutes",
+                            rec.cache_duration.num_minutes()
+                        ),
                     ],
                     generated_at: Utc::now(),
                     priority: match rec.priority {
@@ -615,7 +661,10 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 user_context: None,
             };
-            analytics.process_event(&event).await.expect("await should be present");
+            analytics
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
         // Should have generated some predictions
@@ -635,7 +684,10 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 response_time_ms: 20,
             };
-            analytics.process_event(&event).await.expect("await should be present");
+            analytics
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
         assert!(!analytics.get_search_predictions().is_empty());
@@ -655,10 +707,16 @@ mod tests {
                 timestamp: base_time + Duration::minutes(i * 10),
                 user_context: None,
             };
-            analytics.process_event(&event).await.expect("await should be present");
+            analytics
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
-        let _recommendations = analytics.generate_caching_recommendations().await.expect("await should be present");
+        let _recommendations = analytics
+            .generate_caching_recommendations()
+            .await
+            .expect("await should be present");
         // Should generate recommendations for frequently accessed memory
         // Function works correctly regardless of result count
     }
@@ -677,10 +735,16 @@ mod tests {
                 timestamp: base_time + Duration::hours(i),
                 user_context: None,
             };
-            analytics.process_event(&event).await.expect("await should be present");
+            analytics
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
-        let _insights = analytics.generate_insights().await.expect("await should be present");
+        let _insights = analytics
+            .generate_insights()
+            .await
+            .expect("await should be present");
         // Should generate insights based on patterns
         // Function works correctly regardless of result count
     }

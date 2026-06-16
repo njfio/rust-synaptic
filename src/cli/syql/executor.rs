@@ -3,8 +3,10 @@
 //! This module implements the query execution engine for SyQL, executing query plans
 //! and producing results with comprehensive statistics and error handling.
 
-use super::{QueryPlan, QueryResult, QueryMetadata, QueryType, QueryRow, QueryValue, 
-           ExecutionStatistics, IndexUsageStats, ColumnInfo, DataType};
+use super::{
+    ColumnInfo, DataType, ExecutionStatistics, IndexUsageStats, QueryMetadata, QueryPlan,
+    QueryResult, QueryRow, QueryType, QueryValue,
+};
 use crate::error::Result;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -75,45 +77,45 @@ impl QueryExecutor {
                 super::PlanNodeType::MemoryScan => {
                     let rows = self.execute_memory_scan(node).await?;
                     result_rows.extend(rows);
-                },
+                }
                 super::PlanNodeType::IndexScan => {
                     let rows = self.execute_index_scan(node).await?;
                     result_rows.extend(rows);
-                },
+                }
                 super::PlanNodeType::RelationshipTraversal => {
                     let rows = self.execute_relationship_traversal(node).await?;
                     result_rows.extend(rows);
-                },
+                }
                 super::PlanNodeType::Filter => {
                     result_rows = self.execute_filter(node, result_rows).await?;
-                },
+                }
                 super::PlanNodeType::Project => {
                     result_rows = self.execute_project(node, result_rows).await?;
-                },
+                }
                 super::PlanNodeType::Aggregate => {
                     result_rows = self.execute_aggregate(node, result_rows).await?;
-                },
+                }
                 super::PlanNodeType::Sort => {
                     result_rows = self.execute_sort(node, result_rows).await?;
-                },
+                }
                 super::PlanNodeType::Limit => {
                     result_rows = self.execute_limit(node, result_rows).await?;
-                },
+                }
                 super::PlanNodeType::Join => {
                     // Join would require more complex execution logic
                     // For now, return empty result
-                },
+                }
                 super::PlanNodeType::Union => {
                     // Union would require more complex execution logic
                     // For now, return empty result
-                },
+                }
                 super::PlanNodeType::PathExpansion => {
                     let rows = self.execute_path_expansion(node).await?;
                     result_rows.extend(rows);
-                },
+                }
                 super::PlanNodeType::TemporalFilter => {
                     result_rows = self.execute_temporal_filter(node, result_rows).await?;
-                },
+                }
             }
         }
 
@@ -124,15 +126,18 @@ impl QueryExecutor {
     async fn execute_memory_scan(&mut self, node: &super::PlanNode) -> Result<Vec<QueryRow>> {
         // Simulate memory scanning
         let mut rows = Vec::new();
-        
+
         // Generate sample data
         for i in 0..node.rows.min(100) {
             let mut values = HashMap::new();
             values.insert("id".to_string(), QueryValue::String(format!("mem_{}", i)));
-            values.insert("content".to_string(), QueryValue::String(format!("Sample memory content {}", i)));
+            values.insert(
+                "content".to_string(),
+                QueryValue::String(format!("Sample memory content {}", i)),
+            );
             values.insert("type".to_string(), QueryValue::String("text".to_string()));
             values.insert("created_at".to_string(), QueryValue::DateTime(Utc::now()));
-            
+
             rows.push(QueryRow { values });
         }
 
@@ -147,13 +152,22 @@ impl QueryExecutor {
     async fn execute_index_scan(&mut self, node: &super::PlanNode) -> Result<Vec<QueryRow>> {
         // Simulate index scanning (more efficient than memory scan)
         let mut rows = Vec::new();
-        
+
         for i in 0..node.rows.min(50) {
             let mut values = HashMap::new();
-            values.insert("id".to_string(), QueryValue::String(format!("idx_mem_{}", i)));
-            values.insert("content".to_string(), QueryValue::String(format!("Indexed memory {}", i)));
-            values.insert("score".to_string(), QueryValue::Float(0.9 - (i as f64 * 0.01)));
-            
+            values.insert(
+                "id".to_string(),
+                QueryValue::String(format!("idx_mem_{}", i)),
+            );
+            values.insert(
+                "content".to_string(),
+                QueryValue::String(format!("Indexed memory {}", i)),
+            );
+            values.insert(
+                "score".to_string(),
+                QueryValue::Float(0.9 - (i as f64 * 0.01)),
+            );
+
             rows.push(QueryRow { values });
         }
 
@@ -165,16 +179,28 @@ impl QueryExecutor {
     }
 
     /// Execute relationship traversal
-    async fn execute_relationship_traversal(&mut self, node: &super::PlanNode) -> Result<Vec<QueryRow>> {
+    async fn execute_relationship_traversal(
+        &mut self,
+        node: &super::PlanNode,
+    ) -> Result<Vec<QueryRow>> {
         let mut rows = Vec::new();
-        
+
         for i in 0..node.rows.min(20) {
             let mut values = HashMap::new();
-            values.insert("from_id".to_string(), QueryValue::String(format!("mem_{}", i)));
-            values.insert("to_id".to_string(), QueryValue::String(format!("mem_{}", i + 1)));
-            values.insert("relationship_type".to_string(), QueryValue::String("related_to".to_string()));
+            values.insert(
+                "from_id".to_string(),
+                QueryValue::String(format!("mem_{}", i)),
+            );
+            values.insert(
+                "to_id".to_string(),
+                QueryValue::String(format!("mem_{}", i + 1)),
+            );
+            values.insert(
+                "relationship_type".to_string(),
+                QueryValue::String("related_to".to_string()),
+            );
             values.insert("strength".to_string(), QueryValue::Float(0.8));
-            
+
             rows.push(QueryRow { values });
         }
 
@@ -185,7 +211,11 @@ impl QueryExecutor {
     }
 
     /// Execute filter operation
-    async fn execute_filter(&self, _node: &super::PlanNode, input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
+    async fn execute_filter(
+        &self,
+        _node: &super::PlanNode,
+        input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
         // Simulate filtering (keep 50% of rows)
         let filtered_rows: Vec<QueryRow> = input_rows
             .into_iter()
@@ -198,7 +228,11 @@ impl QueryExecutor {
     }
 
     /// Execute projection operation
-    async fn execute_project(&self, _node: &super::PlanNode, input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
+    async fn execute_project(
+        &self,
+        _node: &super::PlanNode,
+        input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
         // Simulate projection (select specific columns)
         let projected_rows: Vec<QueryRow> = input_rows
             .into_iter()
@@ -219,23 +253,31 @@ impl QueryExecutor {
     }
 
     /// Execute aggregation operation
-    async fn execute_aggregate(&self, _node: &super::PlanNode, input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
+    async fn execute_aggregate(
+        &self,
+        _node: &super::PlanNode,
+        input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
         // Simulate aggregation (count)
         let count = input_rows.len();
-        
+
         let mut values = HashMap::new();
         values.insert("count".to_string(), QueryValue::Integer(count as i64));
-        
+
         Ok(vec![QueryRow { values }])
     }
 
     /// Execute sort operation
-    async fn execute_sort(&self, _node: &super::PlanNode, mut input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
+    async fn execute_sort(
+        &self,
+        _node: &super::PlanNode,
+        mut input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
         // Simulate sorting by id
         input_rows.sort_by(|a, b| {
             let a_id = a.values.get("id").unwrap_or(&QueryValue::Null);
             let b_id = b.values.get("id").unwrap_or(&QueryValue::Null);
-            
+
             match (a_id, b_id) {
                 (QueryValue::String(a), QueryValue::String(b)) => a.cmp(b),
                 _ => std::cmp::Ordering::Equal,
@@ -246,8 +288,13 @@ impl QueryExecutor {
     }
 
     /// Execute limit operation
-    async fn execute_limit(&self, node: &super::PlanNode, input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
-        let limit = node.properties
+    async fn execute_limit(
+        &self,
+        node: &super::PlanNode,
+        input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
+        let limit = node
+            .properties
             .get("limit_count")
             .and_then(|v| match v {
                 QueryValue::Integer(n) => Some(*n as usize),
@@ -261,16 +308,25 @@ impl QueryExecutor {
     /// Execute path expansion
     async fn execute_path_expansion(&self, node: &super::PlanNode) -> Result<Vec<QueryRow>> {
         let mut rows = Vec::new();
-        
+
         // Simulate path finding results
         for i in 0..node.rows.min(5) {
             let mut values = HashMap::new();
-            values.insert("path_id".to_string(), QueryValue::String(format!("path_{}", i)));
-            values.insert("start_node".to_string(), QueryValue::String("start".to_string()));
-            values.insert("end_node".to_string(), QueryValue::String("end".to_string()));
+            values.insert(
+                "path_id".to_string(),
+                QueryValue::String(format!("path_{}", i)),
+            );
+            values.insert(
+                "start_node".to_string(),
+                QueryValue::String("start".to_string()),
+            );
+            values.insert(
+                "end_node".to_string(),
+                QueryValue::String("end".to_string()),
+            );
             values.insert("length".to_string(), QueryValue::Integer((i + 2) as i64));
             values.insert("weight".to_string(), QueryValue::Float(1.0 + i as f64));
-            
+
             rows.push(QueryRow { values });
         }
 
@@ -278,10 +334,14 @@ impl QueryExecutor {
     }
 
     /// Execute temporal filter
-    async fn execute_temporal_filter(&self, _node: &super::PlanNode, input_rows: Vec<QueryRow>) -> Result<Vec<QueryRow>> {
+    async fn execute_temporal_filter(
+        &self,
+        _node: &super::PlanNode,
+        input_rows: Vec<QueryRow>,
+    ) -> Result<Vec<QueryRow>> {
         // Simulate temporal filtering (keep rows with recent timestamps)
         let cutoff = Utc::now() - chrono::Duration::hours(24);
-        
+
         let filtered_rows: Vec<QueryRow> = input_rows
             .into_iter()
             .filter(|row| {
@@ -299,7 +359,7 @@ impl QueryExecutor {
     /// Infer column information from result rows
     fn infer_columns(&self, rows: &[QueryRow]) -> Vec<ColumnInfo> {
         let mut columns = Vec::new();
-        
+
         if let Some(first_row) = rows.first() {
             for (name, value) in &first_row.values {
                 let data_type = match value {
@@ -325,8 +385,10 @@ impl QueryExecutor {
                         } else {
                             DataType::List(Box::new(DataType::String))
                         }
-                    },
-                    QueryValue::Map(_) => DataType::Map(Box::new(DataType::String), Box::new(DataType::String)),
+                    }
+                    QueryValue::Map(_) => {
+                        DataType::Map(Box::new(DataType::String), Box::new(DataType::String))
+                    }
                 };
 
                 columns.push(ColumnInfo {
@@ -386,9 +448,9 @@ impl ExecutionContext {
     /// Calculate actual execution cost
     fn calculate_actual_cost(&self) -> f64 {
         // Simple cost calculation based on operations performed
-        (self.memories_scanned as f64 * 1.0) +
-        (self.relationships_traversed as f64 * 0.5) +
-        (self.seek_operations as f64 * 0.1) +
-        (self.scan_operations as f64 * 10.0)
+        (self.memories_scanned as f64 * 1.0)
+            + (self.relationships_traversed as f64 * 0.5)
+            + (self.seek_operations as f64 * 0.1)
+            + (self.scan_operations as f64 * 10.0)
     }
 }

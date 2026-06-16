@@ -1,15 +1,15 @@
 //! Differential analysis for memory changes
 
 use crate::error::Result;
+use crate::memory::temporal::{ChangeType, TimeRange};
 use crate::memory::types::MemoryEntry;
-use crate::memory::temporal::{TimeRange, ChangeType};
 use chrono::{DateTime, Utc};
+use imara_diff::Algorithm;
+use lz4_flex;
 use serde::{Deserialize, Serialize};
+use similar::{ChangeTag, TextDiff};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use lz4_flex;
-use imara_diff::Algorithm;
-use similar::{ChangeTag, TextDiff};
 
 /// Detailed difference between two memory entries
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +147,10 @@ pub enum FieldChange {
     /// Field was removed
     Removed(String),
     /// Field value was changed
-    Modified { old_value: String, new_value: String },
+    Modified {
+        old_value: String,
+        new_value: String,
+    },
 }
 
 /// Set of changes that occurred together
@@ -285,13 +288,18 @@ impl DiffAnalyzer {
         }
 
         // Analyze content differences
-        let content_changes = self.analyze_content_diff(&from_memory.value, &to_memory.value).await?;
+        let content_changes = self
+            .analyze_content_diff(&from_memory.value, &to_memory.value)
+            .await?;
 
         // Analyze metadata differences
-        let metadata_changes = self.analyze_metadata_diff(&from_memory.metadata, &to_memory.metadata).await?;
+        let metadata_changes = self
+            .analyze_metadata_diff(&from_memory.metadata, &to_memory.metadata)
+            .await?;
 
         // Calculate significance score
-        let significance_score = self.calculate_significance_score(&content_changes, &metadata_changes);
+        let significance_score =
+            self.calculate_significance_score(&content_changes, &metadata_changes);
 
         // Calculate diff size
         let diff_size = self.calculate_diff_size(&content_changes, &metadata_changes);
@@ -328,16 +336,17 @@ impl DiffAnalyzer {
 
         // Update metrics
         self.metrics.total_diffs += 1;
-        self.metrics.avg_significance =
-            (self.metrics.avg_significance * (self.metrics.total_diffs - 1) as f64
-                + significance_score)
-                / self.metrics.total_diffs as f64;
-        self.metrics.avg_content_similarity =
-            (self.metrics.avg_content_similarity * (self.metrics.total_diffs - 1) as f64
-                + diff.content_changes.similarity_score)
-                / self.metrics.total_diffs as f64;
+        self.metrics.avg_significance = (self.metrics.avg_significance
+            * (self.metrics.total_diffs - 1) as f64
+            + significance_score)
+            / self.metrics.total_diffs as f64;
+        self.metrics.avg_content_similarity = (self.metrics.avg_content_similarity
+            * (self.metrics.total_diffs - 1) as f64
+            + diff.content_changes.similarity_score)
+            / self.metrics.total_diffs as f64;
         self.metrics.total_diff_size += diff_size;
-        *self.change_type_counts
+        *self
+            .change_type_counts
             .entry(diff.content_changes.change_type.clone())
             .or_insert(0) += 1;
         if let Some((change, _)) = self
@@ -352,7 +361,11 @@ impl DiffAnalyzer {
     }
 
     /// Analyze content differences between two text strings
-    async fn analyze_content_diff(&self, old_content: &str, new_content: &str) -> Result<ContentDiff> {
+    async fn analyze_content_diff(
+        &self,
+        old_content: &str,
+        new_content: &str,
+    ) -> Result<ContentDiff> {
         // Calculate similarity score
         let similarity_score = self.calculate_text_similarity(old_content, new_content);
 
@@ -361,7 +374,8 @@ impl DiffAnalyzer {
 
         // Find additions, deletions, and modifications
         let (additions, deletions, modifications) = if self.config.enable_detailed_text_analysis {
-            self.perform_detailed_text_analysis(old_content, new_content).await?
+            self.perform_detailed_text_analysis(old_content, new_content)
+                .await?
         } else {
             (Vec::new(), Vec::new(), Vec::new())
         };
@@ -388,22 +402,37 @@ impl DiffAnalyzer {
         // Analyze tag changes
         let old_tags: HashSet<_> = old_metadata.tags.iter().collect();
         let new_tags: HashSet<_> = new_metadata.tags.iter().collect();
-        
-        let added: Vec<String> = new_tags.difference(&old_tags).map(|s| s.to_string()).collect();
-        let removed: Vec<String> = old_tags.difference(&new_tags).map(|s| s.to_string()).collect();
-        let unchanged: Vec<String> = old_tags.intersection(&new_tags).map(|s| s.to_string()).collect();
-        
-        let tag_changes = TagChanges { added, removed, unchanged };
+
+        let added: Vec<String> = new_tags
+            .difference(&old_tags)
+            .map(|s| s.to_string())
+            .collect();
+        let removed: Vec<String> = old_tags
+            .difference(&new_tags)
+            .map(|s| s.to_string())
+            .collect();
+        let unchanged: Vec<String> = old_tags
+            .intersection(&new_tags)
+            .map(|s| s.to_string())
+            .collect();
+
+        let tag_changes = TagChanges {
+            added,
+            removed,
+            unchanged,
+        };
 
         // Analyze importance change
-        let importance_change = if (old_metadata.importance - new_metadata.importance).abs() > 0.01 {
+        let importance_change = if (old_metadata.importance - new_metadata.importance).abs() > 0.01
+        {
             Some(new_metadata.importance - old_metadata.importance)
         } else {
             None
         };
 
         // Analyze confidence change
-        let confidence_change = if (old_metadata.confidence - new_metadata.confidence).abs() > 0.01 {
+        let confidence_change = if (old_metadata.confidence - new_metadata.confidence).abs() > 0.01
+        {
             Some(new_metadata.confidence - old_metadata.confidence)
         } else {
             None
@@ -411,7 +440,7 @@ impl DiffAnalyzer {
 
         // Analyze custom field changes
         let mut custom_field_changes = HashMap::new();
-        
+
         // Check for added and modified fields
         for (key, new_value) in &new_metadata.custom_fields {
             match old_metadata.custom_fields.get(key) {
@@ -430,7 +459,7 @@ impl DiffAnalyzer {
                 _ => {} // No change
             }
         }
-        
+
         // Check for removed fields
         for (key, old_value) in &old_metadata.custom_fields {
             if !new_metadata.custom_fields.contains_key(key) {
@@ -455,11 +484,11 @@ impl DiffAnalyzer {
         if text1 == text2 {
             return 1.0;
         }
-        
+
         if text1.is_empty() && text2.is_empty() {
             return 1.0;
         }
-        
+
         if text1.is_empty() || text2.is_empty() {
             return 0.0;
         }
@@ -467,10 +496,10 @@ impl DiffAnalyzer {
         // Use Jaccard similarity on word level
         let words1: HashSet<&str> = text1.split_whitespace().collect();
         let words2: HashSet<&str> = text2.split_whitespace().collect();
-        
+
         let intersection = words1.intersection(&words2).count();
         let union = words1.union(&words2).count();
-        
+
         if union == 0 {
             0.0
         } else {
@@ -479,39 +508,43 @@ impl DiffAnalyzer {
     }
 
     /// Determine the type of content change
-    fn determine_content_change_type(&self, old_content: &str, new_content: &str) -> ContentChangeType {
+    fn determine_content_change_type(
+        &self,
+        old_content: &str,
+        new_content: &str,
+    ) -> ContentChangeType {
         if old_content == new_content {
             return ContentChangeType::Unchanged;
         }
-        
+
         if old_content.is_empty() {
             return ContentChangeType::Replaced;
         }
-        
+
         if new_content.is_empty() {
             return ContentChangeType::Truncated;
         }
-        
+
         // Check for append
         if new_content.starts_with(old_content) {
             return ContentChangeType::Appended;
         }
-        
+
         // Check for prepend
         if new_content.ends_with(old_content) {
             return ContentChangeType::Prepended;
         }
-        
+
         // Check for insertion (old content is contained in new)
         if new_content.contains(old_content) {
             return ContentChangeType::Inserted;
         }
-        
+
         // Check for truncation (new content is contained in old)
         if old_content.contains(new_content) {
             return ContentChangeType::Truncated;
         }
-        
+
         // Calculate similarity to determine if it's modification or replacement
         let similarity = self.calculate_text_similarity(old_content, new_content);
         if similarity > 0.3 {
@@ -527,7 +560,11 @@ impl DiffAnalyzer {
         old_text: &str,
         new_text: &str,
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
-        tracing::debug!("Performing Myers' diff analysis on texts of length {} and {}", old_text.len(), new_text.len());
+        tracing::debug!(
+            "Performing Myers' diff analysis on texts of length {} and {}",
+            old_text.len(),
+            new_text.len()
+        );
         let start_time = std::time::Instant::now();
 
         let (additions, deletions, modifications) = match self.config.myers_algorithm {
@@ -550,7 +587,8 @@ impl DiffAnalyzer {
         new_text: &str,
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
         if self.config.enable_line_optimization {
-            self.myers_line_based_diff(old_text, new_text, Algorithm::Myers).await
+            self.myers_line_based_diff(old_text, new_text, Algorithm::Myers)
+                .await
         } else {
             self.myers_character_based_diff(old_text, new_text).await
         }
@@ -562,7 +600,8 @@ impl DiffAnalyzer {
         old_text: &str,
         new_text: &str,
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
-        self.myers_line_based_diff(old_text, new_text, Algorithm::Histogram).await
+        self.myers_line_based_diff(old_text, new_text, Algorithm::Histogram)
+            .await
     }
 
     /// Adaptive algorithm selection based on text characteristics
@@ -573,7 +612,8 @@ impl DiffAnalyzer {
     ) -> Result<(Vec<TextSegment>, Vec<TextSegment>, Vec<TextModification>)> {
         let algorithm = self.select_optimal_algorithm(old_text, new_text);
         tracing::debug!("Selected {:?} algorithm for adaptive diff", algorithm);
-        self.myers_line_based_diff(old_text, new_text, algorithm).await
+        self.myers_line_based_diff(old_text, new_text, algorithm)
+            .await
     }
 
     /// Select optimal algorithm based on text characteristics
@@ -591,7 +631,8 @@ impl DiffAnalyzer {
         if total_lines > 1000 {
             let old_unique_lines: std::collections::HashSet<_> = old_text.lines().collect();
             let new_unique_lines: std::collections::HashSet<_> = new_text.lines().collect();
-            let unique_ratio = (old_unique_lines.len() + new_unique_lines.len()) as f64 / total_lines as f64;
+            let unique_ratio =
+                (old_unique_lines.len() + new_unique_lines.len()) as f64 / total_lines as f64;
 
             if unique_ratio > 0.8 {
                 return Algorithm::Histogram;
@@ -644,7 +685,11 @@ impl DiffAnalyzer {
                         position: old_char_pos,
                         length: line_content.len(),
                         content: line_content.to_string(),
-                        context: self.extract_context(&old_lines, old_line_num, self.config.context_lines),
+                        context: self.extract_context(
+                            &old_lines,
+                            old_line_num,
+                            self.config.context_lines,
+                        ),
                     });
                     old_char_pos += line_content.len();
                     old_line_num += 1;
@@ -654,7 +699,11 @@ impl DiffAnalyzer {
                         position: new_char_pos,
                         length: line_content.len(),
                         content: line_content.to_string(),
-                        context: self.extract_context(&new_lines, new_line_num, self.config.context_lines),
+                        context: self.extract_context(
+                            &new_lines,
+                            new_line_num,
+                            self.config.context_lines,
+                        ),
                     });
                     new_char_pos += line_content.len();
                     new_line_num += 1;
@@ -665,8 +714,12 @@ impl DiffAnalyzer {
         // Post-process to find modifications (adjacent deletions and insertions)
         self.merge_adjacent_changes(&mut additions, &mut deletions, &mut modifications);
 
-        tracing::debug!("Myers line-based diff completed: {} additions, {} deletions, {} modifications",
-                       additions.len(), deletions.len(), modifications.len());
+        tracing::debug!(
+            "Myers line-based diff completed: {} additions, {} deletions, {} modifications",
+            additions.len(),
+            deletions.len(),
+            modifications.len()
+        );
 
         Ok((additions, deletions, modifications))
     }
@@ -720,7 +773,11 @@ impl DiffAnalyzer {
 
     /// Classify the type of modification based on content analysis
     #[allow(dead_code)]
-    fn classify_modification_by_content(&self, old_content: &str, new_content: &str) -> ModificationType {
+    fn classify_modification_by_content(
+        &self,
+        old_content: &str,
+        new_content: &str,
+    ) -> ModificationType {
         // Check for common modification patterns
         if self.is_spelling_correction(old_content, new_content) {
             return ModificationType::Correction;
@@ -806,7 +863,12 @@ impl DiffAnalyzer {
     }
 
     /// Extract context around a line
-    fn extract_context(&self, lines: &[&str], line_num: usize, context_size: usize) -> Option<String> {
+    fn extract_context(
+        &self,
+        lines: &[&str],
+        line_num: usize,
+        context_size: usize,
+    ) -> Option<String> {
         if context_size == 0 {
             return None;
         }
@@ -846,7 +908,8 @@ impl DiffAnalyzer {
                 deletion.position - addition.position
             };
 
-            if distance <= 10 { // Arbitrary threshold for "adjacent"
+            if distance <= 10 {
+                // Arbitrary threshold for "adjacent"
                 modifications.push(TextModification {
                     position: deletion.position.min(addition.position),
                     old_text: deletion.content.clone(),
@@ -874,9 +937,13 @@ impl DiffAnalyzer {
     }
 
     /// Calculate significance score for a diff
-    fn calculate_significance_score(&self, content_diff: &ContentDiff, metadata_diff: &MetadataDiff) -> f64 {
+    fn calculate_significance_score(
+        &self,
+        content_diff: &ContentDiff,
+        metadata_diff: &MetadataDiff,
+    ) -> f64 {
         let mut score = 0.0;
-        
+
         // Content significance
         match content_diff.change_type {
             ContentChangeType::Replaced => score += 1.0,
@@ -887,32 +954,38 @@ impl DiffAnalyzer {
             ContentChangeType::Reformatted => score += 0.3,
             ContentChangeType::Unchanged => score += 0.0,
         }
-        
+
         // Length change significance
-        let length_change_ratio = content_diff.length_delta.abs() as f64 / 
-            (content_diff.length_delta.abs() + 100) as f64; // Normalize
+        let length_change_ratio =
+            content_diff.length_delta.abs() as f64 / (content_diff.length_delta.abs() + 100) as f64; // Normalize
         score += length_change_ratio * 0.3;
-        
+
         // Metadata significance
-        if !metadata_diff.tag_changes.added.is_empty() || !metadata_diff.tag_changes.removed.is_empty() {
+        if !metadata_diff.tag_changes.added.is_empty()
+            || !metadata_diff.tag_changes.removed.is_empty()
+        {
             score += 0.2;
         }
-        
+
         if metadata_diff.importance_change.is_some() {
             score += 0.1;
         }
-        
+
         if !metadata_diff.custom_field_changes.is_empty() {
             score += 0.1;
         }
-        
+
         score.min(1.0)
     }
 
     /// Calculate the size of a diff in bytes
-    fn calculate_diff_size(&self, content_diff: &ContentDiff, metadata_diff: &MetadataDiff) -> usize {
+    fn calculate_diff_size(
+        &self,
+        content_diff: &ContentDiff,
+        metadata_diff: &MetadataDiff,
+    ) -> usize {
         let mut size = 0;
-        
+
         // Content diff size
         for addition in &content_diff.additions {
             size += addition.content.len();
@@ -923,7 +996,7 @@ impl DiffAnalyzer {
         for modification in &content_diff.modifications {
             size += modification.old_text.len() + modification.new_text.len();
         }
-        
+
         // Metadata diff size
         for tag in &metadata_diff.tag_changes.added {
             size += tag.len();
@@ -931,7 +1004,7 @@ impl DiffAnalyzer {
         for tag in &metadata_diff.tag_changes.removed {
             size += tag.len();
         }
-        
+
         size
     }
 

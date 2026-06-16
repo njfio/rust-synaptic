@@ -1,17 +1,17 @@
 // Real PostgreSQL Database Integration
 // Implements actual database persistence for memory entries and analytics
 
-#[cfg(feature = "sql-storage")]
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
-use crate::error::{Result, MemoryError};
-use crate::memory::types::{MemoryEntry, MemoryType, MemoryMetadata};
+use crate::error::{MemoryError, Result};
 use crate::memory::management::analytics::{AnalyticsEvent, AnalyticsInsight};
 use crate::memory::storage::Storage;
-use serde::{Deserialize, Serialize};
+use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "sql-storage")]
+use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use uuid::Uuid;
 
 /// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,8 +31,9 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string()),
+            database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgresql://synaptic_user:synaptic_pass@localhost:11110/synaptic_db".to_string()
+            }),
             max_connections: 10,
             connect_timeout_secs: 30,
             ssl_mode: "prefer".to_string(),
@@ -68,7 +69,9 @@ impl DatabaseClient {
                 .acquire_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
                 .connect(&config.database_url)
                 .await
-                .map_err(|e| MemoryError::storage(format!("Failed to connect to database: {}", e)))?;
+                .map_err(|e| {
+                    MemoryError::storage(format!("Failed to connect to database: {}", e))
+                })?;
 
             let mut client = Self {
                 pool,
@@ -82,7 +85,9 @@ impl DatabaseClient {
 
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
@@ -90,7 +95,8 @@ impl DatabaseClient {
     #[cfg(feature = "sql-storage")]
     async fn run_migrations(&mut self) -> Result<()> {
         // Create memory_entries table
-        sqlx::query(&format!(r#"
+        sqlx::query(&format!(
+            r#"
             CREATE TABLE IF NOT EXISTS {}.memory_entries (
                 id UUID PRIMARY KEY,
                 key VARCHAR NOT NULL,
@@ -107,13 +113,18 @@ impl DatabaseClient {
                 access_count BIGINT NOT NULL DEFAULT 0,
                 UNIQUE(key)
             )
-        "#, self.config.schema))
+        "#,
+            self.config.schema
+        ))
         .execute(&self.pool)
         .await
-        .map_err(|e| MemoryError::storage(format!("Failed to create memory_entries table: {}", e)))?;
+        .map_err(|e| {
+            MemoryError::storage(format!("Failed to create memory_entries table: {}", e))
+        })?;
 
         // Create analytics_events table
-        sqlx::query(&format!(r#"
+        sqlx::query(&format!(
+            r#"
             CREATE TABLE IF NOT EXISTS {}.analytics_events (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 event_type VARCHAR NOT NULL,
@@ -122,13 +133,18 @@ impl DatabaseClient {
                 user_context VARCHAR,
                 session_id UUID
             )
-        "#, self.config.schema))
+        "#,
+            self.config.schema
+        ))
         .execute(&self.pool)
         .await
-        .map_err(|e| MemoryError::storage(format!("Failed to create analytics_events table: {}", e)))?;
+        .map_err(|e| {
+            MemoryError::storage(format!("Failed to create analytics_events table: {}", e))
+        })?;
 
         // Create analytics_insights table
-        sqlx::query(&format!(r#"
+        sqlx::query(&format!(
+            r#"
             CREATE TABLE IF NOT EXISTS {}.analytics_insights (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 title VARCHAR NOT NULL,
@@ -140,10 +156,14 @@ impl DatabaseClient {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 expires_at TIMESTAMPTZ
             )
-        "#, self.config.schema))
+        "#,
+            self.config.schema
+        ))
         .execute(&self.pool)
         .await
-        .map_err(|e| MemoryError::storage(format!("Failed to create analytics_insights table: {}", e)))?;
+        .map_err(|e| {
+            MemoryError::storage(format!("Failed to create analytics_insights table: {}", e))
+        })?;
 
         // Create indexes for performance (execute individually)
         let indexes = vec![
@@ -172,11 +192,13 @@ impl DatabaseClient {
 
         let memory_type_str = format!("{:?}", entry.memory_type);
         let tags: Vec<String> = entry.metadata.tags.clone();
-        let custom_fields = serde_json::to_value(&entry.metadata.custom_fields)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize custom fields: {}", e)))?;
+        let custom_fields = serde_json::to_value(&entry.metadata.custom_fields).map_err(|e| {
+            MemoryError::storage(format!("Failed to serialize custom fields: {}", e))
+        })?;
         let embedding: Option<Vec<f32>> = entry.embedding.clone();
 
-        sqlx::query(&format!(r#"
+        sqlx::query(&format!(
+            r#"
             INSERT INTO {}.memory_entries
             (id, key, value, memory_type, importance, confidence, tags, custom_fields, embedding,
              created_at, last_accessed, last_modified, access_count)
@@ -190,7 +212,9 @@ impl DatabaseClient {
                 custom_fields = EXCLUDED.custom_fields,
                 embedding = EXCLUDED.embedding,
                 last_modified = EXCLUDED.last_modified
-        "#, self.config.schema))
+        "#,
+            self.config.schema
+        ))
         .bind(entry.metadata.id)
         .bind(&entry.key)
         .bind(&entry.value)
@@ -217,12 +241,15 @@ impl DatabaseClient {
     pub async fn get_memory(&self, key: &str) -> Result<Option<MemoryEntry>> {
         let start_time = std::time::Instant::now();
 
-        let row = sqlx::query(&format!(r#"
+        let row = sqlx::query(&format!(
+            r#"
             SELECT id, key, value, memory_type, importance, confidence, tags, custom_fields, 
                    embedding, created_at, last_accessed, last_modified, access_count
             FROM {}.memory_entries 
             WHERE key = $1
-        "#, self.config.schema))
+        "#,
+            self.config.schema
+        ))
         .bind(key)
         .fetch_optional(&self.pool)
         .await
@@ -237,9 +264,9 @@ impl DatabaseClient {
                 _ => MemoryType::ShortTerm,
             };
 
-            let custom_fields: HashMap<String, String> = serde_json::from_value(
-                row.get::<serde_json::Value, _>("custom_fields")
-            ).unwrap_or_default();
+            let custom_fields: HashMap<String, String> =
+                serde_json::from_value(row.get::<serde_json::Value, _>("custom_fields"))
+                    .unwrap_or_default();
 
             let metadata = MemoryMetadata {
                 id: row.get("id"),
@@ -332,11 +359,15 @@ impl DatabaseClient {
 #[cfg(not(feature = "sql-storage"))]
 impl DatabaseClient {
     pub async fn new(_config: DatabaseConfig) -> Result<Self> {
-        Err(MemoryError::configuration("SQL storage feature not enabled"))
+        Err(MemoryError::configuration(
+            "SQL storage feature not enabled",
+        ))
     }
 
     pub async fn health_check(&self) -> Result<()> {
-        Err(MemoryError::configuration("SQL storage feature not enabled"))
+        Err(MemoryError::configuration(
+            "SQL storage feature not enabled",
+        ))
     }
 
     pub async fn shutdown(&mut self) -> Result<()> {
@@ -358,7 +389,9 @@ impl Storage for DatabaseClient {
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
@@ -369,15 +402,24 @@ impl Storage for DatabaseClient {
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<crate::memory::types::MemoryFragment>> {
+    async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::memory::types::MemoryFragment>> {
         #[cfg(feature = "sql-storage")]
         {
             // Use prepared statement for better performance and security
-            let sql = format!("SELECT key, value FROM {}.memory_entries WHERE value ILIKE $1 LIMIT $2", self.config.schema);
+            let sql = format!(
+                "SELECT key, value FROM {}.memory_entries WHERE value ILIKE $1 LIMIT $2",
+                self.config.schema
+            );
             let rows = sqlx::query(&sql)
                 .bind(format!("%{}%", query))
                 .bind(limit as i64)
@@ -389,25 +431,31 @@ impl Storage for DatabaseClient {
             let fragments = if rows.len() > 100 {
                 // Use parallel processing for large result sets
                 use rayon::prelude::*;
-                rows.into_par_iter().map(|row| crate::memory::types::MemoryFragment {
-                    key: row.get("key"),
-                    snippet: row.get::<String, _>("value").chars().take(100).collect(),
-                    relevance_score: 1.0, // Default relevance score
-                }).collect()
+                rows.into_par_iter()
+                    .map(|row| crate::memory::types::MemoryFragment {
+                        key: row.get("key"),
+                        snippet: row.get::<String, _>("value").chars().take(100).collect(),
+                        relevance_score: 1.0, // Default relevance score
+                    })
+                    .collect()
             } else {
                 // Use sequential processing for small result sets
-                rows.into_iter().map(|row| crate::memory::types::MemoryFragment {
-                    key: row.get("key"),
-                    snippet: row.get::<String, _>("value").chars().take(100).collect(),
-                    relevance_score: 1.0, // Default relevance score
-                }).collect()
+                rows.into_iter()
+                    .map(|row| crate::memory::types::MemoryFragment {
+                        key: row.get("key"),
+                        snippet: row.get::<String, _>("value").chars().take(100).collect(),
+                        relevance_score: 1.0, // Default relevance score
+                    })
+                    .collect()
             };
 
             Ok(fragments)
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
@@ -420,84 +468,111 @@ impl Storage for DatabaseClient {
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn delete(&self, key: &str) -> Result<bool> {
         #[cfg(feature = "sql-storage")]
         {
-            let result = sqlx::query(&format!("DELETE FROM {}.memory_entries WHERE key=$1", self.config.schema))
-                .bind(key)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| MemoryError::storage(format!("Delete failed: {}", e)))?;
+            let result = sqlx::query(&format!(
+                "DELETE FROM {}.memory_entries WHERE key=$1",
+                self.config.schema
+            ))
+            .bind(key)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Delete failed: {}", e)))?;
             Ok(result.rows_affected() > 0)
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn list_keys(&self) -> Result<Vec<String>> {
         #[cfg(feature = "sql-storage")]
         {
-            let rows = sqlx::query(&format!("SELECT key FROM {}.memory_entries", self.config.schema))
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| MemoryError::storage(format!("List keys failed: {}", e)))?;
+            let rows = sqlx::query(&format!(
+                "SELECT key FROM {}.memory_entries",
+                self.config.schema
+            ))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("List keys failed: {}", e)))?;
             Ok(rows.into_iter().map(|r| r.get("key")).collect())
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn count(&self) -> Result<usize> {
         #[cfg(feature = "sql-storage")]
         {
-            let row = sqlx::query(&format!("SELECT COUNT(*) as count FROM {}.memory_entries", self.config.schema))
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| MemoryError::storage(format!("Count failed: {}", e)))?;
+            let row = sqlx::query(&format!(
+                "SELECT COUNT(*) as count FROM {}.memory_entries",
+                self.config.schema
+            ))
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Count failed: {}", e)))?;
             Ok(row.get::<i64, _>("count") as usize)
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn clear(&self) -> Result<()> {
         #[cfg(feature = "sql-storage")]
         {
-            sqlx::query(&format!("TRUNCATE TABLE {}.memory_entries", self.config.schema))
-                .execute(&self.pool)
-                .await
-                .map_err(|e| MemoryError::storage(format!("Clear failed: {}", e)))?;
+            sqlx::query(&format!(
+                "TRUNCATE TABLE {}.memory_entries",
+                self.config.schema
+            ))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Clear failed: {}", e)))?;
             Ok(())
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn exists(&self, key: &str) -> Result<bool> {
         #[cfg(feature = "sql-storage")]
         {
-            let row = sqlx::query(&format!("SELECT EXISTS(SELECT 1 FROM {}.memory_entries WHERE key=$1) as exist", self.config.schema))
-                .bind(key)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| MemoryError::storage(format!("Exists query failed: {}", e)))?;
+            let row = sqlx::query(&format!(
+                "SELECT EXISTS(SELECT 1 FROM {}.memory_entries WHERE key=$1) as exist",
+                self.config.schema
+            ))
+            .bind(key)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Exists query failed: {}", e)))?;
             Ok(row.get::<bool, _>("exist"))
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
@@ -520,26 +595,40 @@ impl Storage for DatabaseClient {
     async fn backup(&self, path: &str) -> Result<()> {
         #[cfg(feature = "sql-storage")]
         {
-            let rows = sqlx::query(&format!("SELECT key, value FROM {}.memory_entries", self.config.schema))
-                .fetch_all(&self.pool)
+            let rows = sqlx::query(&format!(
+                "SELECT key, value FROM {}.memory_entries",
+                self.config.schema
+            ))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| MemoryError::storage(format!("Backup query failed: {}", e)))?;
+            let pairs: Vec<(String, String)> = rows
+                .into_iter()
+                .map(|r| (r.get("key"), r.get("value")))
+                .collect();
+            let json =
+                serde_json::to_string(&pairs).map_err(|e| MemoryError::storage(e.to_string()))?;
+            tokio::fs::write(path, json)
                 .await
-                .map_err(|e| MemoryError::storage(format!("Backup query failed: {}", e)))?;
-            let pairs: Vec<(String, String)> = rows.into_iter().map(|r| (r.get("key"), r.get("value"))).collect();
-            let json = serde_json::to_string(&pairs).map_err(|e| MemoryError::storage(e.to_string()))?;
-            tokio::fs::write(path, json).await.map_err(|e| MemoryError::storage(e.to_string()))?;
+                .map_err(|e| MemoryError::storage(e.to_string()))?;
             Ok(())
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
 
     async fn restore(&self, path: &str) -> Result<()> {
         #[cfg(feature = "sql-storage")]
         {
-            let data = tokio::fs::read(path).await.map_err(|e| MemoryError::storage(e.to_string()))?;
-            let rows: Vec<(String, String)> = serde_json::from_slice(&data).map_err(|e| MemoryError::storage(e.to_string()))?;
+            let data = tokio::fs::read(path)
+                .await
+                .map_err(|e| MemoryError::storage(e.to_string()))?;
+            let rows: Vec<(String, String)> =
+                serde_json::from_slice(&data).map_err(|e| MemoryError::storage(e.to_string()))?;
             for (key, value) in rows {
                 let entry = MemoryEntry {
                     key,
@@ -554,9 +643,9 @@ impl Storage for DatabaseClient {
         }
         #[cfg(not(feature = "sql-storage"))]
         {
-            Err(MemoryError::configuration("SQL storage feature not enabled"))
+            Err(MemoryError::configuration(
+                "SQL storage feature not enabled",
+            ))
         }
     }
-
-
 }

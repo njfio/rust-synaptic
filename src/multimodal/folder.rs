@@ -3,7 +3,9 @@
 //! Advanced folder and batch processing capabilities for handling multiple files and directories.
 //! Provides intelligent content discovery, batch processing, and hierarchical organization.
 
-use super::{ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult};
+use super::{
+    ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult,
+};
 use crate::error::SynapticError;
 use crate::memory::types::MemoryId;
 use serde::{Deserialize, Serialize};
@@ -147,13 +149,27 @@ impl Default for FolderProcessorConfig {
             batch_size: 100,
             enable_deduplication: true,
             supported_extensions: vec![
-                "txt".to_string(), "md".to_string(), "pdf".to_string(),
-                "doc".to_string(), "docx".to_string(), "csv".to_string(),
-                "json".to_string(), "xml".to_string(), "html".to_string(),
-                "rs".to_string(), "py".to_string(), "js".to_string(),
-                "ts".to_string(), "java".to_string(), "cpp".to_string(),
-                "png".to_string(), "jpg".to_string(), "jpeg".to_string(),
-                "wav".to_string(), "mp3".to_string(), "flac".to_string(),
+                "txt".to_string(),
+                "md".to_string(),
+                "pdf".to_string(),
+                "doc".to_string(),
+                "docx".to_string(),
+                "csv".to_string(),
+                "json".to_string(),
+                "xml".to_string(),
+                "html".to_string(),
+                "rs".to_string(),
+                "py".to_string(),
+                "js".to_string(),
+                "ts".to_string(),
+                "java".to_string(),
+                "cpp".to_string(),
+                "png".to_string(),
+                "jpg".to_string(),
+                "jpeg".to_string(),
+                "wav".to_string(),
+                "mp3".to_string(),
+                "flac".to_string(),
             ],
         }
     }
@@ -195,43 +211,49 @@ impl FolderMemoryProcessor {
     }
 
     /// Process entire folder structure
-    pub async fn process_folder<P: AsRef<Path>>(&self, folder_path: P) -> MultiModalResult<FolderProcessingResult> {
+    pub async fn process_folder<P: AsRef<Path>>(
+        &self,
+        folder_path: P,
+    ) -> MultiModalResult<FolderProcessingResult> {
         let start_time = std::time::Instant::now();
         let root_path = folder_path.as_ref().to_path_buf();
-        
+
         if !root_path.exists() {
-            return Err(SynapticError::ProcessingError(
-                format!("Folder does not exist: {}", root_path.display())
-            ));
+            return Err(SynapticError::ProcessingError(format!(
+                "Folder does not exist: {}",
+                root_path.display()
+            )));
         }
-        
+
         if !root_path.is_dir() {
-            return Err(SynapticError::ProcessingError(
-                format!("Path is not a directory: {}", root_path.display())
-            ));
+            return Err(SynapticError::ProcessingError(format!(
+                "Path is not a directory: {}",
+                root_path.display()
+            )));
         }
-        
+
         // Discover files
         let discovered_files = self.discover_files(&root_path).await?;
-        
+
         // Build hierarchy
         let hierarchy = self.build_hierarchy(&root_path, &discovered_files).await?;
-        
+
         // Process files in batches
         let (memories, errors) = self.process_files_batch(&discovered_files).await?;
-        
+
         // Calculate statistics
         let total_files = discovered_files.len() as u64;
         let total_directories = self.count_directories(&hierarchy);
-        let total_size = discovered_files.iter()
+        let total_size = discovered_files
+            .iter()
             .filter_map(|path| std::fs::metadata(path).ok())
             .map(|metadata| metadata.len())
             .sum();
-        
+
         let file_type_distribution = self.calculate_file_type_distribution(&discovered_files);
-        
+
         let processing_duration = start_time.elapsed();
-        
+
         Ok(FolderProcessingResult {
             root_path,
             total_files,
@@ -249,37 +271,37 @@ impl FolderMemoryProcessor {
     async fn discover_files(&self, root_path: &Path) -> MultiModalResult<Vec<PathBuf>> {
         let mut discovered_files = Vec::new();
         let mut total_size = 0u64;
-        
+
         // Use walkdir for recursive directory traversal
         let walker = walkdir::WalkDir::new(root_path)
             .max_depth(self.config.max_depth as usize)
             .follow_links(self.config.follow_symlinks);
-        
+
         for entry in walker {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
-                    
+
                     // Skip if not a file
                     if !path.is_file() {
                         continue;
                     }
-                    
+
                     // Skip hidden files if not enabled
                     if !self.config.process_hidden && self.is_hidden_file(path) {
                         continue;
                     }
-                    
+
                     // Check include/exclude patterns
                     if !self.matches_patterns(path) {
                         continue;
                     }
-                    
+
                     // Check file extension
                     if !self.is_supported_extension(path) {
                         continue;
                     }
-                    
+
                     // Check size limits
                     if let Ok(metadata) = std::fs::metadata(path) {
                         let file_size = metadata.len();
@@ -288,9 +310,9 @@ impl FolderMemoryProcessor {
                         }
                         total_size += file_size;
                     }
-                    
+
                     discovered_files.push(path.to_path_buf());
-                    
+
                     // Check file count limit
                     if discovered_files.len() >= self.config.max_files as usize {
                         break;
@@ -302,7 +324,7 @@ impl FolderMemoryProcessor {
                 }
             }
         }
-        
+
         Ok(discovered_files)
     }
 
@@ -317,21 +339,21 @@ impl FolderMemoryProcessor {
     /// Check if file matches include/exclude patterns
     fn matches_patterns(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
-        
+
         // Check exclude patterns first
         for pattern in &self.config.exclude_patterns {
             if self.matches_glob_pattern(&path_str, pattern) {
                 return false;
             }
         }
-        
+
         // Check include patterns
         for pattern in &self.config.include_patterns {
             if self.matches_glob_pattern(&path_str, pattern) {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -340,7 +362,7 @@ impl FolderMemoryProcessor {
         if pattern == "*" {
             return true;
         }
-        
+
         if pattern.contains('*') {
             let parts: Vec<&str> = pattern.split('*').collect();
             if parts.len() == 2 {
@@ -349,7 +371,7 @@ impl FolderMemoryProcessor {
                 return text.starts_with(prefix) && text.ends_with(suffix);
             }
         }
-        
+
         text.contains(pattern)
     }
 
@@ -357,18 +379,25 @@ impl FolderMemoryProcessor {
     fn is_supported_extension(&self, path: &Path) -> bool {
         if let Some(extension) = path.extension() {
             if let Some(ext_str) = extension.to_str() {
-                return self.config.supported_extensions.contains(&ext_str.to_lowercase());
+                return self
+                    .config
+                    .supported_extensions
+                    .contains(&ext_str.to_lowercase());
             }
         }
         false
     }
 
     /// Build folder hierarchy
-    async fn build_hierarchy(&self, root_path: &Path, files: &[PathBuf]) -> MultiModalResult<FolderHierarchy> {
+    async fn build_hierarchy(
+        &self,
+        root_path: &Path,
+        files: &[PathBuf],
+    ) -> MultiModalResult<FolderHierarchy> {
         let root_node = self.build_node(root_path, files, 0).await?;
         let max_depth = self.calculate_max_depth(&root_node);
         let total_nodes = self.count_total_nodes(&root_node);
-        
+
         Ok(FolderHierarchy {
             root: root_node,
             max_depth,
@@ -377,14 +406,23 @@ impl FolderMemoryProcessor {
     }
 
     /// Build individual node
-    async fn build_node(&self, path: &Path, all_files: &[PathBuf], depth: u32) -> MultiModalResult<FolderNode> {
+    async fn build_node(
+        &self,
+        path: &Path,
+        all_files: &[PathBuf],
+        depth: u32,
+    ) -> MultiModalResult<FolderNode> {
         let metadata = std::fs::metadata(path).ok();
-        let modified = metadata.as_ref()
+        let modified = metadata
+            .as_ref()
             .and_then(|m| m.modified().ok())
-            .and_then(|t| chrono::DateTime::from_timestamp(
-                t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64, 0
-            ));
-        
+            .and_then(|t| {
+                chrono::DateTime::from_timestamp(
+                    t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+                    0,
+                )
+            });
+
         let node_type = if path.is_dir() {
             NodeType::Directory
         } else if path.is_file() {
@@ -392,15 +430,15 @@ impl FolderMemoryProcessor {
         } else {
             NodeType::Unknown
         };
-        
+
         let size = if path.is_file() {
             metadata.map(|m| m.len())
         } else {
             None
         };
-        
+
         let mut children = Vec::new();
-        
+
         // Add child nodes for directories
         if path.is_dir() && depth < self.config.max_depth {
             if let Ok(entries) = std::fs::read_dir(path) {
@@ -413,9 +451,10 @@ impl FolderMemoryProcessor {
                 }
             }
         }
-        
+
         Ok(FolderNode {
-            name: path.file_name()
+            name: path
+                .file_name()
                 .unwrap_or_else(|| path.as_os_str())
                 .to_string_lossy()
                 .to_string(),
@@ -434,7 +473,9 @@ impl FolderMemoryProcessor {
         if node.children.is_empty() {
             0
         } else {
-            1 + node.children.iter()
+            1 + node
+                .children
+                .iter()
                 .map(|child| self.calculate_max_depth(child))
                 .max()
                 .unwrap_or(0)
@@ -443,7 +484,9 @@ impl FolderMemoryProcessor {
 
     /// Count total nodes in hierarchy
     fn count_total_nodes(&self, node: &FolderNode) -> u64 {
-        1 + node.children.iter()
+        1 + node
+            .children
+            .iter()
             .map(|child| self.count_total_nodes(child))
             .sum::<u64>()
     }
@@ -455,30 +498,41 @@ impl FolderMemoryProcessor {
 
     /// Count directories recursively
     fn count_directories_recursive(&self, node: &FolderNode) -> u64 {
-        let current = if node.node_type == NodeType::Directory { 1 } else { 0 };
-        current + node.children.iter()
-            .map(|child| self.count_directories_recursive(child))
-            .sum::<u64>()
+        let current = if node.node_type == NodeType::Directory {
+            1
+        } else {
+            0
+        };
+        current
+            + node
+                .children
+                .iter()
+                .map(|child| self.count_directories_recursive(child))
+                .sum::<u64>()
     }
 
     /// Calculate file type distribution
     fn calculate_file_type_distribution(&self, files: &[PathBuf]) -> HashMap<String, u64> {
         let mut distribution = HashMap::new();
-        
+
         for file in files {
-            let extension = file.extension()
+            let extension = file
+                .extension()
                 .and_then(|ext| ext.to_str())
                 .unwrap_or("unknown")
                 .to_lowercase();
-            
+
             *distribution.entry(extension).or_insert(0) += 1;
         }
-        
+
         distribution
     }
 
     /// Process files in batches
-    async fn process_files_batch(&self, files: &[PathBuf]) -> MultiModalResult<(Vec<MultiModalMemory>, Vec<ProcessingError>)> {
+    async fn process_files_batch(
+        &self,
+        files: &[PathBuf],
+    ) -> MultiModalResult<(Vec<MultiModalMemory>, Vec<ProcessingError>)> {
         let mut memories = Vec::new();
         let mut errors = Vec::new();
 
@@ -503,7 +557,10 @@ impl FolderMemoryProcessor {
     }
 
     /// Process a single batch of files
-    async fn process_file_batch(&self, files: &[PathBuf]) -> Vec<Result<MultiModalMemory, ProcessingError>> {
+    async fn process_file_batch(
+        &self,
+        files: &[PathBuf],
+    ) -> Vec<Result<MultiModalMemory, ProcessingError>> {
         let mut results = Vec::new();
 
         for file_path in files {
@@ -515,7 +572,10 @@ impl FolderMemoryProcessor {
     }
 
     /// Process a single file
-    async fn process_single_file(&self, file_path: &Path) -> Result<MultiModalMemory, ProcessingError> {
+    async fn process_single_file(
+        &self,
+        file_path: &Path,
+    ) -> Result<MultiModalMemory, ProcessingError> {
         // Read file content
         let content = match std::fs::read(file_path) {
             Ok(content) => content,
@@ -547,20 +607,18 @@ impl FolderMemoryProcessor {
         // Process based on content type
         let memory = match content_type {
             ContentType::Document { .. } => {
-                self.document_processor.process(&content, &content_type).await
+                self.document_processor
+                    .process(&content, &content_type)
+                    .await
             }
-            ContentType::Data { .. } => {
-                self.data_processor.process(&content, &content_type).await
-            }
+            ContentType::Data { .. } => self.data_processor.process(&content, &content_type).await,
             ContentType::Image { .. } => {
                 self.image_processor.process(&content, &content_type).await
             }
             ContentType::Audio { .. } => {
                 self.audio_processor.process(&content, &content_type).await
             }
-            ContentType::Code { .. } => {
-                self.code_processor.process(&content, &content_type).await
-            }
+            ContentType::Code { .. } => self.code_processor.process(&content, &content_type).await,
             _ => {
                 return Err(ProcessingError {
                     file_path: file_path.to_path_buf(),
@@ -575,7 +633,8 @@ impl FolderMemoryProcessor {
                 // Add file path information
                 mem.extracted_features.insert(
                     "file_path".to_string(),
-                    serde_json::to_value(file_path.to_string_lossy().to_string()).expect("value should be available"),
+                    serde_json::to_value(file_path.to_string_lossy().to_string())
+                        .expect("value should be available"),
                 );
                 Ok(mem)
             }
@@ -588,8 +647,13 @@ impl FolderMemoryProcessor {
     }
 
     /// Detect content type from file path and content
-    fn detect_content_type(&self, file_path: &Path, content: &[u8]) -> MultiModalResult<ContentType> {
-        let extension = file_path.extension()
+    fn detect_content_type(
+        &self,
+        file_path: &Path,
+        content: &[u8],
+    ) -> MultiModalResult<ContentType> {
+        let extension = file_path
+            .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("")
             .to_lowercase();
@@ -695,14 +759,19 @@ impl FolderMemoryProcessor {
                         schema: None,
                     })
                 } else {
-                    Err(SynapticError::ProcessingError("Unknown content type".to_string()))
+                    Err(SynapticError::ProcessingError(
+                        "Unknown content type".to_string(),
+                    ))
                 }
             }
         }
     }
 
     /// Deduplicate memories based on content hash
-    async fn deduplicate_memories(&self, memories: Vec<MultiModalMemory>) -> MultiModalResult<Vec<MultiModalMemory>> {
+    async fn deduplicate_memories(
+        &self,
+        memories: Vec<MultiModalMemory>,
+    ) -> MultiModalResult<Vec<MultiModalMemory>> {
         let mut unique_memories = Vec::new();
         let mut seen_hashes = std::collections::HashSet::new();
 
@@ -776,15 +845,20 @@ pub struct ProcessingStats {
 
 #[async_trait::async_trait]
 impl MultiModalProcessor for FolderMemoryProcessor {
-    async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+    async fn process(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory> {
         // For folder processor, content should be a path
         let path_str = String::from_utf8_lossy(content);
         let path = Path::new(path_str.as_ref());
 
         if !path.exists() {
-            return Err(SynapticError::ProcessingError(
-                format!("Path does not exist: {}", path.display())
-            ));
+            return Err(SynapticError::ProcessingError(format!(
+                "Path does not exist: {}",
+                path.display()
+            )));
         }
 
         if path.is_file() {
@@ -828,13 +902,18 @@ impl MultiModalProcessor for FolderMemoryProcessor {
 
             Ok(memory)
         } else {
-            Err(SynapticError::ProcessingError(
-                format!("Unsupported path type: {}", path.display())
-            ))
+            Err(SynapticError::ProcessingError(format!(
+                "Unsupported path type: {}",
+                path.display()
+            )))
         }
     }
 
-    async fn extract_features(&self, content: &[u8], _content_type: &ContentType) -> MultiModalResult<Vec<f32>> {
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        _content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>> {
         // For folder processing, extract features from path
         let path_str = String::from_utf8_lossy(content);
         let path = Path::new(path_str.as_ref());
@@ -866,13 +945,21 @@ impl MultiModalProcessor for FolderMemoryProcessor {
         }
     }
 
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32> {
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32> {
         if features1.len() != features2.len() {
             return Ok(0.0);
         }
 
         // Cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -883,7 +970,11 @@ impl MultiModalProcessor for FolderMemoryProcessor {
         }
     }
 
-    async fn search_similar(&self, query_features: &[f32], candidates: &[MultiModalMemory]) -> MultiModalResult<Vec<(MemoryId, f32)>> {
+    async fn search_similar(
+        &self,
+        query_features: &[f32],
+        candidates: &[MultiModalMemory],
+    ) -> MultiModalResult<Vec<(MemoryId, f32)>> {
         let mut results = Vec::new();
 
         for memory in candidates {

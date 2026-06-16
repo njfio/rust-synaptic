@@ -4,7 +4,7 @@
 //! supporting text-embedding-ada-002 and text-embedding-3-* models.
 
 use super::super::provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities, compute_content_hash,
+    compute_content_hash, EmbedOptions, Embedding, EmbeddingProvider, ProviderCapabilities,
 };
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
@@ -197,9 +197,8 @@ impl OpenAIProvider {
         for attempt in 0..=self.config.max_retries {
             if attempt > 0 {
                 // Exponential backoff
-                let delay = Duration::from_millis(
-                    self.config.retry_base_delay_ms * 2_u64.pow(attempt - 1),
-                );
+                let delay =
+                    Duration::from_millis(self.config.retry_base_delay_ms * 2_u64.pow(attempt - 1));
                 tokio::time::sleep(delay).await;
                 tracing::debug!("Retrying OpenAI request (attempt {})", attempt + 1);
             }
@@ -233,7 +232,10 @@ impl OpenAIProvider {
                         }
                     } else {
                         let status = resp.status();
-                        let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                        let error_text = resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unknown error".to_string());
 
                         // Don't retry 4xx errors (except 429 rate limit)
                         if status.is_client_error() && status.as_u16() != 429 {
@@ -442,8 +444,7 @@ mod tests {
             return;
         };
 
-        let config = OpenAIConfig::new(api_key)
-            .with_model(OpenAIModel::TextEmbedding3Small);
+        let config = OpenAIConfig::new(api_key).with_model(OpenAIModel::TextEmbedding3Small);
         let provider = OpenAIProvider::new(config).expect("value should be available");
 
         let text = "This is a test of OpenAI embeddings";
@@ -465,8 +466,7 @@ mod tests {
             return;
         };
 
-        let config = OpenAIConfig::new(api_key)
-            .with_model(OpenAIModel::TextEmbedding3Small);
+        let config = OpenAIConfig::new(api_key).with_model(OpenAIModel::TextEmbedding3Small);
         let provider = OpenAIProvider::new(config).expect("value should be available");
 
         let texts = vec![
@@ -495,19 +495,31 @@ mod tests {
             return;
         };
 
-        let config = OpenAIConfig::new(api_key)
-            .with_model(OpenAIModel::TextEmbedding3Small);
+        let config = OpenAIConfig::new(api_key).with_model(OpenAIModel::TextEmbedding3Small);
         let provider = OpenAIProvider::new(config).expect("value should be available");
 
-        let emb1 = provider.embed("machine learning and artificial intelligence", None).await.expect("await should be present");
-        let emb2 = provider.embed("deep learning and neural networks", None).await.expect("await should be present");
-        let emb3 = provider.embed("cooking Italian pasta recipes", None).await.expect("await should be present");
+        let emb1 = provider
+            .embed("machine learning and artificial intelligence", None)
+            .await
+            .expect("await should be present");
+        let emb2 = provider
+            .embed("deep learning and neural networks", None)
+            .await
+            .expect("await should be present");
+        let emb3 = provider
+            .embed("cooking Italian pasta recipes", None)
+            .await
+            .expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        tracing::info!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!(
+            "Related similarity: {}, Unrelated similarity: {}",
+            sim_related,
+            sim_unrelated
+        );
     }
 }

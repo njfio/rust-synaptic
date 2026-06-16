@@ -165,16 +165,20 @@ impl Node {
         node.importance = memory.metadata.importance;
         node.confidence = memory.metadata.confidence;
         node.tags = memory.metadata.tags.clone();
-        
+
         // Copy custom fields as properties
         for (key, value) in &memory.metadata.custom_fields {
             node.properties.insert(key.clone(), value.clone());
         }
-        
+
         // Add memory-specific properties
-        node.properties.insert("memory_type".to_string(), memory.memory_type.to_string());
-        node.properties.insert("access_count".to_string(), memory.access_count().to_string());
-        
+        node.properties
+            .insert("memory_type".to_string(), memory.memory_type.to_string());
+        node.properties.insert(
+            "access_count".to_string(),
+            memory.access_count().to_string(),
+        );
+
         node
     }
 
@@ -258,7 +262,10 @@ impl Relationship {
     }
 
     /// Create a relationship with properties
-    pub fn with_properties(relationship_type: RelationshipType, properties: HashMap<String, String>) -> Self {
+    pub fn with_properties(
+        relationship_type: RelationshipType,
+        properties: HashMap<String, String>,
+    ) -> Self {
         let mut rel = Self::new(relationship_type);
         rel.properties = properties;
         rel
@@ -325,8 +332,8 @@ impl Edge {
 
     /// Check if this edge connects the given nodes (in either direction)
     pub fn connects(&self, node1: Uuid, node2: Uuid) -> bool {
-        (self.from_node == node1 && self.to_node == node2) ||
-        (self.from_node == node2 && self.to_node == node1)
+        (self.from_node == node1 && self.to_node == node2)
+            || (self.from_node == node2 && self.to_node == node1)
     }
 
     /// Get the other node in this edge

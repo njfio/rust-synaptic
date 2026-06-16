@@ -3,20 +3,20 @@
 //! This module implements a sophisticated interactive shell with command history,
 //! auto-completion, multi-line input support, and integrated SyQL query execution.
 
-use super::syql::{SyQLEngine, OutputFormat};
-use super::config::CliConfig;
 use super::completion::CompletionEngine;
-use super::history::{HistoryManager, CommandType};
+use super::config::CliConfig;
+use super::history::{CommandType, HistoryManager};
+use super::syql::{OutputFormat, SyQLEngine};
 use crate::error::Result;
-use rustyline::{Helper, Context, Result as RustylineResult, DefaultEditor};
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
-use rustyline::highlight::{Highlighter, MatchingBracketHighlighter, CmdKind};
+use rustyline::highlight::{CmdKind, Highlighter, MatchingBracketHighlighter};
 use rustyline::hint::{Hinter, HistoryHinter};
-use rustyline::validate::{Validator, MatchingBracketValidator};
+use rustyline::validate::{MatchingBracketValidator, Validator};
+use rustyline::{Context, DefaultEditor, Helper, Result as RustylineResult};
 use std::borrow::Cow::{self, Borrowed, Owned};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 /// Interactive shell for Synaptic CLI
@@ -51,8 +51,11 @@ impl<'a> InteractiveShell<'a> {
         let completion_engine = CompletionEngine::new();
 
         // Initialize history manager
-        let history_path = history_file.clone().unwrap_or_else(|| config.get_history_file());
-        let mut history_manager = HistoryManager::new(config.shell.history_size, Some(history_path.clone()));
+        let history_path = history_file
+            .clone()
+            .unwrap_or_else(|| config.get_history_file());
+        let mut history_manager =
+            HistoryManager::new(config.shell.history_size, Some(history_path.clone()));
         history_manager.load().await?;
 
         // Load history into rustyline if file is specified
@@ -100,7 +103,7 @@ impl<'a> InteractiveShell<'a> {
             match self.editor.readline(prompt) {
                 Ok(line) => {
                     let trimmed = line.trim();
-                    
+
                     if trimmed.is_empty() {
                         continue;
                     }
@@ -111,7 +114,8 @@ impl<'a> InteractiveShell<'a> {
                             // End multi-line input
                             self.state.multi_line_mode = false;
                             if !self.state.current_query.trim().is_empty() {
-                                self.execute_command(&self.state.current_query.clone()).await?;
+                                self.execute_command(&self.state.current_query.clone())
+                                    .await?;
                             }
                             self.state.current_query.clear();
                         } else {
@@ -124,7 +128,7 @@ impl<'a> InteractiveShell<'a> {
                     // Check for multi-line start
                     if trimmed.ends_with('\\') {
                         self.state.multi_line_mode = true;
-                        self.state.current_query = trimmed[..trimmed.len()-1].to_string();
+                        self.state.current_query = trimmed[..trimmed.len() - 1].to_string();
                         self.state.current_query.push('\n');
                         continue;
                     }
@@ -145,18 +149,18 @@ impl<'a> InteractiveShell<'a> {
 
                     // Execute as SyQL query
                     self.execute_command(trimmed).await?;
-                },
+                }
                 Err(ReadlineError::Interrupted) => {
                     tracing::debug!("User interrupted input with Ctrl+C");
                     crate::cli_outln!("^C");
                     self.state.multi_line_mode = false;
                     self.state.current_query.clear();
-                },
+                }
                 Err(ReadlineError::Eof) => {
                     tracing::info!("User exited shell with EOF");
                     crate::cli_outln!("Goodbye!");
                     break;
-                },
+                }
                 Err(err) => {
                     tracing::error!(
                         error = %err,
@@ -196,19 +200,19 @@ impl<'a> InteractiveShell<'a> {
             "exit" | "quit" | "q" => {
                 crate::cli_outln!("Goodbye!");
                 return Ok(Some(true));
-            },
+            }
             "help" | "h" => {
                 self.print_help();
                 return Ok(Some(false));
-            },
+            }
             "clear" | "cls" => {
                 crate::cli_out!("\x1B[2J\x1B[1;1H"); // Clear screen
                 return Ok(Some(false));
-            },
+            }
             "history" => {
                 self.show_history();
                 return Ok(Some(false));
-            },
+            }
             "set" => {
                 if parts.len() >= 3 {
                     self.set_variable(&parts[1..].join(" ")).await?;
@@ -216,7 +220,7 @@ impl<'a> InteractiveShell<'a> {
                     crate::cli_outln!("Usage: set <key> <value>");
                 }
                 return Ok(Some(false));
-            },
+            }
             "get" => {
                 if parts.len() >= 2 {
                     self.get_variable(parts[1]);
@@ -224,7 +228,7 @@ impl<'a> InteractiveShell<'a> {
                     self.show_all_variables();
                 }
                 return Ok(Some(false));
-            },
+            }
             "format" => {
                 if parts.len() >= 2 {
                     self.set_output_format(parts[1])?;
@@ -233,25 +237,35 @@ impl<'a> InteractiveShell<'a> {
                     crate::cli_outln!("Available formats: table, json, csv, yaml, graph, tree");
                 }
                 return Ok(Some(false));
-            },
+            }
             "timing" => {
                 if parts.len() >= 2 {
                     self.state.show_timing = parts[1].parse().unwrap_or(true);
                 } else {
                     self.state.show_timing = !self.state.show_timing;
                 }
-                crate::cli_outln!("Timing display: {}", if self.state.show_timing { "on" } else { "off" });
+                crate::cli_outln!(
+                    "Timing display: {}",
+                    if self.state.show_timing { "on" } else { "off" }
+                );
                 return Ok(Some(false));
-            },
+            }
             "stats" => {
                 if parts.len() >= 2 {
                     self.state.show_statistics = parts[1].parse().unwrap_or(true);
                 } else {
                     self.state.show_statistics = !self.state.show_statistics;
                 }
-                crate::cli_outln!("Statistics display: {}", if self.state.show_statistics { "on" } else { "off" });
+                crate::cli_outln!(
+                    "Statistics display: {}",
+                    if self.state.show_statistics {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                );
                 return Ok(Some(false));
-            },
+            }
             "explain" => {
                 if parts.len() >= 2 {
                     let query = parts[1..].join(" ");
@@ -260,11 +274,11 @@ impl<'a> InteractiveShell<'a> {
                     crate::cli_outln!("Usage: explain <query>");
                 }
                 return Ok(Some(false));
-            },
+            }
             "recover" => {
                 self.handle_error_recovery().await?;
                 return Ok(Some(false));
-            },
+            }
             "session" => {
                 if parts.len() >= 2 {
                     match parts[1] {
@@ -277,7 +291,7 @@ impl<'a> InteractiveShell<'a> {
                     self.show_session_info().await?;
                 }
                 return Ok(Some(false));
-            },
+            }
             "complete" => {
                 if parts.len() >= 2 {
                     let query = parts[1..].join(" ");
@@ -286,7 +300,7 @@ impl<'a> InteractiveShell<'a> {
                     crate::cli_outln!("Usage: complete <partial_query>");
                 }
                 return Ok(Some(false));
-            },
+            }
             _ => return Ok(None), // Not a shell command
         }
     }
@@ -307,7 +321,7 @@ impl<'a> InteractiveShell<'a> {
             crate::cli_outln!("Step {}: {}", i + 1, cmd);
 
             match self.execute_command_with_recovery(cmd).await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     crate::cli_errln!("Command chain failed at step {}: {}", i + 1, e);
                     self.state.error_recovery_mode = true;
@@ -331,7 +345,9 @@ impl<'a> InteractiveShell<'a> {
 
         match self.syql_engine.execute_query(command).await {
             Ok(result) => {
-                let formatted = self.syql_engine.format_result(&result, self.state.output_format.clone())?;
+                let formatted = self
+                    .syql_engine
+                    .format_result(&result, self.state.output_format.clone())?;
                 crate::cli_outln!("{}", formatted);
 
                 if self.state.show_timing {
@@ -340,7 +356,8 @@ impl<'a> InteractiveShell<'a> {
                 }
 
                 if self.state.show_statistics {
-                    crate::cli_outln!("Statistics: {} rows, {} memories scanned, {} relationships traversed",
+                    crate::cli_outln!(
+                        "Statistics: {} rows, {} memories scanned, {} relationships traversed",
                         result.statistics.rows_returned,
                         result.statistics.memories_scanned,
                         result.statistics.relationships_traversed
@@ -359,7 +376,7 @@ impl<'a> InteractiveShell<'a> {
                 // Clear error recovery mode on success
                 self.state.error_recovery_mode = false;
                 self.state.last_error = None;
-            },
+            }
             Err(e) => {
                 tracing::error!("Error executing query: {}", e);
 
@@ -402,10 +419,15 @@ impl<'a> InteractiveShell<'a> {
                 tracing::info!("");
 
                 for (i, node) in plan.nodes.iter().enumerate() {
-                    tracing::info!("{}. {} (Cost: {:.2}, Rows: {})",
-                        i + 1, node.description, node.cost, node.rows);
+                    tracing::info!(
+                        "{}. {} (Cost: {:.2}, Rows: {})",
+                        i + 1,
+                        node.description,
+                        node.cost,
+                        node.rows
+                    );
                 }
-            },
+            }
             Err(e) => {
                 tracing::error!("Error explaining query: {}", e);
             }
@@ -537,7 +559,11 @@ impl<'a> InteractiveShell<'a> {
     }
 
     /// Suggest error recovery actions
-    async fn suggest_error_recovery(&self, failed_command: &str, error_message: &str) -> Result<()> {
+    async fn suggest_error_recovery(
+        &self,
+        failed_command: &str,
+        error_message: &str,
+    ) -> Result<()> {
         crate::cli_outln!("\n🔧 Error Recovery Suggestions:");
         crate::cli_outln!("===============================");
 
@@ -605,7 +631,12 @@ impl<'a> InteractiveShell<'a> {
             .collect::<Vec<_>>();
 
         for (i, entry) in successful_commands.iter().enumerate() {
-            crate::cli_outln!("{}. {} ({}ms)", i + 1, entry.command, entry.duration_ms.unwrap_or(0));
+            crate::cli_outln!(
+                "{}. {} ({}ms)",
+                i + 1,
+                entry.command,
+                entry.duration_ms.unwrap_or(0)
+            );
         }
 
         self.state.error_recovery_mode = false;
@@ -631,9 +662,17 @@ impl<'a> InteractiveShell<'a> {
         }
 
         similar_commands.sort_by(|a, b| {
-            let sim_a = self.calculate_command_similarity(&failed_words, &a.split_whitespace().collect::<Vec<_>>());
-            let sim_b = self.calculate_command_similarity(&failed_words, &b.split_whitespace().collect::<Vec<_>>());
-            sim_b.partial_cmp(&sim_a).unwrap_or(std::cmp::Ordering::Equal)
+            let sim_a = self.calculate_command_similarity(
+                &failed_words,
+                &a.split_whitespace().collect::<Vec<_>>(),
+            );
+            let sim_b = self.calculate_command_similarity(
+                &failed_words,
+                &b.split_whitespace().collect::<Vec<_>>(),
+            );
+            sim_b
+                .partial_cmp(&sim_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         similar_commands
@@ -647,7 +686,10 @@ impl<'a> InteractiveShell<'a> {
 
         let mut common_words = 0;
         for word1 in words1 {
-            if words2.iter().any(|word2| word1.to_lowercase() == word2.to_lowercase()) {
+            if words2
+                .iter()
+                .any(|word2| word1.to_lowercase() == word2.to_lowercase())
+            {
                 common_words += 1;
             }
         }
@@ -660,7 +702,10 @@ impl<'a> InteractiveShell<'a> {
         crate::cli_outln!("Session Information:");
         crate::cli_outln!("===================");
         crate::cli_outln!("Session ID: {}", self.session_id);
-        crate::cli_outln!("Commands executed: {}", self.history_manager.get_entries().len());
+        crate::cli_outln!(
+            "Commands executed: {}",
+            self.history_manager.get_entries().len()
+        );
 
         let stats = self.history_manager.get_statistics();
         crate::cli_outln!("Successful commands: {}", stats.successful_commands);
@@ -671,8 +716,18 @@ impl<'a> InteractiveShell<'a> {
         }
 
         crate::cli_outln!("Current format: {:?}", self.state.output_format);
-        crate::cli_outln!("Timing display: {}", if self.state.show_timing { "on" } else { "off" });
-        crate::cli_outln!("Statistics display: {}", if self.state.show_statistics { "on" } else { "off" });
+        crate::cli_outln!(
+            "Timing display: {}",
+            if self.state.show_timing { "on" } else { "off" }
+        );
+        crate::cli_outln!(
+            "Statistics display: {}",
+            if self.state.show_statistics {
+                "on"
+            } else {
+                "off"
+            }
+        );
 
         if self.state.error_recovery_mode {
             crate::cli_outln!("Status: Error recovery mode");
@@ -691,8 +746,11 @@ impl<'a> InteractiveShell<'a> {
         // In a full implementation, you'd save session state to a file
         // For now, just save the history
         if let Some(ref history_path) = self.state.history_file {
-            let session_path = history_path.with_file_name(format!("session_{}.json", session_name));
-            self.history_manager.export(&session_path, super::history::ExportFormat::Json).await?;
+            let session_path =
+                history_path.with_file_name(format!("session_{}.json", session_name));
+            self.history_manager
+                .export(&session_path, super::history::ExportFormat::Json)
+                .await?;
             crate::cli_outln!("Session saved to {}", session_path.display());
         }
 
@@ -707,9 +765,13 @@ impl<'a> InteractiveShell<'a> {
         // In a full implementation, you'd load session state from a file
         // For now, just load the history
         if let Some(ref history_path) = self.state.history_file {
-            let session_path = history_path.with_file_name(format!("session_{}.json", session_name));
+            let session_path =
+                history_path.with_file_name(format!("session_{}.json", session_name));
             if session_path.exists() {
-                let imported = self.history_manager.import(&session_path, super::history::ImportFormat::Json).await?;
+                let imported = self
+                    .history_manager
+                    .import(&session_path, super::history::ImportFormat::Json)
+                    .await?;
                 crate::cli_outln!("Loaded {} commands from session", imported);
             } else {
                 crate::cli_outln!("Session '{}' not found", session_name);
@@ -721,7 +783,10 @@ impl<'a> InteractiveShell<'a> {
 
     /// Show completions for a partial query
     async fn show_completions(&mut self, partial_query: &str) -> Result<()> {
-        let completions = self.completion_engine.get_completions(partial_query, partial_query.len()).await?;
+        let completions = self
+            .completion_engine
+            .get_completions(partial_query, partial_query.len())
+            .await?;
 
         if completions.is_empty() {
             crate::cli_outln!("No completions found for '{}'", partial_query);
@@ -732,7 +797,12 @@ impl<'a> InteractiveShell<'a> {
         crate::cli_outln!("======================");
 
         for (i, completion) in completions.iter().take(10).enumerate() {
-            crate::cli_outln!("{}. {} ({:?})", i + 1, completion.text, completion.item_type);
+            crate::cli_outln!(
+                "{}. {} ({:?})",
+                i + 1,
+                completion.text,
+                completion.item_type
+            );
             if let Some(ref desc) = completion.description {
                 crate::cli_outln!("   {}", desc);
             }
@@ -815,21 +885,63 @@ impl Completer for SynapticHelper {
 
         // Enhanced keyword completion with categories
         let syql_keywords = vec![
-            "SELECT", "FROM", "WHERE", "ORDER", "BY", "LIMIT", "GROUP", "HAVING",
-            "MATCH", "CREATE", "UPDATE", "DELETE", "SHOW", "EXPLAIN", "DESCRIBE",
-            "MEMORIES", "RELATIONSHIPS", "PATH", "SHORTEST", "ALL", "PATHS",
-            "AND", "OR", "NOT", "IN", "BETWEEN", "LIKE", "REGEX", "EXISTS",
-            "CASE", "WHEN", "THEN", "ELSE", "END", "AS", "DISTINCT",
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "ORDER",
+            "BY",
+            "LIMIT",
+            "GROUP",
+            "HAVING",
+            "MATCH",
+            "CREATE",
+            "UPDATE",
+            "DELETE",
+            "SHOW",
+            "EXPLAIN",
+            "DESCRIBE",
+            "MEMORIES",
+            "RELATIONSHIPS",
+            "PATH",
+            "SHORTEST",
+            "ALL",
+            "PATHS",
+            "AND",
+            "OR",
+            "NOT",
+            "IN",
+            "BETWEEN",
+            "LIKE",
+            "REGEX",
+            "EXISTS",
+            "CASE",
+            "WHEN",
+            "THEN",
+            "ELSE",
+            "END",
+            "AS",
+            "DISTINCT",
         ];
 
         let shell_commands = vec![
-            "help", "exit", "quit", "clear", "history", "set", "get", "format",
-            "timing", "stats", "explain", "recover", "session", "complete",
+            "help", "exit", "quit", "clear", "history", "set", "get", "format", "timing", "stats",
+            "explain", "recover", "session", "complete",
         ];
 
         let functions = vec![
-            "COUNT", "SUM", "AVG", "MIN", "MAX", "LENGTH", "SIZE", "TYPE",
-            "NOW", "DATE", "SIMILARITY", "DISTANCE", "SHORTEST_PATH",
+            "COUNT",
+            "SUM",
+            "AVG",
+            "MIN",
+            "MAX",
+            "LENGTH",
+            "SIZE",
+            "TYPE",
+            "NOW",
+            "DATE",
+            "SIMILARITY",
+            "DISTANCE",
+            "SHORTEST_PATH",
         ];
 
         let word_start = line[..pos].rfind(' ').map(|i| i + 1).unwrap_or(0);
@@ -929,5 +1041,3 @@ impl Validator for SynapticHelper {
         self.validator.validate_while_typing()
     }
 }
-
-

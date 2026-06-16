@@ -1,23 +1,27 @@
-use synaptic::memory::temporal::{DiffAnalyzer, ChangeSet, ChangeType, TimeRange};
+use chrono::{Duration, Utc};
 use synaptic::memory::temporal::differential::ContentChangeType;
+use synaptic::memory::temporal::{ChangeSet, ChangeType, DiffAnalyzer, TimeRange};
 use synaptic::memory::types::{MemoryEntry, MemoryType};
-use chrono::{Utc, Duration};
 use uuid::Uuid;
 
 #[tokio::test]
 async fn test_diff_analysis_with_compression() -> Result<(), Box<dyn std::error::Error>> {
     let mut analyzer = DiffAnalyzer::new();
     let m1 = MemoryEntry::new("m1".into(), "Hello world".into(), MemoryType::ShortTerm);
-    let m2 = MemoryEntry::new("m1".into(), "Hello brave new world".into(), MemoryType::ShortTerm);
+    let m2 = MemoryEntry::new(
+        "m1".into(),
+        "Hello brave new world".into(),
+        MemoryType::ShortTerm,
+    );
     let diff = analyzer.analyze_difference(&m1, &m2).await?;
     assert!(diff.compression_ratio.is_some());
 
     // The test should check for any kind of change detection, not just additions
     // Since "Hello world" -> "Hello brave new world" could be detected as a modification
     assert!(
-        !diff.content_changes.additions.is_empty() ||
-        !diff.content_changes.modifications.is_empty() ||
-        diff.content_changes.change_type != ContentChangeType::Unchanged
+        !diff.content_changes.additions.is_empty()
+            || !diff.content_changes.modifications.is_empty()
+            || diff.content_changes.change_type != ContentChangeType::Unchanged
     );
     Ok(())
 }

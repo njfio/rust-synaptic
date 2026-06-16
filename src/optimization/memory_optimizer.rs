@@ -156,7 +156,7 @@ pub struct ResourcePoolManager {
 /// Resource pool trait
 pub trait ResourcePool {
     type Resource;
-    
+
     fn acquire(&self) -> Result<Self::Resource>;
     fn release(&self, resource: Self::Resource) -> Result<()>;
     fn size(&self) -> usize;
@@ -308,12 +308,12 @@ impl MemoryOptimizer {
     /// Create new memory optimizer
     pub fn new(config: MemoryOptimizerConfig) -> Result<Self> {
         info!("Initializing memory optimizer");
-        
+
         let allocator = Arc::new(OptimizedAllocator::new(config.allocation_tracking.clone())?);
         let pool_manager = Arc::new(ResourcePoolManager::new(config.pool_config.clone())?);
         let gc_optimizer = Arc::new(GarbageCollectionOptimizer::new(config.gc_config.clone())?);
         let memory_profiler = Arc::new(MemoryProfiler::new(config.profiling_config.clone())?);
-        
+
         Ok(Self {
             allocator,
             pool_manager,
@@ -326,19 +326,19 @@ impl MemoryOptimizer {
     /// Start memory optimization
     pub async fn start(&self) -> Result<()> {
         info!("Starting memory optimizer");
-        
+
         if self.config.enable_memory_profiling {
             self.memory_profiler.start_profiling().await?;
         }
-        
+
         if self.config.enable_gc_optimization {
             self.gc_optimizer.start_optimization().await?;
         }
-        
+
         if self.config.enable_resource_pooling {
             self.pool_manager.start_monitoring().await?;
         }
-        
+
         info!("Memory optimizer started successfully");
         Ok(())
     }
@@ -346,33 +346,33 @@ impl MemoryOptimizer {
     /// Optimize memory usage
     pub async fn optimize(&self) -> Result<OptimizationResult> {
         debug!("Running memory optimization");
-        
+
         let mut result = OptimizationResult::default();
-        
+
         // Run garbage collection optimization
         if self.config.enable_gc_optimization {
             let gc_result = self.gc_optimizer.optimize().await?;
             result.memory_freed += gc_result.memory_freed;
             result.optimizations_applied.push("GC optimization".to_string());
         }
-        
+
         // Optimize resource pools
         if self.config.enable_resource_pooling {
             let pool_result = self.pool_manager.optimize_pools().await?;
             result.resources_optimized += pool_result.pools_optimized;
             result.optimizations_applied.push("Pool optimization".to_string());
         }
-        
+
         // Analyze and optimize allocations
         let allocation_result = self.allocator.optimize_allocations().await?;
         result.allocations_optimized += allocation_result.optimized_count;
         result.optimizations_applied.push("Allocation optimization".to_string());
-        
+
         // Update profiling data
         if self.config.enable_memory_profiling {
             self.memory_profiler.update_analysis().await?;
         }
-        
+
         info!("Memory optimization completed: {:?}", result);
         Ok(result)
     }
@@ -383,7 +383,7 @@ impl MemoryOptimizer {
         let pool_stats = self.pool_manager.get_stats().await;
         let gc_stats = self.gc_optimizer.get_stats().await;
         let profiling_data = self.memory_profiler.get_profiling_data().await;
-        
+
         MemoryStats {
             allocation_stats,
             pool_stats,

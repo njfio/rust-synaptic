@@ -3,17 +3,19 @@
 //! Advanced document processing capabilities for PDF, Word documents, Markdown, and other text-based formats.
 //! Provides intelligent content extraction, metadata analysis, and semantic understanding.
 
-use super::{ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult};
+use super::{
+    ContentType, MultiModalMemory, MultiModalMetadata, MultiModalProcessor, MultiModalResult,
+};
 use crate::error::SynapticError;
 use crate::memory::types::MemoryId;
+use pdf_extract;
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{Read, Cursor};
-use pdf_extract;
-use zip::read::ZipArchive;
-use quick_xml::Reader;
-use quick_xml::events::Event;
+use std::io::{Cursor, Read};
 use uuid::Uuid;
+use zip::read::ZipArchive;
 
 /// Document formats supported by the document processor
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,10 +39,7 @@ pub enum DocumentFormat {
         image_count: u32,
     },
     /// Plain text documents
-    PlainText {
-        encoding: String,
-        line_count: u32,
-    },
+    PlainText { encoding: String, line_count: u32 },
     /// Rich Text Format
     Rtf {
         version: String,
@@ -202,7 +201,7 @@ impl DocumentMemoryProcessor {
         // Check file signatures and content patterns
         if content.starts_with(b"%PDF") {
             Ok(DocumentFormat::Pdf {
-                pages: 0, // Would need proper parsing
+                pages: 0,                   // Would need proper parsing
                 version: "1.4".to_string(), // Default version
                 encrypted: false,
             })
@@ -245,23 +244,25 @@ impl DocumentMemoryProcessor {
     fn is_markdown_content(&self, content: &[u8]) -> bool {
         let text = String::from_utf8_lossy(content);
         let lines: Vec<&str> = text.lines().take(20).collect(); // Check first 20 lines
-        
+
         let markdown_indicators = [
             "# ", "## ", "### ", // Headers
-            "- ", "* ", "+ ",    // Lists
-            "```", "~~~",        // Code blocks
-            "[", "](", "![",     // Links and images
-            "|", "---",          // Tables and horizontal rules
+            "- ", "* ", "+ ", // Lists
+            "```", "~~~", // Code blocks
+            "[", "](", "![", // Links and images
+            "|", "---", // Tables and horizontal rules
         ];
-        
-        let indicator_count = lines.iter()
+
+        let indicator_count = lines
+            .iter()
             .map(|line| {
-                markdown_indicators.iter()
+                markdown_indicators
+                    .iter()
                     .filter(|&indicator| line.contains(indicator))
                     .count()
             })
             .sum::<usize>();
-        
+
         indicator_count >= 2 // At least 2 markdown indicators
     }
 
@@ -278,16 +279,18 @@ impl DocumentMemoryProcessor {
     }
 
     /// Extract text content from document
-    pub async fn extract_text(&self, content: &[u8], format: &DocumentFormat) -> MultiModalResult<String> {
+    pub async fn extract_text(
+        &self,
+        content: &[u8],
+        format: &DocumentFormat,
+    ) -> MultiModalResult<String> {
         match format {
             DocumentFormat::Pdf { .. } => self.extract_pdf_text(content).await,
             DocumentFormat::Docx { .. } => self.extract_docx_text(content).await,
             DocumentFormat::Markdown { .. } => self.extract_markdown_text(content).await,
             DocumentFormat::Html { .. } => self.extract_html_text(content).await,
             DocumentFormat::Rtf { .. } => self.extract_rtf_text(content).await,
-            DocumentFormat::PlainText { .. } => {
-                Ok(String::from_utf8_lossy(content).to_string())
-            }
+            DocumentFormat::PlainText { .. } => Ok(String::from_utf8_lossy(content).to_string()),
         }
     }
 
@@ -296,7 +299,9 @@ impl DocumentMemoryProcessor {
         let mut cursor = std::io::Cursor::new(content);
         match pdf_extract::extract_text_from_reader(&mut cursor) {
             Ok(text) => Ok(text),
-            Err(e) => Err(SynapticError::ProcessingError(format!("PDF extraction failed: {e}")))
+            Err(e) => Err(SynapticError::ProcessingError(format!(
+                "PDF extraction failed: {e}"
+            ))),
         }
     }
 
@@ -318,7 +323,11 @@ impl DocumentMemoryProcessor {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Text(e)) => text.push_str(&e.unescape().unwrap_or_default()),
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(SynapticError::ProcessingError(format!("DOCX parse error: {e}"))),
+                Err(e) => {
+                    return Err(SynapticError::ProcessingError(format!(
+                        "DOCX parse error: {e}"
+                    )))
+                }
                 _ => {}
             }
             buf.clear();
@@ -341,7 +350,7 @@ impl DocumentMemoryProcessor {
             .replace("<br>", "\n")
             .replace("<p>", "\n")
             .replace("</p>", "\n");
-        
+
         // Remove HTML tags (very basic implementation)
         let mut result = String::new();
         let mut in_tag = false;
@@ -353,7 +362,7 @@ impl DocumentMemoryProcessor {
                 _ => {}
             }
         }
-        
+
         Ok(result)
     }
 
@@ -363,7 +372,7 @@ impl DocumentMemoryProcessor {
         // Basic RTF parsing (remove control words)
         let mut result = String::new();
         let mut in_control = false;
-        
+
         for ch in rtf_text.chars() {
             match ch {
                 '\\' => in_control = true,
@@ -376,12 +385,16 @@ impl DocumentMemoryProcessor {
                 _ => {}
             }
         }
-        
+
         Ok(result.trim().to_string())
     }
 
     /// Analyze document structure
-    pub async fn analyze_structure(&self, text: &str, format: &DocumentFormat) -> MultiModalResult<DocumentStructure> {
+    pub async fn analyze_structure(
+        &self,
+        text: &str,
+        format: &DocumentFormat,
+    ) -> MultiModalResult<DocumentStructure> {
         let headings = self.extract_headings(text, format).await?;
         let table_of_contents = self.generate_toc(&headings);
         let sections = self.extract_sections(text, &headings).await?;
@@ -396,7 +409,11 @@ impl DocumentMemoryProcessor {
     }
 
     /// Extract headings from text
-    async fn extract_headings(&self, text: &str, format: &DocumentFormat) -> MultiModalResult<Vec<DocumentHeading>> {
+    async fn extract_headings(
+        &self,
+        text: &str,
+        format: &DocumentFormat,
+    ) -> MultiModalResult<Vec<DocumentHeading>> {
         let mut headings = Vec::new();
 
         match format {
@@ -423,7 +440,8 @@ impl DocumentMemoryProcessor {
                         let end_tag = format!("</h{}>", level);
                         if let Some(start) = line.find(&start_tag) {
                             if let Some(end) = line.find(&end_tag) {
-                                let heading_text = line[start + start_tag.len()..end].trim().to_string();
+                                let heading_text =
+                                    line[start + start_tag.len()..end].trim().to_string();
                                 if !heading_text.is_empty() {
                                     headings.push(DocumentHeading {
                                         level: level as u8,
@@ -442,7 +460,10 @@ impl DocumentMemoryProcessor {
                     let trimmed = line.trim();
                     if trimmed.len() > 0 && trimmed.len() < 100 {
                         // Check if line looks like a heading (all caps, short, etc.)
-                        if trimmed.chars().all(|c| c.is_uppercase() || c.is_whitespace() || c.is_numeric()) {
+                        if trimmed
+                            .chars()
+                            .all(|c| c.is_uppercase() || c.is_whitespace() || c.is_numeric())
+                        {
                             headings.push(DocumentHeading {
                                 level: 1,
                                 text: trimmed.to_string(),
@@ -459,16 +480,23 @@ impl DocumentMemoryProcessor {
 
     /// Generate table of contents from headings
     fn generate_toc(&self, headings: &[DocumentHeading]) -> Vec<TocEntry> {
-        headings.iter().map(|heading| TocEntry {
-            title: heading.text.clone(),
-            level: heading.level,
-            page: None, // Page numbers would need document layout analysis
-            position: heading.position,
-        }).collect()
+        headings
+            .iter()
+            .map(|heading| TocEntry {
+                title: heading.text.clone(),
+                level: heading.level,
+                page: None, // Page numbers would need document layout analysis
+                position: heading.position,
+            })
+            .collect()
     }
 
     /// Extract sections based on headings
-    async fn extract_sections(&self, text: &str, headings: &[DocumentHeading]) -> MultiModalResult<Vec<DocumentSection>> {
+    async fn extract_sections(
+        &self,
+        text: &str,
+        headings: &[DocumentHeading],
+    ) -> MultiModalResult<Vec<DocumentSection>> {
         let lines: Vec<&str> = text.lines().collect();
         let mut sections = Vec::new();
 
@@ -530,7 +558,8 @@ impl DocumentMemoryProcessor {
         // Simple keyword extraction (in real implementation, use TF-IDF or NLP)
         let mut word_counts = HashMap::new();
         for word in words {
-            let clean_word = word.to_lowercase()
+            let clean_word = word
+                .to_lowercase()
                 .trim_matches(|c: char| !c.is_alphabetic())
                 .to_string();
             if !clean_word.is_empty() && !self.is_stop_word(&clean_word) {
@@ -551,11 +580,11 @@ impl DocumentMemoryProcessor {
     /// Check if word is a stop word
     fn is_stop_word(&self, word: &str) -> bool {
         const STOP_WORDS: &[&str] = &[
-            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
-            "from", "up", "about", "into", "through", "during", "before", "after", "above",
-            "below", "between", "among", "this", "that", "these", "those", "is", "are", "was",
-            "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "must", "can", "shall", "a", "an",
+            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "from",
+            "up", "about", "into", "through", "during", "before", "after", "above", "below",
+            "between", "among", "this", "that", "these", "those", "is", "are", "was", "were", "be",
+            "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "must", "can", "shall", "a", "an",
         ];
         STOP_WORDS.contains(&word)
     }
@@ -568,7 +597,8 @@ impl DocumentMemoryProcessor {
         }
 
         // Simple extractive summarization (take first and last sentences)
-        let summary = format!("{}. {}",
+        let summary = format!(
+            "{}. {}",
             sentences.first().unwrap_or(&"").trim(),
             sentences.last().unwrap_or(&"").trim()
         );
@@ -586,13 +616,19 @@ impl DocumentMemoryProcessor {
 
 #[async_trait::async_trait]
 impl MultiModalProcessor for DocumentMemoryProcessor {
-    async fn process(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+    async fn process(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory> {
         let start_time = std::time::Instant::now();
 
         if content.len() > self.config.max_document_size {
-            return Err(SynapticError::ProcessingError(
-                format!("Document size {} exceeds maximum {}", content.len(), self.config.max_document_size)
-            ));
+            return Err(SynapticError::ProcessingError(format!(
+                "Document size {} exceeds maximum {}",
+                content.len(),
+                self.config.max_document_size
+            )));
         }
 
         // Detect document format
@@ -656,7 +692,8 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         let quality_score = self.calculate_document_quality_score(&doc_metadata, content.len());
 
         // Calculate confidence based on processing success and content characteristics
-        let confidence = self.calculate_processing_confidence(&doc_metadata, &format, processing_time_ms);
+        let confidence =
+            self.calculate_processing_confidence(&doc_metadata, &format, processing_time_ms);
 
         // Create multi-modal metadata
         let metadata = MultiModalMetadata {
@@ -677,7 +714,10 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             metadata,
             extracted_features: {
                 let mut features = HashMap::new();
-                features.insert("document_metadata".to_string(), serde_json::to_value(doc_metadata)?);
+                features.insert(
+                    "document_metadata".to_string(),
+                    serde_json::to_value(doc_metadata)?,
+                );
                 features
             },
             cross_modal_links: Vec::new(),
@@ -688,7 +728,11 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         Ok(memory)
     }
 
-    async fn extract_features(&self, content: &[u8], _content_type: &ContentType) -> MultiModalResult<Vec<f32>> {
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        _content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>> {
         // Extract text and create feature vector
         let format = self.detect_document_format(content)?;
         let text = self.extract_text(content, &format).await?;
@@ -697,18 +741,30 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         let word_count = text.split_whitespace().count() as f32;
         let char_count = text.chars().count() as f32;
         let line_count = text.lines().count() as f32;
-        let avg_word_length = if word_count > 0.0 { char_count / word_count } else { 0.0 };
+        let avg_word_length = if word_count > 0.0 {
+            char_count / word_count
+        } else {
+            0.0
+        };
 
         Ok(vec![word_count, char_count, line_count, avg_word_length])
     }
 
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32> {
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32> {
         if features1.len() != features2.len() {
             return Ok(0.0);
         }
 
         // Cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -719,7 +775,11 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         }
     }
 
-    async fn search_similar(&self, query_features: &[f32], candidates: &[MultiModalMemory]) -> MultiModalResult<Vec<(MemoryId, f32)>> {
+    async fn search_similar(
+        &self,
+        query_features: &[f32],
+        candidates: &[MultiModalMemory],
+    ) -> MultiModalResult<Vec<(MemoryId, f32)>> {
         let mut results = Vec::new();
 
         for memory in candidates {
@@ -739,7 +799,11 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
     }
 
     /// Calculate document quality score based on multiple factors
-    fn calculate_document_quality_score(&self, metadata: &DocumentMetadata, content_size: usize) -> f64 {
+    fn calculate_document_quality_score(
+        &self,
+        metadata: &DocumentMetadata,
+        content_size: usize,
+    ) -> f64 {
         let mut quality_factors = Vec::new();
 
         // Factor 1: Content completeness (0.0-1.0)
@@ -760,14 +824,16 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             let reference_count = metadata.structure.references.len() as f64;
 
             // Normalize structure elements
-            let structure_richness = (heading_count * 0.4 + section_count * 0.4 + reference_count * 0.2) / 10.0;
+            let structure_richness =
+                (heading_count * 0.4 + section_count * 0.4 + reference_count * 0.2) / 10.0;
             structure_richness.min(1.0)
         };
         quality_factors.push(structure_score * 0.20);
 
         // Factor 3: Keyword density and relevance (0.0-1.0)
         let keyword_score = if metadata.word_count > 0 {
-            let keyword_density = metadata.keywords.len() as f64 / (metadata.word_count as f64 / 100.0);
+            let keyword_density =
+                metadata.keywords.len() as f64 / (metadata.word_count as f64 / 100.0);
             // Optimal keyword density is around 2-5%
             let optimal_density = 3.5;
             let density_score = 1.0 - (keyword_density - optimal_density).abs() / optimal_density;
@@ -838,7 +904,12 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
     }
 
     /// Calculate processing confidence based on various factors
-    fn calculate_processing_confidence(&self, metadata: &DocumentMetadata, format: &DocumentFormat, processing_time_ms: u64) -> f64 {
+    fn calculate_processing_confidence(
+        &self,
+        metadata: &DocumentMetadata,
+        format: &DocumentFormat,
+        processing_time_ms: u64,
+    ) -> f64 {
         let mut confidence_factors = Vec::new();
 
         // Factor 1: Format recognition confidence (0.0-1.0)
@@ -901,10 +972,14 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         // Factor 5: Feature extraction success (0.0-1.0)
         let feature_confidence = {
             let has_keywords = !metadata.keywords.is_empty();
-            let has_structure = !metadata.structure.headings.is_empty() || !metadata.structure.sections.is_empty();
+            let has_structure =
+                !metadata.structure.headings.is_empty() || !metadata.structure.sections.is_empty();
             let has_summary = metadata.summary.is_some();
 
-            let feature_count = [has_keywords, has_structure, has_summary].iter().filter(|&&x| x).count();
+            let feature_count = [has_keywords, has_structure, has_summary]
+                .iter()
+                .filter(|&&x| x)
+                .count();
             feature_count as f64 / 3.0
         };
         confidence_factors.push(feature_confidence * 0.1);

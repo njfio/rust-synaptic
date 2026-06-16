@@ -1,13 +1,13 @@
 //! Comprehensive Audit Logging Module
-//! 
+//!
 //! Implements enterprise-grade audit logging with real-time monitoring,
 //! alerting, and compliance reporting capabilities.
 
 use crate::error::Result;
-use crate::security::{SecurityContext, AuditConfig, AlertThresholds, SecureOperation};
+use crate::security::{AlertThresholds, AuditConfig, SecureOperation, SecurityContext};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Audit logger for security events
@@ -31,10 +31,11 @@ impl AuditLogger {
     }
 
     /// Log a memory operation
-    pub async fn log_memory_operation(&mut self, 
-        context: &SecurityContext, 
-        operation: &str, 
-        success: bool
+    pub async fn log_memory_operation(
+        &mut self,
+        context: &SecurityContext,
+        operation: &str,
+        success: bool,
     ) -> Result<()> {
         if !self.config.log_memory_operations {
             return Ok(());
@@ -55,7 +56,11 @@ impl AuditLogger {
             ip_address: None,
             user_agent: None,
             details,
-            risk_level: if success { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if success {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         };
 
         self.add_audit_event(event).await?;
@@ -63,11 +68,12 @@ impl AuditLogger {
     }
 
     /// Log an authentication event
-    pub async fn log_authentication_event(&mut self,
+    pub async fn log_authentication_event(
+        &mut self,
         user_id: &str,
         auth_type: &str,
         success: bool,
-        ip_address: Option<String>
+        ip_address: Option<String>,
     ) -> Result<()> {
         if !self.config.log_auth_events {
             return Ok(());
@@ -82,14 +88,23 @@ impl AuditLogger {
             event_type: AuditEventType::Authentication,
             user_id: user_id.to_string(),
             session_id: "N/A".to_string(),
-            operation: if success { "login_success" } else { "login_failure" }.to_string(),
+            operation: if success {
+                "login_success"
+            } else {
+                "login_failure"
+            }
+            .to_string(),
             resource: "authentication".to_string(),
             success,
             timestamp: Utc::now(),
             ip_address,
             user_agent: None,
             details,
-            risk_level: if success { RiskLevel::Low } else { RiskLevel::High },
+            risk_level: if success {
+                RiskLevel::Low
+            } else {
+                RiskLevel::High
+            },
         };
 
         self.add_audit_event(event).await?;
@@ -103,10 +118,11 @@ impl AuditLogger {
     }
 
     /// Log an access control decision
-    pub async fn log_access_decision(&mut self, 
-        context: &SecurityContext, 
-        permission: &str, 
-        granted: bool
+    pub async fn log_access_decision(
+        &mut self,
+        context: &SecurityContext,
+        permission: &str,
+        granted: bool,
     ) -> Result<()> {
         if !self.config.log_access_decisions {
             return Ok(());
@@ -122,31 +138,42 @@ impl AuditLogger {
             event_type: AuditEventType::AccessControl,
             user_id: context.user_id.clone(),
             session_id: context.session_id.clone(),
-            operation: if granted { "permission_granted" } else { "permission_denied" }.to_string(),
+            operation: if granted {
+                "permission_granted"
+            } else {
+                "permission_denied"
+            }
+            .to_string(),
             resource: "access_control".to_string(),
             success: granted,
             timestamp: Utc::now(),
             ip_address: None,
             user_agent: None,
             details,
-            risk_level: if granted { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if granted {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         };
 
         self.add_audit_event(event).await?;
 
         // Track unauthorized access attempts
         if !granted {
-            self.alert_tracker.record_unauthorized_attempt(&context.user_id);
+            self.alert_tracker
+                .record_unauthorized_attempt(&context.user_id);
         }
 
         Ok(())
     }
 
     /// Log an encryption operation
-    pub async fn log_encryption_operation(&mut self, 
-        context: &SecurityContext, 
-        operation: &str, 
-        success: bool
+    pub async fn log_encryption_operation(
+        &mut self,
+        context: &SecurityContext,
+        operation: &str,
+        success: bool,
     ) -> Result<()> {
         if !self.config.log_encryption_ops {
             return Ok(());
@@ -167,7 +194,11 @@ impl AuditLogger {
             ip_address: None,
             user_agent: None,
             details,
-            risk_level: if success { RiskLevel::Low } else { RiskLevel::High },
+            risk_level: if success {
+                RiskLevel::Low
+            } else {
+                RiskLevel::High
+            },
         };
 
         self.add_audit_event(event).await?;
@@ -181,10 +212,11 @@ impl AuditLogger {
     }
 
     /// Log a computation operation
-    pub async fn log_computation_operation(&mut self, 
-        context: &SecurityContext, 
-        operation: &SecureOperation, 
-        success: bool
+    pub async fn log_computation_operation(
+        &mut self,
+        context: &SecurityContext,
+        operation: &SecureOperation,
+        success: bool,
     ) -> Result<()> {
         let mut details = HashMap::new();
         details.insert("operation_type".to_string(), format!("{:?}", operation));
@@ -210,10 +242,11 @@ impl AuditLogger {
     }
 
     /// Log a system event
-    pub async fn log_system_event(&mut self, 
-        event_type: &str, 
-        description: &str, 
-        risk_level: RiskLevel
+    pub async fn log_system_event(
+        &mut self,
+        event_type: &str,
+        description: &str,
+        risk_level: RiskLevel,
     ) -> Result<()> {
         let event = AuditEvent {
             id: Uuid::new_v4().to_string(),
@@ -239,35 +272,41 @@ impl AuditLogger {
     }
 
     /// Get audit events within a time range
-    pub async fn get_audit_events(&self, 
-        start_time: DateTime<Utc>, 
-        end_time: DateTime<Utc>
+    pub async fn get_audit_events(
+        &self,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
     ) -> Result<Vec<AuditEvent>> {
-        let events: Vec<AuditEvent> = self.audit_log.iter()
+        let events: Vec<AuditEvent> = self
+            .audit_log
+            .iter()
             .filter(|event| event.timestamp >= start_time && event.timestamp <= end_time)
             .cloned()
             .collect();
-        
+
         Ok(events)
     }
 
     /// Get audit events for a specific user
-    pub async fn get_user_audit_events(&self, 
-        user_id: &str, 
-        limit: Option<usize>
+    pub async fn get_user_audit_events(
+        &self,
+        user_id: &str,
+        limit: Option<usize>,
     ) -> Result<Vec<AuditEvent>> {
-        let mut events: Vec<AuditEvent> = self.audit_log.iter()
+        let mut events: Vec<AuditEvent> = self
+            .audit_log
+            .iter()
             .filter(|event| event.user_id == user_id)
             .cloned()
             .collect();
-        
+
         // Sort by timestamp (newest first)
         events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        
+
         if let Some(limit) = limit {
             events.truncate(limit);
         }
-        
+
         Ok(events)
     }
 
@@ -282,12 +321,13 @@ impl AuditLogger {
     }
 
     /// Generate compliance report
-    pub async fn generate_compliance_report(&self, 
-        start_time: DateTime<Utc>, 
-        end_time: DateTime<Utc>
+    pub async fn generate_compliance_report(
+        &self,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
     ) -> Result<ComplianceReport> {
         let events = self.get_audit_events(start_time, end_time).await?;
-        
+
         let mut report = ComplianceReport {
             period_start: start_time,
             period_end: end_time,
@@ -322,7 +362,8 @@ impl AuditLogger {
 
         // Calculate compliance score (simplified)
         let success_rate = if report.total_events > 0 {
-            ((report.total_events - report.failed_operations) as f64 / report.total_events as f64) * 100.0
+            ((report.total_events - report.failed_operations) as f64 / report.total_events as f64)
+                * 100.0
         } else {
             100.0
         };
@@ -386,7 +427,7 @@ impl AuditLogger {
                         RiskLevel::High,
                     );
                 }
-            },
+            }
             AuditEventType::AccessControl if !event.success => {
                 if self.alert_tracker.should_alert_unauthorized_access() {
                     self.alert_tracker.create_alert(
@@ -395,7 +436,7 @@ impl AuditLogger {
                         RiskLevel::High,
                     );
                 }
-            },
+            }
             AuditEventType::Encryption if !event.success => {
                 if self.alert_tracker.should_alert_encryption_failures() {
                     self.alert_tracker.create_alert(
@@ -404,7 +445,7 @@ impl AuditLogger {
                         RiskLevel::Critical,
                     );
                 }
-            },
+            }
             _ => {}
         }
 
@@ -479,7 +520,10 @@ impl AlertTracker {
 
     fn record_unauthorized_attempt(&mut self, user_id: &str) {
         self.reset_counters_if_needed();
-        *self.unauthorized_attempts.entry(user_id.to_string()).or_insert(0) += 1;
+        *self
+            .unauthorized_attempts
+            .entry(user_id.to_string())
+            .or_insert(0) += 1;
     }
 
     fn record_encryption_failure(&mut self) {
@@ -492,7 +536,8 @@ impl AlertTracker {
     }
 
     fn should_alert_unauthorized_access(&self) -> bool {
-        self.unauthorized_attempts.values().sum::<u32>() >= self.thresholds.unauthorized_attempts_per_hour
+        self.unauthorized_attempts.values().sum::<u32>()
+            >= self.thresholds.unauthorized_attempts_per_hour
     }
 
     fn should_alert_encryption_failures(&self) -> bool {

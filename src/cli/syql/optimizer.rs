@@ -21,7 +21,7 @@ impl QueryOptimizer {
     /// Create a new query optimizer
     pub fn new() -> Result<Self> {
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
-        
+
         // Add optimization rules
         rules.push(Box::new(PredicatePushdownRule));
         rules.push(Box::new(ProjectionPushdownRule));
@@ -31,7 +31,7 @@ impl QueryOptimizer {
         rules.push(Box::new(RedundantExpressionRule));
         rules.push(Box::new(SubqueryOptimizationRule));
         rules.push(Box::new(PathOptimizationRule));
-        
+
         Ok(Self {
             rules,
             cost_model: CostModel::new(),
@@ -45,7 +45,7 @@ impl QueryOptimizer {
             Statement::Query(query) => {
                 let optimized_query = self.optimize_query(query).await?;
                 Ok(Statement::Query(optimized_query))
-            },
+            }
             other => Ok(other), // Other statements don't need optimization
         }
     }
@@ -56,10 +56,10 @@ impl QueryOptimizer {
         for rule in &self.rules {
             query = rule.apply(query).await?;
         }
-        
+
         // Apply cost-based optimizations
         query = self.cost_based_optimization(query).await?;
-        
+
         Ok(query)
     }
 
@@ -67,60 +67,72 @@ impl QueryOptimizer {
     async fn cost_based_optimization(&self, query: QueryStatement) -> Result<QueryStatement> {
         // Generate alternative query plans
         let alternatives = self.generate_alternatives(&query).await?;
-        
+
         // Estimate costs for each alternative
         let mut best_query = query;
         let mut best_cost = f64::INFINITY;
-        
+
         for alternative in alternatives {
-            let cost = self.cost_model.estimate_cost(&alternative, &self.statistics).await?;
+            let cost = self
+                .cost_model
+                .estimate_cost(&alternative, &self.statistics)
+                .await?;
             if cost < best_cost {
                 best_cost = cost;
                 best_query = alternative;
             }
         }
-        
+
         Ok(best_query)
     }
 
     /// Generate alternative query plans
     async fn generate_alternatives(&self, query: &QueryStatement) -> Result<Vec<QueryStatement>> {
         let mut alternatives = Vec::new();
-        
+
         // Generate join order alternatives
         if let Some(join_alternatives) = self.generate_join_alternatives(query).await? {
             alternatives.extend(join_alternatives);
         }
-        
+
         // Generate index access alternatives
         if let Some(index_alternatives) = self.generate_index_alternatives(query).await? {
             alternatives.extend(index_alternatives);
         }
-        
+
         // Generate path algorithm alternatives
         if let Some(path_alternatives) = self.generate_path_alternatives(query).await? {
             alternatives.extend(path_alternatives);
         }
-        
+
         Ok(alternatives)
     }
 
     /// Generate join order alternatives
-    async fn generate_join_alternatives(&self, _query: &QueryStatement) -> Result<Option<Vec<QueryStatement>>> {
+    async fn generate_join_alternatives(
+        &self,
+        _query: &QueryStatement,
+    ) -> Result<Option<Vec<QueryStatement>>> {
         // Placeholder implementation
         // In a full implementation, this would generate different join orders
         Ok(None)
     }
 
     /// Generate index access alternatives
-    async fn generate_index_alternatives(&self, _query: &QueryStatement) -> Result<Option<Vec<QueryStatement>>> {
+    async fn generate_index_alternatives(
+        &self,
+        _query: &QueryStatement,
+    ) -> Result<Option<Vec<QueryStatement>>> {
         // Placeholder implementation
         // In a full implementation, this would consider different index access paths
         Ok(None)
     }
 
     /// Generate path algorithm alternatives
-    async fn generate_path_alternatives(&self, _query: &QueryStatement) -> Result<Option<Vec<QueryStatement>>> {
+    async fn generate_path_alternatives(
+        &self,
+        _query: &QueryStatement,
+    ) -> Result<Option<Vec<QueryStatement>>> {
         // Placeholder implementation
         // In a full implementation, this would consider different path finding algorithms
         Ok(None)
@@ -130,14 +142,20 @@ impl QueryOptimizer {
 /// Optimization rule trait
 trait OptimizationRule: Send + Sync {
     /// Apply the optimization rule to a query
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>>;
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>>;
 }
 
 /// Predicate pushdown optimization rule
 struct PredicatePushdownRule;
 
 impl OptimizationRule for PredicatePushdownRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         let query = query.clone();
         Box::pin(async move {
             let query = query;
@@ -152,15 +170,16 @@ impl OptimizationRule for PredicatePushdownRule {
     }
 }
 
-impl PredicatePushdownRule {
-
-}
+impl PredicatePushdownRule {}
 
 /// Projection pushdown optimization rule
 struct ProjectionPushdownRule;
 
 impl OptimizationRule for ProjectionPushdownRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Push projections down to reduce data movement
             // Placeholder implementation
@@ -173,7 +192,10 @@ impl OptimizationRule for ProjectionPushdownRule {
 struct JoinReorderingRule;
 
 impl OptimizationRule for JoinReorderingRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Reorder joins for optimal execution
             // Placeholder implementation
@@ -186,7 +208,10 @@ impl OptimizationRule for JoinReorderingRule {
 struct IndexSelectionRule;
 
 impl OptimizationRule for IndexSelectionRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Select optimal indexes for query execution
             // Placeholder implementation
@@ -199,7 +224,10 @@ impl OptimizationRule for IndexSelectionRule {
 struct ConstantFoldingRule;
 
 impl OptimizationRule for ConstantFoldingRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Fold constant expressions
             // Placeholder implementation - would analyze and fold constants
@@ -208,19 +236,16 @@ impl OptimizationRule for ConstantFoldingRule {
     }
 }
 
-impl ConstantFoldingRule {
-
-
-
-
-
-}
+impl ConstantFoldingRule {}
 
 /// Redundant expression elimination rule
 struct RedundantExpressionRule;
 
 impl OptimizationRule for RedundantExpressionRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Remove redundant expressions
             // Placeholder implementation
@@ -233,7 +258,10 @@ impl OptimizationRule for RedundantExpressionRule {
 struct SubqueryOptimizationRule;
 
 impl OptimizationRule for SubqueryOptimizationRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Optimize subqueries (convert to joins when possible)
             // Placeholder implementation
@@ -246,7 +274,10 @@ impl OptimizationRule for SubqueryOptimizationRule {
 struct PathOptimizationRule;
 
 impl OptimizationRule for PathOptimizationRule {
-    fn apply(&self, query: QueryStatement) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
+    fn apply(
+        &self,
+        query: QueryStatement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<QueryStatement>> + Send>> {
         Box::pin(async move {
             // Optimize path queries
             // Placeholder implementation
@@ -265,7 +296,7 @@ impl CostModel {
     /// Create a new cost model
     pub fn new() -> Self {
         let mut operation_costs = HashMap::new();
-        
+
         // Set base costs for different operations
         operation_costs.insert("memory_scan".to_string(), 1.0);
         operation_costs.insert("index_scan".to_string(), 0.1);
@@ -275,68 +306,91 @@ impl CostModel {
         operation_costs.insert("sort".to_string(), 10.0);
         operation_costs.insert("join".to_string(), 5.0);
         operation_costs.insert("aggregate".to_string(), 2.0);
-        
+
         Self { operation_costs }
     }
 
     /// Estimate the cost of executing a query
-    pub async fn estimate_cost(&self, query: &QueryStatement, statistics: &QueryStatistics) -> Result<f64> {
+    pub async fn estimate_cost(
+        &self,
+        query: &QueryStatement,
+        statistics: &QueryStatistics,
+    ) -> Result<f64> {
         let mut total_cost = 0.0;
-        
+
         // Estimate FROM clause cost
         total_cost += self.estimate_from_cost(&query.from, statistics).await?;
-        
+
         // Estimate WHERE clause cost
         if query.where_clause.is_some() {
-            total_cost += self.operation_costs.get("filter").unwrap_or(&0.01) * statistics.estimated_rows as f64;
+            total_cost += self.operation_costs.get("filter").unwrap_or(&0.01)
+                * statistics.estimated_rows as f64;
         }
-        
+
         // Estimate ORDER BY cost
         if query.order_by.is_some() {
-            total_cost += self.operation_costs.get("sort").unwrap_or(&10.0) * statistics.estimated_rows as f64;
+            total_cost += self.operation_costs.get("sort").unwrap_or(&10.0)
+                * statistics.estimated_rows as f64;
         }
-        
+
         // Estimate GROUP BY cost
         if query.group_by.is_some() {
-            total_cost += self.operation_costs.get("aggregate").unwrap_or(&2.0) * statistics.estimated_rows as f64;
+            total_cost += self.operation_costs.get("aggregate").unwrap_or(&2.0)
+                * statistics.estimated_rows as f64;
         }
-        
+
         Ok(total_cost)
     }
 
     /// Estimate cost of FROM clause
-    fn estimate_from_cost<'a>(&'a self, from: &FromClause, statistics: &'a QueryStatistics) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + 'a>> {
+    fn estimate_from_cost<'a>(
+        &'a self,
+        from: &FromClause,
+        statistics: &'a QueryStatistics,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + 'a>> {
         let from = from.clone();
         let statistics = statistics;
-        Box::pin(async move {
-            self.estimate_from_cost_impl(&from, &statistics).await
-        })
+        Box::pin(async move { self.estimate_from_cost_impl(&from, &statistics).await })
     }
 
     /// Implementation of estimate_from_cost
-    async fn estimate_from_cost_impl(&self, from: &FromClause, statistics: &QueryStatistics) -> Result<f64> {
+    async fn estimate_from_cost_impl(
+        &self,
+        from: &FromClause,
+        statistics: &QueryStatistics,
+    ) -> Result<f64> {
         match from {
             FromClause::Memories { .. } => {
-                Ok(self.operation_costs.get("memory_scan").unwrap_or(&1.0) * statistics.memory_count as f64)
-            },
+                Ok(self.operation_costs.get("memory_scan").unwrap_or(&1.0)
+                    * statistics.memory_count as f64)
+            }
             FromClause::Pattern { patterns } => {
                 let mut cost = 0.0;
                 for _pattern in patterns {
-                    cost += self.operation_costs.get("relationship_traversal").unwrap_or(&0.5) * statistics.relationship_count as f64;
+                    cost += self
+                        .operation_costs
+                        .get("relationship_traversal")
+                        .unwrap_or(&0.5)
+                        * statistics.relationship_count as f64;
                 }
                 Ok(cost)
-            },
-            FromClause::Path { .. } => {
-                Ok(self.operation_costs.get("relationship_traversal").unwrap_or(&0.5) * statistics.relationship_count as f64 * 2.0)
-            },
+            }
+            FromClause::Path { .. } => Ok(self
+                .operation_costs
+                .get("relationship_traversal")
+                .unwrap_or(&0.5)
+                * statistics.relationship_count as f64
+                * 2.0),
             FromClause::Join { .. } => {
                 // Simplified join cost estimation without recursion
-                let join_cost = self.operation_costs.get("join").unwrap_or(&5.0) * statistics.estimated_rows as f64;
+                let join_cost = self.operation_costs.get("join").unwrap_or(&5.0)
+                    * statistics.estimated_rows as f64;
                 Ok(join_cost * 2.0) // Assume two tables
-            },
+            }
             FromClause::Subquery { .. } => {
-                Ok(self.operation_costs.get("memory_scan").unwrap_or(&1.0) * statistics.estimated_rows as f64)
-            },
+                Ok(self.operation_costs.get("memory_scan").unwrap_or(&1.0)
+                    * statistics.estimated_rows as f64)
+            }
         }
     }
 }

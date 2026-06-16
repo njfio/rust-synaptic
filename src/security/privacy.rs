@@ -1,14 +1,14 @@
 //! Differential Privacy Module
-//! 
+//!
 //! Implements state-of-the-art differential privacy techniques to protect
 //! individual privacy while enabling statistical analysis and machine learning.
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use crate::security::{SecurityConfig, SecurityContext};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Privacy manager for differential privacy operations
 #[derive(Debug)]
@@ -31,9 +31,10 @@ impl PrivacyManager {
     }
 
     /// Apply differential privacy to a memory entry
-    pub async fn apply_differential_privacy(&mut self,
+    pub async fn apply_differential_privacy(
+        &mut self,
         entry: &MemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
 
@@ -41,11 +42,13 @@ impl PrivacyManager {
         context.validate_comprehensive(self.config.access_control_policy.require_mfa)?;
 
         // Check privacy budget
-        let epsilon = self.privacy_budget_tracker.allocate_budget(&context.user_id, 0.1)?;
-        
+        let epsilon = self
+            .privacy_budget_tracker
+            .allocate_budget(&context.user_id, 0.1)?;
+
         // Apply noise to the memory entry
         let privatized_entry = self.add_differential_privacy_noise(entry, epsilon).await?;
-        
+
         // Update metrics
         self.metrics.total_privatizations += 1;
         self.metrics.total_privacy_time_ms += start_time.elapsed().as_millis() as u64;
@@ -55,36 +58,32 @@ impl PrivacyManager {
     }
 
     /// Generate differentially private statistics
-    pub async fn generate_private_statistics(&mut self,
+    pub async fn generate_private_statistics(
+        &mut self,
         entries: &[MemoryEntry],
         query: PrivacyQuery,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<PrivateStatistics> {
         let start_time = std::time::Instant::now();
 
         // Allocate privacy budget based on query sensitivity
-        let epsilon = self.privacy_budget_tracker.allocate_budget(
-            &context.user_id, 
-            query.sensitivity
-        )?;
+        let epsilon = self
+            .privacy_budget_tracker
+            .allocate_budget(&context.user_id, query.sensitivity)?;
 
         // Compute statistics with differential privacy
         let statistics = match query.query_type {
-            PrivacyQueryType::Count => {
-                self.private_count(entries, epsilon).await?
-            },
-            PrivacyQueryType::Sum => {
-                self.private_sum(entries, epsilon).await?
-            },
-            PrivacyQueryType::Average => {
-                self.private_average(entries, epsilon).await?
-            },
+            PrivacyQueryType::Count => self.private_count(entries, epsilon).await?,
+            PrivacyQueryType::Sum => self.private_sum(entries, epsilon).await?,
+            PrivacyQueryType::Average => self.private_average(entries, epsilon).await?,
             PrivacyQueryType::Histogram => {
-                self.private_histogram(entries, epsilon, query.bins.unwrap_or(10)).await?
-            },
+                self.private_histogram(entries, epsilon, query.bins.unwrap_or(10))
+                    .await?
+            }
             PrivacyQueryType::Quantile => {
-                self.private_quantile(entries, epsilon, query.quantile.unwrap_or(0.5)).await?
-            },
+                self.private_quantile(entries, epsilon, query.quantile.unwrap_or(0.5))
+                    .await?
+            }
         };
 
         // Update metrics
@@ -95,13 +94,14 @@ impl PrivacyManager {
     }
 
     /// Apply local differential privacy to user data
-    pub async fn apply_local_differential_privacy(&mut self,
+    pub async fn apply_local_differential_privacy(
+        &mut self,
         entry: &MemoryEntry,
-        epsilon: f64
+        epsilon: f64,
     ) -> Result<MemoryEntry> {
         // Local differential privacy - add noise at the source
         let privatized_entry = self.add_local_noise(entry, epsilon).await?;
-        
+
         self.metrics.total_local_privatizations += 1;
         Ok(privatized_entry)
     }
@@ -118,9 +118,10 @@ impl PrivacyManager {
 
     // Private helper methods
 
-    async fn add_differential_privacy_noise(&mut self, 
-        entry: &MemoryEntry, 
-        epsilon: f64
+    async fn add_differential_privacy_noise(
+        &mut self,
+        entry: &MemoryEntry,
+        epsilon: f64,
     ) -> Result<MemoryEntry> {
         let mut privatized_entry = entry.clone();
 
@@ -140,7 +141,7 @@ impl PrivacyManager {
         // Implement text privatization using exponential mechanism
         // For simplicity, we'll add character-level noise
         let mut privatized_chars: Vec<char> = text.chars().collect();
-        
+
         for char in privatized_chars.iter_mut() {
             // Add noise with probability based on epsilon
             if self.noise_generator.should_add_noise(epsilon) {
@@ -154,20 +155,25 @@ impl PrivacyManager {
     fn add_laplace_noise_to_vector(&self, vector: &[f32], epsilon: f64) -> Result<Vec<f32>> {
         let sensitivity = 1.0; // Assume L1 sensitivity of 1
         let scale = sensitivity / epsilon;
-        
-        let noisy_vector: Vec<f32> = vector.iter()
+
+        let noisy_vector: Vec<f32> = vector
+            .iter()
             .map(|&x| x + self.noise_generator.laplace_noise(scale) as f32)
             .collect();
-        
+
         Ok(noisy_vector)
     }
 
-    async fn private_count(&self, entries: &[MemoryEntry], epsilon: f64) -> Result<PrivateStatistics> {
+    async fn private_count(
+        &self,
+        entries: &[MemoryEntry],
+        epsilon: f64,
+    ) -> Result<PrivateStatistics> {
         let true_count = entries.len() as f64;
         let sensitivity = 1.0; // Adding/removing one entry changes count by 1
         let scale = sensitivity / epsilon;
         let noisy_count = true_count + self.noise_generator.laplace_noise(scale);
-        
+
         Ok(PrivateStatistics {
             query_type: PrivacyQueryType::Count,
             result: noisy_count.max(0.0), // Ensure non-negative
@@ -177,13 +183,17 @@ impl PrivacyManager {
         })
     }
 
-    async fn private_sum(&self, entries: &[MemoryEntry], epsilon: f64) -> Result<PrivateStatistics> {
+    async fn private_sum(
+        &self,
+        entries: &[MemoryEntry],
+        epsilon: f64,
+    ) -> Result<PrivateStatistics> {
         // Sum of text lengths as a simple numeric aggregation
         let true_sum = entries.iter().map(|e| e.value.len() as f64).sum::<f64>();
         let sensitivity = 1000.0; // Assume max text length is 1000
         let scale = sensitivity / epsilon;
         let noisy_sum = true_sum + self.noise_generator.laplace_noise(scale);
-        
+
         Ok(PrivateStatistics {
             query_type: PrivacyQueryType::Sum,
             result: noisy_sum,
@@ -193,7 +203,11 @@ impl PrivacyManager {
         })
     }
 
-    async fn private_average(&self, entries: &[MemoryEntry], epsilon: f64) -> Result<PrivateStatistics> {
+    async fn private_average(
+        &self,
+        entries: &[MemoryEntry],
+        epsilon: f64,
+    ) -> Result<PrivateStatistics> {
         if entries.is_empty() {
             return Ok(PrivateStatistics {
                 query_type: PrivacyQueryType::Average,
@@ -210,7 +224,7 @@ impl PrivacyManager {
 
         let count_stats = self.private_count(entries, epsilon_count).await?;
         let sum_stats = self.private_sum(entries, epsilon_sum).await?;
-        
+
         let average = if count_stats.result > 0.0 {
             sum_stats.result / count_stats.result
         } else {
@@ -226,11 +240,16 @@ impl PrivacyManager {
         })
     }
 
-    async fn private_histogram(&self, entries: &[MemoryEntry], epsilon: f64, bins: usize) -> Result<PrivateStatistics> {
+    async fn private_histogram(
+        &self,
+        entries: &[MemoryEntry],
+        epsilon: f64,
+        bins: usize,
+    ) -> Result<PrivateStatistics> {
         // Create histogram of text lengths
         let max_length = entries.iter().map(|e| e.value.len()).max().unwrap_or(0);
         let bin_size = (max_length as f64 / bins as f64).ceil() as usize;
-        
+
         let mut histogram = vec![0.0f64; bins];
         for entry in entries {
             let bin_index = (entry.value.len() / bin_size.max(1)).min(bins - 1);
@@ -240,7 +259,7 @@ impl PrivacyManager {
         // Add Laplace noise to each bin
         let sensitivity = 1.0; // Adding/removing one entry affects one bin by 1
         let scale = sensitivity / epsilon;
-        
+
         for count in histogram.iter_mut() {
             *count += self.noise_generator.laplace_noise(scale);
             *count = count.max(0.0); // Ensure non-negative
@@ -248,7 +267,7 @@ impl PrivacyManager {
 
         // Return the sum of histogram (total count with noise)
         let total = histogram.iter().sum();
-        
+
         Ok(PrivateStatistics {
             query_type: PrivacyQueryType::Histogram,
             result: total,
@@ -258,20 +277,25 @@ impl PrivacyManager {
         })
     }
 
-    async fn private_quantile(&self, entries: &[MemoryEntry], epsilon: f64, quantile: f64) -> Result<PrivateStatistics> {
+    async fn private_quantile(
+        &self,
+        entries: &[MemoryEntry],
+        epsilon: f64,
+        quantile: f64,
+    ) -> Result<PrivateStatistics> {
         // Compute quantile of text lengths
         let mut lengths: Vec<f64> = entries.iter().map(|e| e.value.len() as f64).collect();
         use crate::error_handling::SafeCompare;
         lengths.sort_by(|a, b| a.safe_partial_cmp(b));
-        
+
         let index = (quantile * (lengths.len() as f64 - 1.0)).round() as usize;
         let true_quantile = lengths.get(index).copied().unwrap_or(0.0);
-        
+
         // Add noise using exponential mechanism (simplified)
         let sensitivity = 1000.0; // Assume max text length difference
         let scale = sensitivity / epsilon;
         let noisy_quantile = true_quantile + self.noise_generator.laplace_noise(scale);
-        
+
         Ok(PrivateStatistics {
             query_type: PrivacyQueryType::Quantile,
             result: noisy_quantile.max(0.0),
@@ -284,23 +308,23 @@ impl PrivacyManager {
     async fn add_local_noise(&self, entry: &MemoryEntry, epsilon: f64) -> Result<MemoryEntry> {
         // Local differential privacy with randomized response
         let mut privatized_entry = entry.clone();
-        
+
         // Apply randomized response to text
         privatized_entry.value = self.randomized_response(&entry.value, epsilon).await?;
-        
+
         // Add noise to embeddings
         if let Some(ref embedding) = entry.embedding {
             let noisy_embedding = self.add_laplace_noise_to_vector(embedding, epsilon)?;
             privatized_entry.embedding = Some(noisy_embedding);
         }
-        
+
         Ok(privatized_entry)
     }
 
     async fn randomized_response(&self, text: &str, epsilon: f64) -> Result<String> {
         // Simplified randomized response mechanism
         let p = (epsilon.exp()) / (epsilon.exp() + 1.0); // Probability of truth
-        
+
         let mut result = String::new();
         for char in text.chars() {
             if self.noise_generator.random_bool(p) {
@@ -309,7 +333,7 @@ impl PrivacyManager {
                 result.push(self.noise_generator.random_char()); // Random response
             }
         }
-        
+
         Ok(result)
     }
 
@@ -336,21 +360,29 @@ impl PrivacyBudgetTracker {
     }
 
     fn allocate_budget(&mut self, user_id: &str, epsilon: f64) -> Result<f64> {
-        let current_budget = self.user_budgets.get(user_id).copied().unwrap_or(self.total_budget);
-        
+        let current_budget = self
+            .user_budgets
+            .get(user_id)
+            .copied()
+            .unwrap_or(self.total_budget);
+
         if current_budget < epsilon {
             return Err(MemoryError::privacy(format!(
-                "Insufficient privacy budget. Requested: {}, Available: {}", 
+                "Insufficient privacy budget. Requested: {}, Available: {}",
                 epsilon, current_budget
             )));
         }
-        
-        self.user_budgets.insert(user_id.to_string(), current_budget - epsilon);
+
+        self.user_budgets
+            .insert(user_id.to_string(), current_budget - epsilon);
         Ok(epsilon)
     }
 
     fn get_remaining_budget(&self, user_id: &str) -> f64 {
-        self.user_budgets.get(user_id).copied().unwrap_or(self.total_budget)
+        self.user_budgets
+            .get(user_id)
+            .copied()
+            .unwrap_or(self.total_budget)
     }
 }
 
@@ -448,7 +480,8 @@ pub struct PrivacyMetrics {
 impl PrivacyMetrics {
     pub fn calculate_averages(&mut self) {
         if self.total_privatizations > 0 {
-            self.average_privacy_time_ms = self.total_privacy_time_ms as f64 / self.total_privatizations as f64;
+            self.average_privacy_time_ms =
+                self.total_privacy_time_ms as f64 / self.total_privatizations as f64;
         }
         // Privacy budget utilization would be calculated based on total budget
         self.privacy_budget_utilization = (self.total_epsilon_consumed / 10.0).min(1.0) * 100.0;

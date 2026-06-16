@@ -1,6 +1,6 @@
 //! Checkpointing system for agent state management
 
-use crate::error::{MemoryError, Result, MemoryErrorExt};
+use crate::error::{MemoryError, MemoryErrorExt, Result};
 use crate::memory::state::AgentState;
 use crate::memory::storage::Storage;
 use chrono::{DateTime, Utc};
@@ -117,8 +117,8 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     pub fn new(state: &AgentState, metadata: CheckpointMetadata) -> Result<Self> {
-        let state_data = bincode::serialize(state)
-            .checkpoint_context("Failed to serialize agent state")?;
+        let state_data =
+            bincode::serialize(state).checkpoint_context("Failed to serialize agent state")?;
 
         Ok(Self {
             metadata,
@@ -132,17 +132,13 @@ impl Checkpoint {
     }
 
     pub fn size(&self) -> usize {
-        self.state_data.len() + 
-        bincode::serialized_size(&self.metadata).unwrap_or(0) as usize
+        self.state_data.len() + bincode::serialized_size(&self.metadata).unwrap_or(0) as usize
     }
 }
 
 impl CheckpointManager {
     /// Create a new checkpoint manager
-    pub fn new(
-        checkpoint_interval: usize,
-        storage: Arc<dyn Storage + Send + Sync>,
-    ) -> Self {
+    pub fn new(checkpoint_interval: usize, storage: Arc<dyn Storage + Send + Sync>) -> Self {
         let config = CheckpointConfig {
             auto_checkpoint_interval: checkpoint_interval,
             ..Default::default()
@@ -156,10 +152,7 @@ impl CheckpointManager {
     }
 
     /// Create a new checkpoint manager with custom configuration
-    pub fn with_config(
-        storage: Arc<dyn Storage + Send + Sync>,
-        config: CheckpointConfig,
-    ) -> Self {
+    pub fn with_config(storage: Arc<dyn Storage + Send + Sync>, config: CheckpointConfig) -> Self {
         Self {
             storage,
             metadata_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -184,12 +177,12 @@ impl CheckpointManager {
         // Store the checkpoint
         let checkpoint_key = format!("checkpoint_{}", metadata.id);
         #[cfg(feature = "bincode")]
-        let serialized_checkpoint = bincode::serialize(&checkpoint)
-            .checkpoint_context("Failed to serialize checkpoint")?;
+        let serialized_checkpoint =
+            bincode::serialize(&checkpoint).checkpoint_context("Failed to serialize checkpoint")?;
 
         #[cfg(not(feature = "bincode"))]
-        let serialized_checkpoint = serde_json::to_vec(&checkpoint)
-            .checkpoint_context("Failed to serialize checkpoint")?;
+        let serialized_checkpoint =
+            serde_json::to_vec(&checkpoint).checkpoint_context("Failed to serialize checkpoint")?;
 
         // Create a memory entry for the checkpoint
         let checkpoint_entry = crate::memory::types::MemoryEntry::new(
@@ -198,7 +191,9 @@ impl CheckpointManager {
             crate::memory::types::MemoryType::LongTerm,
         );
 
-        self.storage.store(&checkpoint_entry).await
+        self.storage
+            .store(&checkpoint_entry)
+            .await
             .checkpoint_context("Failed to store checkpoint")?;
 
         // Update metadata cache
@@ -216,8 +211,11 @@ impl CheckpointManager {
     /// Restore agent state from a checkpoint
     pub async fn restore_checkpoint(&self, checkpoint_id: Uuid) -> Result<AgentState> {
         let checkpoint_key = format!("checkpoint_{}", checkpoint_id);
-        
-        let checkpoint_entry = self.storage.retrieve(&checkpoint_key).await
+
+        let checkpoint_entry = self
+            .storage
+            .retrieve(&checkpoint_key)
+            .await
             .checkpoint_context("Failed to retrieve checkpoint")?
             .ok_or_else(|| MemoryError::NotFound {
                 key: checkpoint_key,
@@ -237,7 +235,10 @@ impl CheckpointManager {
     }
 
     /// List all available checkpoints for a session
-    pub async fn list_checkpoints(&self, session_id: Option<Uuid>) -> Result<Vec<CheckpointMetadata>> {
+    pub async fn list_checkpoints(
+        &self,
+        session_id: Option<Uuid>,
+    ) -> Result<Vec<CheckpointMetadata>> {
         let cache = self.metadata_cache.read().await;
         let mut checkpoints: Vec<CheckpointMetadata> = cache.values().cloned().collect();
 
@@ -253,7 +254,10 @@ impl CheckpointManager {
     }
 
     /// Get checkpoint metadata by ID
-    pub async fn get_checkpoint_metadata(&self, checkpoint_id: Uuid) -> Result<Option<CheckpointMetadata>> {
+    pub async fn get_checkpoint_metadata(
+        &self,
+        checkpoint_id: Uuid,
+    ) -> Result<Option<CheckpointMetadata>> {
         let cache = self.metadata_cache.read().await;
         Ok(cache.get(&checkpoint_id).cloned())
     }
@@ -261,8 +265,11 @@ impl CheckpointManager {
     /// Delete a specific checkpoint
     pub async fn delete_checkpoint(&self, checkpoint_id: Uuid) -> Result<bool> {
         let checkpoint_key = format!("checkpoint_{}", checkpoint_id);
-        
-        let deleted = self.storage.delete(&checkpoint_key).await
+
+        let deleted = self
+            .storage
+            .delete(&checkpoint_key)
+            .await
             .checkpoint_context("Failed to delete checkpoint")?;
 
         if deleted {
@@ -274,7 +281,10 @@ impl CheckpointManager {
     }
 
     /// Get the most recent checkpoint for a session
-    pub async fn get_latest_checkpoint(&self, session_id: Uuid) -> Result<Option<CheckpointMetadata>> {
+    pub async fn get_latest_checkpoint(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<CheckpointMetadata>> {
         let checkpoints = self.list_checkpoints(Some(session_id)).await?;
         Ok(checkpoints.into_iter().next())
     }
@@ -286,8 +296,8 @@ impl CheckpointManager {
         name: String,
         importance: Option<f64>,
     ) -> Result<Uuid> {
-        let mut metadata = CheckpointMetadata::new(state.session_id(), state.version())
-            .with_description(name);
+        let mut metadata =
+            CheckpointMetadata::new(state.session_id(), state.version()).with_description(name);
 
         if let Some(importance) = importance {
             metadata = metadata.with_importance(importance);
@@ -308,7 +318,9 @@ impl CheckpointManager {
             crate::memory::types::MemoryType::LongTerm,
         );
 
-        self.storage.store(&checkpoint_entry).await
+        self.storage
+            .store(&checkpoint_entry)
+            .await
             .checkpoint_context("Failed to store named checkpoint")?;
 
         let checkpoint_id = metadata.id;
@@ -324,9 +336,7 @@ impl CheckpointManager {
     /// Apply the configured retention policy
     async fn apply_retention_policy(&self) -> Result<()> {
         match &self.config.retention_policy {
-            RetentionPolicy::KeepRecent { count } => {
-                self.apply_keep_recent_policy(*count).await
-            }
+            RetentionPolicy::KeepRecent { count } => self.apply_keep_recent_policy(*count).await,
             RetentionPolicy::KeepByAge { max_age_hours } => {
                 self.apply_keep_by_age_policy(*max_age_hours).await
             }
@@ -344,7 +354,7 @@ impl CheckpointManager {
     async fn apply_keep_recent_policy(&self, keep_count: usize) -> Result<()> {
         let mut cache = self.metadata_cache.write().await;
         let mut checkpoints: Vec<CheckpointMetadata> = cache.values().cloned().collect();
-        
+
         if checkpoints.len() <= keep_count {
             return Ok(());
         }
@@ -366,7 +376,7 @@ impl CheckpointManager {
     async fn apply_keep_by_age_policy(&self, max_age_hours: u64) -> Result<()> {
         let cutoff_time = Utc::now() - chrono::Duration::hours(max_age_hours as i64);
         let mut cache = self.metadata_cache.write().await;
-        
+
         let expired_ids: Vec<Uuid> = cache
             .values()
             .filter(|metadata| metadata.created_at < cutoff_time)
@@ -386,13 +396,17 @@ impl CheckpointManager {
     async fn apply_keep_by_importance_policy(&self, max_count: usize) -> Result<()> {
         let mut cache = self.metadata_cache.write().await;
         let mut checkpoints: Vec<CheckpointMetadata> = cache.values().cloned().collect();
-        
+
         if checkpoints.len() <= max_count {
             return Ok(());
         }
 
         // Sort by importance (highest first)
-        checkpoints.sort_by(|a, b| b.importance.partial_cmp(&a.importance).expect("value should be available"));
+        checkpoints.sort_by(|a, b| {
+            b.importance
+                .partial_cmp(&a.importance)
+                .expect("value should be available")
+        });
 
         // Remove low-importance checkpoints
         for checkpoint in checkpoints.iter().skip(max_count) {
@@ -425,7 +439,10 @@ mod tests {
     fn test_checkpoint_config_clone() {
         let config1 = CheckpointConfig::default();
         let config2 = config1.clone();
-        assert_eq!(config1.auto_checkpoint_interval, config2.auto_checkpoint_interval);
+        assert_eq!(
+            config1.auto_checkpoint_interval,
+            config2.auto_checkpoint_interval
+        );
         assert_eq!(config1.max_checkpoints, config2.max_checkpoints);
         assert_eq!(config1.enable_compression, config2.enable_compression);
     }
@@ -448,8 +465,8 @@ mod tests {
     #[test]
     fn test_checkpoint_metadata_with_description() {
         let session_id = Uuid::new_v4();
-        let metadata = CheckpointMetadata::new(session_id, 1)
-            .with_description("Test checkpoint".to_string());
+        let metadata =
+            CheckpointMetadata::new(session_id, 1).with_description("Test checkpoint".to_string());
 
         assert_eq!(metadata.description, Some("Test checkpoint".to_string()));
     }
@@ -457,8 +474,7 @@ mod tests {
     #[test]
     fn test_checkpoint_metadata_with_importance() {
         let session_id = Uuid::new_v4();
-        let metadata = CheckpointMetadata::new(session_id, 1)
-            .with_importance(0.8);
+        let metadata = CheckpointMetadata::new(session_id, 1).with_importance(0.8);
 
         assert_eq!(metadata.importance, 0.8);
     }
@@ -468,13 +484,11 @@ mod tests {
         let session_id = Uuid::new_v4();
 
         // Test upper bound clamping
-        let metadata1 = CheckpointMetadata::new(session_id, 1)
-            .with_importance(1.5);
+        let metadata1 = CheckpointMetadata::new(session_id, 1).with_importance(1.5);
         assert_eq!(metadata1.importance, 1.0);
 
         // Test lower bound clamping
-        let metadata2 = CheckpointMetadata::new(session_id, 1)
-            .with_importance(-0.5);
+        let metadata2 = CheckpointMetadata::new(session_id, 1).with_importance(-0.5);
         assert_eq!(metadata2.importance, 0.0);
     }
 
@@ -485,7 +499,10 @@ mod tests {
             .with_description("Important checkpoint".to_string())
             .with_importance(0.9);
 
-        assert_eq!(metadata.description, Some("Important checkpoint".to_string()));
+        assert_eq!(
+            metadata.description,
+            Some("Important checkpoint".to_string())
+        );
         assert_eq!(metadata.importance, 0.9);
         assert_eq!(metadata.state_version, 10);
     }
@@ -493,8 +510,7 @@ mod tests {
     #[test]
     fn test_checkpoint_metadata_clone() {
         let session_id = Uuid::new_v4();
-        let metadata1 = CheckpointMetadata::new(session_id, 5)
-            .with_description("Test".to_string());
+        let metadata1 = CheckpointMetadata::new(session_id, 5).with_description("Test".to_string());
 
         let metadata2 = metadata1.clone();
         assert_eq!(metadata1.id, metadata2.id);
@@ -511,7 +527,8 @@ mod tests {
             .with_importance(0.75);
 
         let serialized = serde_json::to_string(&metadata).expect("value should be available");
-        let deserialized: CheckpointMetadata = serde_json::from_str(&serialized).expect("value should be available");
+        let deserialized: CheckpointMetadata =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(metadata.id, deserialized.id);
         assert_eq!(metadata.session_id, deserialized.session_id);
@@ -553,7 +570,10 @@ mod tests {
         let policy2 = policy1.clone();
 
         match (policy1, policy2) {
-            (RetentionPolicy::KeepRecent { count: c1 }, RetentionPolicy::KeepRecent { count: c2 }) => {
+            (
+                RetentionPolicy::KeepRecent { count: c1 },
+                RetentionPolicy::KeepRecent { count: c2 },
+            ) => {
                 assert_eq!(c1, c2);
             }
             _ => panic!("Clone failed"),
@@ -567,7 +587,9 @@ mod tests {
         let metadata = CheckpointMetadata::new(session_id, state.version());
 
         let checkpoint = Checkpoint::new(&state, metadata).expect("value should be available");
-        let restored_state = checkpoint.restore_state().expect("restore_state() should succeed");
+        let restored_state = checkpoint
+            .restore_state()
+            .expect("restore_state() should succeed");
 
         assert_eq!(state.session_id(), restored_state.session_id());
         assert_eq!(state.version(), restored_state.version());
@@ -608,7 +630,8 @@ mod tests {
         let checkpoint = Checkpoint::new(&state, metadata).expect("value should be available");
 
         let serialized = serde_json::to_string(&checkpoint).expect("value should be available");
-        let deserialized: Checkpoint = serde_json::from_str(&serialized).expect("value should be available");
+        let deserialized: Checkpoint =
+            serde_json::from_str(&serialized).expect("value should be available");
 
         assert_eq!(checkpoint.metadata.id, deserialized.metadata.id);
         assert_eq!(checkpoint.state_data.len(), deserialized.state_data.len());
@@ -679,10 +702,16 @@ mod tests {
         ));
 
         // Create checkpoint
-        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
+        let checkpoint_id = manager
+            .create_checkpoint(&state)
+            .await
+            .expect("await should be present");
 
         // Restore checkpoint
-        let restored_state = manager.restore_checkpoint(checkpoint_id).await.expect("await should be present");
+        let restored_state = manager
+            .restore_checkpoint(checkpoint_id)
+            .await
+            .expect("await should be present");
 
         assert_eq!(state.session_id(), restored_state.session_id());
         assert!(restored_state.has_memory("test_key"));
@@ -697,10 +726,19 @@ mod tests {
         let state = AgentState::new(session_id);
 
         // Create multiple checkpoints
-        let _ = manager.create_checkpoint(&state).await.expect("await should be present");
-        let _ = manager.create_checkpoint(&state).await.expect("await should be present");
+        let _ = manager
+            .create_checkpoint(&state)
+            .await
+            .expect("await should be present");
+        let _ = manager
+            .create_checkpoint(&state)
+            .await
+            .expect("await should be present");
 
-        let checkpoints = manager.list_checkpoints(Some(session_id)).await.expect("await should be present");
+        let checkpoints = manager
+            .list_checkpoints(Some(session_id))
+            .await
+            .expect("await should be present");
         assert_eq!(checkpoints.len(), 2);
     }
 
@@ -712,11 +750,20 @@ mod tests {
         let session_id = Uuid::new_v4();
         let state = AgentState::new(session_id);
 
-        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
-        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.expect("await should be present");
+        let checkpoint_id = manager
+            .create_checkpoint(&state)
+            .await
+            .expect("await should be present");
+        let metadata = manager
+            .get_checkpoint_metadata(checkpoint_id)
+            .await
+            .expect("await should be present");
 
         assert!(metadata.is_some());
-        assert_eq!(metadata.expect("metadata should be valid").id, checkpoint_id);
+        assert_eq!(
+            metadata.expect("metadata should be valid").id,
+            checkpoint_id
+        );
     }
 
     #[tokio::test]
@@ -727,12 +774,21 @@ mod tests {
         let session_id = Uuid::new_v4();
         let state = AgentState::new(session_id);
 
-        let checkpoint_id = manager.create_checkpoint(&state).await.expect("await should be present");
-        let deleted = manager.delete_checkpoint(checkpoint_id).await.expect("await should be present");
+        let checkpoint_id = manager
+            .create_checkpoint(&state)
+            .await
+            .expect("await should be present");
+        let deleted = manager
+            .delete_checkpoint(checkpoint_id)
+            .await
+            .expect("await should be present");
 
         assert!(deleted);
 
-        let metadata = manager.get_checkpoint_metadata(checkpoint_id).await.expect("await should be present");
+        let metadata = manager
+            .get_checkpoint_metadata(checkpoint_id)
+            .await
+            .expect("await should be present");
         assert!(metadata.is_none());
     }
 }

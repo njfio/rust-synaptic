@@ -4,15 +4,15 @@
 //! Provides IndexedDB storage, web worker support, and browser-specific optimizations.
 
 use super::{
-    CrossPlatformAdapter, PlatformConfig, PlatformFeature, PlatformInfo, Platform,
-    PerformanceProfile, StorageBackend, StorageStats,
+    CrossPlatformAdapter, PerformanceProfile, Platform, PlatformConfig, PlatformFeature,
+    PlatformInfo, StorageBackend, StorageStats,
 };
 use crate::error::MemoryError as SynapticError;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 mod wasm_worker;
 use wasm_worker::WebWorkerManager;
@@ -113,17 +113,23 @@ impl WasmAdapter {
     /// Initialize IndexedDB connection
     #[cfg(feature = "wasm")]
     async fn initialize_indexeddb(&mut self) -> Result<(), SynapticError> {
-        let window = window().ok_or_else(|| SynapticError::ProcessingError("No window object available".to_string()))?;
-        
+        let window = window().ok_or_else(|| {
+            SynapticError::ProcessingError("No window object available".to_string())
+        })?;
+
         let idb_factory = window
             .indexed_db()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get IndexedDB: {:?}", e)))?
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get IndexedDB: {:?}", e))
+            })?
             .ok_or_else(|| SynapticError::ProcessingError("IndexedDB not supported".to_string()))?;
 
         // Open database
         let open_request = idb_factory
             .open_with_u32(&self.config.db_name, self.config.db_version)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to open database: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to open database: {:?}", e))
+            })?;
 
         // Set up upgrade handler
         let upgrade_closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
@@ -157,14 +163,17 @@ impl WasmAdapter {
         upgrade_closure.forget();
 
         // Wait for database to open
-        let promise = Promise::resolve(&JsFuture::from(open_request).await
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to open IndexedDB: {:?}", e)))?);
-        
-        let db_result = JsFuture::from(promise).await
-            .map_err(|e| SynapticError::ProcessingError(format!("Database open failed: {:?}", e)))?;
-        
-        self.db = Some(db_result.dyn_into::<IdbDatabase>()
-            .map_err(|e| SynapticError::ProcessingError(format!("Invalid database object: {:?}", e)))?);
+        let promise = Promise::resolve(&JsFuture::from(open_request).await.map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to open IndexedDB: {:?}", e))
+        })?);
+
+        let db_result = JsFuture::from(promise).await.map_err(|e| {
+            SynapticError::ProcessingError(format!("Database open failed: {:?}", e))
+        })?;
+
+        self.db = Some(db_result.dyn_into::<IdbDatabase>().map_err(|e| {
+            SynapticError::ProcessingError(format!("Invalid database object: {:?}", e))
+        })?);
 
         Ok(())
     }
@@ -176,11 +185,13 @@ impl WasmAdapter {
             return Ok(());
         }
 
-        let window = window().ok_or_else(|| SynapticError::ProcessingError("No window object available".to_string()))?;
+        let window = window().ok_or_else(|| {
+            SynapticError::ProcessingError("No window object available".to_string())
+        })?;
 
-        self.local_storage = window
-            .local_storage()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get local storage: {:?}", e)))?;
+        self.local_storage = window.local_storage().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to get local storage: {:?}", e))
+        })?;
 
         Ok(())
     }
@@ -204,15 +215,21 @@ impl WasmAdapter {
     /// Store data in IndexedDB
     #[cfg(feature = "wasm")]
     async fn store_indexeddb(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
-        let db = self.db.as_ref().ok_or_else(|| SynapticError::ProcessingError("IndexedDB not initialized".to_string()))?;
-        
+        let db = self.db.as_ref().ok_or_else(|| {
+            SynapticError::ProcessingError("IndexedDB not initialized".to_string())
+        })?;
+
         let transaction = db
             .transaction_with_str_and_mode(&self.config.store_name, IdbTransactionMode::Readwrite)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to create transaction: {:?}", e)))?;
-        
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to create transaction: {:?}", e))
+            })?;
+
         let store = transaction
             .object_store(&self.config.store_name)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get object store: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get object store: {:?}", e))
+            })?;
 
         // Convert data to Uint8Array
         let uint8_array = Uint8Array::new_with_length(data.len() as u32);
@@ -221,11 +238,14 @@ impl WasmAdapter {
         // Store data
         let request = store
             .put_with_key(&uint8_array, &JsValue::from_str(key))
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to store data: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to store data: {:?}", e))
+            })?;
 
         // Wait for completion
-        JsFuture::from(request).await
-            .map_err(|e| SynapticError::ProcessingError(format!("Store operation failed: {:?}", e)))?;
+        JsFuture::from(request).await.map_err(|e| {
+            SynapticError::ProcessingError(format!("Store operation failed: {:?}", e))
+        })?;
 
         Ok(())
     }
@@ -233,31 +253,39 @@ impl WasmAdapter {
     /// Retrieve data from IndexedDB
     #[cfg(feature = "wasm")]
     async fn retrieve_indexeddb(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
-        let db = self.db.as_ref().ok_or_else(|| SynapticError::ProcessingError("IndexedDB not initialized".to_string()))?;
-        
+        let db = self.db.as_ref().ok_or_else(|| {
+            SynapticError::ProcessingError("IndexedDB not initialized".to_string())
+        })?;
+
         let transaction = db
             .transaction_with_str(&self.config.store_name)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to create transaction: {:?}", e)))?;
-        
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to create transaction: {:?}", e))
+            })?;
+
         let store = transaction
             .object_store(&self.config.store_name)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get object store: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get object store: {:?}", e))
+            })?;
 
         let request = store
             .get(&JsValue::from_str(key))
             .map_err(|e| SynapticError::ProcessingError(format!("Failed to get data: {:?}", e)))?;
 
-        let result = JsFuture::from(request).await
-            .map_err(|e| SynapticError::ProcessingError(format!("Retrieve operation failed: {:?}", e)))?;
+        let result = JsFuture::from(request).await.map_err(|e| {
+            SynapticError::ProcessingError(format!("Retrieve operation failed: {:?}", e))
+        })?;
 
         if result.is_undefined() {
             return Ok(None);
         }
 
         // Convert Uint8Array back to Vec<u8>
-        let uint8_array: Uint8Array = result.dyn_into()
+        let uint8_array: Uint8Array = result
+            .dyn_into()
             .map_err(|e| SynapticError::ProcessingError(format!("Invalid data format: {:?}", e)))?;
-        
+
         let mut data = vec![0u8; uint8_array.length() as usize];
         uint8_array.copy_to(&mut data);
 
@@ -267,14 +295,18 @@ impl WasmAdapter {
     /// Store data in local storage (fallback)
     #[cfg(feature = "wasm")]
     fn store_local_storage(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
-        let storage = self.local_storage.as_ref().ok_or_else(|| SynapticError::ProcessingError("Local storage not available".to_string()))?;
-        
+        let storage = self.local_storage.as_ref().ok_or_else(|| {
+            SynapticError::ProcessingError("Local storage not available".to_string())
+        })?;
+
         // Encode data as base64
         let encoded = base64::encode(data);
-        
+
         storage
             .set_item(&format!("synaptic_{}", key), &encoded)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to store in local storage: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to store in local storage: {:?}", e))
+            })?;
 
         Ok(())
     }
@@ -282,15 +314,23 @@ impl WasmAdapter {
     /// Retrieve data from local storage (fallback)
     #[cfg(feature = "wasm")]
     fn retrieve_local_storage(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
-        let storage = self.local_storage.as_ref().ok_or_else(|| SynapticError::ProcessingError("Local storage not available".to_string()))?;
-        
+        let storage = self.local_storage.as_ref().ok_or_else(|| {
+            SynapticError::ProcessingError("Local storage not available".to_string())
+        })?;
+
         let encoded = storage
             .get_item(&format!("synaptic_{}", key))
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to retrieve from local storage: {:?}", e)))?;
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!(
+                    "Failed to retrieve from local storage: {:?}",
+                    e
+                ))
+            })?;
 
         if let Some(encoded) = encoded {
-            let data = base64::decode(&encoded)
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to decode data: {}", e)))?;
+            let data = base64::decode(&encoded).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to decode data: {}", e))
+            })?;
             Ok(Some(data))
         } else {
             Ok(None)
@@ -340,18 +380,17 @@ impl WasmAdapter {
     fn get_browser_performance(&self) -> PerformanceProfile {
         let window = window();
         let performance = window.and_then(|w| w.performance());
-        
+
         // Get memory information if available
-        let memory_info = performance.and_then(|p| {
-            js_sys::Reflect::get(&p, &JsValue::from_str("memory")).ok()
-        });
+        let memory_info =
+            performance.and_then(|p| js_sys::Reflect::get(&p, &JsValue::from_str("memory")).ok());
 
         let (memory_score, cpu_score) = if let Some(memory) = memory_info {
             let used_heap = js_sys::Reflect::get(&memory, &JsValue::from_str("usedJSHeapSize"))
                 .ok()
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            
+
             let total_heap = js_sys::Reflect::get(&memory, &JsValue::from_str("totalJSHeapSize"))
                 .ok()
                 .and_then(|v| v.as_f64())
@@ -359,10 +398,16 @@ impl WasmAdapter {
 
             let memory_usage = used_heap / total_heap;
             let memory_score = (1.0 - memory_usage).max(0.0).min(1.0) as f32;
-            
+
             // Estimate CPU score based on memory pressure
-            let cpu_score = if memory_usage < 0.5 { 0.9 } else if memory_usage < 0.8 { 0.7 } else { 0.5 };
-            
+            let cpu_score = if memory_usage < 0.5 {
+                0.9
+            } else if memory_usage < 0.8 {
+                0.7
+            } else {
+                0.5
+            };
+
             (memory_score, cpu_score)
         } else {
             (0.8, 0.8) // Default values
@@ -371,8 +416,8 @@ impl WasmAdapter {
         PerformanceProfile {
             cpu_score,
             memory_score,
-            storage_score: 0.7, // IndexedDB is generally good
-            network_score: 0.9, // Browsers have good network capabilities
+            storage_score: 0.7,         // IndexedDB is generally good
+            network_score: 0.9,         // Browsers have good network capabilities
             battery_optimization: true, // Always optimize for battery in browsers
         }
     }
@@ -461,7 +506,12 @@ impl CrossPlatformAdapter for WasmAdapter {
         if let Some(ref storage) = self.local_storage {
             storage
                 .remove_item(&format!("synaptic_{}", key))
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to delete from local storage: {:?}", e)))?;
+                .map_err(|e| {
+                    SynapticError::ProcessingError(format!(
+                        "Failed to delete from local storage: {:?}",
+                        e
+                    ))
+                })?;
             deleted = true;
         }
 
@@ -480,8 +530,9 @@ impl CrossPlatformAdapter for WasmAdapter {
         // Get keys from local storage
         #[cfg(feature = "wasm")]
         if let Some(ref storage) = self.local_storage {
-            let length = storage.length()
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to get storage length: {:?}", e)))?;
+            let length = storage.length().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get storage length: {:?}", e))
+            })?;
 
             for i in 0..length {
                 if let Ok(Some(key)) = storage.key(i) {
@@ -500,7 +551,7 @@ impl CrossPlatformAdapter for WasmAdapter {
     fn get_stats(&self) -> Result<StorageStats, SynapticError> {
         let keys = self.list_keys()?;
         let item_count = keys.len();
-        
+
         let mut total_size = 0;
         for key in &keys {
             if let Ok(Some(data)) = self.retrieve(key) {
@@ -550,7 +601,7 @@ impl CrossPlatformAdapter for WasmAdapter {
         PlatformInfo {
             platform: Platform::WebAssembly,
             version: "1.0.0".to_string(),
-            available_memory: 50 * 1024 * 1024, // 50MB estimate
+            available_memory: 50 * 1024 * 1024,   // 50MB estimate
             available_storage: 100 * 1024 * 1024, // 100MB estimate
             supported_features: vec![
                 PlatformFeature::NetworkAccess,
@@ -574,7 +625,9 @@ impl WasmAdapter {
             }
 
             if let Some(ref worker) = *self.worker_manager.borrow() {
-                return worker.store_async(key, data, self.config.enable_compression).await;
+                return worker
+                    .store_async(key, data, self.config.enable_compression)
+                    .await;
             }
         }
 
@@ -640,7 +693,11 @@ impl WasmAdapter {
     }
 
     /// Search operation using web worker
-    pub async fn search_async(&self, query: &str, limit: usize) -> Result<Vec<wasm_worker::SearchResult>, SynapticError> {
+    pub async fn search_async(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<wasm_worker::SearchResult>, SynapticError> {
         // Initialize worker if not already done
         if self.worker_manager.borrow().is_none() {
             #[cfg(feature = "wasm")]
@@ -651,16 +708,27 @@ impl WasmAdapter {
             return worker.search_async(query, limit).await;
         }
 
-        Err(SynapticError::ProcessingError("Web worker not available for search".to_string()))
+        Err(SynapticError::ProcessingError(
+            "Web worker not available for search".to_string(),
+        ))
     }
 
     /// Get web worker statistics
     pub fn get_worker_stats(&self) -> HashMap<String, String> {
         let mut stats = HashMap::new();
 
-        stats.insert("worker_enabled".to_string(), self.config.enable_web_worker.to_string());
-        stats.insert("worker_initialized".to_string(), self.worker_manager.borrow().is_some().to_string());
-        stats.insert("worker_timeout".to_string(), format!("{}s", self.config.worker_timeout_seconds));
+        stats.insert(
+            "worker_enabled".to_string(),
+            self.config.enable_web_worker.to_string(),
+        );
+        stats.insert(
+            "worker_initialized".to_string(),
+            self.worker_manager.borrow().is_some().to_string(),
+        );
+        stats.insert(
+            "worker_timeout".to_string(),
+            format!("{}s", self.config.worker_timeout_seconds),
+        );
 
         stats
     }

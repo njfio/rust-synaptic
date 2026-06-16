@@ -1,9 +1,7 @@
 //! Knowledge graph usage example for the AI Agent Memory system
 
 use synaptic::{
-    AgentMemory, MemoryConfig,
-    memory::knowledge_graph::RelationshipType,
-    error::Result,
+    error::Result, memory::knowledge_graph::RelationshipType, AgentMemory, MemoryConfig,
 };
 
 // Only import these when needed for the helper function
@@ -47,10 +45,18 @@ async fn basic_knowledge_graph_operations() -> Result<()> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Store some related memories
-    memory.store("user_alice", "Alice is a software engineer").await?;
-    memory.store("project_alpha", "Project Alpha is a web application").await?;
-    memory.store("technology_rust", "Rust is a systems programming language").await?;
-    memory.store("meeting_standup", "Daily standup meeting at 9 AM").await?;
+    memory
+        .store("user_alice", "Alice is a software engineer")
+        .await?;
+    memory
+        .store("project_alpha", "Project Alpha is a web application")
+        .await?;
+    memory
+        .store("technology_rust", "Rust is a systems programming language")
+        .await?;
+    memory
+        .store("meeting_standup", "Daily standup meeting at 9 AM")
+        .await?;
 
     println!("✓ Stored 4 memories in the system");
 
@@ -80,53 +86,65 @@ async fn relationship_creation_and_traversal() -> Result<()> {
     // Store memories about a project
     memory.store("alice", "Alice is the lead developer").await?;
     memory.store("bob", "Bob is a frontend developer").await?;
-    memory.store("project_web_app", "Building a web application for e-commerce").await?;
-    memory.store("technology_react", "Using React for the frontend").await?;
-    memory.store("technology_rust", "Using Rust for the backend API").await?;
-    memory.store("deadline", "Project deadline is December 2024").await?;
+    memory
+        .store(
+            "project_web_app",
+            "Building a web application for e-commerce",
+        )
+        .await?;
+    memory
+        .store("technology_react", "Using React for the frontend")
+        .await?;
+    memory
+        .store("technology_rust", "Using Rust for the backend API")
+        .await?;
+    memory
+        .store("deadline", "Project deadline is December 2024")
+        .await?;
 
     println!("✓ Stored project-related memories");
 
     // Create explicit relationships
-    memory.create_memory_relationship(
-        "alice",
-        "project_web_app",
-        RelationshipType::PartOf,
-    ).await?;
+    memory
+        .create_memory_relationship("alice", "project_web_app", RelationshipType::PartOf)
+        .await?;
 
-    memory.create_memory_relationship(
-        "bob",
-        "project_web_app",
-        RelationshipType::PartOf,
-    ).await?;
+    memory
+        .create_memory_relationship("bob", "project_web_app", RelationshipType::PartOf)
+        .await?;
 
-    memory.create_memory_relationship(
-        "technology_react",
-        "project_web_app",
-        RelationshipType::PartOf,
-    ).await?;
+    memory
+        .create_memory_relationship(
+            "technology_react",
+            "project_web_app",
+            RelationshipType::PartOf,
+        )
+        .await?;
 
-    memory.create_memory_relationship(
-        "technology_rust",
-        "project_web_app",
-        RelationshipType::PartOf,
-    ).await?;
+    memory
+        .create_memory_relationship(
+            "technology_rust",
+            "project_web_app",
+            RelationshipType::PartOf,
+        )
+        .await?;
 
-    memory.create_memory_relationship(
-        "project_web_app",
-        "deadline",
-        RelationshipType::RelatedTo,
-    ).await?;
+    memory
+        .create_memory_relationship("project_web_app", "deadline", RelationshipType::RelatedTo)
+        .await?;
 
     println!("✓ Created explicit relationships between memories");
 
     // Find related memories
     let related = memory.find_related_memories("project_web_app", 2).await?;
-    println!("✓ Found {} memories related to 'project_web_app':", related.len());
+    println!(
+        "✓ Found {} memories related to 'project_web_app':",
+        related.len()
+    );
     for related_memory in related {
-        println!("  - {} (strength: {:.3})", 
-            related_memory.memory_key, 
-            related_memory.relationship_strength
+        println!(
+            "  - {} (strength: {:.3})",
+            related_memory.memory_key, related_memory.relationship_strength
         );
     }
 
@@ -146,37 +164,52 @@ async fn inference_and_reasoning() -> Result<()> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Store memories that can lead to inferences
-    memory.store("coffee_shop", "Local coffee shop serves excellent espresso").await?;
-    memory.store("alice_likes_coffee", "Alice loves drinking coffee").await?;
-    memory.store("alice_works_nearby", "Alice works in the downtown office").await?;
-    memory.store("coffee_shop_location", "Coffee shop is located downtown").await?;
+    memory
+        .store("coffee_shop", "Local coffee shop serves excellent espresso")
+        .await?;
+    memory
+        .store("alice_likes_coffee", "Alice loves drinking coffee")
+        .await?;
+    memory
+        .store("alice_works_nearby", "Alice works in the downtown office")
+        .await?;
+    memory
+        .store("coffee_shop_location", "Coffee shop is located downtown")
+        .await?;
 
     println!("✓ Stored memories for inference testing");
 
     // Create some relationships
-    memory.create_memory_relationship(
-        "alice_likes_coffee",
-        "coffee_shop",
-        RelationshipType::RelatedTo,
-    ).await?;
+    memory
+        .create_memory_relationship(
+            "alice_likes_coffee",
+            "coffee_shop",
+            RelationshipType::RelatedTo,
+        )
+        .await?;
 
-    memory.create_memory_relationship(
-        "alice_works_nearby",
-        "coffee_shop_location",
-        RelationshipType::SemanticallyRelated,
-    ).await?;
+    memory
+        .create_memory_relationship(
+            "alice_works_nearby",
+            "coffee_shop_location",
+            RelationshipType::SemanticallyRelated,
+        )
+        .await?;
 
     println!("✓ Created initial relationships");
 
     // Perform inference
     let inferences = memory.infer_relationships().await?;
-    println!("✓ Discovered {} new relationships through inference:", inferences.len());
-    
-    for inference in inferences.iter().take(5) { // Show first 5
-        println!("  - {} (confidence: {:.3}): {}", 
-            inference.rule_id,
-            inference.confidence,
-            inference.explanation
+    println!(
+        "✓ Discovered {} new relationships through inference:",
+        inferences.len()
+    );
+
+    for inference in inferences.iter().take(5) {
+        // Show first 5
+        println!(
+            "  - {} (confidence: {:.3}): {}",
+            inference.rule_id, inference.confidence, inference.explanation
         );
     }
 
@@ -201,9 +234,18 @@ async fn complex_graph_queries() -> Result<()> {
         ("person_bob", "Bob is a product manager"),
         ("person_charlie", "Charlie is a UX designer"),
         ("project_mobile_app", "Mobile app for task management"),
-        ("project_web_platform", "Web platform for team collaboration"),
-        ("technology_flutter", "Flutter for cross-platform mobile development"),
-        ("technology_typescript", "TypeScript for type-safe web development"),
+        (
+            "project_web_platform",
+            "Web platform for team collaboration",
+        ),
+        (
+            "technology_flutter",
+            "Flutter for cross-platform mobile development",
+        ),
+        (
+            "technology_typescript",
+            "TypeScript for type-safe web development",
+        ),
         ("skill_leadership", "Leadership and team management skills"),
         ("skill_design", "User experience and interface design"),
         ("deadline_q1", "Q1 2024 deadline for mobile app"),
@@ -218,20 +260,58 @@ async fn complex_graph_queries() -> Result<()> {
 
     // Create a web of relationships
     let relationships = vec![
-        ("person_alice", "project_mobile_app", RelationshipType::PartOf),
-        ("person_alice", "skill_leadership", RelationshipType::RelatedTo),
+        (
+            "person_alice",
+            "project_mobile_app",
+            RelationshipType::PartOf,
+        ),
+        (
+            "person_alice",
+            "skill_leadership",
+            RelationshipType::RelatedTo,
+        ),
         ("person_bob", "project_mobile_app", RelationshipType::PartOf),
-        ("person_bob", "project_web_platform", RelationshipType::PartOf),
-        ("person_charlie", "project_web_platform", RelationshipType::PartOf),
-        ("person_charlie", "skill_design", RelationshipType::RelatedTo),
-        ("technology_flutter", "project_mobile_app", RelationshipType::PartOf),
-        ("technology_typescript", "project_web_platform", RelationshipType::PartOf),
-        ("project_mobile_app", "deadline_q1", RelationshipType::RelatedTo),
-        ("project_web_platform", "deadline_q2", RelationshipType::RelatedTo),
+        (
+            "person_bob",
+            "project_web_platform",
+            RelationshipType::PartOf,
+        ),
+        (
+            "person_charlie",
+            "project_web_platform",
+            RelationshipType::PartOf,
+        ),
+        (
+            "person_charlie",
+            "skill_design",
+            RelationshipType::RelatedTo,
+        ),
+        (
+            "technology_flutter",
+            "project_mobile_app",
+            RelationshipType::PartOf,
+        ),
+        (
+            "technology_typescript",
+            "project_web_platform",
+            RelationshipType::PartOf,
+        ),
+        (
+            "project_mobile_app",
+            "deadline_q1",
+            RelationshipType::RelatedTo,
+        ),
+        (
+            "project_web_platform",
+            "deadline_q2",
+            RelationshipType::RelatedTo,
+        ),
     ];
 
     for (from, to, rel_type) in relationships {
-        memory.create_memory_relationship(from, to, rel_type).await?;
+        memory
+            .create_memory_relationship(from, to, rel_type)
+            .await?;
     }
 
     println!("✓ Created {} explicit relationships", 10);
@@ -241,11 +321,14 @@ async fn complex_graph_queries() -> Result<()> {
 
     // Find all memories related to Alice
     let alice_related = memory.find_related_memories("person_alice", 3).await?;
-    println!("✓ Memories related to Alice ({} found):", alice_related.len());
+    println!(
+        "✓ Memories related to Alice ({} found):",
+        alice_related.len()
+    );
     for related in alice_related.iter().take(5) {
-        println!("  - {} (strength: {:.3})", 
-            related.memory_key, 
-            related.relationship_strength
+        println!(
+            "  - {} (strength: {:.3})",
+            related.memory_key, related.relationship_strength
         );
     }
 
@@ -253,7 +336,11 @@ async fn complex_graph_queries() -> Result<()> {
     let project_memories = vec!["project_mobile_app", "project_web_platform"];
     for project in project_memories {
         let related = memory.find_related_memories(project, 2).await?;
-        println!("✓ Memories related to {} ({} found)", project, related.len());
+        println!(
+            "✓ Memories related to {} ({} found)",
+            project,
+            related.len()
+        );
     }
 
     // Get final knowledge graph statistics
@@ -262,7 +349,10 @@ async fn complex_graph_queries() -> Result<()> {
         println!("  - Total nodes: {}", stats.node_count);
         println!("  - Total edges: {}", stats.edge_count);
         println!("  - Graph density: {:.4}", stats.density);
-        println!("  - Average connections per node: {:.2}", stats.average_degree);
+        println!(
+            "  - Average connections per node: {:.2}",
+            stats.average_degree
+        );
         if let Some(most_connected) = stats.most_connected_node {
             println!("  - Most connected node: {}", most_connected);
         }
@@ -275,19 +365,20 @@ async fn complex_graph_queries() -> Result<()> {
 /// Helper function to demonstrate memory entry creation with rich metadata
 #[allow(dead_code)]
 fn create_rich_memory_entry(key: &str, value: &str, tags: Vec<&str>) -> MemoryEntry {
-    let mut entry = MemoryEntry::new(
-        key.to_string(),
-        value.to_string(),
-        MemoryType::LongTerm,
-    );
-    
-    entry.metadata = entry.metadata
+    let mut entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::LongTerm);
+
+    entry.metadata = entry
+        .metadata
         .with_tags(tags.iter().map(|s| s.to_string()).collect())
         .with_importance(0.8);
-    
+
     // Add some custom fields for knowledge graph
-    entry.metadata.set_custom_field("category".to_string(), "knowledge_graph_demo".to_string());
-    entry.metadata.set_custom_field("source".to_string(), "example_usage".to_string());
-    
+    entry
+        .metadata
+        .set_custom_field("category".to_string(), "knowledge_graph_demo".to_string());
+    entry
+        .metadata
+        .set_custom_field("source".to_string(), "example_usage".to_string());
+
     entry
 }

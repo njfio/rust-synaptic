@@ -2,7 +2,7 @@
 // Implements actual machine learning models for embeddings and predictions
 
 #[cfg(feature = "ml-models")]
-use candle_core::{Device, Tensor, DType};
+use candle_core::{DType, Device, Tensor};
 #[cfg(feature = "ml-models")]
 use candle_nn::VarBuilder;
 #[cfg(feature = "ml-models")]
@@ -10,7 +10,7 @@ use candle_transformers::models::bert::{BertModel, Config as BertConfig};
 #[cfg(feature = "ml-models")]
 use tokenizers::Tokenizer;
 
-use crate::error::{Result, MemoryError};
+use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -78,8 +78,10 @@ impl MLModelManager {
         {
             // Initialize device
             let device = match config.device.as_str() {
-                "cuda" => Device::new_cuda(0).map_err(|e| MemoryError::storage(format!("CUDA device error: {}", e)))?,
-                "metal" => Device::new_metal(0).map_err(|e| MemoryError::storage(format!("Metal device error: {}", e)))?,
+                "cuda" => Device::new_cuda(0)
+                    .map_err(|e| MemoryError::storage(format!("CUDA device error: {}", e)))?,
+                "metal" => Device::new_metal(0)
+                    .map_err(|e| MemoryError::storage(format!("Metal device error: {}", e)))?,
                 _ => Device::Cpu,
             };
 
@@ -94,7 +96,7 @@ impl MLModelManager {
 
             // Load embedding model (BERT)
             manager.load_embedding_model().await?;
-            
+
             manager.metrics.model_load_time_ms = start_time.elapsed().as_millis() as u64;
             Ok(manager)
         }
@@ -110,7 +112,7 @@ impl MLModelManager {
     async fn load_embedding_model(&mut self) -> Result<()> {
         // Download or load pre-trained BERT model
         let model_path = self.config.model_dir.join("bert-base-uncased");
-        
+
         // For this example, we'll use a simplified approach
         // In production, you'd download from HuggingFace Hub
         if !model_path.exists() {
@@ -130,7 +132,7 @@ impl MLModelManager {
         if config_path.exists() {
             let config_str = std::fs::read_to_string(&config_path)
                 .map_err(|e| MemoryError::storage(format!("Failed to read config: {}", e)))?;
-            
+
             let bert_config: BertConfig = serde_json::from_str(&config_str)
                 .map_err(|e| MemoryError::storage(format!("Failed to parse config: {}", e)))?;
 
@@ -144,7 +146,11 @@ impl MLModelManager {
                 }?;
                 let model = BertModel::load(vb, &bert_config)?;
 
-                self.embedding_model = Some(Box::new(SimpleBertModel::new(model, tokenizer, self.device.clone())?));
+                self.embedding_model = Some(Box::new(SimpleBertModel::new(
+                    model,
+                    tokenizer,
+                    self.device.clone(),
+                )?));
                 tracing::info!("BERT model loaded successfully");
             } else {
                 tracing::warn!("Model weights not found at: {}", weights_path.display());
@@ -168,14 +174,17 @@ impl MLModelManager {
         self.metrics.cache_misses += 1;
 
         // Run inference using the trait object
-        let model = self.embedding_model.as_ref()
+        let model = self
+            .embedding_model
+            .as_ref()
             .ok_or_else(|| MemoryError::storage("Embedding model not loaded"))?;
 
         let embedding_vec = model.generate_embedding(text)?;
 
         // Cache the result
         if self.embedding_cache.len() < self.config.cache_size {
-            self.embedding_cache.insert(text.to_string(), embedding_vec.clone());
+            self.embedding_cache
+                .insert(text.to_string(), embedding_vec.clone());
         }
 
         self.metrics.embeddings_generated += 1;
@@ -220,7 +229,11 @@ impl MLModelManager {
         }
 
         // Cosine similarity
-        let dot_product: f32 = embedding1.iter().zip(embedding2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = embedding1
+            .iter()
+            .zip(embedding2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = embedding1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = embedding2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -232,21 +245,24 @@ impl MLModelManager {
     }
 
     /// Predict memory access patterns using simple ML
-    pub async fn predict_access_pattern(&mut self, memory_keys: &[String], historical_data: &[(String, chrono::DateTime<chrono::Utc>)]) -> Result<Vec<AccessPrediction>> {
+    pub async fn predict_access_pattern(
+        &mut self,
+        memory_keys: &[String],
+        historical_data: &[(String, chrono::DateTime<chrono::Utc>)],
+    ) -> Result<Vec<AccessPrediction>> {
         let start_time = std::time::Instant::now();
 
         let mut predictions = Vec::new();
 
         for key in memory_keys {
             // Simple frequency-based prediction
-            let access_count = historical_data.iter()
-                .filter(|(k, _)| k == key)
-                .count();
+            let access_count = historical_data.iter().filter(|(k, _)| k == key).count();
 
             if access_count > 0 {
                 // Calculate average interval
                 let mut intervals = Vec::new();
-                let key_accesses: Vec<_> = historical_data.iter()
+                let key_accesses: Vec<_> = historical_data
+                    .iter()
                     .filter(|(k, _)| k == key)
                     .map(|(_, timestamp)| *timestamp)
                     .collect();
@@ -257,7 +273,8 @@ impl MLModelManager {
                 }
 
                 if !intervals.is_empty() {
-                    let avg_interval = intervals.iter().sum::<chrono::Duration>() / intervals.len() as i32;
+                    let avg_interval =
+                        intervals.iter().sum::<chrono::Duration>() / intervals.len() as i32;
                     let last_access = key_accesses.last().expect("last() should succeed");
                     let predicted_time = *last_access + avg_interval;
 
@@ -362,7 +379,11 @@ struct SimpleBertModel {
 #[cfg(feature = "ml-models")]
 impl SimpleBertModel {
     fn new(model: BertModel, tokenizer: Tokenizer, device: Device) -> Result<Self> {
-        Ok(SimpleBertModel { model, tokenizer, device })
+        Ok(SimpleBertModel {
+            model,
+            tokenizer,
+            device,
+        })
     }
 }
 

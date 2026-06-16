@@ -1,15 +1,14 @@
 //! Adaptive Learning and Task Adaptation Module
-//! 
+//!
 //! This module provides utilities for adapting to new tasks and domains,
 //! including transfer learning, domain adaptation, and continual learning.
 
-use super::{MetaTask, MetaLearningConfig, AdaptationResult, TaskType};
+use super::{AdaptationResult, MetaLearningConfig, MetaTask, TaskType};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
-
 
 /// Adaptation strategy for new tasks
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,9 +19,7 @@ pub enum AdaptationStrategy {
         num_steps: usize,
     },
     /// Feature adaptation
-    FeatureAdaptation {
-        adaptation_layers: Vec<String>,
-    },
+    FeatureAdaptation { adaptation_layers: Vec<String> },
     /// Gradient-based adaptation (MAML-style)
     GradientBased {
         inner_lr: f64,
@@ -135,41 +132,52 @@ impl AdaptationManager {
     /// Get default adaptation strategies
     fn default_strategies() -> HashMap<String, AdaptationStrategy> {
         let mut strategies = HashMap::new();
-        
-        strategies.insert("fine_tuning".to_string(), AdaptationStrategy::FineTuning {
-            learning_rate: 0.001,
-            num_steps: 10,
-        });
-        
-        strategies.insert("gradient_based".to_string(), AdaptationStrategy::GradientBased {
-            inner_lr: 0.01,
-            outer_lr: 0.001,
-            steps: 5,
-        });
-        
-        strategies.insert("prototype_based".to_string(), AdaptationStrategy::PrototypeBased {
-            distance_metric: "euclidean".to_string(),
-            num_prototypes: 5,
-        });
-        
+
+        strategies.insert(
+            "fine_tuning".to_string(),
+            AdaptationStrategy::FineTuning {
+                learning_rate: 0.001,
+                num_steps: 10,
+            },
+        );
+
+        strategies.insert(
+            "gradient_based".to_string(),
+            AdaptationStrategy::GradientBased {
+                inner_lr: 0.01,
+                outer_lr: 0.001,
+                steps: 5,
+            },
+        );
+
+        strategies.insert(
+            "prototype_based".to_string(),
+            AdaptationStrategy::PrototypeBased {
+                distance_metric: "euclidean".to_string(),
+                num_prototypes: 5,
+            },
+        );
+
         strategies
     }
 
     /// Adapt to a new task using the best strategy
     pub async fn adapt_to_task(&mut self, task: &MetaTask) -> Result<AdaptationResult> {
         tracing::info!("Adapting to task: {} in domain: {}", task.id, task.domain);
-        
+
         // Find the best adaptation strategy
         let strategy_name = self.select_adaptation_strategy(task).await?;
-        let strategy = self.strategies.get(&strategy_name)
+        let strategy = self
+            .strategies
+            .get(&strategy_name)
             .ok_or_else(|| crate::error::MemoryError::InvalidConfiguration {
-                message: format!("Strategy not found: {}", strategy_name)
+                message: format!("Strategy not found: {}", strategy_name),
             })?
             .clone();
-        
+
         // Perform adaptation
         let result = self.execute_adaptation_strategy(task, &strategy).await?;
-        
+
         // Record adaptation
         let record = AdaptationRecord {
             task_id: task.id.clone(),
@@ -180,7 +188,7 @@ impl AdaptationManager {
             timestamp: Utc::now(),
         };
         self.adaptation_history.push(record);
-        
+
         Ok(result)
     }
 
@@ -194,7 +202,7 @@ impl AdaptationManager {
                 } else {
                     Ok("gradient_based".to_string())
                 }
-            },
+            }
             TaskType::Regression => Ok("fine_tuning".to_string()),
             TaskType::Ranking => Ok("gradient_based".to_string()),
             TaskType::Consolidation => Ok("fine_tuning".to_string()),
@@ -210,25 +218,42 @@ impl AdaptationManager {
         strategy: &'a AdaptationStrategy,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<AdaptationResult>> + 'a>> {
         Box::pin(async move {
-        let _start_time = std::time::Instant::now();
-        
-        match strategy {
-            AdaptationStrategy::FineTuning { learning_rate, num_steps } => {
-                self.fine_tuning_adaptation(task, *learning_rate, *num_steps).await
-            },
-            AdaptationStrategy::FeatureAdaptation { adaptation_layers } => {
-                self.feature_adaptation(task, adaptation_layers).await
-            },
-            AdaptationStrategy::GradientBased { inner_lr, outer_lr, steps } => {
-                self.gradient_based_adaptation(task, *inner_lr, *outer_lr, *steps).await
-            },
-            AdaptationStrategy::PrototypeBased { distance_metric, num_prototypes } => {
-                self.prototype_based_adaptation(task, distance_metric, *num_prototypes).await
-            },
-            AdaptationStrategy::Ensemble { base_strategies, weights } => {
-                self.ensemble_adaptation(task, base_strategies, weights).await
-            },
-        }
+            let _start_time = std::time::Instant::now();
+
+            match strategy {
+                AdaptationStrategy::FineTuning {
+                    learning_rate,
+                    num_steps,
+                } => {
+                    self.fine_tuning_adaptation(task, *learning_rate, *num_steps)
+                        .await
+                }
+                AdaptationStrategy::FeatureAdaptation { adaptation_layers } => {
+                    self.feature_adaptation(task, adaptation_layers).await
+                }
+                AdaptationStrategy::GradientBased {
+                    inner_lr,
+                    outer_lr,
+                    steps,
+                } => {
+                    self.gradient_based_adaptation(task, *inner_lr, *outer_lr, *steps)
+                        .await
+                }
+                AdaptationStrategy::PrototypeBased {
+                    distance_metric,
+                    num_prototypes,
+                } => {
+                    self.prototype_based_adaptation(task, distance_metric, *num_prototypes)
+                        .await
+                }
+                AdaptationStrategy::Ensemble {
+                    base_strategies,
+                    weights,
+                } => {
+                    self.ensemble_adaptation(task, base_strategies, weights)
+                        .await
+                }
+            }
         })
     }
 
@@ -241,22 +266,22 @@ impl AdaptationManager {
     ) -> Result<AdaptationResult> {
         // Simplified fine-tuning simulation
         let mut loss = 2.0; // Initial loss
-        
+
         for step in 0..num_steps {
             // Simulate gradient descent
             let gradient_magnitude = 0.1 * (1.0 - step as f64 / num_steps as f64);
             loss -= learning_rate * gradient_magnitude;
             loss = loss.max(0.1); // Minimum loss
         }
-        
+
         let success = loss < 1.0;
         let confidence = 1.0 / (1.0 + loss);
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("final_loss".to_string(), loss);
         metrics.insert("learning_rate".to_string(), learning_rate);
         metrics.insert("num_steps".to_string(), num_steps as f64);
-        
+
         Ok(AdaptationResult {
             task_id: task.id.clone(),
             adaptation_steps: num_steps,
@@ -277,14 +302,14 @@ impl AdaptationManager {
         // Simplified feature adaptation
         let complexity_factor = self.compute_task_complexity(task).await?;
         let loss = 0.5 + complexity_factor * 0.3;
-        
+
         let success = loss < 1.0;
         let confidence = 1.0 / (1.0 + loss);
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("final_loss".to_string(), loss);
         metrics.insert("complexity_factor".to_string(), complexity_factor);
-        
+
         Ok(AdaptationResult {
             task_id: task.id.clone(),
             adaptation_steps: 1,
@@ -305,22 +330,22 @@ impl AdaptationManager {
         steps: usize,
     ) -> Result<AdaptationResult> {
         let mut loss = 1.5;
-        
+
         // Simulate inner loop adaptation
         for step in 0..steps {
             let gradient = 0.2 * (1.0 - step as f64 / steps as f64);
             loss -= inner_lr * gradient;
             loss = loss.max(0.05);
         }
-        
+
         let success = loss < 0.8;
         let confidence = 1.0 / (1.0 + loss);
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("final_loss".to_string(), loss);
         metrics.insert("inner_lr".to_string(), inner_lr);
         metrics.insert("adaptation_steps".to_string(), steps as f64);
-        
+
         Ok(AdaptationResult {
             task_id: task.id.clone(),
             adaptation_steps: steps,
@@ -342,15 +367,15 @@ impl AdaptationManager {
         // Compute adaptation based on prototype quality
         let prototype_quality = self.compute_prototype_quality(task, num_prototypes).await?;
         let loss = 1.0 - prototype_quality;
-        
+
         let success = loss < 0.7;
         let confidence = prototype_quality;
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("final_loss".to_string(), loss);
         metrics.insert("prototype_quality".to_string(), prototype_quality);
         metrics.insert("num_prototypes".to_string(), num_prototypes as f64);
-        
+
         Ok(AdaptationResult {
             task_id: task.id.clone(),
             adaptation_steps: 1,
@@ -370,20 +395,20 @@ impl AdaptationManager {
         weights: &[f64],
     ) -> Result<AdaptationResult> {
         let mut ensemble_results = Vec::new();
-        
+
         // Execute each base strategy
         for strategy in base_strategies {
             let result = self.execute_adaptation_strategy(task, strategy).await?;
             ensemble_results.push(result);
         }
-        
+
         // Combine results using weights
         let mut weighted_loss = 0.0;
         let mut weighted_confidence = 0.0;
         let mut total_weight = 0.0;
         let mut total_steps = 0;
         let mut total_time = 0;
-        
+
         for (i, result) in ensemble_results.iter().enumerate() {
             let weight = weights.get(i).unwrap_or(&1.0);
             weighted_loss += result.final_loss * weight;
@@ -392,19 +417,19 @@ impl AdaptationManager {
             total_steps += result.adaptation_steps;
             total_time += result.adaptation_time_ms;
         }
-        
+
         if total_weight > 0.0 {
             weighted_loss /= total_weight;
             weighted_confidence /= total_weight;
         }
-        
+
         let success = weighted_loss < 0.8;
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("ensemble_size".to_string(), base_strategies.len() as f64);
         metrics.insert("weighted_loss".to_string(), weighted_loss);
         metrics.insert("weighted_confidence".to_string(), weighted_confidence);
-        
+
         Ok(AdaptationResult {
             task_id: task.id.clone(),
             adaptation_steps: total_steps,
@@ -419,15 +444,15 @@ impl AdaptationManager {
     /// Compute task complexity
     async fn compute_task_complexity(&self, task: &MetaTask) -> Result<f64> {
         let mut complexity = 0.0;
-        
+
         // Support set size factor
         let support_factor = 1.0 / (task.support_set.len() as f64 + 1.0);
         complexity += support_factor * 0.4;
-        
+
         // Content diversity factor
         let diversity = self.compute_content_diversity(&task.support_set).await?;
         complexity += diversity * 0.3;
-        
+
         // Task type complexity
         let type_complexity = match task.task_type {
             TaskType::Classification => 0.2,
@@ -438,7 +463,7 @@ impl AdaptationManager {
             TaskType::Custom(_) => 0.5,
         };
         complexity += type_complexity * 0.3;
-        
+
         Ok(complexity.min(1.0))
     }
 
@@ -447,18 +472,20 @@ impl AdaptationManager {
         if memories.len() < 2 {
             return Ok(0.0);
         }
-        
+
         let mut total_diversity = 0.0;
         let mut comparisons = 0;
-        
+
         for i in 0..memories.len() {
             for j in (i + 1)..memories.len() {
-                let similarity = self.compute_content_similarity(&memories[i], &memories[j]).await?;
+                let similarity = self
+                    .compute_content_similarity(&memories[i], &memories[j])
+                    .await?;
                 total_diversity += 1.0 - similarity;
                 comparisons += 1;
             }
         }
-        
+
         if comparisons > 0 {
             Ok(total_diversity / comparisons as f64)
         } else {
@@ -467,14 +494,18 @@ impl AdaptationManager {
     }
 
     /// Compute content similarity between two memories
-    async fn compute_content_similarity(&self, mem1: &MemoryEntry, mem2: &MemoryEntry) -> Result<f64> {
+    async fn compute_content_similarity(
+        &self,
+        mem1: &MemoryEntry,
+        mem2: &MemoryEntry,
+    ) -> Result<f64> {
         // Simple Jaccard similarity on words
         let words1: std::collections::HashSet<&str> = mem1.value.split_whitespace().collect();
         let words2: std::collections::HashSet<&str> = mem2.value.split_whitespace().collect();
-        
+
         let intersection = words1.intersection(&words2).count();
         let union = words1.union(&words2).count();
-        
+
         if union == 0 {
             Ok(0.0)
         } else {
@@ -483,15 +514,19 @@ impl AdaptationManager {
     }
 
     /// Compute prototype quality
-    async fn compute_prototype_quality(&self, task: &MetaTask, num_prototypes: usize) -> Result<f64> {
+    async fn compute_prototype_quality(
+        &self,
+        task: &MetaTask,
+        num_prototypes: usize,
+    ) -> Result<f64> {
         if task.support_set.is_empty() {
             return Ok(0.0);
         }
-        
+
         // Quality based on support set size and diversity
         let size_factor = (task.support_set.len() as f64 / num_prototypes as f64).min(1.0);
         let diversity = self.compute_content_diversity(&task.support_set).await?;
-        
+
         let quality = (size_factor * 0.6 + diversity * 0.4).min(1.0);
         Ok(quality)
     }
@@ -504,34 +539,48 @@ impl AdaptationManager {
     /// Get adaptation statistics
     pub fn get_adaptation_statistics(&self) -> HashMap<String, f64> {
         let mut stats = HashMap::new();
-        
+
         if self.adaptation_history.is_empty() {
             return stats;
         }
-        
+
         let total_adaptations = self.adaptation_history.len() as f64;
-        let successful_adaptations = self.adaptation_history.iter()
+        let successful_adaptations = self
+            .adaptation_history
+            .iter()
             .filter(|record| record.result.success)
             .count() as f64;
-        
-        let avg_loss = self.adaptation_history.iter()
+
+        let avg_loss = self
+            .adaptation_history
+            .iter()
             .map(|record| record.result.final_loss)
-            .sum::<f64>() / total_adaptations;
-        
-        let avg_confidence = self.adaptation_history.iter()
+            .sum::<f64>()
+            / total_adaptations;
+
+        let avg_confidence = self
+            .adaptation_history
+            .iter()
             .map(|record| record.result.confidence)
-            .sum::<f64>() / total_adaptations;
-        
-        let avg_time = self.adaptation_history.iter()
+            .sum::<f64>()
+            / total_adaptations;
+
+        let avg_time = self
+            .adaptation_history
+            .iter()
             .map(|record| record.result.adaptation_time_ms as f64)
-            .sum::<f64>() / total_adaptations;
-        
+            .sum::<f64>()
+            / total_adaptations;
+
         stats.insert("total_adaptations".to_string(), total_adaptations);
-        stats.insert("success_rate".to_string(), successful_adaptations / total_adaptations);
+        stats.insert(
+            "success_rate".to_string(),
+            successful_adaptations / total_adaptations,
+        );
         stats.insert("avg_loss".to_string(), avg_loss);
         stats.insert("avg_confidence".to_string(), avg_confidence);
         stats.insert("avg_time_ms".to_string(), avg_time);
-        
+
         stats
     }
 

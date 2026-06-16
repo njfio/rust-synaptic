@@ -2,23 +2,23 @@
 // Implements actual chart generation and image export
 
 #[cfg(feature = "visualization")]
-use plotters::prelude::*;
+use base64;
 #[cfg(feature = "visualization")]
-use plotters_backend::DrawingBackend;
+use chrono::{Datelike, Timelike};
 #[cfg(feature = "visualization")]
 use image::{ImageBuffer, RgbImage};
 #[cfg(feature = "visualization")]
-use base64;
+use plotters::prelude::*;
 #[cfg(feature = "visualization")]
-use chrono::{Timelike, Datelike};
+use plotters_backend::DrawingBackend;
 
-use crate::error::{Result, MemoryError};
-use crate::memory::types::MemoryEntry;
+use crate::error::{MemoryError, Result};
 use crate::memory::management::analytics::{AnalyticsEvent, AnalyticsInsight};
+use crate::memory::types::MemoryEntry;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use chrono::{DateTime, Utc};
 
 /// Visualization configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,8 +90,9 @@ impl RealVisualizationEngine {
     pub async fn new(config: VisualizationConfig) -> Result<Self> {
         // Create output directory if it doesn't exist
         if !config.output_dir.exists() {
-            std::fs::create_dir_all(&config.output_dir)
-                .map_err(|e| MemoryError::storage(format!("Failed to create output directory: {}", e)))?;
+            std::fs::create_dir_all(&config.output_dir).map_err(|e| {
+                MemoryError::storage(format!("Failed to create output directory: {}", e))
+            })?;
         }
 
         Ok(Self {
@@ -102,9 +103,13 @@ impl RealVisualizationEngine {
 
     /// Generate memory network graph
     #[cfg(feature = "visualization")]
-    pub async fn generate_memory_network(&mut self, memories: &[MemoryEntry], relationships: &[(String, String, f32)]) -> Result<String> {
+    pub async fn generate_memory_network(
+        &mut self,
+        memories: &[MemoryEntry],
+        relationships: &[(String, String, f32)],
+    ) -> Result<String> {
         let start_time = std::time::Instant::now();
-        
+
         let filename = format!("memory_network_{}.png", Utc::now().format("%Y%m%d_%H%M%S"));
         let filepath = self.config.output_dir.join(&filename);
 
@@ -141,7 +146,7 @@ impl RealVisualizationEngine {
             };
 
             chart.draw_series(std::iter::once(Circle::new((x, y), 5, color.filled())))?;
-            
+
             // Add label
             chart.draw_series(std::iter::once(Text::new(
                 memory.key.chars().take(10).collect::<String>(),
@@ -152,10 +157,18 @@ impl RealVisualizationEngine {
 
         // Draw relationships
         for (source, target, strength) in relationships {
-            if let (Some(&(x1, y1)), Some(&(x2, y2))) = (positions.get(source), positions.get(target)) {
+            if let (Some(&(x1, y1)), Some(&(x2, y2))) =
+                (positions.get(source), positions.get(target))
+            {
                 let line_width = (strength * 5.0) as u32;
-                let color = if *strength > 0.7 { &GREEN } else if *strength > 0.4 { &YELLOW } else { &BLACK };
-                
+                let color = if *strength > 0.7 {
+                    &GREEN
+                } else if *strength > 0.4 {
+                    &YELLOW
+                } else {
+                    &BLACK
+                };
+
                 chart.draw_series(std::iter::once(PathElement::new(
                     vec![(x1, y1), (x2, y2)],
                     color.stroke_width(line_width),
@@ -164,17 +177,23 @@ impl RealVisualizationEngine {
         }
 
         root.present()?;
-        
+
         self.update_metrics(start_time, &filepath);
         Ok(filename)
     }
 
     /// Generate analytics timeline chart
     #[cfg(feature = "visualization")]
-    pub async fn generate_analytics_timeline(&mut self, events: &[AnalyticsEvent]) -> Result<String> {
+    pub async fn generate_analytics_timeline(
+        &mut self,
+        events: &[AnalyticsEvent],
+    ) -> Result<String> {
         let start_time = std::time::Instant::now();
-        
-        let filename = format!("analytics_timeline_{}.png", Utc::now().format("%Y%m%d_%H%M%S"));
+
+        let filename = format!(
+            "analytics_timeline_{}.png",
+            Utc::now().format("%Y%m%d_%H%M%S")
+        );
         let filepath = self.config.output_dir.join(&filename);
 
         let root = BitMapBackend::new(&filepath, (self.config.width, self.config.height))
@@ -201,41 +220,50 @@ impl RealVisualizationEngine {
         let max_count = data.iter().map(|(_, count)| *count).max().unwrap_or(1);
 
         let mut chart = ChartBuilder::on(&root)
-            .caption("Analytics Events Timeline", ("Arial", self.config.font_size))
+            .caption(
+                "Analytics Events Timeline",
+                ("Arial", self.config.font_size),
+            )
             .margin(20)
             .x_label_area_size(60)
             .y_label_area_size(60)
             .build_cartesian_2d(0f32..(data.len() as f32), 0f32..(max_count as f32))?;
 
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_desc("Time")
             .y_desc("Event Count")
             .draw()?;
 
         // Draw line chart
         chart.draw_series(LineSeries::new(
-            data.iter().enumerate().map(|(i, (_, count))| (i as f32, *count as f32)),
+            data.iter()
+                .enumerate()
+                .map(|(i, (_, count))| (i as f32, *count as f32)),
             &BLUE,
         ))?;
 
         // Draw points
         chart.draw_series(
-            data.iter().enumerate().map(|(i, (_, count))| {
-                Circle::new((i as f32, *count as f32), 3, BLUE.filled())
-            })
+            data.iter()
+                .enumerate()
+                .map(|(i, (_, count))| Circle::new((i as f32, *count as f32), 3, BLUE.filled())),
         )?;
 
         root.present()?;
-        
+
         self.update_metrics(start_time, &filepath);
         Ok(filename)
     }
 
     /// Generate memory usage heatmap
     #[cfg(feature = "visualization")]
-    pub async fn generate_memory_heatmap(&mut self, access_data: &[(String, DateTime<Utc>, u32)]) -> Result<String> {
+    pub async fn generate_memory_heatmap(
+        &mut self,
+        access_data: &[(String, DateTime<Utc>, u32)],
+    ) -> Result<String> {
         let start_time = std::time::Instant::now();
-        
+
         let filename = format!("memory_heatmap_{}.png", Utc::now().format("%Y%m%d_%H%M%S"));
         let filepath = self.config.output_dir.join(&filename);
 
@@ -245,7 +273,7 @@ impl RealVisualizationEngine {
 
         // Create heatmap data (24 hours x 7 days)
         let mut heatmap_data = vec![vec![0u32; 24]; 7];
-        
+
         for (_, timestamp, count) in access_data {
             let hour = timestamp.hour() as usize;
             let day = timestamp.weekday().num_days_from_monday() as usize;
@@ -254,7 +282,8 @@ impl RealVisualizationEngine {
             }
         }
 
-        let max_value = heatmap_data.iter()
+        let max_value = heatmap_data
+            .iter()
             .flat_map(|row| row.iter())
             .max()
             .copied()
@@ -267,7 +296,8 @@ impl RealVisualizationEngine {
             .y_label_area_size(60)
             .build_cartesian_2d(0f32..24f32, 0f32..7f32)?;
 
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_desc("Hour of Day")
             .y_desc("Day of Week")
             .draw()?;
@@ -281,26 +311,35 @@ impl RealVisualizationEngine {
                     (255.0 * (1.0 - intensity)) as u8,
                     0,
                 );
-                
+
                 chart.draw_series(std::iter::once(Rectangle::new(
-                    [(hour as f32, day as f32), (hour as f32 + 1.0, day as f32 + 1.0)],
+                    [
+                        (hour as f32, day as f32),
+                        (hour as f32 + 1.0, day as f32 + 1.0),
+                    ],
                     color.filled(),
                 )))?;
             }
         }
 
         root.present()?;
-        
+
         self.update_metrics(start_time, &filepath);
         Ok(filename)
     }
 
     /// Generate insights dashboard
     #[cfg(feature = "visualization")]
-    pub async fn generate_insights_dashboard(&mut self, insights: &[AnalyticsInsight]) -> Result<String> {
+    pub async fn generate_insights_dashboard(
+        &mut self,
+        insights: &[AnalyticsInsight],
+    ) -> Result<String> {
         let start_time = std::time::Instant::now();
-        
-        let filename = format!("insights_dashboard_{}.png", Utc::now().format("%Y%m%d_%H%M%S"));
+
+        let filename = format!(
+            "insights_dashboard_{}.png",
+            Utc::now().format("%Y%m%d_%H%M%S")
+        );
         let filepath = self.config.output_dir.join(&filename);
 
         let root = BitMapBackend::new(&filepath, (self.config.width, self.config.height))
@@ -320,87 +359,111 @@ impl RealVisualizationEngine {
 
         // Insight type distribution (upper left)
         self.draw_insight_type_chart(&upper_left, insights)?;
-        
+
         // Priority distribution (upper right)
         self.draw_priority_chart(&upper_right, insights)?;
-        
+
         // Confidence distribution (lower left)
         self.draw_confidence_chart(&lower_left, insights)?;
-        
+
         // Timeline (lower right)
         self.draw_insights_timeline(&lower_right, insights)?;
 
         root.present()?;
-        
+
         self.update_metrics(start_time, &filepath);
         Ok(filename)
     }
 
     #[cfg(feature = "visualization")]
-    fn draw_insight_type_chart<DB: DrawingBackend>(&self, area: &DrawingArea<DB, plotters::coord::Shift>, insights: &[AnalyticsInsight]) -> Result<()>
+    fn draw_insight_type_chart<DB: DrawingBackend>(
+        &self,
+        area: &DrawingArea<DB, plotters::coord::Shift>,
+        insights: &[AnalyticsInsight],
+    ) -> Result<()>
     where
-        <DB as DrawingBackend>::ErrorType: 'static
+        <DB as DrawingBackend>::ErrorType: 'static,
     {
         let mut type_counts = HashMap::new();
         for insight in insights {
-            *type_counts.entry(format!("{:?}", insight.insight_type)).or_insert(0) += 1;
+            *type_counts
+                .entry(format!("{:?}", insight.insight_type))
+                .or_insert(0) += 1;
         }
 
         let mut chart = ChartBuilder::on(area)
             .caption("Insight Types", ("Arial", 12))
             .margin(10)
-            .build_cartesian_2d(0f32..type_counts.len() as f32, 0f32..type_counts.values().max().copied().unwrap_or(1) as f32)?;
+            .build_cartesian_2d(
+                0f32..type_counts.len() as f32,
+                0f32..type_counts.values().max().copied().unwrap_or(1) as f32,
+            )?;
 
         chart.configure_mesh().draw()?;
 
-        chart.draw_series(
-            type_counts.iter().enumerate().map(|(i, (_, &count))| {
-                Rectangle::new([(i as f32, 0f32), (i as f32 + 0.8, count as f32)], BLUE.filled())
-            })
-        )?;
+        chart.draw_series(type_counts.iter().enumerate().map(|(i, (_, &count))| {
+            Rectangle::new(
+                [(i as f32, 0f32), (i as f32 + 0.8, count as f32)],
+                BLUE.filled(),
+            )
+        }))?;
 
         Ok(())
     }
 
     #[cfg(feature = "visualization")]
-    fn draw_priority_chart<DB: DrawingBackend>(&self, area: &DrawingArea<DB, plotters::coord::Shift>, insights: &[AnalyticsInsight]) -> Result<()>
+    fn draw_priority_chart<DB: DrawingBackend>(
+        &self,
+        area: &DrawingArea<DB, plotters::coord::Shift>,
+        insights: &[AnalyticsInsight],
+    ) -> Result<()>
     where
-        <DB as DrawingBackend>::ErrorType: 'static
+        <DB as DrawingBackend>::ErrorType: 'static,
     {
         let mut priority_counts = HashMap::new();
         for insight in insights {
-            *priority_counts.entry(format!("{:?}", insight.priority)).or_insert(0) += 1;
+            *priority_counts
+                .entry(format!("{:?}", insight.priority))
+                .or_insert(0) += 1;
         }
 
         // Simple pie chart representation as bars
         let mut chart = ChartBuilder::on(area)
             .caption("Priority Distribution", ("Arial", 12))
             .margin(10)
-            .build_cartesian_2d(0f32..priority_counts.len() as f32, 0f32..priority_counts.values().max().copied().unwrap_or(1) as f32)?;
+            .build_cartesian_2d(
+                0f32..priority_counts.len() as f32,
+                0f32..priority_counts.values().max().copied().unwrap_or(1) as f32,
+            )?;
 
         chart.configure_mesh().draw()?;
 
-        chart.draw_series(
-            priority_counts.iter().enumerate().map(|(i, (_, &count))| {
-                let color = match i {
-                    0 => &RED,
-                    1 => &YELLOW,
-                    _ => &GREEN,
-                };
-                Rectangle::new([(i as f32, 0f32), (i as f32 + 0.8, count as f32)], color.filled())
-            })
-        )?;
+        chart.draw_series(priority_counts.iter().enumerate().map(|(i, (_, &count))| {
+            let color = match i {
+                0 => &RED,
+                1 => &YELLOW,
+                _ => &GREEN,
+            };
+            Rectangle::new(
+                [(i as f32, 0f32), (i as f32 + 0.8, count as f32)],
+                color.filled(),
+            )
+        }))?;
 
         Ok(())
     }
 
     #[cfg(feature = "visualization")]
-    fn draw_confidence_chart<DB: DrawingBackend>(&self, area: &DrawingArea<DB, plotters::coord::Shift>, insights: &[AnalyticsInsight]) -> Result<()>
+    fn draw_confidence_chart<DB: DrawingBackend>(
+        &self,
+        area: &DrawingArea<DB, plotters::coord::Shift>,
+        insights: &[AnalyticsInsight],
+    ) -> Result<()>
     where
-        <DB as DrawingBackend>::ErrorType: 'static
+        <DB as DrawingBackend>::ErrorType: 'static,
     {
         let confidences: Vec<f32> = insights.iter().map(|i| i.confidence as f32).collect();
-        
+
         let mut chart = ChartBuilder::on(area)
             .caption("Confidence Distribution", ("Arial", 12))
             .margin(10)
@@ -409,7 +472,10 @@ impl RealVisualizationEngine {
         chart.configure_mesh().draw()?;
 
         chart.draw_series(LineSeries::new(
-            confidences.iter().enumerate().map(|(i, &conf)| (i as f32, conf)),
+            confidences
+                .iter()
+                .enumerate()
+                .map(|(i, &conf)| (i as f32, conf)),
             &BLUE,
         ))?;
 
@@ -417,9 +483,13 @@ impl RealVisualizationEngine {
     }
 
     #[cfg(feature = "visualization")]
-    fn draw_insights_timeline<DB: DrawingBackend>(&self, area: &DrawingArea<DB, plotters::coord::Shift>, insights: &[AnalyticsInsight]) -> Result<()>
+    fn draw_insights_timeline<DB: DrawingBackend>(
+        &self,
+        area: &DrawingArea<DB, plotters::coord::Shift>,
+        insights: &[AnalyticsInsight],
+    ) -> Result<()>
     where
-        <DB as DrawingBackend>::ErrorType: 'static
+        <DB as DrawingBackend>::ErrorType: 'static,
     {
         let mut daily_counts = HashMap::new();
         for insight in insights {
@@ -437,12 +507,17 @@ impl RealVisualizationEngine {
         let mut chart = ChartBuilder::on(area)
             .caption("Insights Timeline", ("Arial", 12))
             .margin(10)
-            .build_cartesian_2d(0f32..data.len() as f32, 0f32..data.iter().map(|(_, count)| *count).max().unwrap_or(1) as f32)?;
+            .build_cartesian_2d(
+                0f32..data.len() as f32,
+                0f32..data.iter().map(|(_, count)| *count).max().unwrap_or(1) as f32,
+            )?;
 
         chart.configure_mesh().draw()?;
 
         chart.draw_series(LineSeries::new(
-            data.iter().enumerate().map(|(i, (_, count))| (i as f32, *count as f32)),
+            data.iter()
+                .enumerate()
+                .map(|(i, (_, count))| (i as f32, *count as f32)),
             &GREEN,
         ))?;
 
@@ -455,8 +530,8 @@ impl RealVisualizationEngine {
         let filepath = self.config.output_dir.join(filename);
         let image_data = std::fs::read(&filepath)
             .map_err(|e| MemoryError::storage(format!("Failed to read image file: {}", e)))?;
-        
-        use base64::{Engine as _, engine::general_purpose};
+
+        use base64::{engine::general_purpose, Engine as _};
         Ok(general_purpose::STANDARD.encode(image_data))
     }
 
@@ -467,7 +542,7 @@ impl RealVisualizationEngine {
         std::fs::write(&test_file, "test")
             .map_err(|e| MemoryError::storage(format!("Output directory not writable: {}", e)))?;
         std::fs::remove_file(&test_file).ok();
-        
+
         Ok(())
     }
 
@@ -485,7 +560,7 @@ impl RealVisualizationEngine {
     fn update_metrics(&mut self, start_time: std::time::Instant, filepath: &std::path::Path) {
         self.metrics.charts_generated += 1;
         self.metrics.total_render_time_ms += start_time.elapsed().as_millis() as u64;
-        
+
         if let Ok(metadata) = std::fs::metadata(filepath) {
             self.metrics.file_size_bytes += metadata.len();
             self.metrics.images_exported += 1;
@@ -500,11 +575,15 @@ impl RealVisualizationEngine {
 #[cfg(not(feature = "visualization"))]
 impl RealVisualizationEngine {
     pub async fn new(_config: VisualizationConfig) -> Result<Self> {
-        Err(MemoryError::configuration("Visualization feature not enabled"))
+        Err(MemoryError::configuration(
+            "Visualization feature not enabled",
+        ))
     }
 
     pub async fn health_check(&self) -> Result<()> {
-        Err(MemoryError::configuration("Visualization feature not enabled"))
+        Err(MemoryError::configuration(
+            "Visualization feature not enabled",
+        ))
     }
 
     pub async fn shutdown(&mut self) -> Result<()> {

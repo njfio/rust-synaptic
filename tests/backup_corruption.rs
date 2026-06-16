@@ -3,22 +3,28 @@
 // These tests verify that the backup/restore functionality properly handles
 // various types of corrupted backup files and provides meaningful error messages.
 
+use std::io::Write;
 use std::sync::Arc;
 use synaptic::memory::storage::memory::MemoryStorage;
 use synaptic::memory::storage::{Storage, TransactionalStorage};
 use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tempfile::NamedTempFile;
-use std::io::Write;
 
 #[tokio::test]
 async fn test_nonexistent_backup_file() {
     let storage = Arc::new(MemoryStorage::new());
     let result = storage.restore("/path/that/does/not/exist.json").await;
 
-    assert!(result.is_err(), "Should fail when backup file doesn't exist");
+    assert!(
+        result.is_err(),
+        "Should fail when backup file doesn't exist"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to read backup file"),
-        "Error should mention file read failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to read backup file"),
+        "Error should mention file read failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -32,8 +38,11 @@ async fn test_empty_backup_file() {
 
     assert!(result.is_err(), "Should fail when backup file is empty");
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to decode") || err_msg.contains("Failed to deserialize"),
-        "Error should mention decoding or deserialization failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to decode") || err_msg.contains("Failed to deserialize"),
+        "Error should mention decoding or deserialization failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -46,10 +55,16 @@ async fn test_invalid_utf8_backup() {
     let storage = Arc::new(MemoryStorage::new());
     let result = storage.restore(temp_file.path().to_str().unwrap()).await;
 
-    assert!(result.is_err(), "Should fail when backup contains invalid UTF-8");
+    assert!(
+        result.is_err(),
+        "Should fail when backup contains invalid UTF-8"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to decode"),
-        "Error should mention UTF-8 decode failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to decode"),
+        "Error should mention UTF-8 decode failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -61,10 +76,16 @@ async fn test_invalid_json_backup() {
     let storage = Arc::new(MemoryStorage::new());
     let result = storage.restore(temp_file.path().to_str().unwrap()).await;
 
-    assert!(result.is_err(), "Should fail when backup contains invalid JSON");
+    assert!(
+        result.is_err(),
+        "Should fail when backup contains invalid JSON"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to parse") || err_msg.contains("deserialize"),
-        "Error should mention JSON parsing failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to parse") || err_msg.contains("deserialize"),
+        "Error should mention JSON parsing failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -90,10 +111,16 @@ async fn test_unsupported_backup_version() {
     let storage = Arc::new(MemoryStorage::new());
     let result = storage.restore(temp_file.path().to_str().unwrap()).await;
 
-    assert!(result.is_err(), "Should fail when backup version is unsupported");
+    assert!(
+        result.is_err(),
+        "Should fail when backup version is unsupported"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Unsupported backup version"),
-        "Error should mention unsupported version: {}", err_msg);
+    assert!(
+        err_msg.contains("Unsupported backup version"),
+        "Error should mention unsupported version: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -133,8 +160,11 @@ async fn test_checksum_mismatch() {
 
     assert!(result.is_err(), "Should fail when checksum doesn't match");
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("integrity verification failed") || err_msg.contains("checksum"),
-        "Error should mention integrity/checksum failure: {}", err_msg);
+    assert!(
+        err_msg.contains("integrity verification failed") || err_msg.contains("checksum"),
+        "Error should mention integrity/checksum failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -159,19 +189,30 @@ async fn test_malformed_entry_in_backup() {
 
     assert!(result.is_err(), "Should fail when entries are malformed");
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to parse") || err_msg.contains("missing field"),
-        "Error should mention parsing failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to parse") || err_msg.contains("missing field"),
+        "Error should mention parsing failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
 async fn test_get_backup_info_nonexistent_file() {
     let storage = Arc::new(MemoryStorage::new());
-    let result = storage.get_backup_info("/path/that/does/not/exist.json").await;
+    let result = storage
+        .get_backup_info("/path/that/does/not/exist.json")
+        .await;
 
-    assert!(result.is_err(), "get_backup_info should fail when file doesn't exist");
+    assert!(
+        result.is_err(),
+        "get_backup_info should fail when file doesn't exist"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to read backup file"),
-        "Error should mention file read failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to read backup file"),
+        "Error should mention file read failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -181,12 +222,20 @@ async fn test_get_backup_info_corrupted_json() {
     temp_file.flush().unwrap();
 
     let storage = Arc::new(MemoryStorage::new());
-    let result = storage.get_backup_info(temp_file.path().to_str().unwrap()).await;
+    let result = storage
+        .get_backup_info(temp_file.path().to_str().unwrap())
+        .await;
 
-    assert!(result.is_err(), "get_backup_info should fail on corrupted JSON");
+    assert!(
+        result.is_err(),
+        "get_backup_info should fail on corrupted JSON"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Failed to deserialize") || err_msg.contains("Failed to decode"),
-        "Error should mention deserialization failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Failed to deserialize") || err_msg.contains("Failed to decode"),
+        "Error should mention deserialization failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -221,7 +270,10 @@ async fn test_backup_info_no_redundant_read() {
 
     assert_eq!(info.version, "1.1");
     assert_eq!(info.entry_count, 1);
-    assert!(!info.is_compressed, "Default backup should not be compressed");
+    assert!(
+        !info.is_compressed,
+        "Default backup should not be compressed"
+    );
 
     // The key assertion: this completed successfully, proving the file
     // was only read once and the cached data was reused for compression check
@@ -232,16 +284,24 @@ async fn test_backup_info_no_redundant_read() {
 async fn test_corrupted_compressed_backup() {
     let mut temp_file = NamedTempFile::new().unwrap();
     // Write gzip magic number but invalid gzip data
-    temp_file.write_all(&[0x1f, 0x8b, 0xFF, 0xFF, 0xFF, 0xFF]).unwrap();
+    temp_file
+        .write_all(&[0x1f, 0x8b, 0xFF, 0xFF, 0xFF, 0xFF])
+        .unwrap();
     temp_file.flush().unwrap();
 
     let storage = Arc::new(MemoryStorage::new());
     let result = storage.restore(temp_file.path().to_str().unwrap()).await;
 
-    assert!(result.is_err(), "Should fail when compressed data is corrupted");
+    assert!(
+        result.is_err(),
+        "Should fail when compressed data is corrupted"
+    );
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("Decompression failed"),
-        "Error should mention decompression failure: {}", err_msg);
+    assert!(
+        err_msg.contains("Decompression failed"),
+        "Error should mention decompression failure: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]
@@ -293,7 +353,10 @@ async fn test_concurrent_backup_operations_no_corruption() {
         // Try to restore from each backup to verify integrity
         let restore_storage = Arc::new(MemoryStorage::new());
         restore_storage.restore(path).await.unwrap();
-        assert_eq!(restore_storage.count().await.unwrap(), 10,
-            "Restored storage should contain all entries");
+        assert_eq!(
+            restore_storage.count().await.unwrap(),
+            10,
+            "Restored storage should contain all entries"
+        );
     }
 }

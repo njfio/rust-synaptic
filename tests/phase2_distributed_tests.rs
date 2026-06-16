@@ -1,32 +1,36 @@
 //! Comprehensive tests for Phase 2 distributed architecture
-//! 
+//!
 //! This test suite validates all distributed system components including
 //! consensus, sharding, events, and real-time synchronization.
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 mod distributed_tests {
-    use synaptic::{
-        distributed::{
-            NodeId, DistributedConfig, ConsistencyLevel, OperationMetadata, ShardId,
-            events::{EventBus, MemoryEvent, InMemoryEventStore, EventHandler, EventEnvelope},
-            consensus::{SimpleConsensus, ConsensusCommand, Operation},
-            sharding::{DistributedGraph, ConsistentHashRing, GraphShard},
-            // realtime::{RealtimeSync, RealtimeConfig, ClientId, UpdateType},
-            coordination::DistributedCoordinator,
-        },
-        memory::{
-            types::{MemoryEntry, MemoryType},
-            knowledge_graph::RelationshipType,
-        },
-        distributed::sharding::MemoryNode,
-        MemoryConfig, AgentMemory,
-    };
+    use chrono::Utc;
+    use parking_lot::RwLock;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use parking_lot::RwLock;
-    use uuid::Uuid;
-    use chrono::Utc;
+    use synaptic::{
+        distributed::sharding::MemoryNode,
+        distributed::{
+            consensus::{ConsensusCommand, Operation, SimpleConsensus},
+            // realtime::{RealtimeSync, RealtimeConfig, ClientId, UpdateType},
+            coordination::DistributedCoordinator,
+            events::{EventBus, EventEnvelope, EventHandler, InMemoryEventStore, MemoryEvent},
+            sharding::{ConsistentHashRing, DistributedGraph, GraphShard},
+            ConsistencyLevel,
+            DistributedConfig,
+            NodeId,
+            OperationMetadata,
+            ShardId,
+        },
+        memory::{
+            knowledge_graph::RelationshipType,
+            types::{MemoryEntry, MemoryType},
+        },
+        AgentMemory, MemoryConfig,
+    };
     use tokio::sync::oneshot;
+    use uuid::Uuid;
 
     /// Test event handler for validation
     struct TestEventHandler {
@@ -151,9 +155,11 @@ mod distributed_tests {
 
         // Keys should potentially map to different node sets
         // (though with only 3 nodes and replication factor 3, they'll be the same)
-        assert!(nodes_for_key1.contains(&node1) || 
-                nodes_for_key1.contains(&node2) || 
-                nodes_for_key1.contains(&node3));
+        assert!(
+            nodes_for_key1.contains(&node1)
+                || nodes_for_key1.contains(&node2)
+                || nodes_for_key1.contains(&node3)
+        );
     }
 
     #[tokio::test]
@@ -238,7 +244,10 @@ mod distributed_tests {
         let coordinator = DistributedCoordinator::new(config).await.unwrap();
 
         let stats = coordinator.get_stats().await;
-        assert_eq!(stats.current_node, coordinator.get_stats().await.current_node);
+        assert_eq!(
+            stats.current_node,
+            coordinator.get_stats().await.current_node
+        );
         assert_eq!(stats.active_peers, 0);
         assert_eq!(stats.events_processed, 0);
 
@@ -260,11 +269,15 @@ mod distributed_tests {
         );
 
         // Test eventual consistency
-        let result = coordinator.store_memory(memory.clone(), ConsistencyLevel::Eventual).await;
+        let result = coordinator
+            .store_memory(memory.clone(), ConsistencyLevel::Eventual)
+            .await;
         assert!(result.is_ok());
 
         // Test strong consistency (will work since we're the only node)
-        let result = coordinator.store_memory(memory, ConsistencyLevel::Strong).await;
+        let result = coordinator
+            .store_memory(memory, ConsistencyLevel::Strong)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -341,8 +354,14 @@ mod distributed_tests {
         let mut memory = result.unwrap();
 
         // Store some memories
-        memory.store("distributed_key1", "Distributed memory content 1").await.unwrap();
-        memory.store("distributed_key2", "Distributed memory content 2").await.unwrap();
+        memory
+            .store("distributed_key1", "Distributed memory content 1")
+            .await
+            .unwrap();
+        memory
+            .store("distributed_key2", "Distributed memory content 2")
+            .await
+            .unwrap();
 
         // Verify memories can be retrieved
         let retrieved1 = memory.retrieve("distributed_key1").await.unwrap();
@@ -376,17 +395,30 @@ mod distributed_tests {
                 MemoryType::ShortTerm,
             );
 
-            coordinator.store_memory(memory, ConsistencyLevel::Eventual).await.unwrap();
+            coordinator
+                .store_memory(memory, ConsistencyLevel::Eventual)
+                .await
+                .unwrap();
         }
 
         let elapsed = start_time.elapsed();
         let ops_per_second = num_operations as f64 / elapsed.as_secs_f64();
 
-        println!("Distributed storage performance: {:.2} ops/second", ops_per_second);
-        println!("Average latency: {:.2}ms", elapsed.as_millis() as f64 / num_operations as f64);
+        println!(
+            "Distributed storage performance: {:.2} ops/second",
+            ops_per_second
+        );
+        println!(
+            "Average latency: {:.2}ms",
+            elapsed.as_millis() as f64 / num_operations as f64
+        );
 
         // Should be able to handle at least 100 ops/second
-        assert!(ops_per_second > 50.0, "Performance too low: {} ops/second", ops_per_second);
+        assert!(
+            ops_per_second > 50.0,
+            "Performance too low: {} ops/second",
+            ops_per_second
+        );
 
         // For now, just check that operations completed successfully
         // In a full implementation, we'd have proper event processing metrics

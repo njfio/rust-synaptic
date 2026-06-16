@@ -6,21 +6,19 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod dense_vector;
 pub mod indexed;
 pub mod pipeline;
 pub mod strategies;
-pub mod dense_vector;
 
 // Re-export pipeline types
 pub use pipeline::{
-    RetrievalPipeline, RetrievalSignal, ScoredMemory, PipelineConfig,
-    FusionStrategy, HybridRetriever, CacheStats,
+    CacheStats, FusionStrategy, HybridRetriever, PipelineConfig, RetrievalPipeline,
+    RetrievalSignal, ScoredMemory,
 };
 
 // Re-export concrete strategies
-pub use strategies::{
-    KeywordRetriever, TemporalRetriever, GraphRetriever,
-};
+pub use strategies::{GraphRetriever, KeywordRetriever, TemporalRetriever};
 
 // Re-export dense vector retriever
 pub use dense_vector::DenseVectorRetriever;
@@ -140,7 +138,6 @@ pub trait MemoryRetriever: Send + Sync {
 
 // Re-export the optimized implementations
 pub use indexed::{
-    IndexedMemoryRetriever, IndexingConfig, IndexStats,
-    AccessTimeIndex, AccessFrequencyIndex, TagIndex,
-    HotDataCache, QueryResultCache,
+    AccessFrequencyIndex, AccessTimeIndex, HotDataCache, IndexStats, IndexedMemoryRetriever,
+    IndexingConfig, QueryResultCache, TagIndex,
 };

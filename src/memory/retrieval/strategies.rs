@@ -3,15 +3,15 @@
 //! This module provides specific retrieval strategies that can be composed
 //! in a hybrid pipeline for optimal search quality.
 
-use super::pipeline::{RetrievalPipeline, RetrievalSignal, ScoredMemory, PipelineConfig};
+use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
 use crate::error::{MemoryError, Result};
+use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::storage::Storage;
 use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
-use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use async_trait::async_trait;
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::Utc;
 
 /// Keyword-based retriever using BM25-style scoring
 ///
@@ -95,7 +95,11 @@ impl RetrievalPipeline for KeywordRetriever {
             .collect();
 
         // Sort by score descending
-        scored_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top limit
         scored_results.truncate(limit);
@@ -157,7 +161,8 @@ impl TemporalRetriever {
         let frequency_score = memory.relevance_score;
 
         // Combine scores
-        let combined = self.recency_weight * recency_score + self.frequency_weight * frequency_score;
+        let combined =
+            self.recency_weight * recency_score + self.frequency_weight * frequency_score;
 
         combined.min(1.0).max(0.0)
     }
@@ -193,7 +198,11 @@ impl RetrievalPipeline for TemporalRetriever {
             .collect();
 
         // Sort by score descending
-        scored_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top limit
         scored_results.truncate(limit);
@@ -238,11 +247,7 @@ impl GraphRetriever {
     }
 
     /// Compute graph-based score
-    async fn compute_graph_score(
-        &self,
-        memory_key: &str,
-        base_score: f64,
-    ) -> Result<f64> {
+    async fn compute_graph_score(&self, memory_key: &str, base_score: f64) -> Result<f64> {
         if let Some(ref kg) = self.knowledge_graph {
             let kg_guard = kg.read().await;
 
@@ -306,7 +311,11 @@ impl RetrievalPipeline for GraphRetriever {
         }
 
         // Sort by score descending
-        scored_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top limit
         scored_results.truncate(limit);

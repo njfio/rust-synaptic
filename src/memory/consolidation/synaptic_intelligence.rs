@@ -1,14 +1,14 @@
 //! Synaptic Intelligence (SI) Implementation
-//! 
+//!
 //! Implements the Synaptic Intelligence algorithm for continual learning and
 //! catastrophic forgetting prevention through path integral-based parameter importance tracking.
 
+use super::ConsolidationConfig;
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::ConsolidationConfig;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Path integral accumulator for parameter importance
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,12 +151,17 @@ impl SynapticIntelligence {
         parameter_updates: &HashMap<String, f64>,
         gradients: &HashMap<String, f64>,
     ) -> Result<()> {
-        tracing::debug!("Updating path integrals for {} parameters", parameter_updates.len());
+        tracing::debug!(
+            "Updating path integrals for {} parameters",
+            parameter_updates.len()
+        );
 
         for (param_id, &new_value) in parameter_updates {
             let gradient = gradients.get(param_id).copied().unwrap_or(0.0);
-            
-            let path_integral = self.path_integrals.entry(param_id.clone())
+
+            let path_integral = self
+                .path_integrals
+                .entry(param_id.clone())
                 .or_insert_with(|| PathIntegral {
                     parameter_id: param_id.clone(),
                     integral_value: 0.0,
@@ -169,14 +174,14 @@ impl SynapticIntelligence {
 
             // Calculate parameter change
             let param_change = new_value - path_integral.current_value;
-            
+
             // Update path integral using: Ω += -∇L * Δθ
             let integral_update = -gradient * param_change;
             path_integral.integral_value += integral_update;
-            
+
             // Update gradient accumulator
             path_integral.gradient_accumulator += gradient.abs();
-            
+
             // Update parameter values
             path_integral.previous_value = path_integral.current_value;
             path_integral.current_value = new_value;
@@ -186,19 +191,23 @@ impl SynapticIntelligence {
 
         // Update metrics
         self.update_metrics().await?;
-        
+
         Ok(())
     }
 
     /// Calculate parameter importance from path integrals
     pub async fn calculate_parameter_importance(&mut self) -> Result<()> {
-        tracing::debug!("Calculating parameter importance for {} parameters", self.path_integrals.len());
+        tracing::debug!(
+            "Calculating parameter importance for {} parameters",
+            self.path_integrals.len()
+        );
 
         for (param_id, path_integral) in &self.path_integrals {
             // Calculate importance using: ω = Ω / (ξ + ||Δθ||²)
-            let change_magnitude = (path_integral.current_value - path_integral.previous_value).abs();
+            let change_magnitude =
+                (path_integral.current_value - path_integral.previous_value).abs();
             let denominator = self.damping_factor + change_magnitude.powi(2);
-            
+
             let raw_importance = if denominator > 0.0 {
                 path_integral.integral_value.abs() / denominator
             } else {
@@ -209,7 +218,8 @@ impl SynapticIntelligence {
             let importance_score = (raw_importance / (1.0 + raw_importance)).min(1.0).max(0.0);
 
             // Calculate loss contribution (simplified)
-            let loss_contribution = path_integral.gradient_accumulator / (path_integral.update_count as f64 + 1.0);
+            let loss_contribution =
+                path_integral.gradient_accumulator / (path_integral.update_count as f64 + 1.0);
 
             let importance = ParameterImportance {
                 parameter_id: param_id.clone(),
@@ -221,14 +231,19 @@ impl SynapticIntelligence {
                 calculated_at: Utc::now(),
             };
 
-            self.parameter_importance.insert(param_id.clone(), importance);
+            self.parameter_importance
+                .insert(param_id.clone(), importance);
         }
 
         Ok(())
     }
 
     /// Consolidate parameters for a completed task
-    pub async fn consolidate_task(&mut self, task_id: &str, memories: &[MemoryEntry]) -> Result<()> {
+    pub async fn consolidate_task(
+        &mut self,
+        task_id: &str,
+        memories: &[MemoryEntry],
+    ) -> Result<()> {
         tracing::info!("Consolidating SI parameters for task: {}", task_id);
 
         // Calculate current parameter importance
@@ -240,7 +255,7 @@ impl SynapticIntelligence {
         // Store consolidated parameters and importance weights
         for memory in memories {
             let param_id = format!("task_{}_{}", task_id, memory.key);
-            
+
             // Get current parameter value (simulated)
             let param_value = self.get_current_parameter_value(&param_id).await?;
             task_params.insert(param_id.clone(), param_value);
@@ -251,15 +266,21 @@ impl SynapticIntelligence {
             }
         }
 
-        self.task_parameters.insert(task_id.to_string(), task_params);
-        self.task_importance_weights.insert(task_id.to_string(), task_weights);
-        
+        self.task_parameters
+            .insert(task_id.to_string(), task_params);
+        self.task_importance_weights
+            .insert(task_id.to_string(), task_weights);
+
         // Reset path integrals for next task
         self.reset_path_integrals().await?;
-        
+
         self.metrics.task_count += 1;
-        tracing::info!("Task {} consolidated with {} parameters", task_id, memories.len());
-        
+        tracing::info!(
+            "Task {} consolidated with {} parameters",
+            task_id,
+            memories.len()
+        );
+
         Ok(())
     }
 
@@ -288,11 +309,11 @@ impl SynapticIntelligence {
 
             if total_importance > 0.0 {
                 consolidated_value /= total_importance;
-                
+
                 // Calculate SI penalty: c/2 * ω * (θ - θ*)²
                 let deviation = new_value - consolidated_value;
                 let penalty = 0.5 * self.config.ewc_lambda * total_importance * deviation.powi(2);
-                
+
                 total_penalty += penalty;
             }
         }
@@ -329,18 +350,23 @@ impl SynapticIntelligence {
     /// Update performance metrics
     async fn update_metrics(&mut self) -> Result<()> {
         self.metrics.tracked_parameters = self.path_integrals.len();
-        
+
         if !self.path_integrals.is_empty() {
-            self.metrics.avg_path_integral = self.path_integrals.values()
+            self.metrics.avg_path_integral = self
+                .path_integrals
+                .values()
                 .map(|pi| pi.integral_value.abs())
-                .sum::<f64>() / self.path_integrals.len() as f64;
+                .sum::<f64>()
+                / self.path_integrals.len() as f64;
         }
 
         // Calculate prevention rate based on protected parameters
-        let protected_params = self.parameter_importance.values()
+        let protected_params = self
+            .parameter_importance
+            .values()
             .filter(|imp| imp.importance_score > 0.5)
             .count();
-        
+
         self.metrics.prevention_rate = if self.parameter_importance.len() > 0 {
             protected_params as f64 / self.parameter_importance.len() as f64
         } else {
@@ -364,7 +390,9 @@ impl SynapticIntelligence {
         let base_value = self.calculate_memory_based_parameter(memory_key).await?;
 
         // Apply task-specific adjustments if available
-        let adjusted_value = self.apply_task_specific_adjustments(param_id, base_value).await?;
+        let adjusted_value = self
+            .apply_task_specific_adjustments(param_id, base_value)
+            .await?;
 
         // Apply temporal decay
         let final_value = self.apply_temporal_decay(adjusted_value).await?;
@@ -388,22 +416,27 @@ impl SynapticIntelligence {
     }
 
     /// Apply task-specific adjustments to parameter value
-    async fn apply_task_specific_adjustments(&self, param_id: &str, base_value: f64) -> Result<f64> {
+    async fn apply_task_specific_adjustments(
+        &self,
+        param_id: &str,
+        base_value: f64,
+    ) -> Result<f64> {
         let mut adjusted_value = base_value;
 
         // Check if this parameter has task-specific history
         for (task_id, task_params) in &self.task_parameters {
             if let Some(&historical_value) = task_params.get(param_id) {
                 // Get task importance weight
-                let importance_weight = self.task_importance_weights
+                let importance_weight = self
+                    .task_importance_weights
                     .get(task_id)
                     .and_then(|weights| weights.get(param_id))
                     .copied()
                     .unwrap_or(0.0);
 
                 // Blend with historical value based on importance
-                adjusted_value = adjusted_value * (1.0 - importance_weight) +
-                               historical_value * importance_weight;
+                adjusted_value = adjusted_value * (1.0 - importance_weight)
+                    + historical_value * importance_weight;
             }
         }
 
@@ -476,11 +509,12 @@ impl SynapticIntelligence {
         for (_task_id, task_weights) in &self.task_importance_weights {
             if let Some(&importance) = task_weights.get(param_id) {
                 // Get path integral contribution
-                let path_integral_contribution = if let Some(path_integral) = self.path_integrals.get(param_id) {
-                    path_integral.integral_value.abs()
-                } else {
-                    0.0
-                };
+                let path_integral_contribution =
+                    if let Some(path_integral) = self.path_integrals.get(param_id) {
+                        path_integral.integral_value.abs()
+                    } else {
+                        0.0
+                    };
 
                 // Calculate resistance as combination of importance and path integral
                 let resistance = importance * (1.0 + path_integral_contribution);
@@ -567,7 +601,9 @@ impl SynapticIntelligence {
         let mut recommendations = Vec::new();
 
         // Detect at-risk parameters
-        let at_risk = self.detect_catastrophic_forgetting(parameter_updates, 0.5).await?;
+        let at_risk = self
+            .detect_catastrophic_forgetting(parameter_updates, 0.5)
+            .await?;
 
         for param_id in at_risk {
             let resistance = self.calculate_forgetting_resistance(&param_id).await?;
@@ -576,7 +612,8 @@ impl SynapticIntelligence {
                 ProtectionRecommendation {
                     parameter_id: param_id.clone(),
                     protection_level: ProtectionLevel::High,
-                    recommended_action: "Apply strong regularization and reduce learning rate".to_string(),
+                    recommended_action: "Apply strong regularization and reduce learning rate"
+                        .to_string(),
                     confidence: resistance,
                 }
             } else if resistance > 0.5 {
@@ -627,7 +664,9 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
         gradients.insert("param2".to_string(), -0.2);
 
-        let result = si.update_path_integrals(&parameter_updates, &gradients).await;
+        let result = si
+            .update_path_integrals(&parameter_updates, &gradients)
+            .await;
         assert!(result.is_ok());
         assert_eq!(si.path_integrals.len(), 2);
     }
@@ -640,12 +679,14 @@ mod tests {
         // Add some path integrals first
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("param1".to_string(), 0.5);
-        
+
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 0.1);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+
         let result = si.calculate_parameter_importance().await;
         assert!(result.is_ok());
         assert!(si.parameter_importance.contains_key("param1"));
@@ -657,8 +698,16 @@ mod tests {
         let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "Content 2".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "Content 1".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "Content 2".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
         let result = si.consolidate_task("task1", &memories).await;
@@ -674,16 +723,23 @@ mod tests {
         let mut si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // First consolidate a task
-        let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        let memories = vec![MemoryEntry::new(
+            "key1".to_string(),
+            "Content 1".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
         // Now calculate penalty for parameter updates
         let mut parameter_updates = HashMap::new();
         parameter_updates.insert("task_task1_key1".to_string(), 0.8);
 
-        let penalty = si.calculate_regularization_penalty(&parameter_updates).await.expect("await should be present");
+        let penalty = si
+            .calculate_regularization_penalty(&parameter_updates)
+            .await
+            .expect("await should be present");
         assert!(penalty >= 0.0);
     }
 
@@ -699,15 +755,22 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
 
         // First update
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
 
         // Second update with different values
         parameter_updates.insert("param1".to_string(), 0.7);
         gradients.insert("param1".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
 
-        let path_integral = si.path_integrals.get("param1").expect("value should be available");
+        let path_integral = si
+            .path_integrals
+            .get("param1")
+            .expect("value should be available");
         assert!(path_integral.update_count == 2);
         assert!(path_integral.gradient_accumulator > 0.0);
     }
@@ -726,8 +789,12 @@ mod tests {
         gradients.insert("param1".to_string(), 1.0);
         gradients.insert("param2".to_string(), 0.01);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         for importance in si.parameter_importance.values() {
             assert!(importance.importance_score >= 0.0);
@@ -742,10 +809,14 @@ mod tests {
 
         // Consolidate multiple tasks
         for i in 1..=3 {
-            let memories = vec![
-                MemoryEntry::new(format!("key{}", i), format!("Content {}", i), MemoryType::LongTerm),
-            ];
-            si.consolidate_task(&format!("task{}", i), &memories).await.expect("await should be present");
+            let memories = vec![MemoryEntry::new(
+                format!("key{}", i),
+                format!("Content {}", i),
+                MemoryType::LongTerm,
+            )];
+            si.consolidate_task(&format!("task{}", i), &memories)
+                .await
+                .expect("await should be present");
         }
 
         assert_eq!(si.metrics.task_count, 3);
@@ -767,7 +838,9 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
         gradients.insert("param2".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
 
         let metrics = si.get_metrics();
         assert_eq!(metrics.tracked_parameters, 2);
@@ -791,14 +864,28 @@ mod tests {
         gradients.insert("param1".to_string(), 0.1);
 
         // Same updates for both
-        si1.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si2.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si1.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si2.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
 
-        si1.calculate_parameter_importance().await.expect("await should be present");
-        si2.calculate_parameter_importance().await.expect("await should be present");
+        si1.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
+        si2.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
-        let importance1 = si1.parameter_importance.get("param1").expect("value should be available");
-        let importance2 = si2.parameter_importance.get("param1").expect("value should be available");
+        let importance1 = si1
+            .parameter_importance
+            .get("param1")
+            .expect("value should be available");
+        let importance2 = si2
+            .parameter_importance
+            .get("param1")
+            .expect("value should be available");
 
         // Lower damping factor should result in higher importance scores
         assert!(importance1.importance_score >= importance2.importance_score);
@@ -816,20 +903,31 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("key1".to_string(), 1.0); // High gradient for importance
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Consolidate a task
-        let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        let memories = vec![MemoryEntry::new(
+            "key1".to_string(),
+            "Content 1".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
         // Create parameter updates that would cause forgetting
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_key1".to_string(), 10.0); // Large deviation
 
-        let _at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.expect("await should be present");
+        let _at_risk = si
+            .detect_catastrophic_forgetting(&risky_updates, 0.1)
+            .await
+            .expect("await should be present");
 
         // Should detect the parameter as at risk if there's sufficient importance
         // The test is valid whether or not parameters are detected as at risk
@@ -848,16 +946,27 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 0.8); // High gradient = high importance
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Consolidate task
-        let memories = vec![
-            MemoryEntry::new("param1".to_string(), "Content".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        let memories = vec![MemoryEntry::new(
+            "param1".to_string(),
+            "Content".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
-        let resistance = si.calculate_forgetting_resistance("task_task1_param1").await.expect("await should be present");
+        let resistance = si
+            .calculate_forgetting_resistance("task_task1_param1")
+            .await
+            .expect("await should be present");
 
         assert!(resistance >= 0.0);
         assert!(resistance <= 1.0);
@@ -875,12 +984,18 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("param1".to_string(), 1.0); // High gradient
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         let original_damping = si.damping_factor;
 
-        si.apply_adaptive_damping("param1").await.expect("await should be present");
+        si.apply_adaptive_damping("param1")
+            .await
+            .expect("await should be present");
 
         // Damping should be adjusted for high importance parameters
         assert!(si.damping_factor <= original_damping);
@@ -898,26 +1013,41 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("shared_param".to_string(), 0.8);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Consolidate first task
-        let memories1 = vec![
-            MemoryEntry::new("shared_param".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories1).await.expect("await should be present");
+        let memories1 = vec![MemoryEntry::new(
+            "shared_param".to_string(),
+            "Content 1".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories1)
+            .await
+            .expect("await should be present");
 
         // Consolidate second task
-        let memories2 = vec![
-            MemoryEntry::new("shared_param".to_string(), "Content 2".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task2", &memories2).await.expect("await should be present");
+        let memories2 = vec![MemoryEntry::new(
+            "shared_param".to_string(),
+            "Content 2".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task2", &memories2)
+            .await
+            .expect("await should be present");
 
         // Calculate interference for new task with different parameter values
         let mut new_task_params = HashMap::new();
         new_task_params.insert("task_task1_shared_param".to_string(), 5.0); // Very different value
 
-        let interference = si.calculate_cross_task_interference(&new_task_params).await.expect("await should be present");
+        let interference = si
+            .calculate_cross_task_interference(&new_task_params)
+            .await
+            .expect("await should be present");
 
         assert!(interference >= 0.0);
         // Interference may be 0 if no matching parameters found, which is valid
@@ -935,20 +1065,31 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("critical_param".to_string(), 1.0);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Consolidate task
-        let memories = vec![
-            MemoryEntry::new("critical_param".to_string(), "Critical content".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        let memories = vec![MemoryEntry::new(
+            "critical_param".to_string(),
+            "Critical content".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
         // Create updates that would cause forgetting
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_critical_param".to_string(), 10.0);
 
-        let recommendations = si.generate_protection_recommendations(&risky_updates).await.expect("await should be present");
+        let recommendations = si
+            .generate_protection_recommendations(&risky_updates)
+            .await
+            .expect("await should be present");
 
         // Should generate recommendations for at-risk parameters
         if !recommendations.is_empty() {
@@ -965,8 +1106,14 @@ mod tests {
         let si = SynapticIntelligence::new(&config).expect("value should be available");
 
         // Test consistent parameter generation for same memory key
-        let param1 = si.calculate_memory_based_parameter("test_key").await.expect("await should be present");
-        let param2 = si.calculate_memory_based_parameter("test_key").await.expect("await should be present");
+        let param1 = si
+            .calculate_memory_based_parameter("test_key")
+            .await
+            .expect("await should be present");
+        let param2 = si
+            .calculate_memory_based_parameter("test_key")
+            .await
+            .expect("await should be present");
 
         // Should be deterministic
         assert_eq!(param1, param2);
@@ -976,7 +1123,10 @@ mod tests {
         assert!(param1 <= 1.0);
 
         // Different keys should produce different values
-        let param3 = si.calculate_memory_based_parameter("different_key").await.expect("await should be present");
+        let param3 = si
+            .calculate_memory_based_parameter("different_key")
+            .await
+            .expect("await should be present");
         assert_ne!(param1, param3);
     }
 
@@ -992,17 +1142,28 @@ mod tests {
         let mut gradients = HashMap::new();
         gradients.insert("test_param".to_string(), 0.5);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Consolidate a task with known parameter value
-        let memories = vec![
-            MemoryEntry::new("test_param".to_string(), "Content".to_string(), MemoryType::LongTerm),
-        ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        let memories = vec![MemoryEntry::new(
+            "test_param".to_string(),
+            "Content".to_string(),
+            MemoryType::LongTerm,
+        )];
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
         let base_value = 0.5;
-        let adjusted = si.apply_task_specific_adjustments("task_task1_test_param", base_value).await.expect("await should be present");
+        let adjusted = si
+            .apply_task_specific_adjustments("task_task1_test_param", base_value)
+            .await
+            .expect("await should be present");
 
         // Should return a valid adjusted value
         assert!(adjusted >= -1.0 && adjusted <= 1.0);
@@ -1014,7 +1175,10 @@ mod tests {
         let si = SynapticIntelligence::new(&config).expect("value should be available");
 
         let original_value = 1.0;
-        let decayed = si.apply_temporal_decay(original_value).await.expect("await should be present");
+        let decayed = si
+            .apply_temporal_decay(original_value)
+            .await
+            .expect("await should be present");
 
         // Should apply some decay
         assert!(decayed <= original_value);
@@ -1035,29 +1199,52 @@ mod tests {
         gradients.insert("param1".to_string(), 0.8);
         gradients.insert("param2".to_string(), 0.2);
 
-        si.update_path_integrals(&parameter_updates, &gradients).await.expect("await should be present");
+        si.update_path_integrals(&parameter_updates, &gradients)
+            .await
+            .expect("await should be present");
 
         // Step 2: Calculate importance
-        si.calculate_parameter_importance().await.expect("await should be present");
+        si.calculate_parameter_importance()
+            .await
+            .expect("await should be present");
 
         // Step 3: Consolidate task
         let memories = vec![
-            MemoryEntry::new("param1".to_string(), "Important content".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("param2".to_string(), "Less important".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "param1".to_string(),
+                "Important content".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "param2".to_string(),
+                "Less important".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
-        si.consolidate_task("task1", &memories).await.expect("await should be present");
+        si.consolidate_task("task1", &memories)
+            .await
+            .expect("await should be present");
 
         // Step 4: Test forgetting detection
         let mut risky_updates = HashMap::new();
         risky_updates.insert("task_task1_param1".to_string(), 5.0);
 
-        let at_risk = si.detect_catastrophic_forgetting(&risky_updates, 0.1).await.expect("await should be present");
+        let at_risk = si
+            .detect_catastrophic_forgetting(&risky_updates, 0.1)
+            .await
+            .expect("await should be present");
 
         // Step 5: Calculate regularization penalty
-        let penalty = si.calculate_regularization_penalty(&risky_updates).await.expect("await should be present");
+        let penalty = si
+            .calculate_regularization_penalty(&risky_updates)
+            .await
+            .expect("await should be present");
 
         // Step 6: Generate recommendations
-        let _recommendations = si.generate_protection_recommendations(&risky_updates).await.expect("await should be present");
+        let _recommendations = si
+            .generate_protection_recommendations(&risky_updates)
+            .await
+            .expect("await should be present");
 
         // Verify the complete workflow
         assert!(si.metrics.tracked_parameters > 0);

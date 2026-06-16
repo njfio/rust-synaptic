@@ -1,14 +1,14 @@
 //! Gradual Forgetting Algorithm Implementation
-//! 
+//!
 //! Implements sophisticated gradual forgetting mechanisms based on Ebbinghaus forgetting curves,
 //! importance-based retention, and temporal decay patterns for natural memory management.
 
+use super::{ConsolidationConfig, MemoryImportance};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance};
-use chrono::{DateTime, Utc, Duration};
-use std::collections::HashMap;
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Forgetting curve types based on psychological research
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -165,7 +165,10 @@ impl GradualForgettingAlgorithm {
         memories: &[MemoryEntry],
         importance_scores: &[MemoryImportance],
     ) -> Result<Vec<ForgettingDecision>> {
-        tracing::info!("Evaluating {} memories for gradual forgetting", memories.len());
+        tracing::info!(
+            "Evaluating {} memories for gradual forgetting",
+            memories.len()
+        );
 
         let mut decisions = Vec::new();
         let mut total_forgetting_prob = 0.0;
@@ -173,10 +176,10 @@ impl GradualForgettingAlgorithm {
 
         for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
             let decision = self.evaluate_single_memory(memory, importance).await?;
-            
+
             total_forgetting_prob += decision.forgetting_probability;
             total_retention_strength += decision.retention_strength;
-            
+
             if decision.should_forget {
                 self.metrics.memories_forgotten += 1;
             } else {
@@ -195,15 +198,19 @@ impl GradualForgettingAlgorithm {
         // Update metrics
         self.metrics.memories_evaluated += memories.len();
         if !decisions.is_empty() {
-            self.metrics.avg_forgetting_probability = total_forgetting_prob / decisions.len() as f64;
+            self.metrics.avg_forgetting_probability =
+                total_forgetting_prob / decisions.len() as f64;
             self.metrics.avg_retention_strength = total_retention_strength / decisions.len() as f64;
         }
         self.metrics.efficiency_score = self.calculate_efficiency_score();
         self.metrics.last_evaluation = Utc::now();
         self.last_evaluation = Some(Utc::now());
 
-        tracing::info!("Forgetting evaluation complete: {} to forget, {} to retain", 
-                      self.metrics.memories_forgotten, self.metrics.memories_retained);
+        tracing::info!(
+            "Forgetting evaluation complete: {} to forget, {} to retain",
+            self.metrics.memories_forgotten,
+            self.metrics.memories_retained
+        );
 
         Ok(decisions)
     }
@@ -216,27 +223,26 @@ impl GradualForgettingAlgorithm {
     ) -> Result<ForgettingDecision> {
         // Calculate retention factors
         let retention_factors = self.calculate_retention_factors(memory, importance).await?;
-        
+
         // Calculate forgetting probability using selected curve
-        let forgetting_probability = self.calculate_forgetting_probability(
-            memory, 
-            importance, 
-            &retention_factors
-        ).await?;
+        let forgetting_probability = self
+            .calculate_forgetting_probability(memory, importance, &retention_factors)
+            .await?;
 
         // Calculate retention strength (inverse of forgetting probability)
         let retention_strength = 1.0 - forgetting_probability;
 
         // Make forgetting decision
-        let should_forget = forgetting_probability > 0.5 && 
-                           importance.importance_score < self.config.importance_threshold &&
-                           self.meets_minimum_retention_time(memory);
+        let should_forget = forgetting_probability > 0.5
+            && importance.importance_score < self.config.importance_threshold
+            && self.meets_minimum_retention_time(memory);
 
         // Calculate next evaluation time
         let next_evaluation = self.calculate_next_evaluation_time(memory, &retention_factors);
 
         // Store retention factors for tracking
-        self.retention_tracking.insert(memory.key.clone(), retention_factors.clone());
+        self.retention_tracking
+            .insert(memory.key.clone(), retention_factors.clone());
 
         Ok(ForgettingDecision {
             memory_key: memory.key.clone(),
@@ -270,7 +276,9 @@ impl GradualForgettingAlgorithm {
         let emotional_significance = self.calculate_emotional_significance(memory).await?;
 
         // Contextual relevance (based on current usage patterns)
-        let contextual_relevance = self.calculate_contextual_relevance(memory, importance).await?;
+        let contextual_relevance = self
+            .calculate_contextual_relevance(memory, importance)
+            .await?;
 
         Ok(RetentionFactors {
             importance_protection,
@@ -290,45 +298,49 @@ impl GradualForgettingAlgorithm {
         retention_factors: &RetentionFactors,
     ) -> Result<f64> {
         let age_hours = (Utc::now() - memory.created_at()).num_hours().max(0) as f64;
-        
+
         // Base forgetting curve calculation
         let base_forgetting = match &self.config.curve_type {
             ForgettingCurveType::Ebbinghaus => {
                 // R = e^(-t/S) where S is memory strength
                 let memory_strength = importance.importance_score * 168.0; // Scale to hours
                 1.0 - (-age_hours / memory_strength).exp()
-            },
+            }
             ForgettingCurveType::PowerLaw => {
                 // R = (1 + t)^(-β) where β is decay parameter
                 let beta = 0.5;
                 1.0 - (1.0 + age_hours / 24.0).powf(-beta)
-            },
+            }
             ForgettingCurveType::Logarithmic => {
                 // R = 1 - log(1 + t) / log(1 + T_max)
                 let max_time = self.config.max_retention_hours as f64;
                 1.0 - (1.0 + age_hours).ln() / (1.0 + max_time).ln()
-            },
+            }
             ForgettingCurveType::Hybrid => {
                 // Combine multiple curves
                 let ebbinghaus = 1.0 - (-age_hours / (importance.importance_score * 168.0)).exp();
                 let power_law = 1.0 - (1.0 + age_hours / 24.0).powf(-0.5);
                 ebbinghaus * 0.6 + power_law * 0.4
-            },
-            ForgettingCurveType::Custom { decay_rate, shape_factor } => {
+            }
+            ForgettingCurveType::Custom {
+                decay_rate,
+                shape_factor,
+            } => {
                 // Custom curve: R = 1 - e^(-(t/decay_rate)^shape_factor)
                 1.0 - (-(age_hours / decay_rate).powf(*shape_factor)).exp()
-            },
+            }
         };
 
         // Apply retention factors
-        let protection_factor = retention_factors.importance_protection * 0.4 +
-                               retention_factors.frequency_influence * 0.3 +
-                               retention_factors.recency_boost * 0.2 +
-                               retention_factors.emotional_significance * 0.05 +
-                               retention_factors.contextual_relevance * 0.05;
+        let protection_factor = retention_factors.importance_protection * 0.4
+            + retention_factors.frequency_influence * 0.3
+            + retention_factors.recency_boost * 0.2
+            + retention_factors.emotional_significance * 0.05
+            + retention_factors.contextual_relevance * 0.05;
 
         // Final forgetting probability with protection
-        let forgetting_probability = base_forgetting * (1.0 - protection_factor) * self.config.base_forgetting_rate;
+        let forgetting_probability =
+            base_forgetting * (1.0 - protection_factor) * self.config.base_forgetting_rate;
 
         Ok(forgetting_probability.min(1.0).max(0.0))
     }
@@ -346,14 +358,14 @@ impl GradualForgettingAlgorithm {
         retention_factors: &RetentionFactors,
     ) -> DateTime<Utc> {
         let base_interval = self.config.evaluation_interval_hours as f64;
-        
+
         // Adjust interval based on retention strength
-        let retention_strength = (retention_factors.importance_protection + 
-                                 retention_factors.frequency_influence) / 2.0;
-        
+        let retention_strength =
+            (retention_factors.importance_protection + retention_factors.frequency_influence) / 2.0;
+
         // Higher retention = longer intervals between evaluations
         let adjusted_interval = base_interval * (1.0 + retention_strength * 2.0);
-        
+
         Utc::now() + Duration::hours(adjusted_interval as i64)
     }
 
@@ -362,14 +374,30 @@ impl GradualForgettingAlgorithm {
         // Simplified emotional analysis based on content keywords
         let content = memory.value.to_lowercase();
         let emotional_keywords = [
-            "important", "critical", "urgent", "love", "hate", "fear", "joy",
-            "success", "failure", "achievement", "milestone", "breakthrough",
-            "crisis", "emergency", "celebration", "victory", "defeat"
+            "important",
+            "critical",
+            "urgent",
+            "love",
+            "hate",
+            "fear",
+            "joy",
+            "success",
+            "failure",
+            "achievement",
+            "milestone",
+            "breakthrough",
+            "crisis",
+            "emergency",
+            "celebration",
+            "victory",
+            "defeat",
         ];
 
-        let emotional_score = emotional_keywords.iter()
+        let emotional_score = emotional_keywords
+            .iter()
             .map(|&keyword| if content.contains(keyword) { 1.0 } else { 0.0 })
-            .sum::<f64>() / emotional_keywords.len() as f64;
+            .sum::<f64>()
+            / emotional_keywords.len() as f64;
 
         Ok(emotional_score.min(1.0))
     }
@@ -381,9 +409,8 @@ impl GradualForgettingAlgorithm {
         importance: &MemoryImportance,
     ) -> Result<f64> {
         // Simplified contextual relevance based on centrality and uniqueness
-        let relevance = importance.centrality_score * 0.6 +
-                        importance.uniqueness_score * 0.4;
-        
+        let relevance = importance.centrality_score * 0.6 + importance.uniqueness_score * 0.4;
+
         Ok(relevance.min(1.0))
     }
 
@@ -393,14 +420,18 @@ impl GradualForgettingAlgorithm {
             return 1.0;
         }
 
-        let retention_rate = self.metrics.memories_retained as f64 / self.metrics.memories_evaluated as f64;
-        let _forgetting_rate = self.metrics.memories_forgotten as f64 / self.metrics.memories_evaluated as f64;
-        
+        let retention_rate =
+            self.metrics.memories_retained as f64 / self.metrics.memories_evaluated as f64;
+        let _forgetting_rate =
+            self.metrics.memories_forgotten as f64 / self.metrics.memories_evaluated as f64;
+
         // Efficiency based on balanced retention/forgetting and average retention strength
         let balance_score = 1.0 - (retention_rate - 0.7).abs(); // Target 70% retention
         let strength_score = self.metrics.avg_retention_strength;
-        
-        (balance_score * 0.6 + strength_score * 0.4).min(1.0).max(0.0)
+
+        (balance_score * 0.6 + strength_score * 0.4)
+            .min(1.0)
+            .max(0.0)
     }
 
     /// Get forgetting decisions for a specific memory
@@ -449,9 +480,15 @@ mod tests {
         forgetting_config.curve_type = ForgettingCurveType::Ebbinghaus;
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.5,
@@ -464,7 +501,10 @@ mod tests {
             fisher_information: None,
         };
 
-        let decisions = algorithm.evaluate_memories(&[memory], &[importance]).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(&[memory], &[importance])
+            .await
+            .expect("await should be present");
         assert_eq!(decisions.len(), 1);
         assert!(decisions[0].forgetting_probability >= 0.0);
         assert!(decisions[0].forgetting_probability <= 1.0);
@@ -477,9 +517,15 @@ mod tests {
         forgetting_config.curve_type = ForgettingCurveType::PowerLaw;
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.8,
@@ -492,7 +538,10 @@ mod tests {
             fisher_information: None,
         };
 
-        let decisions = algorithm.evaluate_memories(&[memory], &[importance]).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(&[memory], &[importance])
+            .await
+            .expect("await should be present");
         assert_eq!(decisions.len(), 1);
         assert_eq!(decisions[0].curve_type, ForgettingCurveType::PowerLaw);
         // High importance should result in low forgetting probability
@@ -504,13 +553,19 @@ mod tests {
         let mut forgetting_config = ForgettingConfig::default();
         forgetting_config.curve_type = ForgettingCurveType::Custom {
             decay_rate: 48.0,
-            shape_factor: 1.5
+            shape_factor: 1.5,
         };
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.4,
@@ -523,9 +578,16 @@ mod tests {
             fisher_information: None,
         };
 
-        let decisions = algorithm.evaluate_memories(&[memory], &[importance]).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(&[memory], &[importance])
+            .await
+            .expect("await should be present");
         assert_eq!(decisions.len(), 1);
-        if let ForgettingCurveType::Custom { decay_rate, shape_factor } = &decisions[0].curve_type {
+        if let ForgettingCurveType::Custom {
+            decay_rate,
+            shape_factor,
+        } = &decisions[0].curve_type
+        {
             assert_eq!(*decay_rate, 48.0);
             assert_eq!(*shape_factor, 1.5);
         } else {
@@ -538,9 +600,14 @@ mod tests {
         let forgetting_config = ForgettingConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+            .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Important critical content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Important critical content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.9,
@@ -553,7 +620,10 @@ mod tests {
             fisher_information: None,
         };
 
-        let retention_factors = algorithm.calculate_retention_factors(&memory, &importance).await.expect("await should be present");
+        let retention_factors = algorithm
+            .calculate_retention_factors(&memory, &importance)
+            .await
+            .expect("await should be present");
 
         assert_eq!(retention_factors.importance_protection, 0.9);
         assert_eq!(retention_factors.frequency_influence, 0.8);
@@ -568,10 +638,16 @@ mod tests {
         forgetting_config.importance_threshold = 0.7;
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
         // High importance memory (above threshold)
-        let high_importance_memory = MemoryEntry::new("high_key".to_string(), "High importance content".to_string(), MemoryType::LongTerm);
+        let high_importance_memory = MemoryEntry::new(
+            "high_key".to_string(),
+            "High importance content".to_string(),
+            MemoryType::LongTerm,
+        );
         let high_importance = MemoryImportance {
             memory_key: "high_key".to_string(),
             importance_score: 0.9,
@@ -585,7 +661,11 @@ mod tests {
         };
 
         // Low importance memory (below threshold)
-        let low_importance_memory = MemoryEntry::new("low_key".to_string(), "Low importance content".to_string(), MemoryType::ShortTerm);
+        let low_importance_memory = MemoryEntry::new(
+            "low_key".to_string(),
+            "Low importance content".to_string(),
+            MemoryType::ShortTerm,
+        );
         let low_importance = MemoryImportance {
             memory_key: "low_key".to_string(),
             importance_score: 0.2,
@@ -598,10 +678,13 @@ mod tests {
             fisher_information: None,
         };
 
-        let decisions = algorithm.evaluate_memories(
-            &[high_importance_memory, low_importance_memory],
-            &[high_importance, low_importance]
-        ).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(
+                &[high_importance_memory, low_importance_memory],
+                &[high_importance, low_importance],
+            )
+            .await
+            .expect("await should be present");
 
         assert_eq!(decisions.len(), 2);
 
@@ -620,10 +703,15 @@ mod tests {
         forgetting_config.min_retention_hours = 48; // 2 days
         let consolidation_config = ConsolidationConfig::default();
 
-        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+            .expect("value should be available");
 
         // Very recent memory (should be protected by minimum retention time)
-        let recent_memory = MemoryEntry::new("recent_key".to_string(), "Recent content".to_string(), MemoryType::ShortTerm);
+        let recent_memory = MemoryEntry::new(
+            "recent_key".to_string(),
+            "Recent content".to_string(),
+            MemoryType::ShortTerm,
+        );
 
         // Even with low importance, recent memory should not meet minimum retention time
         assert!(!algorithm.meets_minimum_retention_time(&recent_memory));
@@ -634,24 +722,31 @@ mod tests {
         let forgetting_config = ForgettingConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+            .expect("value should be available");
 
         // Memory with emotional keywords
         let emotional_memory = MemoryEntry::new(
             "emotional_key".to_string(),
             "This is a critical breakthrough achievement that brings joy and success".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
         // Memory without emotional keywords
         let neutral_memory = MemoryEntry::new(
             "neutral_key".to_string(),
             "This is regular content without special significance".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
-        let emotional_score = algorithm.calculate_emotional_significance(&emotional_memory).await.expect("await should be present");
-        let neutral_score = algorithm.calculate_emotional_significance(&neutral_memory).await.expect("await should be present");
+        let emotional_score = algorithm
+            .calculate_emotional_significance(&emotional_memory)
+            .await
+            .expect("await should be present");
+        let neutral_score = algorithm
+            .calculate_emotional_significance(&neutral_memory)
+            .await
+            .expect("await should be present");
 
         assert!(emotional_score > neutral_score);
         assert!(emotional_score > 0.0);
@@ -663,9 +758,15 @@ mod tests {
         forgetting_config.curve_type = ForgettingCurveType::Hybrid;
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.6,
@@ -678,7 +779,10 @@ mod tests {
             fisher_information: None,
         };
 
-        let decisions = algorithm.evaluate_memories(&[memory], &[importance]).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(&[memory], &[importance])
+            .await
+            .expect("await should be present");
         assert_eq!(decisions.len(), 1);
         assert_eq!(decisions[0].curve_type, ForgettingCurveType::Hybrid);
 
@@ -692,12 +796,26 @@ mod tests {
         let forgetting_config = ForgettingConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "Content 2".to_string(), MemoryType::ShortTerm),
-            MemoryEntry::new("key3".to_string(), "Content 3".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "Content 1".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "Content 2".to_string(),
+                MemoryType::ShortTerm,
+            ),
+            MemoryEntry::new(
+                "key3".to_string(),
+                "Content 3".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
         let importance_scores = vec![
@@ -736,7 +854,10 @@ mod tests {
             },
         ];
 
-        let decisions = algorithm.evaluate_memories(&memories, &importance_scores).await.expect("await should be present");
+        let decisions = algorithm
+            .evaluate_memories(&memories, &importance_scores)
+            .await
+            .expect("await should be present");
 
         assert_eq!(decisions.len(), 3);
 
@@ -756,9 +877,15 @@ mod tests {
         let forgetting_config = ForgettingConfig::default();
         let consolidation_config = ConsolidationConfig::default();
 
-        let mut algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let mut algorithm =
+            GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+                .expect("value should be available");
 
-        let memory = MemoryEntry::new("test_key".to_string(), "Test content".to_string(), MemoryType::LongTerm);
+        let memory = MemoryEntry::new(
+            "test_key".to_string(),
+            "Test content".to_string(),
+            MemoryType::LongTerm,
+        );
         let importance = MemoryImportance {
             memory_key: "test_key".to_string(),
             importance_score: 0.5,
@@ -772,12 +899,20 @@ mod tests {
         };
 
         // First evaluation
-        algorithm.evaluate_memories(&[memory.clone()], &[importance.clone()]).await.expect("await should be present");
+        algorithm
+            .evaluate_memories(&[memory.clone()], &[importance.clone()])
+            .await
+            .expect("await should be present");
 
         // Second evaluation
-        algorithm.evaluate_memories(&[memory], &[importance]).await.expect("await should be present");
+        algorithm
+            .evaluate_memories(&[memory], &[importance])
+            .await
+            .expect("await should be present");
 
-        let history = algorithm.get_memory_decisions("test_key").expect("value should be available");
+        let history = algorithm
+            .get_memory_decisions("test_key")
+            .expect("value should be available");
         assert_eq!(history.len(), 2);
 
         // Check that decisions are properly stored
@@ -794,7 +929,8 @@ mod tests {
         forgetting_config.evaluation_interval_hours = 1; // 1 hour interval
         let consolidation_config = ConsolidationConfig::default();
 
-        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config).expect("value should be available");
+        let algorithm = GradualForgettingAlgorithm::new(forgetting_config, consolidation_config)
+            .expect("value should be available");
 
         // Should evaluate on first run
         assert!(algorithm.should_evaluate());

@@ -1,11 +1,11 @@
+use chrono::{Duration, Utc};
+use std::sync::Arc;
 use synaptic::{
     memory::management::{MemorySummarizer, SummaryStrategy},
     memory::storage::memory::MemoryStorage,
-    memory::types::{MemoryEntry, MemoryType, MemoryMetadata},
+    memory::types::{MemoryEntry, MemoryMetadata, MemoryType},
     memory::Storage,
 };
-use std::sync::Arc;
-use chrono::{Utc, Duration};
 
 #[tokio::test]
 async fn test_key_points_summary() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +18,11 @@ async fn test_key_points_summary() -> Result<(), Box<dyn std::error::Error>> {
     storage.store(&e2).await?;
 
     let result = summarizer
-        .summarize_memories(&*storage, vec!["k1".into(), "k2".into()], SummaryStrategy::KeyPoints)
+        .summarize_memories(
+            &*storage,
+            vec!["k1".into(), "k2".into()],
+            SummaryStrategy::KeyPoints,
+        )
         .await?;
 
     assert!(result.summary_content.contains("Learn Rust"));
@@ -42,7 +46,11 @@ async fn test_chronological_summary() -> Result<(), Box<dyn std::error::Error>> 
     storage.store(&e2).await?;
 
     let result = summarizer
-        .summarize_memories(&*storage, vec!["old".into(), "new".into()], SummaryStrategy::Chronological)
+        .summarize_memories(
+            &*storage,
+            vec!["old".into(), "new".into()],
+            SummaryStrategy::Chronological,
+        )
         .await?;
 
     let lines: Vec<&str> = result.summary_content.lines().collect();
@@ -59,9 +67,21 @@ async fn test_storage_backend_integration() -> Result<(), Box<dyn std::error::Er
     let mut summarizer = MemorySummarizer::new();
 
     // Create test memories
-    let e1 = MemoryEntry::new("mem1".into(), "First memory content".into(), MemoryType::ShortTerm);
-    let e2 = MemoryEntry::new("mem2".into(), "Second memory content".into(), MemoryType::LongTerm);
-    let e3 = MemoryEntry::new("mem3".into(), "Third memory content".into(), MemoryType::ShortTerm);
+    let e1 = MemoryEntry::new(
+        "mem1".into(),
+        "First memory content".into(),
+        MemoryType::ShortTerm,
+    );
+    let e2 = MemoryEntry::new(
+        "mem2".into(),
+        "Second memory content".into(),
+        MemoryType::LongTerm,
+    );
+    let e3 = MemoryEntry::new(
+        "mem3".into(),
+        "Third memory content".into(),
+        MemoryType::ShortTerm,
+    );
 
     // Store memories
     memory_storage.store(&e1).await?;
@@ -99,11 +119,19 @@ async fn test_data_integrity_across_operations() -> Result<(), Box<dyn std::erro
     let mut summarizer = MemorySummarizer::new();
 
     // Create memories with specific metadata
-    let mut e1 = MemoryEntry::new("data1".into(), "Important data entry".into(), MemoryType::LongTerm);
+    let mut e1 = MemoryEntry::new(
+        "data1".into(),
+        "Important data entry".into(),
+        MemoryType::LongTerm,
+    );
     e1.metadata.importance = 0.9;
     e1.metadata.tags = vec!["important".to_string(), "data".to_string()];
 
-    let mut e2 = MemoryEntry::new("data2".into(), "Related data entry".into(), MemoryType::LongTerm);
+    let mut e2 = MemoryEntry::new(
+        "data2".into(),
+        "Related data entry".into(),
+        MemoryType::LongTerm,
+    );
     e2.metadata.importance = 0.8;
     e2.metadata.tags = vec!["related".to_string(), "data".to_string()];
 
@@ -187,7 +215,11 @@ async fn test_mixed_existing_nonexistent_keys() -> Result<(), Box<dyn std::error
     let mut summarizer = MemorySummarizer::new();
 
     // Store one memory
-    let e1 = MemoryEntry::new("exists".into(), "This memory exists".into(), MemoryType::ShortTerm);
+    let e1 = MemoryEntry::new(
+        "exists".into(),
+        "This memory exists".into(),
+        MemoryType::ShortTerm,
+    );
     storage.store(&e1).await?;
 
     // Test with mix of existing and non-existing keys
@@ -214,9 +246,21 @@ async fn test_all_summary_strategies() -> Result<(), Box<dyn std::error::Error>>
 
     // Create diverse test memories
     let memories = vec![
-        MemoryEntry::new("tech1".into(), "Learn Rust programming language".into(), MemoryType::LongTerm),
-        MemoryEntry::new("tech2".into(), "Write unit tests for code".into(), MemoryType::ShortTerm),
-        MemoryEntry::new("tech3".into(), "Deploy application to production".into(), MemoryType::LongTerm),
+        MemoryEntry::new(
+            "tech1".into(),
+            "Learn Rust programming language".into(),
+            MemoryType::LongTerm,
+        ),
+        MemoryEntry::new(
+            "tech2".into(),
+            "Write unit tests for code".into(),
+            MemoryType::ShortTerm,
+        ),
+        MemoryEntry::new(
+            "tech3".into(),
+            "Deploy application to production".into(),
+            MemoryType::LongTerm,
+        ),
     ];
 
     // Store all memories
@@ -242,7 +286,11 @@ async fn test_all_summary_strategies() -> Result<(), Box<dyn std::error::Error>>
             .await?;
 
         // Verify each strategy produces valid results
-        assert!(!result.summary_content.is_empty(), "Strategy {:?} produced empty summary", strategy);
+        assert!(
+            !result.summary_content.is_empty(),
+            "Strategy {:?} produced empty summary",
+            strategy
+        );
         assert_eq!(result.strategy, strategy);
         assert_eq!(result.source_memory_keys, memory_keys);
         assert!(result.confidence_score >= 0.0);
@@ -279,7 +327,11 @@ async fn test_large_memory_set_performance() -> Result<(), Box<dyn std::error::E
     let duration = start_time.elapsed();
 
     // Verify performance is reasonable (should complete within 5 seconds)
-    assert!(duration.as_secs() < 5, "Summarization took too long: {:?}", duration);
+    assert!(
+        duration.as_secs() < 5,
+        "Summarization took too long: {:?}",
+        duration
+    );
 
     // Verify result quality
     assert!(!result.summary_content.is_empty());
@@ -341,8 +393,16 @@ async fn test_storage_consistency_during_summarization() -> Result<(), Box<dyn s
 
     // Create initial memories
     let initial_memories = vec![
-        MemoryEntry::new("consistency1".into(), "Initial content 1".into(), MemoryType::ShortTerm),
-        MemoryEntry::new("consistency2".into(), "Initial content 2".into(), MemoryType::ShortTerm),
+        MemoryEntry::new(
+            "consistency1".into(),
+            "Initial content 1".into(),
+            MemoryType::ShortTerm,
+        ),
+        MemoryEntry::new(
+            "consistency2".into(),
+            "Initial content 2".into(),
+            MemoryType::ShortTerm,
+        ),
     ];
 
     for memory in &initial_memories {
@@ -368,4 +428,3 @@ async fn test_storage_consistency_during_summarization() -> Result<(), Box<dyn s
 
     Ok(())
 }
-

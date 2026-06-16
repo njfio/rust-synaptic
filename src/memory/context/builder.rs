@@ -5,12 +5,12 @@
 
 use super::{AgentContext, ContextFormat, TokenCounter};
 use crate::error::{MemoryError, Result};
-use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::knowledge_graph::types::RelationshipType;
-use crate::memory::storage::Storage;
+use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::retrieval::{MemoryRetriever, SearchQuery};
+use crate::memory::storage::Storage;
 use crate::memory::types::{MemoryEntry, MemoryType};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -110,7 +110,8 @@ impl ContextBuilder {
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             scored.truncate(limit);
 
-            self.core_memories.extend(scored.into_iter().map(|(entry, _)| entry));
+            self.core_memories
+                .extend(scored.into_iter().map(|(entry, _)| entry));
         }
 
         Ok(self)
@@ -129,12 +130,8 @@ impl ContextBuilder {
             // Map any requested relationship-type names onto the graph's
             // `RelationshipType` enum; unknown names are ignored. A `None`
             // filter (or no recognized types) traverses all relationships.
-            let typed_filter: Option<Vec<RelationshipType>> = relationship_types.map(|types| {
-                types
-                    .into_iter()
-                    .map(RelationshipType::from_name)
-                    .collect()
-            });
+            let typed_filter: Option<Vec<RelationshipType>> = relationship_types
+                .map(|types| types.into_iter().map(RelationshipType::from_name).collect());
 
             // Collect keys first to avoid holding an immutable borrow of
             // `self.core_memories` across the mutable `self.related_memories`
@@ -160,7 +157,8 @@ impl ContextBuilder {
             }
 
             // Sort by relationship strength and remove duplicates
-            self.related_memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            self.related_memories
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             self.related_memories.dedup_by_key(|(entry, _)| entry.id());
         }
 
@@ -178,9 +176,7 @@ impl ContextBuilder {
         let all_entries = self.storage.get_all_entries().await?;
         self.temporal_memories = all_entries
             .into_iter()
-            .filter(|entry| {
-                entry.created_at() >= start && entry.created_at() <= end
-            })
+            .filter(|entry| entry.created_at() >= start && entry.created_at() <= end)
             .collect();
 
         Ok(self)
@@ -227,16 +223,23 @@ impl ContextBuilder {
     pub fn build(mut self) -> Result<AgentContext> {
         // Apply memory type filters
         if !self.memory_types.is_empty() {
-            self.core_memories.retain(|m| self.memory_types.contains(&m.memory_type));
-            self.related_memories.retain(|(m, _)| self.memory_types.contains(&m.memory_type));
-            self.temporal_memories.retain(|m| self.memory_types.contains(&m.memory_type));
+            self.core_memories
+                .retain(|m| self.memory_types.contains(&m.memory_type));
+            self.related_memories
+                .retain(|(m, _)| self.memory_types.contains(&m.memory_type));
+            self.temporal_memories
+                .retain(|m| self.memory_types.contains(&m.memory_type));
         }
 
         // Create the agent context
         let mut context = AgentContext {
             query: self.query.clone(),
             core_memories: self.core_memories.clone(),
-            related_memories: self.related_memories.iter().map(|(m, s)| (m.clone(), *s)).collect(),
+            related_memories: self
+                .related_memories
+                .iter()
+                .map(|(m, s)| (m.clone(), *s))
+                .collect(),
             temporal_memories: self.temporal_memories.clone(),
             summaries: Vec::new(),
             metadata: std::collections::HashMap::new(),
@@ -248,16 +251,25 @@ impl ContextBuilder {
             context.summaries = vec![
                 format!("Core memories: {} items", context.core_memories.len()),
                 format!("Related memories: {} items", context.related_memories.len()),
-                format!("Temporal memories: {} items", context.temporal_memories.len()),
+                format!(
+                    "Temporal memories: {} items",
+                    context.temporal_memories.len()
+                ),
             ];
         }
 
         // Add metadata
         if self.include_metadata {
-            context.metadata.insert("search_limit".to_string(), self.search_limit.to_string());
-            context.metadata.insert("graph_depth".to_string(), self.graph_depth.to_string());
+            context
+                .metadata
+                .insert("search_limit".to_string(), self.search_limit.to_string());
+            context
+                .metadata
+                .insert("graph_depth".to_string(), self.graph_depth.to_string());
             if let Some(max_tokens) = self.max_tokens {
-                context.metadata.insert("max_tokens".to_string(), max_tokens.to_string());
+                context
+                    .metadata
+                    .insert("max_tokens".to_string(), max_tokens.to_string());
             }
         }
 
@@ -291,7 +303,11 @@ impl ContextBuilder {
     }
 
     /// Truncate context to fit within token limit
-    fn truncate_to_tokens(&self, mut context: AgentContext, max_tokens: usize) -> Result<AgentContext> {
+    fn truncate_to_tokens(
+        &self,
+        mut context: AgentContext,
+        max_tokens: usize,
+    ) -> Result<AgentContext> {
         let counter = TokenCounter::new();
 
         // Calculate current token count

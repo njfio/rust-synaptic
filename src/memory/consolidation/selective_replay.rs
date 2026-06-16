@@ -1,14 +1,14 @@
 //! Selective Replay Manager
-//! 
+//!
 //! Implements intelligent memory replay system with importance-based selection,
 //! temporal distribution, and interference minimization.
 
+use super::{ConsolidationConfig, MemoryImportance, ReplayEntry};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance, ReplayEntry};
-use chrono::{DateTime, Utc, Duration};
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use chrono::{DateTime, Duration, Utc};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 /// Replay strategy for memory selection
 #[derive(Debug, Clone)]
@@ -124,10 +124,14 @@ impl SelectiveReplayManager {
     }
 
     /// Add memory to replay buffer with importance-based prioritization
-    pub async fn add_to_buffer(&mut self, memory: &MemoryEntry, importance: &MemoryImportance) -> Result<()> {
+    pub async fn add_to_buffer(
+        &mut self,
+        memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<()> {
         // Calculate replay priority based on multiple factors
         let replay_priority = self.calculate_replay_priority(memory, importance).await?;
-        
+
         // Create replay entry
         let replay_entry = ReplayEntry {
             memory: memory.clone(),
@@ -152,8 +156,11 @@ impl SelectiveReplayManager {
         // Maintain buffer size limit
         self.maintain_buffer_size().await?;
 
-        tracing::debug!("Added memory '{}' to replay buffer with priority {:.3}", 
-                       memory.key, replay_priority);
+        tracing::debug!(
+            "Added memory '{}' to replay buffer with priority {:.3}",
+            memory.key,
+            replay_priority
+        );
 
         Ok(())
     }
@@ -182,13 +189,20 @@ impl SelectiveReplayManager {
         // Update performance metrics
         self.update_replay_metrics(replayed_count).await?;
 
-        tracing::info!("Selective replay completed: {} memories replayed", replayed_count);
+        tracing::info!(
+            "Selective replay completed: {} memories replayed",
+            replayed_count
+        );
 
         Ok(())
     }
 
     /// Calculate replay priority using sophisticated algorithms
-    async fn calculate_replay_priority(&self, memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_replay_priority(
+        &self,
+        memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         let mut priority_factors = Vec::new();
 
         // 1. Base importance score
@@ -213,7 +227,8 @@ impl SelectiveReplayManager {
 
         // Weighted combination of priority factors
         let weights = [0.3, 0.2, 0.2, 0.15, 0.15]; // Sum = 1.0
-        let weighted_priority: f64 = priority_factors.iter()
+        let weighted_priority: f64 = priority_factors
+            .iter()
             .zip(weights.iter())
             .map(|(factor, weight)| factor * weight)
             .sum();
@@ -231,15 +246,15 @@ impl SelectiveReplayManager {
                 // Higher importance = shorter delay
                 let importance_factor = 1.0 - replay_entry.importance_score;
                 (24.0 * (1.0 + importance_factor * 3.0)) as i64 // 24-96 hours
-            },
+            }
             SchedulingAlgorithm::Adaptive => {
                 // Adaptive based on replay history and performance
                 self.calculate_adaptive_delay(replay_entry).await? as i64
-            },
+            }
             SchedulingAlgorithm::SpacedRepetition => {
                 // Spaced repetition algorithm (SM-2 inspired)
                 self.calculate_spaced_repetition_delay(replay_entry).await? as i64
-            },
+            }
         };
 
         Ok(base_time + Duration::hours(delay_hours))
@@ -273,15 +288,20 @@ impl SelectiveReplayManager {
         }
 
         // Update temporal distribution tracking
-        self.update_temporal_distribution(&replay_entry.memory.key).await?;
+        self.update_temporal_distribution(&replay_entry.memory.key)
+            .await?;
 
         // Update interference matrix
-        self.update_interference_matrix(&replay_entry.memory.key).await?;
+        self.update_interference_matrix(&replay_entry.memory.key)
+            .await?;
 
         self.metrics.total_replays += 1;
 
-        tracing::debug!("Replayed memory '{}' (count: {})", 
-                       replay_entry.memory.key, updated_entry.replay_count);
+        tracing::debug!(
+            "Replayed memory '{}' (count: {})",
+            replay_entry.memory.key,
+            updated_entry.replay_count
+        );
 
         Ok(())
     }
@@ -289,12 +309,12 @@ impl SelectiveReplayManager {
     /// Calculate forgetting curve factor based on Ebbinghaus curve
     async fn calculate_forgetting_curve_factor(&self, memory: &MemoryEntry) -> Result<f64> {
         let hours_since_access = (Utc::now() - memory.last_accessed()).num_hours().max(0) as f64;
-        
+
         // Ebbinghaus forgetting curve: R = e^(-t/S)
         // Where R = retention, t = time, S = strength of memory
         let memory_strength = memory.metadata.importance * 100.0; // Scale importance to hours
         let retention = (-hours_since_access / memory_strength).exp();
-        
+
         // Return forgetting factor (1 - retention)
         Ok((1.0 - retention).min(1.0).max(0.0))
     }
@@ -343,7 +363,8 @@ impl SelectiveReplayManager {
         importance_factors.push(tag_importance);
 
         // Calculate average importance
-        let avg_importance = importance_factors.iter().sum::<f64>() / importance_factors.len() as f64;
+        let avg_importance =
+            importance_factors.iter().sum::<f64>() / importance_factors.len() as f64;
         Ok(avg_importance)
     }
 
@@ -353,7 +374,7 @@ impl SelectiveReplayManager {
         // In practice, this would analyze replay effectiveness and adjust delays
         let base_delay = 24.0; // 24 hours
         let performance_factor = self.metrics.avg_effectiveness;
-        
+
         // Better performance = longer delays (memory is stable)
         let adaptive_delay = base_delay * (1.0 + performance_factor);
         Ok(adaptive_delay)
@@ -363,16 +384,16 @@ impl SelectiveReplayManager {
     async fn calculate_spaced_repetition_delay(&self, replay_entry: &ReplayEntry) -> Result<f64> {
         let replay_count = replay_entry.replay_count as f64;
         let importance = replay_entry.importance_score;
-        
+
         // SM-2 inspired intervals: 1, 6, 24, 72, 168 hours...
         let base_intervals = [1.0, 6.0, 24.0, 72.0, 168.0];
         let interval_index = (replay_count as usize).min(base_intervals.len() - 1);
         let base_interval = base_intervals[interval_index];
-        
+
         // Adjust based on importance (higher importance = more frequent replay)
         let importance_factor = 2.0 - importance; // 1.0 to 2.0 range
         let adjusted_interval = base_interval * importance_factor;
-        
+
         Ok(adjusted_interval)
     }
 
@@ -380,11 +401,11 @@ impl SelectiveReplayManager {
     async fn update_replay_priority(&self, replay_entry: &ReplayEntry) -> Result<f64> {
         let base_priority = replay_entry.replay_priority;
         let replay_count = replay_entry.replay_count as f64;
-        
+
         // Decrease priority with successful replays (diminishing returns)
         let decay_factor = 1.0 / (1.0 + replay_count * 0.1);
         let updated_priority = base_priority * decay_factor;
-        
+
         Ok(updated_priority.max(0.1)) // Minimum priority threshold
     }
 
@@ -411,7 +432,7 @@ impl SelectiveReplayManager {
         // Update running average
         let total_ops = self.metrics.total_replays as f64;
         if total_ops > 0.0 {
-            self.metrics.avg_effectiveness = 
+            self.metrics.avg_effectiveness =
                 (self.metrics.avg_effectiveness * (total_ops - 1.0) + effectiveness) / total_ops;
         } else {
             self.metrics.avg_effectiveness = effectiveness;
@@ -467,7 +488,10 @@ impl SelectiveReplayManager {
         let batch_size = self.config.replay_batch_size;
         let mut replayed_count = 0;
 
-        tracing::info!("Starting forced immediate replay with batch size {}", batch_size);
+        tracing::info!(
+            "Starting forced immediate replay with batch size {}",
+            batch_size
+        );
 
         while replayed_count < batch_size && !self.replay_buffer.is_empty() {
             if let Some(priority_entry) = self.replay_buffer.pop() {
@@ -480,7 +504,10 @@ impl SelectiveReplayManager {
         // Update performance metrics
         self.update_replay_metrics(replayed_count).await?;
 
-        tracing::info!("Forced immediate replay completed: {} memories replayed", replayed_count);
+        tracing::info!(
+            "Forced immediate replay completed: {} memories replayed",
+            replayed_count
+        );
 
         Ok(())
     }
@@ -518,7 +545,7 @@ mod tests {
         let memory = MemoryEntry::new(
             "test_key".to_string(),
             "Test content".to_string(),
-            MemoryType::LongTerm
+            MemoryType::LongTerm,
         );
 
         let importance = MemoryImportance {
@@ -548,7 +575,7 @@ mod tests {
             let memory = MemoryEntry::new(
                 format!("key_{}", i),
                 format!("Content {}", i),
-                MemoryType::LongTerm
+                MemoryType::LongTerm,
             );
 
             let importance = MemoryImportance {

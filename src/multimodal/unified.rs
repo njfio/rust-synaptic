@@ -23,25 +23,25 @@ use tokio::sync::RwLock;
 pub struct UnifiedMultiModalMemory {
     /// Core memory system (weak reference to avoid cycles)
     core_memory: Weak<RwLock<AgentMemory>>,
-    
+
     /// Image processor
     #[cfg(feature = "image-memory")]
     image_processor: Option<ImageMemoryProcessor>,
-    
+
     /// Audio processor
     #[cfg(feature = "audio-memory")]
     audio_processor: Option<AudioMemoryProcessor>,
-    
+
     /// Code processor
     #[cfg(feature = "code-memory")]
     code_processor: Option<CodeMemoryProcessor>,
-    
+
     /// Cross-modal relationship analyzer
     cross_modal_analyzer: CrossModalAnalyzer,
-    
+
     /// Multi-modal memory storage
     multimodal_memories: Arc<RwLock<HashMap<MemoryId, MultiModalMemory>>>,
-    
+
     /// Configuration
     config: UnifiedMultiModalConfig,
 }
@@ -51,22 +51,22 @@ pub struct UnifiedMultiModalMemory {
 pub struct UnifiedMultiModalConfig {
     /// Enable image memory processing
     pub enable_image_memory: bool,
-    
+
     /// Enable audio memory processing
     pub enable_audio_memory: bool,
-    
+
     /// Enable code memory processing
     pub enable_code_memory: bool,
-    
+
     /// Enable cross-modal relationship detection
     pub enable_cross_modal_analysis: bool,
-    
+
     /// Auto-detect content types
     pub auto_detect_content_type: bool,
-    
+
     /// Maximum memory storage size (bytes)
     pub max_storage_size: usize,
-    
+
     /// Cross-modal analysis configuration
     pub cross_modal_config: CrossModalConfig,
 }
@@ -90,19 +90,19 @@ impl Default for UnifiedMultiModalConfig {
 pub struct MultiModalQuery {
     /// Content to search for
     pub content: Vec<u8>,
-    
+
     /// Content type (if known)
     pub content_type: Option<ContentType>,
-    
+
     /// Search across specific modalities
     pub modalities: Option<Vec<String>>,
-    
+
     /// Minimum similarity threshold
     pub similarity_threshold: f32,
-    
+
     /// Maximum number of results
     pub max_results: usize,
-    
+
     /// Include cross-modal relationships in results
     pub include_relationships: bool,
 }
@@ -125,10 +125,10 @@ impl Default for MultiModalQuery {
 pub struct MultiModalSearchResult {
     /// Found memory
     pub memory: MultiModalMemory,
-    
+
     /// Similarity score
     pub similarity: f32,
-    
+
     /// Related memories (if requested)
     pub related_memories: Vec<(MemoryId, String, f32)>, // (id, relationship_type, confidence)
 }
@@ -190,11 +190,15 @@ impl UnifiedMultiModalMemory {
         } else if self.config.auto_detect_content_type {
             self.detect_content_type(&content).await?
         } else {
-            return Err(SynapticError::ProcessingError("Content type not provided and auto-detection disabled".to_string()));
+            return Err(SynapticError::ProcessingError(
+                "Content type not provided and auto-detection disabled".to_string(),
+            ));
         };
 
         // Process content with appropriate processor
-        let memory = self.process_content(&content, &detected_content_type).await?;
+        let memory = self
+            .process_content(&content, &detected_content_type)
+            .await?;
 
         // Store in multi-modal memory
         {
@@ -209,8 +213,11 @@ impl UnifiedMultiModalMemory {
                 .upgrade()
                 .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
             let mut core = core_arc.write().await;
-            core.store(key, &format!("multimodal:{}", memory.id)).await
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to store in core memory: {}", e)))?;
+            core.store(key, &format!("multimodal:{}", memory.id))
+                .await
+                .map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to store in core memory: {}", e))
+                })?;
         }
 
         // Update cross-modal relationships if enabled
@@ -222,7 +229,10 @@ impl UnifiedMultiModalMemory {
     }
 
     /// Retrieve multi-modal content
-    pub async fn retrieve_multimodal(&self, key: &str) -> MultiModalResult<Option<MultiModalMemory>> {
+    pub async fn retrieve_multimodal(
+        &self,
+        key: &str,
+    ) -> MultiModalResult<Option<MultiModalMemory>> {
         // Get reference from core memory
         let core_value = {
             let core_arc = self
@@ -230,8 +240,12 @@ impl UnifiedMultiModalMemory {
                 .upgrade()
                 .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
             let core = core_arc.read().await;
-            core.retrieve(key).await
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to retrieve from core memory: {}", e)))?
+            core.retrieve(key).await.map_err(|e| {
+                SynapticError::ProcessingError(format!(
+                    "Failed to retrieve from core memory: {}",
+                    e
+                ))
+            })?
         };
 
         if let Some(value) = core_value {
@@ -247,7 +261,10 @@ impl UnifiedMultiModalMemory {
     }
 
     /// Search across all modalities
-    pub async fn search_multimodal(&self, query: MultiModalQuery) -> MultiModalResult<Vec<MultiModalSearchResult>> {
+    pub async fn search_multimodal(
+        &self,
+        query: MultiModalQuery,
+    ) -> MultiModalResult<Vec<MultiModalSearchResult>> {
         let mut results = Vec::new();
 
         // Extract features from query content
@@ -257,11 +274,13 @@ impl UnifiedMultiModalMemory {
             self.detect_content_type(&query.content).await?
         };
 
-        let query_features = self.extract_features(&query.content, &query_content_type).await?;
+        let query_features = self
+            .extract_features(&query.content, &query_content_type)
+            .await?;
 
         // Search in multi-modal memories
         let memories = self.multimodal_memories.read().await;
-        
+
         for memory in memories.values() {
             // Filter by modality if specified
             if let Some(ref modalities) = query.modalities {
@@ -273,7 +292,9 @@ impl UnifiedMultiModalMemory {
 
             // Calculate similarity
             let memory_features = self.get_memory_features(memory).await?;
-            let similarity = self.calculate_similarity(&query_features, &memory_features).await?;
+            let similarity = self
+                .calculate_similarity(&query_features, &memory_features)
+                .await?;
 
             if similarity >= query.similarity_threshold {
                 let mut result = MultiModalSearchResult {
@@ -300,7 +321,11 @@ impl UnifiedMultiModalMemory {
         }
 
         // Sort by similarity (highest first)
-        results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit results
         results.truncate(query.max_results);
@@ -317,8 +342,12 @@ impl UnifiedMultiModalMemory {
                 .upgrade()
                 .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
             let core = core_arc.read().await;
-            core.retrieve(key).await
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to retrieve from core memory: {}", e)))?
+            core.retrieve(key).await.map_err(|e| {
+                SynapticError::ProcessingError(format!(
+                    "Failed to retrieve from core memory: {}",
+                    e
+                ))
+            })?
         };
 
         if let Some(value) = core_value {
@@ -336,8 +365,12 @@ impl UnifiedMultiModalMemory {
                         .upgrade()
                         .ok_or_else(|| SynapticError::unexpected("Core memory unavailable"))?;
                     let mut core = core_arc.write().await;
-                    core.delete(key).await
-                        .map_err(|e| SynapticError::ProcessingError(format!("Failed to delete from core memory: {}", e)))?;
+                    core.delete(key).await.map_err(|e| {
+                        SynapticError::ProcessingError(format!(
+                            "Failed to delete from core memory: {}",
+                            e
+                        ))
+                    })?;
                 }
 
                 // Update cross-modal relationships
@@ -355,7 +388,7 @@ impl UnifiedMultiModalMemory {
     /// Get statistics about multi-modal memories
     pub async fn get_statistics(&self) -> MultiModalResult<MultiModalStatistics> {
         let memories = self.multimodal_memories.read().await;
-        
+
         let mut stats = MultiModalStatistics::default();
         stats.total_memories = memories.len();
 
@@ -367,7 +400,9 @@ impl UnifiedMultiModalMemory {
         }
 
         if self.config.enable_cross_modal_analysis {
-            let relationship_stats = self.cross_modal_analyzer.get_relationship_statistics(&memories.values().cloned().collect::<Vec<_>>());
+            let relationship_stats = self
+                .cross_modal_analyzer
+                .get_relationship_statistics(&memories.values().cloned().collect::<Vec<_>>());
             stats.average_relationship_confidence = relationship_stats.average_confidence;
         }
 
@@ -420,18 +455,26 @@ impl UnifiedMultiModalMemory {
             }
         }
 
-        Err(SynapticError::ProcessingError("Unable to detect content type".to_string()))
+        Err(SynapticError::ProcessingError(
+            "Unable to detect content type".to_string(),
+        ))
     }
 
     /// Process content with appropriate processor
-    async fn process_content(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<MultiModalMemory> {
+    async fn process_content(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<MultiModalMemory> {
         match content_type {
             #[cfg(feature = "image-memory")]
             ContentType::Image { .. } => {
                 if let Some(ref processor) = self.image_processor {
                     processor.process(content, content_type).await
                 } else {
-                    Err(SynapticError::ProcessingError("Image processor not available".to_string()))
+                    Err(SynapticError::ProcessingError(
+                        "Image processor not available".to_string(),
+                    ))
                 }
             }
             #[cfg(feature = "audio-memory")]
@@ -439,7 +482,9 @@ impl UnifiedMultiModalMemory {
                 if let Some(ref processor) = self.audio_processor {
                     processor.process(content, content_type).await
                 } else {
-                    Err(SynapticError::ProcessingError("Audio processor not available".to_string()))
+                    Err(SynapticError::ProcessingError(
+                        "Audio processor not available".to_string(),
+                    ))
                 }
             }
             #[cfg(feature = "code-memory")]
@@ -447,15 +492,23 @@ impl UnifiedMultiModalMemory {
                 if let Some(ref processor) = self.code_processor {
                     processor.process(content, content_type).await
                 } else {
-                    Err(SynapticError::ProcessingError("Code processor not available".to_string()))
+                    Err(SynapticError::ProcessingError(
+                        "Code processor not available".to_string(),
+                    ))
                 }
             }
-            _ => Err(SynapticError::ProcessingError("Unsupported content type".to_string())),
+            _ => Err(SynapticError::ProcessingError(
+                "Unsupported content type".to_string(),
+            )),
         }
     }
 
     /// Extract features from content
-    async fn extract_features(&self, content: &[u8], content_type: &ContentType) -> MultiModalResult<Vec<f32>> {
+    async fn extract_features(
+        &self,
+        content: &[u8],
+        content_type: &ContentType,
+    ) -> MultiModalResult<Vec<f32>> {
         match content_type {
             #[cfg(feature = "image-memory")]
             ContentType::Image { .. } => {
@@ -488,12 +541,20 @@ impl UnifiedMultiModalMemory {
     /// Get features from stored memory
     async fn get_memory_features(&self, memory: &MultiModalMemory) -> MultiModalResult<Vec<f32>> {
         match &memory.metadata.content_specific {
-            super::ContentSpecificMetadata::Image { visual_features, .. } => Ok(visual_features.clone()),
-            super::ContentSpecificMetadata::Audio { audio_features, .. } => Ok(audio_features.clone()),
+            super::ContentSpecificMetadata::Image {
+                visual_features, ..
+            } => Ok(visual_features.clone()),
+            super::ContentSpecificMetadata::Audio { audio_features, .. } => {
+                Ok(audio_features.clone())
+            }
             super::ContentSpecificMetadata::Code { .. } => {
                 if let Some(features_value) = memory.extracted_features.get("semantic_features") {
-                    serde_json::from_value(features_value.clone())
-                        .map_err(|e| SynapticError::ProcessingError(format!("Failed to deserialize features: {}", e)))
+                    serde_json::from_value(features_value.clone()).map_err(|e| {
+                        SynapticError::ProcessingError(format!(
+                            "Failed to deserialize features: {}",
+                            e
+                        ))
+                    })
                 } else {
                     Ok(vec![])
                 }
@@ -502,13 +563,21 @@ impl UnifiedMultiModalMemory {
     }
 
     /// Calculate similarity between feature vectors
-    async fn calculate_similarity(&self, features1: &[f32], features2: &[f32]) -> MultiModalResult<f32> {
+    async fn calculate_similarity(
+        &self,
+        features1: &[f32],
+        features2: &[f32],
+    ) -> MultiModalResult<f32> {
         if features1.is_empty() || features2.is_empty() || features1.len() != features2.len() {
             return Ok(0.0);
         }
 
         // Calculate cosine similarity
-        let dot_product: f32 = features1.iter().zip(features2.iter()).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm1: f32 = features1.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm2: f32 = features2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -536,8 +605,10 @@ impl UnifiedMultiModalMemory {
         drop(memories);
 
         if let Some(memory) = all_memories.iter().find(|m| m.id == *memory_id) {
-            let relationships = self.cross_modal_analyzer.analyze_relationships(memory, &all_memories)?;
-            
+            let relationships = self
+                .cross_modal_analyzer
+                .analyze_relationships(memory, &all_memories)?;
+
             let mut memories = self.multimodal_memories.write().await;
             if let Some(stored_memory) = memories.get_mut(memory_id) {
                 stored_memory.cross_modal_links = relationships;
@@ -549,12 +620,21 @@ impl UnifiedMultiModalMemory {
     }
 
     /// Clean up cross-modal relationships when a memory is deleted
-    async fn cleanup_cross_modal_relationships(&self, deleted_memory_id: &MemoryId) -> MultiModalResult<()> {
+    async fn cleanup_cross_modal_relationships(
+        &self,
+        deleted_memory_id: &MemoryId,
+    ) -> MultiModalResult<()> {
         let mut memories = self.multimodal_memories.write().await;
-        
+
         for memory in memories.values_mut() {
-            memory.cross_modal_links.retain(|link| link.target_id != *deleted_memory_id);
-            if memory.cross_modal_links.iter().any(|link| link.target_id == *deleted_memory_id) {
+            memory
+                .cross_modal_links
+                .retain(|link| link.target_id != *deleted_memory_id);
+            if memory
+                .cross_modal_links
+                .iter()
+                .any(|link| link.target_id == *deleted_memory_id)
+            {
                 memory.updated_at = chrono::Utc::now();
             }
         }

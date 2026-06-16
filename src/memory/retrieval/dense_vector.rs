@@ -2,9 +2,9 @@
 //!
 //! This retriever uses embedding providers to perform semantic similarity search.
 
-use super::pipeline::{RetrievalPipeline, RetrievalSignal, ScoredMemory, PipelineConfig};
+use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
 use crate::error::{MemoryError, Result};
-use crate::memory::embeddings::{EmbeddingProvider, Embedding, EmbedOptions};
+use crate::memory::embeddings::{EmbedOptions, Embedding, EmbeddingProvider};
 use crate::memory::storage::Storage;
 use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
@@ -50,10 +50,7 @@ impl DenseVectorRetriever {
         query_embedding: &Embedding,
     ) -> Result<f64> {
         // Generate embedding for the fragment
-        let fragment_embedding = self
-            .provider
-            .embed(&fragment.entry.value, None)
-            .await?;
+        let fragment_embedding = self.provider.embed(&fragment.entry.value, None).await?;
 
         // Compute cosine similarity
         let similarity = query_embedding.cosine_similarity(&fragment_embedding);
@@ -94,7 +91,9 @@ impl RetrievalPipeline for DenseVectorRetriever {
         let mut scored_results = Vec::new();
 
         for fragment in fragments {
-            let similarity = self.compute_similarity_score(&fragment, &query_embedding).await?;
+            let similarity = self
+                .compute_similarity_score(&fragment, &query_embedding)
+                .await?;
 
             if similarity >= self.similarity_threshold {
                 let scored = ScoredMemory::new(fragment, similarity, RetrievalSignal::DenseVector)
@@ -186,7 +185,10 @@ mod tests {
         storage.store(&mem3).await.expect("await should be present");
 
         // Search for Rust-related content
-        let results = retriever.search("Rust programming", 10, None).await.expect("await should be present");
+        let results = retriever
+            .search("Rust programming", 10, None)
+            .await
+            .expect("await should be present");
 
         // Should find Rust-related memories
         assert!(!results.is_empty());
@@ -202,8 +204,7 @@ mod tests {
     async fn test_similarity_threshold() {
         let storage = Arc::new(MemoryStorage::new());
         let provider = Arc::new(TfIdfProvider::default());
-        let retriever = DenseVectorRetriever::new(storage.clone(), provider)
-            .with_threshold(0.8); // High threshold
+        let retriever = DenseVectorRetriever::new(storage.clone(), provider).with_threshold(0.8); // High threshold
 
         // Store a memory
         let mem = MemoryEntry::new(
@@ -214,7 +215,10 @@ mod tests {
         storage.store(&mem).await.expect("await should be present");
 
         // Search with unrelated query
-        let results = retriever.search("Rust programming language", 10, None).await.expect("await should be present");
+        let results = retriever
+            .search("Rust programming language", 10, None)
+            .await
+            .expect("await should be present");
 
         // High threshold should filter out low-similarity results
         // Results should be empty or very few
@@ -227,8 +231,7 @@ mod tests {
     async fn test_semantic_similarity_ranking() {
         let storage = Arc::new(MemoryStorage::new());
         let provider = Arc::new(TfIdfProvider::default());
-        let retriever = DenseVectorRetriever::new(storage.clone(), provider)
-            .with_threshold(0.1); // Low threshold to include all
+        let retriever = DenseVectorRetriever::new(storage.clone(), provider).with_threshold(0.1); // Low threshold to include all
 
         // Store memories with varying relevance
         let exact_match = MemoryEntry::new(
@@ -247,9 +250,18 @@ mod tests {
             MemoryType::ShortTerm,
         );
 
-        storage.store(&exact_match).await.expect("await should be present");
-        storage.store(&related).await.expect("await should be present");
-        storage.store(&somewhat_related).await.expect("await should be present");
+        storage
+            .store(&exact_match)
+            .await
+            .expect("await should be present");
+        storage
+            .store(&related)
+            .await
+            .expect("await should be present");
+        storage
+            .store(&somewhat_related)
+            .await
+            .expect("await should be present");
 
         // Search
         let results = retriever

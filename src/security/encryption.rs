@@ -1,29 +1,29 @@
 //! Advanced Encryption Module
-//! 
+//!
 //! Implements state-of-the-art encryption including homomorphic encryption,
 //! zero-knowledge proofs, and secure multi-party computation.
 
 use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
-use crate::security::{SecurityConfig, SecurityContext, EncryptedMemoryEntry, EncryptionMetadata,
-                     SecureOperation, EncryptedComputationResult, PrivacyLevel};
 use crate::security::key_management::KeyManager;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use crate::security::{
+    EncryptedComputationResult, EncryptedMemoryEntry, EncryptionMetadata, PrivacyLevel,
+    SecureOperation, SecurityConfig, SecurityContext,
+};
+use aes_gcm::aead::{generic_array::GenericArray, Aead, KeyInit, Payload};
+use aes_gcm::{Aes256Gcm, Key};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use aes_gcm::{Aes256Gcm, Key};
-use aes_gcm::aead::{Aead, KeyInit, Payload, generic_array::GenericArray};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[cfg(feature = "homomorphic-encryption")]
 use tfhe::{
-    ClientKey, ServerKey,
-    FheUint32,
     generate_keys,
-    ConfigBuilder,
-    prelude::{FheEncrypt, FheDecrypt},
+    prelude::{FheDecrypt, FheEncrypt},
+    ClientKey, ConfigBuilder, FheUint32, ServerKey,
 };
 
 /// Encryption manager for advanced cryptographic operations
@@ -55,24 +55,29 @@ impl EncryptionManager {
     }
 
     /// Standard AES-GCM encryption
-    pub async fn standard_encrypt(&mut self,
+    pub async fn standard_encrypt(
+        &mut self,
         entry: &MemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<EncryptedMemoryEntry> {
         let start_time = std::time::Instant::now();
 
         // Basic context validation
-        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
-            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
         }
 
         // Generate or retrieve encryption key
         let key = self.get_or_generate_key(context, "AES-256-GCM").await?;
-        
+
         // Generate random IV and salt
         let iv = self.generate_random_bytes(12)?;
         let salt = self.generate_random_bytes(16)?;
-        
+
         // Serialize the memory entry
         let plaintext = serde_json::to_vec(entry)
             .map_err(|e| MemoryError::encryption(format!("Serialization failed: {}", e)))?;
@@ -106,33 +111,41 @@ impl EncryptionManager {
     }
 
     /// Standard AES-GCM decryption
-    pub async fn standard_decrypt(&mut self,
+    pub async fn standard_decrypt(
+        &mut self,
         encrypted_entry: &EncryptedMemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
 
         // Validate context before retrieving key
-        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
-            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
         }
 
         // Retrieve encryption key
         let key = self.get_key(&encrypted_entry.key_id, context).await?;
-        
+
         // Extract metadata
         let iv = &encrypted_entry.metadata.iv;
         let salt = &encrypted_entry.metadata.salt;
-        let auth_tag = encrypted_entry.metadata.auth_tag.as_ref()
+        let auth_tag = encrypted_entry
+            .metadata
+            .auth_tag
+            .as_ref()
             .ok_or_else(|| MemoryError::encryption("Missing authentication tag".to_string()))?;
 
         // Decrypt using AES-GCM
         let plaintext = self.aes_gcm_decrypt(
-            &encrypted_entry.encrypted_data, 
-            &key.data, 
-            iv, 
-            salt, 
-            auth_tag
+            &encrypted_entry.encrypted_data,
+            &key.data,
+            iv,
+            salt,
+            auth_tag,
         )?;
 
         // Deserialize the memory entry
@@ -147,22 +160,28 @@ impl EncryptionManager {
     }
 
     /// Homomorphic encryption for secure computation
-    pub async fn homomorphic_encrypt(&mut self,
+    pub async fn homomorphic_encrypt(
+        &mut self,
         entry: &MemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<EncryptedMemoryEntry> {
         let start_time = std::time::Instant::now();
 
-        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
-            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
         }
 
-        let homomorphic_context = self.homomorphic_context.as_ref()
-            .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
+        let homomorphic_context = self.homomorphic_context.as_ref().ok_or_else(|| {
+            MemoryError::encryption("Homomorphic encryption not enabled".to_string())
+        })?;
 
         // Convert memory entry to homomorphic-compatible format
         let numeric_data = self.extract_numeric_features(entry)?;
-        
+
         // Encrypt using homomorphic encryption (simulated with advanced techniques)
         let encrypted_data = homomorphic_context.encrypt_vector(&numeric_data).await?;
 
@@ -192,22 +211,30 @@ impl EncryptionManager {
     }
 
     /// Homomorphic decryption
-    pub async fn homomorphic_decrypt(&mut self,
+    pub async fn homomorphic_decrypt(
+        &mut self,
         encrypted_entry: &EncryptedMemoryEntry,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<MemoryEntry> {
         let start_time = std::time::Instant::now();
 
-        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
-            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
         }
 
-        let homomorphic_context = self.homomorphic_context.as_ref()
-            .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
+        let homomorphic_context = self.homomorphic_context.as_ref().ok_or_else(|| {
+            MemoryError::encryption("Homomorphic encryption not enabled".to_string())
+        })?;
 
         // Decrypt the homomorphic data
-        let numeric_data = homomorphic_context.decrypt_vector(&encrypted_entry.encrypted_data).await?;
-        
+        let numeric_data = homomorphic_context
+            .decrypt_vector(&encrypted_entry.encrypted_data)
+            .await?;
+
         // Reconstruct memory entry from numeric features
         let entry = self.reconstruct_from_numeric_features(&numeric_data)?;
 
@@ -219,40 +246,58 @@ impl EncryptionManager {
     }
 
     /// Perform homomorphic computation on encrypted data
-    pub async fn homomorphic_compute(&mut self,
+    pub async fn homomorphic_compute(
+        &mut self,
         encrypted_entries: &[EncryptedMemoryEntry],
         operation: SecureOperation,
-        context: &SecurityContext
+        context: &SecurityContext,
     ) -> Result<EncryptedComputationResult> {
         let start_time = std::time::Instant::now();
 
-        if !context.is_session_valid() || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa) {
-            return Err(MemoryError::access_denied("Invalid security context".to_string()));
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
         }
 
-        let homomorphic_context = self.homomorphic_context.as_ref()
-            .ok_or_else(|| MemoryError::encryption("Homomorphic encryption not enabled".to_string()))?;
+        let homomorphic_context = self.homomorphic_context.as_ref().ok_or_else(|| {
+            MemoryError::encryption("Homomorphic encryption not enabled".to_string())
+        })?;
 
         // Perform the computation based on operation type
         let result_data = match operation {
             SecureOperation::Sum => {
-                homomorphic_context.homomorphic_sum(encrypted_entries).await?
-            },
+                homomorphic_context
+                    .homomorphic_sum(encrypted_entries)
+                    .await?
+            }
             SecureOperation::Average => {
-                homomorphic_context.homomorphic_average(encrypted_entries).await?
-            },
+                homomorphic_context
+                    .homomorphic_average(encrypted_entries)
+                    .await?
+            }
             SecureOperation::Count => {
-                homomorphic_context.homomorphic_count(encrypted_entries).await?
-            },
+                homomorphic_context
+                    .homomorphic_count(encrypted_entries)
+                    .await?
+            }
             SecureOperation::Search { ref query } => {
-                homomorphic_context.homomorphic_search(encrypted_entries, query).await?
-            },
+                homomorphic_context
+                    .homomorphic_search(encrypted_entries, query)
+                    .await?
+            }
             SecureOperation::Similarity { threshold } => {
-                homomorphic_context.homomorphic_similarity(encrypted_entries, threshold).await?
-            },
+                homomorphic_context
+                    .homomorphic_similarity(encrypted_entries, threshold)
+                    .await?
+            }
             SecureOperation::Aggregate { ref function } => {
-                homomorphic_context.homomorphic_aggregate(encrypted_entries, function).await?
-            },
+                homomorphic_context
+                    .homomorphic_aggregate(encrypted_entries, function)
+                    .await?
+            }
         };
 
         let result = EncryptedComputationResult {
@@ -277,7 +322,11 @@ impl EncryptionManager {
 
     // Private helper methods
 
-    async fn get_or_generate_key(&mut self, context: &SecurityContext, algorithm: &str) -> Result<EncryptionKey> {
+    async fn get_or_generate_key(
+        &mut self,
+        context: &SecurityContext,
+        algorithm: &str,
+    ) -> Result<EncryptionKey> {
         let key_id = format!("{}:{}", context.user_id, algorithm);
 
         if let Some(key) = self.key_cache.get(&key_id) {
@@ -285,7 +334,10 @@ impl EncryptionManager {
         }
 
         // Generate new key using key manager
-        let data_key_id = self.key_manager.generate_data_key("default", context).await?;
+        let data_key_id = self
+            .key_manager
+            .generate_data_key("default", context)
+            .await?;
         let key_data = self.key_manager.get_data_key(&data_key_id, context).await?;
         let key = EncryptionKey {
             id: data_key_id.clone(),
@@ -326,25 +378,50 @@ impl EncryptionManager {
         Ok(bytes)
     }
 
-    fn aes_gcm_encrypt(&self, plaintext: &[u8], key: &[u8], iv: &[u8], salt: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    fn aes_gcm_encrypt(
+        &self,
+        plaintext: &[u8],
+        key: &[u8],
+        iv: &[u8],
+        salt: &[u8],
+    ) -> Result<(Vec<u8>, Vec<u8>)> {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
         let nonce = GenericArray::from_slice(iv);
         let encrypted = cipher
-            .encrypt(nonce, Payload { msg: plaintext, aad: salt })
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: salt,
+                },
+            )
             .map_err(|_| MemoryError::encryption("AES-GCM encryption failed"))?;
         let tag = encrypted[encrypted.len() - 16..].to_vec();
         let ciphertext = encrypted[..encrypted.len() - 16].to_vec();
         Ok((ciphertext, tag))
     }
 
-    fn aes_gcm_decrypt(&self, ciphertext: &[u8], key: &[u8], iv: &[u8], salt: &[u8], auth_tag: &[u8]) -> Result<Vec<u8>> {
+    fn aes_gcm_decrypt(
+        &self,
+        ciphertext: &[u8],
+        key: &[u8],
+        iv: &[u8],
+        salt: &[u8],
+        auth_tag: &[u8],
+    ) -> Result<Vec<u8>> {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
         let nonce = GenericArray::from_slice(iv);
         let mut combined = Vec::with_capacity(ciphertext.len() + auth_tag.len());
         combined.extend_from_slice(ciphertext);
         combined.extend_from_slice(auth_tag);
         let decrypted = cipher
-            .decrypt(nonce, Payload { msg: &combined, aad: salt })
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: &combined,
+                    aad: salt,
+                },
+            )
             .map_err(|_| MemoryError::encryption("AES-GCM decryption failed"))?;
         Ok(decrypted)
     }
@@ -352,7 +429,7 @@ impl EncryptionManager {
     fn extract_numeric_features(&self, entry: &MemoryEntry) -> Result<Vec<f64>> {
         // Extract numeric features from memory entry for homomorphic encryption
         let mut features = Vec::new();
-        
+
         // Convert text to numeric features (simplified)
         let text_bytes = entry.value.as_bytes();
         for chunk in text_bytes.chunks(4) {
@@ -362,37 +439,42 @@ impl EncryptionManager {
             }
             features.push(value as f64);
         }
-        
+
         // Add embedding if available
         if let Some(ref embedding) = entry.embedding {
             features.extend(embedding.iter().map(|&x| x as f64));
         }
-        
+
         Ok(features)
     }
 
     fn reconstruct_from_numeric_features(&self, features: &[f64]) -> Result<MemoryEntry> {
         // Reconstruct memory entry from numeric features (simplified)
         let mut text_bytes = Vec::new();
-        
+
         for &feature in features.iter().take(features.len().saturating_sub(768)) {
             let value = feature as u32;
             for i in 0..4 {
                 text_bytes.push(((value >> (i * 8)) & 0xFF) as u8);
             }
         }
-        
+
         // Remove null bytes and convert to string
         text_bytes.retain(|&b| b != 0);
         let value = String::from_utf8_lossy(&text_bytes).to_string();
-        
+
         // Extract embedding if present
         let embedding = if features.len() > 768 {
-            Some(features[features.len()-768..].iter().map(|&x| x as f32).collect())
+            Some(
+                features[features.len() - 768..]
+                    .iter()
+                    .map(|&x| x as f32)
+                    .collect(),
+            )
         } else {
             None
         };
-        
+
         Ok(MemoryEntry {
             key: uuid::Uuid::new_v4().to_string(),
             value,
@@ -438,7 +520,10 @@ impl HomomorphicContext {
 
         #[cfg(feature = "homomorphic-encryption")]
         {
-            tracing::info!("Initializing real TFHE homomorphic encryption with key size: {}", config.encryption_key_size);
+            tracing::info!(
+                "Initializing real TFHE homomorphic encryption with key size: {}",
+                config.encryption_key_size
+            );
 
             // Generate TFHE integer keys with appropriate configuration
             let config = ConfigBuilder::default().build();
@@ -477,8 +562,9 @@ impl HomomorphicContext {
                 let encrypted_value = FheUint32::encrypt(scaled_value, &self.client_key);
 
                 // Serialize the encrypted value
-                let serialized = bincode::serialize(&encrypted_value)
-                    .map_err(|e| MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e)))?;
+                let serialized = bincode::serialize(&encrypted_value).map_err(|e| {
+                    MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e))
+                })?;
 
                 // Store length prefix for deserialization
                 encrypted_data.extend_from_slice(&(serialized.len() as u32).to_le_bytes());
@@ -493,7 +579,9 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!("Using fallback encryption - homomorphic-encryption feature not enabled");
+            tracing::warn!(
+                "Using fallback encryption - homomorphic-encryption feature not enabled"
+            );
             let mut encrypted = Vec::new();
             for &value in data {
                 let encrypted_value = (value * 1.5 + 42.0) as u64;
@@ -527,12 +615,18 @@ impl HomomorphicContext {
                 offset += 4;
 
                 if offset + length > encrypted_data.len() {
-                    return Err(MemoryError::encryption("Invalid encrypted data format".to_string()));
+                    return Err(MemoryError::encryption(
+                        "Invalid encrypted data format".to_string(),
+                    ));
                 }
 
                 // Deserialize encrypted value
-                let encrypted_value: FheUint32 = bincode::deserialize(&encrypted_data[offset..offset + length])
-                    .map_err(|e| MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e)))?;
+                let encrypted_value: FheUint32 = bincode::deserialize(
+                    &encrypted_data[offset..offset + length],
+                )
+                .map_err(|e| {
+                    MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e))
+                })?;
 
                 // Decrypt the value
                 let decrypted_value: u32 = encrypted_value.decrypt(&self.client_key);
@@ -550,13 +644,15 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!("Using fallback decryption - homomorphic-encryption feature not enabled");
+            tracing::warn!(
+                "Using fallback decryption - homomorphic-encryption feature not enabled"
+            );
             let mut decrypted = Vec::new();
             for chunk in encrypted_data.chunks(8) {
                 if chunk.len() == 8 {
                     let encrypted_value = u64::from_le_bytes([
-                        chunk[0], chunk[1], chunk[2], chunk[3],
-                        chunk[4], chunk[5], chunk[6], chunk[7]
+                        chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                        chunk[7],
                     ]);
                     let value = (encrypted_value as f64 - 42.0) / 1.5;
                     decrypted.push(value);
@@ -586,7 +682,9 @@ impl HomomorphicContext {
 
                 // Ensure same length
                 if encrypted_values.len() != entry_values.len() {
-                    return Err(MemoryError::encryption("Mismatched vector lengths for homomorphic sum".to_string()));
+                    return Err(MemoryError::encryption(
+                        "Mismatched vector lengths for homomorphic sum".to_string(),
+                    ));
                 }
 
                 // Perform homomorphic addition
@@ -627,7 +725,10 @@ impl HomomorphicContext {
     async fn homomorphic_average(&self, entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
         #[cfg(feature = "homomorphic-encryption")]
         {
-            tracing::debug!("Performing homomorphic average on {} entries", entries.len());
+            tracing::debug!(
+                "Performing homomorphic average on {} entries",
+                entries.len()
+            );
 
             if entries.is_empty() {
                 return Ok(Vec::new());
@@ -665,18 +766,27 @@ impl HomomorphicContext {
         Ok(count.to_le_bytes().to_vec())
     }
 
-    async fn homomorphic_search(&self, entries: &[EncryptedMemoryEntry], _query: &str) -> Result<Vec<u8>> {
+    async fn homomorphic_search(
+        &self,
+        entries: &[EncryptedMemoryEntry],
+        _query: &str,
+    ) -> Result<Vec<u8>> {
         // Simulated homomorphic search - returns indices of matching entries
         let mut results = Vec::new();
         for (i, _entry) in entries.iter().enumerate() {
-            if i % 2 == 0 { // Simplified matching logic
+            if i % 2 == 0 {
+                // Simplified matching logic
                 results.extend_from_slice(&(i as u32).to_le_bytes());
             }
         }
         Ok(results)
     }
 
-    async fn homomorphic_similarity(&self, entries: &[EncryptedMemoryEntry], threshold: f64) -> Result<Vec<u8>> {
+    async fn homomorphic_similarity(
+        &self,
+        entries: &[EncryptedMemoryEntry],
+        threshold: f64,
+    ) -> Result<Vec<u8>> {
         // Simulated homomorphic similarity computation
         let threshold_bytes = (threshold * 1000.0) as u32;
         let mut results = Vec::new();
@@ -690,12 +800,19 @@ impl HomomorphicContext {
         Ok(results)
     }
 
-    async fn homomorphic_aggregate(&self, entries: &[EncryptedMemoryEntry], function: &str) -> Result<Vec<u8>> {
+    async fn homomorphic_aggregate(
+        &self,
+        entries: &[EncryptedMemoryEntry],
+        function: &str,
+    ) -> Result<Vec<u8>> {
         match function {
             "sum" => self.homomorphic_sum(entries).await,
             "avg" => self.homomorphic_average(entries).await,
             "count" => self.homomorphic_count(entries).await,
-            _ => Err(MemoryError::encryption(format!("Unknown aggregate function: {}", function))),
+            _ => Err(MemoryError::encryption(format!(
+                "Unknown aggregate function: {}",
+                function
+            ))),
         }
     }
 
@@ -719,12 +836,16 @@ impl HomomorphicContext {
             offset += 4;
 
             if offset + length > encrypted_data.len() {
-                return Err(MemoryError::encryption("Invalid encrypted data format".to_string()));
+                return Err(MemoryError::encryption(
+                    "Invalid encrypted data format".to_string(),
+                ));
             }
 
             // Deserialize encrypted value
-            let encrypted_value: FheUint32 = bincode::deserialize(&encrypted_data[offset..offset + length])
-                .map_err(|e| MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e)))?;
+            let encrypted_value: FheUint32 =
+                bincode::deserialize(&encrypted_data[offset..offset + length]).map_err(|e| {
+                    MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e))
+                })?;
 
             encrypted_values.push(encrypted_value);
             offset += length;
@@ -738,8 +859,9 @@ impl HomomorphicContext {
         let mut result = Vec::new();
 
         for encrypted_value in encrypted_values {
-            let serialized = bincode::serialize(encrypted_value)
-                .map_err(|e| MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e)))?;
+            let serialized = bincode::serialize(encrypted_value).map_err(|e| {
+                MemoryError::encryption(format!("Failed to serialize encrypted value: {}", e))
+            })?;
 
             // Store length prefix
             result.extend_from_slice(&(serialized.len() as u32).to_le_bytes());
@@ -788,10 +910,12 @@ pub struct EncryptionMetrics {
 impl EncryptionMetrics {
     pub fn calculate_averages(&mut self) {
         if self.total_encryptions > 0 {
-            self.average_encryption_time_ms = self.total_encryption_time_ms as f64 / self.total_encryptions as f64;
+            self.average_encryption_time_ms =
+                self.total_encryption_time_ms as f64 / self.total_encryptions as f64;
         }
         if self.total_decryptions > 0 {
-            self.average_decryption_time_ms = self.total_decryption_time_ms as f64 / self.total_decryptions as f64;
+            self.average_decryption_time_ms =
+                self.total_decryption_time_ms as f64 / self.total_decryptions as f64;
         }
         // Calculate success rates (would track failures in production)
         self.encryption_success_rate = 100.0;

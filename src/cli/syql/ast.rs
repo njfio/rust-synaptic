@@ -3,9 +3,9 @@
 //! This module defines the AST nodes for the SyQL query language, providing a structured
 //! representation of parsed queries that can be optimized and executed.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Root AST node for SyQL queries
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,13 +72,9 @@ pub enum FromClause {
         filter: Option<Expression>,
     },
     /// Graph pattern matching
-    Pattern {
-        patterns: Vec<GraphPattern>,
-    },
+    Pattern { patterns: Vec<GraphPattern> },
     /// Path queries
-    Path {
-        path_pattern: PathPattern,
-    },
+    Path { path_pattern: PathPattern },
     /// Subquery
     Subquery {
         query: Box<QueryStatement>,
@@ -370,10 +366,7 @@ pub enum Expression {
         property: String,
     },
     /// Function call
-    Function {
-        name: String,
-        args: Vec<Expression>,
-    },
+    Function { name: String, args: Vec<Expression> },
     /// Binary operation
     Binary {
         left: Box<Expression>,
@@ -402,9 +395,7 @@ pub enum Expression {
         high: Box<Expression>,
     },
     /// EXISTS expression
-    Exists {
-        subquery: Box<QueryStatement>,
-    },
+    Exists { subquery: Box<QueryStatement> },
     /// Subquery expression
     Subquery(Box<QueryStatement>),
     /// Array/List expression
@@ -434,7 +425,7 @@ pub enum BinaryOperator {
     Divide,
     Modulo,
     Power,
-    
+
     // Comparison
     Equal,
     NotEqual,
@@ -442,21 +433,21 @@ pub enum BinaryOperator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
-    
+
     // Logical
     And,
     Or,
-    
+
     // String
     Like,
     NotLike,
     Regex,
     NotRegex,
-    
+
     // Array/List
     Contains,
     NotContains,
-    
+
     // Graph-specific
     Connected,
     NotConnected,

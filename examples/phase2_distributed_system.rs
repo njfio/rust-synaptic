@@ -1,25 +1,27 @@
 //! Phase 2 Distributed Architecture Demo
-//! 
+//!
 //! This example demonstrates the distributed capabilities of Synaptic,
 //! including consensus, sharding, real-time synchronization, and event-driven architecture.
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 use synaptic::{
-    AgentMemory, MemoryConfig,
     distributed::{
-        NodeId, DistributedConfig, ConsistencyLevel, OperationMetadata,
-        events::{EventBus, MemoryEvent, InMemoryEventStore},
-        consensus::{SimpleConsensus, ConsensusCommand},
-        sharding::DistributedGraph,
+        consensus::{ConsensusCommand, SimpleConsensus},
         // realtime::RealtimeSync, // Temporarily disabled
         coordination::DistributedCoordinator,
+        events::{EventBus, InMemoryEventStore, MemoryEvent},
+        sharding::DistributedGraph,
+        ConsistencyLevel,
+        DistributedConfig,
+        NodeId,
+        OperationMetadata,
     },
-    memory::types::{MemoryEntry, MemoryType, MemoryMetadata},
+    memory::types::{MemoryEntry, MemoryMetadata, MemoryType},
+    AgentMemory, MemoryConfig,
 };
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 use std::collections::HashMap;
-
 
 #[cfg(all(feature = "distributed", feature = "embeddings"))]
 #[tokio::main]
@@ -124,7 +126,7 @@ async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>
     let (consensus, command_rx) = SimpleConsensus::new(node_id, config);
 
     println!("  🏛️ Node ID: {}", node_id);
-    
+
     let state = consensus.get_state();
     println!("   Initial state: {:?}", state.state);
     println!("   Current term: {}", state.current_term);
@@ -134,7 +136,7 @@ async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>
     // Start consensus in background for a short time
     let consensus_arc = Arc::new(consensus);
     let consensus_clone = Arc::clone(&consensus_arc);
-    
+
     tokio::spawn(async move {
         tokio::select! {
             _ = consensus_clone.start(command_rx) => {},
@@ -187,9 +189,13 @@ async fn demonstrate_distributed_sharding() -> Result<(), Box<dyn std::error::Er
 
         let shard_id = graph.get_shard_id(memory_node.id);
         let responsible_nodes = graph.get_shard_nodes(shard_id);
-        
-        println!("   Memory '{}' -> Shard {} (Nodes: {:?})", 
-                 key, shard_id, responsible_nodes.len());
+
+        println!(
+            "   Memory '{}' -> Shard {} (Nodes: {:?})",
+            key,
+            shard_id,
+            responsible_nodes.len()
+        );
 
         graph.add_memory_node(memory_node)?;
     }
@@ -269,9 +275,21 @@ async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error:
 
     // Store memories with different consistency levels
     let memories = vec![
-        ("critical_data", "Mission-critical information", ConsistencyLevel::Strong),
-        ("user_session", "User session data", ConsistencyLevel::Causal),
-        ("analytics_data", "Analytics and metrics", ConsistencyLevel::Eventual),
+        (
+            "critical_data",
+            "Mission-critical information",
+            ConsistencyLevel::Strong,
+        ),
+        (
+            "user_session",
+            "User session data",
+            ConsistencyLevel::Causal,
+        ),
+        (
+            "analytics_data",
+            "Analytics and metrics",
+            ConsistencyLevel::Eventual,
+        ),
     ];
 
     for (key, content, consistency) in memories {
@@ -313,14 +331,17 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
 
     // Create multiple coordinators to simulate a cluster
     let mut coordinators = Vec::new();
-    
+
     for i in 0..3 {
         let mut config = DistributedConfig::default();
         config.realtime.websocket_port = 8092 + i;
         config.node_id = NodeId::new();
-        
+
         let coordinator = DistributedCoordinator::new(config).await?;
-        println!("  🖥️ Created node: {}", coordinator.get_stats().await.current_node);
+        println!(
+            "  🖥️ Created node: {}",
+            coordinator.get_stats().await.current_node
+        );
         coordinators.push(coordinator);
     }
 
@@ -349,14 +370,18 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
             embedding: None,
         };
 
-        coordinator.store_memory(memory, ConsistencyLevel::Strong).await?;
+        coordinator
+            .store_memory(memory, ConsistencyLevel::Strong)
+            .await?;
     }
 
     // Show cluster statistics
     for (i, coordinator) in coordinators.iter().enumerate() {
         let stats = coordinator.get_stats().await;
-        println!("   Node {}: {} peers, {} events processed", 
-                 i, stats.active_peers, stats.events_processed);
+        println!(
+            "   Node {}: {} peers, {} events processed",
+            i, stats.active_peers, stats.events_processed
+        );
     }
 
     Ok(())
@@ -391,7 +416,9 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
             embedding: None,
         };
 
-        coordinator.store_memory(memory, ConsistencyLevel::Eventual).await?;
+        coordinator
+            .store_memory(memory, ConsistencyLevel::Eventual)
+            .await?;
 
         if i % 100 == 0 {
             print!(".");
@@ -419,5 +446,7 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
 #[cfg(not(all(feature = "distributed", feature = "embeddings")))]
 fn main() {
     println!("This example requires both 'distributed' and 'embeddings' features to be enabled.");
-    println!("Run with: cargo run --features distributed,embeddings --example phase2_distributed_system");
+    println!(
+        "Run with: cargo run --features distributed,embeddings --example phase2_distributed_system"
+    );
 }

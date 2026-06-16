@@ -4,8 +4,8 @@
 //! Shows multi-modal content handling, cross-platform adaptation, and relationship detection.
 
 use synaptic::phase5_basic::{
-    BasicMultiModalManager, BasicMemoryAdapter, BasicContentDetector,
-    BasicMetadata, BasicCrossPlatformAdapter,
+    BasicContentDetector, BasicCrossPlatformAdapter, BasicMemoryAdapter, BasicMetadata,
+    BasicMultiModalManager,
 };
 
 #[tokio::main]
@@ -16,11 +16,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the basic multi-modal manager
     let adapter = Box::new(BasicMemoryAdapter::new());
     let platform_info = adapter.get_platform_info();
-    
+
     println!("\n Platform Detection");
     println!("---------------------");
     println!(" Platform: {}", platform_info.platform_name);
-    println!(" File System Support: {}", platform_info.supports_file_system);
+    println!(
+        " File System Support: {}",
+        platform_info.supports_file_system
+    );
     println!(" Network Support: {}", platform_info.supports_network);
     println!(" Max Memory: {} MB", platform_info.max_memory_mb);
     println!(" Max Storage: {} MB", platform_info.max_storage_mb);
@@ -40,17 +43,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_metadata = BasicMetadata {
         title: Some("Dashboard Screenshot".to_string()),
         description: Some("Screenshot of the main dashboard interface".to_string()),
-        tags: vec!["ui".to_string(), "dashboard".to_string(), "screenshot".to_string()],
+        tags: vec![
+            "ui".to_string(),
+            "dashboard".to_string(),
+            "screenshot".to_string(),
+        ],
         quality_score: 0.9,
         extracted_features: image_features,
     };
 
-    let image_id = manager.store_multimodal(
-        "dashboard_screenshot",
-        png_data,
-        image_type,
-        image_metadata,
-    )?;
+    let image_id =
+        manager.store_multimodal("dashboard_screenshot", png_data, image_type, image_metadata)?;
     println!(" Stored image memory: {}", image_id);
 
     // Test audio content
@@ -62,24 +65,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audio_metadata = BasicMetadata {
         title: Some("Meeting Recording".to_string()),
         description: Some("Weekly team meeting discussion".to_string()),
-        tags: vec!["meeting".to_string(), "audio".to_string(), "team".to_string()],
+        tags: vec![
+            "meeting".to_string(),
+            "audio".to_string(),
+            "team".to_string(),
+        ],
         quality_score: 0.8,
         extracted_features: audio_features,
     };
 
-    let audio_id = manager.store_multimodal(
-        "team_meeting_audio",
-        wav_data,
-        audio_type,
-        audio_metadata,
-    )?;
+    let audio_id =
+        manager.store_multimodal("team_meeting_audio", wav_data, audio_type, audio_metadata)?;
     println!(" Stored audio memory: {}", audio_id);
 
     // Test code content
     let rust_code = r#"
         fn analyze_user_behavior(data: &[UserAction]) -> BehaviorInsights {
             let mut insights = BehaviorInsights::new();
-            
+
             for action in data {
                 match action.action_type {
                     ActionType::Click => insights.click_count += 1,
@@ -90,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
+
             insights.calculate_patterns();
             insights
         }
@@ -103,7 +106,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let code_metadata = BasicMetadata {
         title: Some("User Behavior Analysis".to_string()),
         description: Some("Function to analyze user interaction patterns".to_string()),
-        tags: vec!["rust".to_string(), "analytics".to_string(), "behavior".to_string()],
+        tags: vec![
+            "rust".to_string(),
+            "analytics".to_string(),
+            "behavior".to_string(),
+        ],
         quality_score: 0.95,
         extracted_features: code_features,
     };
@@ -128,7 +135,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let text_metadata = BasicMetadata {
         title: Some("Behavior Analysis Report".to_string()),
         description: Some("Summary of user behavior analysis findings".to_string()),
-        tags: vec!["analysis".to_string(), "report".to_string(), "behavior".to_string()],
+        tags: vec![
+            "analysis".to_string(),
+            "report".to_string(),
+            "behavior".to_string(),
+        ],
         quality_score: 0.85,
         extracted_features: text_features,
     };
@@ -175,14 +186,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(" Retrieved image memory:");
         println!("   - Title: {:?}", retrieved_image.metadata.title);
         println!("   - Content Type: {:?}", retrieved_image.content_type);
-        println!("   - Features: {} dimensions", retrieved_image.metadata.extracted_features.len());
-        println!("   - Relationships: {}", retrieved_image.relationships.len());
-        
+        println!(
+            "   - Features: {} dimensions",
+            retrieved_image.metadata.extracted_features.len()
+        );
+        println!(
+            "   - Relationships: {}",
+            retrieved_image.relationships.len()
+        );
+
         for relationship in &retrieved_image.relationships {
-            println!("     → {} ({}): {:.2}", 
-                     relationship.target_id, 
-                     relationship.relationship_type, 
-                     relationship.confidence);
+            println!(
+                "     → {} ({}): {:.2}",
+                relationship.target_id, relationship.relationship_type, relationship.confidence
+            );
         }
     }
 
@@ -190,7 +207,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(" Retrieved code memory:");
         println!("   - Title: {:?}", retrieved_code.metadata.title);
         println!("   - Content Type: {:?}", retrieved_code.content_type);
-        println!("   - Quality Score: {:.2}", retrieved_code.metadata.quality_score);
+        println!(
+            "   - Quality Score: {:.2}",
+            retrieved_code.metadata.quality_score
+        );
         println!("   - Tags: {:?}", retrieved_code.metadata.tags);
     }
 
@@ -204,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Total size: {} bytes", stats.total_size);
     println!("   - Total relationships: {}", stats.total_relationships);
     println!("   - Memories by type:");
-    
+
     for (content_type, count) in &stats.memories_by_type {
         println!("     • {}: {} memories", content_type, count);
     }
@@ -212,8 +232,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let platform_info = manager.get_platform_info();
     println!(" Platform Capabilities:");
     println!("   - Platform: {}", platform_info.platform_name);
-    println!("   - File System: {}", if platform_info.supports_file_system { "✓" } else { "✗" });
-    println!("   - Network: {}", if platform_info.supports_network { "✓" } else { "✗" });
+    println!(
+        "   - File System: {}",
+        if platform_info.supports_file_system {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
+    println!(
+        "   - Network: {}",
+        if platform_info.supports_network {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
     println!("   - Memory Limit: {} MB", platform_info.max_memory_mb);
     println!("   - Storage Limit: {} MB", platform_info.max_storage_mb);
 

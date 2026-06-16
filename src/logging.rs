@@ -386,14 +386,13 @@ impl LoggingManager {
                         .create(true)
                         .append(true)
                         .open(log_file)
-                        .map_err(|e| MemoryError::configuration(format!("Failed to open log file: {}", e)))?;
+                        .map_err(|e| {
+                            MemoryError::configuration(format!("Failed to open log file: {}", e))
+                        })?;
 
-                    tracing_subscriber::fmt()
-                        .with_writer(file)
-                        .try_init()
+                    tracing_subscriber::fmt().with_writer(file).try_init()
                 } else {
-                    tracing_subscriber::fmt()
-                        .try_init()
+                    tracing_subscriber::fmt().try_init()
                 }
             }
             LogFormat::Pretty => {
@@ -402,16 +401,16 @@ impl LoggingManager {
                         .create(true)
                         .append(true)
                         .open(log_file)
-                        .map_err(|e| MemoryError::configuration(format!("Failed to open log file: {}", e)))?;
+                        .map_err(|e| {
+                            MemoryError::configuration(format!("Failed to open log file: {}", e))
+                        })?;
 
                     tracing_subscriber::fmt()
                         .pretty()
                         .with_writer(file)
                         .try_init()
                 } else {
-                    tracing_subscriber::fmt()
-                        .pretty()
-                        .try_init()
+                    tracing_subscriber::fmt().pretty().try_init()
                 }
             }
             LogFormat::Compact => {
@@ -420,16 +419,16 @@ impl LoggingManager {
                         .create(true)
                         .append(true)
                         .open(log_file)
-                        .map_err(|e| MemoryError::configuration(format!("Failed to open log file: {}", e)))?;
+                        .map_err(|e| {
+                            MemoryError::configuration(format!("Failed to open log file: {}", e))
+                        })?;
 
                     tracing_subscriber::fmt()
                         .compact()
                         .with_writer(file)
                         .try_init()
                 } else {
-                    tracing_subscriber::fmt()
-                        .compact()
-                        .try_init()
+                    tracing_subscriber::fmt().compact().try_init()
                 }
             }
             LogFormat::Full => {
@@ -438,7 +437,9 @@ impl LoggingManager {
                         .create(true)
                         .append(true)
                         .open(log_file)
-                        .map_err(|e| MemoryError::configuration(format!("Failed to open log file: {}", e)))?;
+                        .map_err(|e| {
+                            MemoryError::configuration(format!("Failed to open log file: {}", e))
+                        })?;
 
                     tracing_subscriber::fmt()
                         .with_file(true)
@@ -457,7 +458,10 @@ impl LoggingManager {
         // Ignore the error if subscriber is already initialized
         match init_result {
             Ok(()) => {
-                tracing::info!("Logging system initialized with level: {:?}", self.config.level);
+                tracing::info!(
+                    "Logging system initialized with level: {:?}",
+                    self.config.level
+                );
             }
             Err(_) => {
                 // Subscriber already initialized, just log a debug message
@@ -475,7 +479,7 @@ impl LoggingManager {
         }
 
         let operation_id = Uuid::new_v4().to_string();
-        let span = tracing::info_span!("performance_trace", 
+        let span = tracing::info_span!("performance_trace",
             operation_id = %operation_id,
             operation_name = %operation_name
         );
@@ -504,12 +508,20 @@ impl LoggingManager {
             performance_metrics.push(metrics);
         }
 
-        tracing::info!("Started performance trace for operation: {}", operation_name);
+        tracing::info!(
+            "Started performance trace for operation: {}",
+            operation_name
+        );
         Ok(operation_id)
     }
 
     /// End a performance trace
-    pub async fn end_performance_trace(&self, operation_id: &str, success: bool, error_message: Option<String>) -> Result<()> {
+    pub async fn end_performance_trace(
+        &self,
+        operation_id: &str,
+        success: bool,
+        error_message: Option<String>,
+    ) -> Result<()> {
         if !self.config.enable_performance_tracing || operation_id.is_empty() {
             return Ok(());
         }
@@ -525,9 +537,13 @@ impl LoggingManager {
         // Update performance metrics
         {
             let mut performance_metrics = self.performance_metrics.write().await;
-            if let Some(metrics) = performance_metrics.iter_mut().find(|m| m.operation_id == operation_id) {
+            if let Some(metrics) = performance_metrics
+                .iter_mut()
+                .find(|m| m.operation_id == operation_id)
+            {
                 metrics.end_time = Some(end_time);
-                metrics.duration_ms = Some((end_time - metrics.start_time).num_milliseconds() as u64);
+                metrics.duration_ms =
+                    Some((end_time - metrics.start_time).num_milliseconds() as u64);
                 metrics.success = success;
                 metrics.error_message = error_message.clone();
             }
@@ -555,7 +571,8 @@ impl LoggingManager {
     }
 
     /// Log an audit event
-    pub async fn log_audit_event(&self, 
+    pub async fn log_audit_event(
+        &self,
         operation: &str,
         user_id: Option<String>,
         session_id: Option<String>,
@@ -563,7 +580,7 @@ impl LoggingManager {
         action: &str,
         success: bool,
         details: HashMap<String, String>,
-        risk_level: RiskLevel
+        risk_level: RiskLevel,
     ) -> Result<()> {
         if !self.config.enable_audit_logging {
             return Ok(());
@@ -682,15 +699,17 @@ impl LoggingManager {
     /// Export performance metrics to JSON
     pub async fn export_performance_metrics(&self) -> Result<String> {
         let metrics = self.performance_metrics.read().await;
-        serde_json::to_string_pretty(&*metrics)
-            .map_err(|e| MemoryError::processing_error(format!("Failed to export performance metrics: {}", e)))
+        serde_json::to_string_pretty(&*metrics).map_err(|e| {
+            MemoryError::processing_error(format!("Failed to export performance metrics: {}", e))
+        })
     }
 
     /// Export audit logs to JSON
     pub async fn export_audit_logs(&self) -> Result<String> {
         let logs = self.audit_logs.read().await;
-        serde_json::to_string_pretty(&*logs)
-            .map_err(|e| MemoryError::processing_error(format!("Failed to export audit logs: {}", e)))
+        serde_json::to_string_pretty(&*logs).map_err(|e| {
+            MemoryError::processing_error(format!("Failed to export audit logs: {}", e))
+        })
     }
 
     /// Get performance metrics summary
@@ -702,18 +721,18 @@ impl LoggingManager {
         let failed_operations = total_operations - successful_operations;
 
         let avg_duration = if !metrics.is_empty() {
-            metrics.iter()
-                .filter_map(|m| m.duration_ms)
-                .sum::<u64>() as f64 / metrics.len() as f64
+            metrics.iter().filter_map(|m| m.duration_ms).sum::<u64>() as f64 / metrics.len() as f64
         } else {
             0.0
         };
 
-        let operations_by_type = metrics.iter()
-            .fold(std::collections::HashMap::new(), |mut acc, m| {
-                *acc.entry(m.operation_name.clone()).or_insert(0) += 1;
-                acc
-            });
+        let operations_by_type =
+            metrics
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, m| {
+                    *acc.entry(m.operation_name.clone()).or_insert(0) += 1;
+                    acc
+                });
 
         PerformanceSummary {
             total_operations,
@@ -737,7 +756,8 @@ impl LoggingManager {
         let successful_events = logs.iter().filter(|l| l.success).count();
         let failed_events = total_events - successful_events;
 
-        let events_by_risk = logs.iter()
+        let events_by_risk = logs
+            .iter()
             .fold(std::collections::HashMap::new(), |mut acc, l| {
                 let risk_str = match l.risk_level {
                     RiskLevel::Low => "low",
@@ -749,11 +769,12 @@ impl LoggingManager {
                 acc
             });
 
-        let events_by_operation = logs.iter()
-            .fold(std::collections::HashMap::new(), |mut acc, l| {
-                *acc.entry(l.operation.clone()).or_insert(0) += 1;
-                acc
-            });
+        let events_by_operation =
+            logs.iter()
+                .fold(std::collections::HashMap::new(), |mut acc, l| {
+                    *acc.entry(l.operation.clone()).or_insert(0) += 1;
+                    acc
+                });
 
         AuditSummary {
             total_events,

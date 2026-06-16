@@ -76,12 +76,12 @@ impl Default for OptimizerConfig {
         min_bounds.insert("cache_size".to_string(), 1.0);
         min_bounds.insert("thread_count".to_string(), 1.0);
         min_bounds.insert("batch_size".to_string(), 1.0);
-        
+
         let mut max_bounds = HashMap::new();
         max_bounds.insert("cache_size".to_string(), 1000.0);
         max_bounds.insert("thread_count".to_string(), 32.0);
         max_bounds.insert("batch_size".to_string(), 1000.0);
-        
+
         Self {
             learning_rate: 0.01,
             max_iterations: 100,
@@ -116,11 +116,11 @@ impl ParameterOptimizer {
         let mut best_performance = self.evaluate_parameters(&parameters, &context).await?;
         let mut best_params = parameters.clone();
         let mut converged = false;
-        
+
         for iteration in 0..self.config.max_iterations {
             // Calculate gradients using finite differences
             let gradients = self.calculate_gradients(&parameters, &context).await?;
-            
+
             // Update parameters using gradient descent
             let mut updated_parameters = HashMap::new();
             for (param_name, current_value) in &parameters {
@@ -132,10 +132,10 @@ impl ParameterOptimizer {
                     updated_parameters.insert(param_name.clone(), *current_value);
                 }
             }
-            
+
             // Evaluate new parameters
             let performance = self.evaluate_parameters(&updated_parameters, &context).await?;
-            
+
             // Record snapshot
             self.parameter_history.push(ParameterSnapshot {
                 timestamp: Utc::now(),
@@ -144,7 +144,7 @@ impl ParameterOptimizer {
                 iteration,
             });
             self.performance_history.push(performance);
-            
+
             // Update best if improved
             if performance > best_performance {
                 best_performance = performance;
@@ -152,7 +152,7 @@ impl ParameterOptimizer {
                 self.best_parameters = best_params.clone();
                 self.best_performance = best_performance;
             }
-            
+
             // Check for convergence
             if iteration > 0 {
                 let improvement = performance - self.performance_history[self.performance_history.len() - 2];
@@ -161,12 +161,12 @@ impl ParameterOptimizer {
                     break;
                 }
             }
-            
+
             parameters = updated_parameters;
         }
-        
+
         let improvement = best_performance - self.evaluate_parameters(&current_parameters, &context).await?;
-        
+
         Ok(OptimizationResult {
             success: improvement > 0.0,
             improvement,
@@ -185,22 +185,22 @@ impl ParameterOptimizer {
     ) -> Result<HashMap<String, f64>> {
         let mut gradients = HashMap::new();
         let epsilon = 0.01; // Small perturbation for finite differences
-        
+
         let base_performance = self.evaluate_parameters(parameters, context).await?;
-        
+
         for (param_name, param_value) in parameters {
             // Create perturbed parameters
             let mut perturbed_params = parameters.clone();
             perturbed_params.insert(param_name.clone(), param_value + epsilon);
-            
+
             // Evaluate perturbed parameters
             let perturbed_performance = self.evaluate_parameters(&perturbed_params, context).await?;
-            
+
             // Calculate gradient
             let gradient = (perturbed_performance - base_performance) / epsilon;
             gradients.insert(param_name.clone(), gradient);
         }
-        
+
         Ok(gradients)
     }
 
@@ -213,32 +213,32 @@ impl ParameterOptimizer {
         // Simplified performance evaluation - in a real implementation,
         // this would run actual performance tests
         let mut score = 0.0;
-        
+
         // Cache size optimization
         if let Some(cache_size) = parameters.get("cache_size") {
             let optimal_cache = context.get("memory_pressure").unwrap_or(&50.0);
             let cache_score = 1.0 - (cache_size - optimal_cache).abs() / 100.0;
             score += cache_score * 0.3;
         }
-        
+
         // Thread count optimization
         if let Some(thread_count) = parameters.get("thread_count") {
             let cpu_cores = context.get("cpu_cores").unwrap_or(&4.0);
             let thread_score = 1.0 - (thread_count - cpu_cores).abs() / 10.0;
             score += thread_score * 0.4;
         }
-        
+
         // Batch size optimization
         if let Some(batch_size) = parameters.get("batch_size") {
             let workload_size = context.get("avg_workload_size").unwrap_or(&100.0);
             let batch_score = 1.0 - (batch_size - workload_size).abs() / 200.0;
             score += batch_score * 0.3;
         }
-        
+
         // Add some noise to simulate real-world variability
         let noise = (fastrand::f64() - 0.5) * 0.1;
         score += noise;
-        
+
         Ok(score.max(0.0).min(1.0))
     }
 
@@ -246,7 +246,7 @@ impl ParameterOptimizer {
     fn apply_bounds(&self, param_name: &str, value: f64) -> f64 {
         let min_bound = self.config.min_bounds.get(param_name).unwrap_or(&0.0);
         let max_bound = self.config.max_bounds.get(param_name).unwrap_or(&1000.0);
-        
+
         value.max(*min_bound).min(*max_bound)
     }
 
@@ -289,7 +289,7 @@ impl ParameterOptimizer {
         context: &HashMap<String, f64>,
     ) -> Result<HashMap<String, f64>> {
         let mut recommendations = HashMap::new();
-        
+
         // Recommend cache size based on memory pressure
         if let Some(memory_pressure) = context.get("memory_pressure") {
             let recommended_cache = if *memory_pressure > 80.0 {
@@ -301,7 +301,7 @@ impl ParameterOptimizer {
             };
             recommendations.insert("cache_size".to_string(), recommended_cache);
         }
-        
+
         // Recommend thread count based on CPU utilization
         if let Some(cpu_utilization) = context.get("cpu_utilization") {
             let cpu_cores = context.get("cpu_cores").unwrap_or(&4.0);
@@ -314,7 +314,7 @@ impl ParameterOptimizer {
             };
             recommendations.insert("thread_count".to_string(), recommended_threads);
         }
-        
+
         // Recommend batch size based on workload characteristics
         if let Some(avg_workload) = context.get("avg_workload_size") {
             let recommended_batch = if *avg_workload > 500.0 {
@@ -326,7 +326,7 @@ impl ParameterOptimizer {
             };
             recommendations.insert("batch_size".to_string(), recommended_batch);
         }
-        
+
         Ok(recommendations)
     }
 }

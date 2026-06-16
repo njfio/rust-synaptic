@@ -1,10 +1,12 @@
 // Intelligence Module
 // Advanced memory intelligence and pattern recognition
 
+use crate::analytics::{
+    AnalyticsConfig, AnalyticsEvent, AnalyticsInsight, InsightPriority, InsightType,
+};
 use crate::error::Result;
-use crate::analytics::{AnalyticsEvent, AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority};
 use crate::memory::types::MemoryEntry;
-use chrono::{DateTime, Utc, Duration, Timelike};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -204,19 +206,27 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Analyze memory intelligence
-    pub async fn analyze_memory_intelligence(&mut self, memory_key: &str, memory_entry: &MemoryEntry, relationships: &[(String, f64)]) -> Result<MemoryIntelligence> {
+    pub async fn analyze_memory_intelligence(
+        &mut self,
+        memory_key: &str,
+        memory_entry: &MemoryEntry,
+        relationships: &[(String, f64)],
+    ) -> Result<MemoryIntelligence> {
         let complexity = self.analyze_complexity(memory_entry).await?;
-        let relationship_intelligence = self.analyze_relationship_intelligence(memory_key, relationships).await?;
-        let usage_intelligence = self.analyze_usage_intelligence(memory_key, memory_entry).await?;
+        let relationship_intelligence = self
+            .analyze_relationship_intelligence(memory_key, relationships)
+            .await?;
+        let usage_intelligence = self
+            .analyze_usage_intelligence(memory_key, memory_entry)
+            .await?;
         let content_intelligence = self.analyze_content_intelligence(memory_entry).await?;
 
         // Calculate overall intelligence score
-        let intelligence_score = (
-            complexity.overall_complexity * 0.2 +
-            relationship_intelligence.centrality_score * 0.3 +
-            usage_intelligence.access_frequency * 0.2 +
-            content_intelligence.semantic_richness * 0.3
-        ).min(1.0);
+        let intelligence_score = (complexity.overall_complexity * 0.2
+            + relationship_intelligence.centrality_score * 0.3
+            + usage_intelligence.access_frequency * 0.2
+            + content_intelligence.semantic_richness * 0.3)
+            .min(1.0);
 
         let intelligence = MemoryIntelligence {
             memory_key: memory_key.to_string(),
@@ -228,17 +238,18 @@ impl MemoryIntelligenceEngine {
             analyzed_at: Utc::now(),
         };
 
-        self.intelligence_cache.insert(memory_key.to_string(), intelligence.clone());
+        self.intelligence_cache
+            .insert(memory_key.to_string(), intelligence.clone());
         Ok(intelligence)
     }
 
     /// Analyze content complexity
     async fn analyze_complexity(&self, memory_entry: &MemoryEntry) -> Result<ComplexityAnalysis> {
         let content = &memory_entry.value;
-        
+
         // Length complexity (normalized)
         let length_complexity = (content.len() as f64 / 1000.0).min(1.0);
-        
+
         // Vocabulary complexity (unique words ratio)
         let words: Vec<&str> = content.split_whitespace().collect();
         let unique_words: HashSet<&str> = words.iter().cloned().collect();
@@ -247,15 +258,19 @@ impl MemoryIntelligenceEngine {
         } else {
             unique_words.len() as f64 / words.len() as f64
         };
-        
+
         // Structural complexity (sentence count, punctuation)
         let sentences = content.split(&['.', '!', '?'][..]).count();
         let structural_complexity = (sentences as f64 / 10.0).min(1.0);
-        
+
         // Conceptual complexity using sophisticated NLP-inspired analysis
         let conceptual_complexity = self.calculate_conceptual_complexity(content)?;
-        
-        let overall_complexity = (length_complexity + vocabulary_complexity + structural_complexity + conceptual_complexity) / 4.0;
+
+        let overall_complexity = (length_complexity
+            + vocabulary_complexity
+            + structural_complexity
+            + conceptual_complexity)
+            / 4.0;
 
         Ok(ComplexityAnalysis {
             length_complexity,
@@ -267,12 +282,16 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Analyze relationship intelligence
-    async fn analyze_relationship_intelligence(&self, _memory_key: &str, relationships: &[(String, f64)]) -> Result<RelationshipIntelligence> {
+    async fn analyze_relationship_intelligence(
+        &self,
+        _memory_key: &str,
+        relationships: &[(String, f64)],
+    ) -> Result<RelationshipIntelligence> {
         let direct_relationships = relationships.len();
-        
+
         // Estimate indirect relationships (simplified)
         let indirect_relationships = direct_relationships * 2;
-        
+
         // Calculate centrality score based on relationship count and strength
         let total_strength: f64 = relationships.iter().map(|(_, strength)| strength).sum();
         let centrality_score = if direct_relationships > 0 {
@@ -280,7 +299,7 @@ impl MemoryIntelligenceEngine {
         } else {
             0.0
         };
-        
+
         // Clustering coefficient based on relationship strength connectivity
         let clustering_coefficient = if direct_relationships > 1 {
             let pair_count = (direct_relationships * (direct_relationships - 1) / 2) as f64;
@@ -298,13 +317,9 @@ impl MemoryIntelligenceEngine {
         } else {
             0.0
         };
-        
+
         // Bridge potential (simplified)
-        let bridge_potential = if direct_relationships > 3 {
-            0.8
-        } else {
-            0.2
-        };
+        let bridge_potential = if direct_relationships > 3 { 0.8 } else { 0.2 };
 
         Ok(RelationshipIntelligence {
             direct_relationships,
@@ -316,7 +331,11 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Analyze usage intelligence
-    async fn analyze_usage_intelligence(&self, memory_key: &str, memory_entry: &MemoryEntry) -> Result<UsageIntelligence> {
+    async fn analyze_usage_intelligence(
+        &self,
+        memory_key: &str,
+        memory_entry: &MemoryEntry,
+    ) -> Result<UsageIntelligence> {
         // Count access events for this memory
         let access_count = self.analysis_history
             .iter()
@@ -328,26 +347,33 @@ impl MemoryIntelligenceEngine {
         let access_frequency = (access_count as f64 / 10.0).min(1.0);
 
         // Filter events related to this memory
-        let memory_events: Vec<AnalyticsEvent> = self.analysis_history
+        let memory_events: Vec<AnalyticsEvent> = self
+            .analysis_history
             .iter()
-            .filter(|event| {
-                match event {
-                    AnalyticsEvent::MemoryAccess { memory_key: key, .. } => key == memory_key,
-                    AnalyticsEvent::MemoryModification { memory_key: key, .. } => key == memory_key,
-                    _ => false,
-                }
+            .filter(|event| match event {
+                AnalyticsEvent::MemoryAccess {
+                    memory_key: key, ..
+                } => key == memory_key,
+                AnalyticsEvent::MemoryModification {
+                    memory_key: key, ..
+                } => key == memory_key,
+                _ => false,
             })
             .cloned()
             .collect();
 
         // Temporal consistency using sophisticated analysis
-        let temporal_consistency = self.calculate_temporal_consistency(memory_entry, &memory_events).await?;
+        let temporal_consistency = self
+            .calculate_temporal_consistency(memory_entry, &memory_events)
+            .await?;
 
         // User diversity using access pattern analysis
         let user_diversity = self.calculate_user_diversity(&memory_events).await?;
 
         // Context diversity using content and metadata analysis
-        let context_diversity = self.calculate_context_diversity(memory_entry, &memory_events).await?;
+        let context_diversity = self
+            .calculate_context_diversity(memory_entry, &memory_events)
+            .await?;
 
         // Collaboration score using interaction pattern analysis
         let collaboration_score = self.calculate_collaboration_score(&memory_events).await?;
@@ -362,9 +388,12 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Analyze content intelligence
-    async fn analyze_content_intelligence(&self, memory_entry: &MemoryEntry) -> Result<ContentIntelligence> {
+    async fn analyze_content_intelligence(
+        &self,
+        memory_entry: &MemoryEntry,
+    ) -> Result<ContentIntelligence> {
         let content = &memory_entry.value;
-        
+
         // Semantic richness (based on content length and vocabulary)
         let words: Vec<&str> = content.split_whitespace().collect();
         let unique_words: HashSet<&str> = words.iter().cloned().collect();
@@ -373,16 +402,16 @@ impl MemoryIntelligenceEngine {
         } else {
             (unique_words.len() as f64 / words.len() as f64 * 2.0).min(1.0)
         };
-        
+
         // Information density
         let information_density = (content.len() as f64 / 500.0).min(1.0);
-        
+
         // Uniqueness using sophisticated content analysis
         let uniqueness = self.calculate_content_uniqueness(memory_entry).await?;
-        
+
         // Relevance (based on importance if available)
         let relevance = memory_entry.metadata.importance;
-        
+
         // Quality (composite score)
         let quality = (semantic_richness + information_density + relevance) / 3.0;
 
@@ -401,10 +430,10 @@ impl MemoryIntelligenceEngine {
 
         // Temporal access pattern recognition
         new_patterns.extend(self.recognize_temporal_patterns().await?);
-        
+
         // Content similarity pattern recognition
         new_patterns.extend(self.recognize_content_patterns().await?);
-        
+
         // User behavior pattern recognition
         new_patterns.extend(self.recognize_user_patterns().await?);
 
@@ -418,23 +447,40 @@ impl MemoryIntelligenceEngine {
 
         // Group access events by hour
         let mut hourly_access: HashMap<u32, Vec<String>> = HashMap::new();
-        
+
         for event in &self.analysis_history {
-            if let AnalyticsEvent::MemoryAccess { memory_key, timestamp, .. } = event {
+            if let AnalyticsEvent::MemoryAccess {
+                memory_key,
+                timestamp,
+                ..
+            } = event
+            {
                 let hour = timestamp.hour();
-                hourly_access.entry(hour).or_insert_with(Vec::new).push(memory_key.clone());
+                hourly_access
+                    .entry(hour)
+                    .or_insert_with(Vec::new)
+                    .push(memory_key.clone());
             }
         }
 
         // Find peak hours
         for (hour, memories) in hourly_access {
-            if memories.len() > 5 { // Threshold for pattern recognition
+            if memories.len() > 5 {
+                // Threshold for pattern recognition
                 let pattern = PatternRecognition {
                     pattern_id: Uuid::new_v4().to_string(),
                     pattern_type: PatternType::TemporalAccess,
-                    description: format!("High activity at hour {} with {} accesses", hour, memories.len()),
+                    description: format!(
+                        "High activity at hour {} with {} accesses",
+                        hour,
+                        memories.len()
+                    ),
                     confidence: (memories.len() as f64 / 20.0).min(1.0),
-                    affected_memories: memories.into_iter().collect::<HashSet<_>>().into_iter().collect(),
+                    affected_memories: memories
+                        .into_iter()
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect(),
                     strength: 0.8,
                     discovered_at: Utc::now(),
                 };
@@ -458,7 +504,10 @@ impl MemoryIntelligenceEngine {
                 "medium"
             };
 
-            groups.entry(bucket).or_insert_with(Vec::new).push(key.clone());
+            groups
+                .entry(bucket)
+                .or_insert_with(Vec::new)
+                .push(key.clone());
         }
 
         let mut patterns = Vec::new();
@@ -467,7 +516,11 @@ impl MemoryIntelligenceEngine {
                 let pattern = PatternRecognition {
                     pattern_id: Uuid::new_v4().to_string(),
                     pattern_type: PatternType::ContentSimilarity,
-                    description: format!("{} memories share {} semantic richness", keys.len(), bucket),
+                    description: format!(
+                        "{} memories share {} semantic richness",
+                        keys.len(),
+                        bucket
+                    ),
                     confidence: (keys.len() as f64 / 5.0).min(1.0),
                     affected_memories: keys,
                     strength: 0.6,
@@ -485,7 +538,11 @@ impl MemoryIntelligenceEngine {
         let mut user_access: HashMap<String, usize> = HashMap::new();
 
         for event in &self.analysis_history {
-            if let AnalyticsEvent::MemoryAccess { user_context: Some(user), .. } = event {
+            if let AnalyticsEvent::MemoryAccess {
+                user_context: Some(user),
+                ..
+            } = event
+            {
                 *user_access.entry(user.clone()).or_insert(0) += 1;
             }
         }
@@ -515,10 +572,10 @@ impl MemoryIntelligenceEngine {
 
         // Detect access pattern anomalies
         anomalies.extend(self.detect_access_anomalies().await?);
-        
+
         // Detect performance anomalies
         anomalies.extend(self.detect_performance_anomalies().await?);
-        
+
         // Detect content anomalies
         anomalies.extend(self.detect_content_anomalies().await?);
 
@@ -532,7 +589,8 @@ impl MemoryIntelligenceEngine {
 
         // Count recent access events
         let recent_threshold = Utc::now() - Duration::hours(1);
-        let recent_accesses = self.analysis_history
+        let recent_accesses = self
+            .analysis_history
             .iter()
             .filter(|event| {
                 if let AnalyticsEvent::MemoryAccess { timestamp, .. } = event {
@@ -544,14 +602,20 @@ impl MemoryIntelligenceEngine {
             .count();
 
         // Check against baseline
-        let baseline_accesses = self.baseline_metrics.get("hourly_accesses").unwrap_or(&10.0);
-        
+        let baseline_accesses = self
+            .baseline_metrics
+            .get("hourly_accesses")
+            .unwrap_or(&10.0);
+
         if recent_accesses as f64 > baseline_accesses * 3.0 {
             let anomaly = AnomalyDetection {
                 anomaly_id: Uuid::new_v4().to_string(),
                 anomaly_type: AnomalyType::AccessPattern,
                 severity: AnomalySeverity::High,
-                description: format!("Unusual spike in access patterns: {} accesses in the last hour", recent_accesses),
+                description: format!(
+                    "Unusual spike in access patterns: {} accesses in the last hour",
+                    recent_accesses
+                ),
                 affected_component: "memory_access_system".to_string(),
                 anomaly_score: recent_accesses as f64 / baseline_accesses,
                 detected_at: Utc::now(),
@@ -576,7 +640,12 @@ impl MemoryIntelligenceEngine {
         let mut count = 0;
 
         for event in &self.analysis_history {
-            if let AnalyticsEvent::SearchQuery { response_time_ms, timestamp, .. } = event {
+            if let AnalyticsEvent::SearchQuery {
+                response_time_ms,
+                timestamp,
+                ..
+            } = event
+            {
                 if *timestamp > recent_threshold {
                     total_time += *response_time_ms as f64;
                     count += 1;
@@ -586,7 +655,10 @@ impl MemoryIntelligenceEngine {
 
         if count > 0 {
             let avg_recent = total_time / count as f64;
-            let baseline = *self.baseline_metrics.get("avg_response_time_ms").unwrap_or(&100.0);
+            let baseline = *self
+                .baseline_metrics
+                .get("avg_response_time_ms")
+                .unwrap_or(&100.0);
             if avg_recent > baseline * 2.0 {
                 anomalies.push(AnomalyDetection {
                     anomaly_id: Uuid::new_v4().to_string(),
@@ -612,7 +684,13 @@ impl MemoryIntelligenceEngine {
         let mut anomalies = Vec::new();
 
         for event in &self.analysis_history {
-            if let AnalyticsEvent::MemoryModification { memory_key, change_magnitude, timestamp, .. } = event {
+            if let AnalyticsEvent::MemoryModification {
+                memory_key,
+                change_magnitude,
+                timestamp,
+                ..
+            } = event
+            {
                 if *change_magnitude > 0.9 {
                     anomalies.push(AnomalyDetection {
                         anomaly_id: Uuid::new_v4().to_string(),
@@ -637,7 +715,8 @@ impl MemoryIntelligenceEngine {
     /// Update baseline metrics
     pub async fn update_baseline_metrics(&mut self) -> Result<()> {
         // Calculate baseline access rate
-        let total_accesses = self.analysis_history
+        let total_accesses = self
+            .analysis_history
             .iter()
             .filter(|event| matches!(event, AnalyticsEvent::MemoryAccess { .. }))
             .count();
@@ -645,11 +724,15 @@ impl MemoryIntelligenceEngine {
         if !self.analysis_history.is_empty() {
             let time_span_hours = 24.0; // Assume 24 hours of data
             let hourly_access_rate = total_accesses as f64 / time_span_hours;
-            self.baseline_metrics.insert("hourly_accesses".to_string(), hourly_access_rate);
+            self.baseline_metrics
+                .insert("hourly_accesses".to_string(), hourly_access_rate);
 
             let (mut total_rt, mut rt_count) = (0.0, 0);
             for event in &self.analysis_history {
-                if let AnalyticsEvent::SearchQuery { response_time_ms, .. } = event {
+                if let AnalyticsEvent::SearchQuery {
+                    response_time_ms, ..
+                } = event
+                {
                     total_rt += *response_time_ms as f64;
                     rt_count += 1;
                 }
@@ -668,16 +751,14 @@ impl MemoryIntelligenceEngine {
     /// Process analytics event for intelligence analysis
     pub async fn process_event(&mut self, event: &AnalyticsEvent) -> Result<()> {
         self.analysis_history.push(event.clone());
-        
+
         // Keep only recent history
         let cutoff_time = Utc::now() - Duration::days(7);
-        self.analysis_history.retain(|event| {
-            match event {
-                AnalyticsEvent::MemoryAccess { timestamp, .. } => *timestamp > cutoff_time,
-                AnalyticsEvent::MemoryModification { timestamp, .. } => *timestamp > cutoff_time,
-                AnalyticsEvent::SearchQuery { timestamp, .. } => *timestamp > cutoff_time,
-                AnalyticsEvent::RelationshipDiscovery { timestamp, .. } => *timestamp > cutoff_time,
-            }
+        self.analysis_history.retain(|event| match event {
+            AnalyticsEvent::MemoryAccess { timestamp, .. } => *timestamp > cutoff_time,
+            AnalyticsEvent::MemoryModification { timestamp, .. } => *timestamp > cutoff_time,
+            AnalyticsEvent::SearchQuery { timestamp, .. } => *timestamp > cutoff_time,
+            AnalyticsEvent::RelationshipDiscovery { timestamp, .. } => *timestamp > cutoff_time,
         });
 
         Ok(())
@@ -777,34 +858,68 @@ impl MemoryIntelligenceEngine {
         let avg_sentence_length = if sentences.is_empty() {
             0.0
         } else {
-            sentences.iter().map(|s| s.split_whitespace().count()).sum::<usize>() as f64 / sentences.len() as f64
+            sentences
+                .iter()
+                .map(|s| s.split_whitespace().count())
+                .sum::<usize>() as f64
+                / sentences.len() as f64
         };
         let sentence_complexity = (avg_sentence_length / 20.0).min(1.0); // Normalize to 0-1
         complexity_score += sentence_complexity;
         factor_count += 1;
 
         // 4. Punctuation density (complex punctuation indicates complex ideas)
-        let complex_punctuation = content.chars().filter(|c| matches!(c, ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}')).count();
-        let punctuation_complexity = (complex_punctuation as f64 / content.len() as f64 * 100.0).min(1.0);
+        let complex_punctuation = content
+            .chars()
+            .filter(|c| matches!(c, ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}'))
+            .count();
+        let punctuation_complexity =
+            (complex_punctuation as f64 / content.len() as f64 * 100.0).min(1.0);
         complexity_score += punctuation_complexity;
         factor_count += 1;
 
         // 5. Technical term density (words with numbers, capitals, special chars)
-        let technical_terms = words.iter().filter(|w| {
-            w.chars().any(|c| c.is_numeric()) ||
-            w.chars().any(|c| c.is_uppercase()) ||
-            w.contains('_') || w.contains('-')
-        }).count();
-        let technical_complexity = if words.is_empty() { 0.0 } else { (technical_terms as f64 / words.len() as f64).min(1.0) };
+        let technical_terms = words
+            .iter()
+            .filter(|w| {
+                w.chars().any(|c| c.is_numeric())
+                    || w.chars().any(|c| c.is_uppercase())
+                    || w.contains('_')
+                    || w.contains('-')
+            })
+            .count();
+        let technical_complexity = if words.is_empty() {
+            0.0
+        } else {
+            (technical_terms as f64 / words.len() as f64).min(1.0)
+        };
         complexity_score += technical_complexity;
         factor_count += 1;
 
         // 6. Concept density (based on abstract vs concrete words)
-        let abstract_indicators = ["concept", "idea", "theory", "principle", "approach", "methodology", "framework", "paradigm"];
-        let abstract_count = words.iter().filter(|w| {
-            abstract_indicators.iter().any(|indicator| w.to_lowercase().contains(indicator))
-        }).count();
-        let concept_density = if words.is_empty() { 0.0 } else { (abstract_count as f64 / words.len() as f64 * 10.0).min(1.0) };
+        let abstract_indicators = [
+            "concept",
+            "idea",
+            "theory",
+            "principle",
+            "approach",
+            "methodology",
+            "framework",
+            "paradigm",
+        ];
+        let abstract_count = words
+            .iter()
+            .filter(|w| {
+                abstract_indicators
+                    .iter()
+                    .any(|indicator| w.to_lowercase().contains(indicator))
+            })
+            .count();
+        let concept_density = if words.is_empty() {
+            0.0
+        } else {
+            (abstract_count as f64 / words.len() as f64 * 10.0).min(1.0)
+        };
         complexity_score += concept_density;
         factor_count += 1;
 
@@ -823,8 +938,13 @@ impl MemoryIntelligenceEngine {
     }
 
     /// Calculate temporal consistency using sophisticated analysis
-    async fn calculate_temporal_consistency(&self, memory_entry: &MemoryEntry, events: &[AnalyticsEvent]) -> Result<f64> {
-        let memory_events: Vec<&AnalyticsEvent> = events.iter()
+    async fn calculate_temporal_consistency(
+        &self,
+        memory_entry: &MemoryEntry,
+        events: &[AnalyticsEvent],
+    ) -> Result<f64> {
+        let memory_events: Vec<&AnalyticsEvent> = events
+            .iter()
             .filter(|e| e.memory_key() == Some(&memory_entry.key))
             .collect();
 
@@ -837,17 +957,23 @@ impl MemoryIntelligenceEngine {
         // 1. Access interval consistency (regular vs irregular access patterns)
         let mut intervals = Vec::new();
         for i in 1..memory_events.len() {
-            let interval = memory_events[i].timestamp() - memory_events[i-1].timestamp();
+            let interval = memory_events[i].timestamp() - memory_events[i - 1].timestamp();
             intervals.push(interval.num_seconds().abs() as f64);
         }
 
         if !intervals.is_empty() {
             let mean_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
-            let variance = intervals.iter()
+            let variance = intervals
+                .iter()
                 .map(|x| (x - mean_interval).powi(2))
-                .sum::<f64>() / intervals.len() as f64;
+                .sum::<f64>()
+                / intervals.len() as f64;
             let std_dev = variance.sqrt();
-            let coefficient_of_variation = if mean_interval > 0.0 { std_dev / mean_interval } else { 1.0 };
+            let coefficient_of_variation = if mean_interval > 0.0 {
+                std_dev / mean_interval
+            } else {
+                1.0
+            };
 
             // Lower coefficient of variation = higher consistency
             let interval_consistency = (1.0 - coefficient_of_variation.min(1.0)).max(0.0);
@@ -855,22 +981,27 @@ impl MemoryIntelligenceEngine {
         }
 
         // 2. Time-of-day consistency
-        let hours: Vec<u32> = memory_events.iter()
-            .map(|e| e.timestamp().hour())
-            .collect();
+        let hours: Vec<u32> = memory_events.iter().map(|e| e.timestamp().hour()).collect();
 
         if !hours.is_empty() {
-            let hour_counts = hours.iter().fold(std::collections::HashMap::new(), |mut acc, &h| {
-                *acc.entry(h).or_insert(0) += 1;
-                acc
-            });
+            let hour_counts = hours
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, &h| {
+                    *acc.entry(h).or_insert(0) += 1;
+                    acc
+                });
 
             // Calculate entropy of hour distribution (lower entropy = more consistent)
             let total = hours.len() as f64;
-            let entropy = hour_counts.values()
+            let entropy = hour_counts
+                .values()
                 .map(|&count| {
                     let p = count as f64 / total;
-                    if p > 0.0 { -p * p.log2() } else { 0.0 }
+                    if p > 0.0 {
+                        -p * p.log2()
+                    } else {
+                        0.0
+                    }
                 })
                 .sum::<f64>();
 
@@ -887,8 +1018,12 @@ impl MemoryIntelligenceEngine {
             consistency_factors.iter().sum::<f64>() / consistency_factors.len() as f64
         };
 
-        tracing::debug!("Temporal consistency calculated for memory '{}': {} (factors: {})",
-            memory_entry.key, final_consistency, consistency_factors.len());
+        tracing::debug!(
+            "Temporal consistency calculated for memory '{}': {} (factors: {})",
+            memory_entry.key,
+            final_consistency,
+            consistency_factors.len()
+        );
 
         Ok(final_consistency.min(1.0))
     }
@@ -913,14 +1048,22 @@ impl MemoryIntelligenceEngine {
             0.0
         };
 
-        tracing::debug!("User diversity calculated: {} (unique users: {}, total events: {})",
-            diversity_score, user_contexts.len(), total_events);
+        tracing::debug!(
+            "User diversity calculated: {} (unique users: {}, total events: {})",
+            diversity_score,
+            user_contexts.len(),
+            total_events
+        );
 
         Ok(diversity_score.min(1.0))
     }
 
     /// Calculate context diversity using content and metadata analysis
-    async fn calculate_context_diversity(&self, memory_entry: &MemoryEntry, events: &[AnalyticsEvent]) -> Result<f64> {
+    async fn calculate_context_diversity(
+        &self,
+        memory_entry: &MemoryEntry,
+        events: &[AnalyticsEvent],
+    ) -> Result<f64> {
         let mut diversity_factors = Vec::new();
 
         // 1. Tag diversity (if memory has tags)
@@ -929,7 +1072,8 @@ impl MemoryIntelligenceEngine {
         diversity_factors.push(tag_diversity);
 
         // 2. Access type diversity
-        let access_types: std::collections::HashSet<_> = events.iter()
+        let access_types: std::collections::HashSet<_> = events
+            .iter()
             .filter_map(|e| {
                 if let AnalyticsEvent::MemoryAccess { access_type, .. } = e {
                     Some(access_type)
@@ -942,18 +1086,23 @@ impl MemoryIntelligenceEngine {
         diversity_factors.push(access_type_diversity);
 
         // 3. Temporal diversity (spread across different times)
-        let hours: std::collections::HashSet<_> = events.iter()
-            .map(|e| e.timestamp().hour())
-            .collect();
+        let hours: std::collections::HashSet<_> =
+            events.iter().map(|e| e.timestamp().hour()).collect();
         let temporal_diversity = (hours.len() as f64 / 24.0).min(1.0); // Normalize to 24 hours
         diversity_factors.push(temporal_diversity);
 
         // 4. Content type diversity (based on content characteristics)
         let content = &memory_entry.value;
         let has_numbers = content.chars().any(|c| c.is_numeric());
-        let has_special_chars = content.chars().any(|c| !c.is_alphanumeric() && !c.is_whitespace());
+        let has_special_chars = content
+            .chars()
+            .any(|c| !c.is_alphanumeric() && !c.is_whitespace());
         let has_uppercase = content.chars().any(|c| c.is_uppercase());
-        let content_type_diversity = [has_numbers, has_special_chars, has_uppercase].iter().filter(|&&x| x).count() as f64 / 3.0;
+        let content_type_diversity = [has_numbers, has_special_chars, has_uppercase]
+            .iter()
+            .filter(|&&x| x)
+            .count() as f64
+            / 3.0;
         diversity_factors.push(content_type_diversity);
 
         let final_diversity = if diversity_factors.is_empty() {
@@ -962,8 +1111,12 @@ impl MemoryIntelligenceEngine {
             diversity_factors.iter().sum::<f64>() / diversity_factors.len() as f64
         };
 
-        tracing::debug!("Context diversity calculated for memory '{}': {} (factors: {})",
-            memory_entry.key, final_diversity, diversity_factors.len());
+        tracing::debug!(
+            "Context diversity calculated for memory '{}': {} (factors: {})",
+            memory_entry.key,
+            final_diversity,
+            diversity_factors.len()
+        );
 
         Ok(final_diversity.min(1.0))
     }
@@ -973,7 +1126,8 @@ impl MemoryIntelligenceEngine {
         let mut collaboration_indicators = Vec::new();
 
         // 1. Multiple user access (indicates sharing/collaboration)
-        let unique_users: std::collections::HashSet<_> = events.iter()
+        let unique_users: std::collections::HashSet<_> = events
+            .iter()
             .filter_map(|e| {
                 if let AnalyticsEvent::MemoryAccess { user_context, .. } = e {
                     user_context.as_ref()
@@ -991,21 +1145,24 @@ impl MemoryIntelligenceEngine {
         collaboration_indicators.push(multi_user_score);
 
         // 2. Modification frequency (indicates active collaboration)
-        let modification_count = events.iter()
+        let modification_count = events
+            .iter()
             .filter(|e| matches!(e, AnalyticsEvent::MemoryModification { .. }))
             .count();
         let modification_score = (modification_count as f64 / 10.0).min(1.0); // Normalize to max 10 modifications
         collaboration_indicators.push(modification_score);
 
         // 3. Relationship discovery (indicates connections to other memories)
-        let relationship_count = events.iter()
+        let relationship_count = events
+            .iter()
             .filter(|e| matches!(e, AnalyticsEvent::RelationshipDiscovery { .. }))
             .count();
         let relationship_score = (relationship_count as f64 / 5.0).min(1.0); // Normalize to max 5 relationships
         collaboration_indicators.push(relationship_score);
 
         // 4. Access frequency (high access might indicate collaboration)
-        let access_count = events.iter()
+        let access_count = events
+            .iter()
             .filter(|e| matches!(e, AnalyticsEvent::MemoryAccess { .. }))
             .count();
         let access_frequency_score = if access_count > 10 {
@@ -1045,8 +1202,13 @@ impl MemoryIntelligenceEngine {
 
         // 2. Vocabulary uniqueness (rare words indicate uniqueness)
         let words: Vec<&str> = content.split_whitespace().collect();
-        let common_words = ["the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "this", "that", "these", "those"];
-        let uncommon_word_count = words.iter()
+        let common_words = [
+            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is",
+            "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will",
+            "would", "could", "should", "may", "might", "can", "this", "that", "these", "those",
+        ];
+        let uncommon_word_count = words
+            .iter()
             .filter(|word| !common_words.contains(&word.to_lowercase().as_str()))
             .count();
         let vocabulary_uniqueness = if words.is_empty() {
@@ -1057,7 +1219,10 @@ impl MemoryIntelligenceEngine {
         uniqueness_factors.push(vocabulary_uniqueness);
 
         // 3. Special character uniqueness
-        let special_chars = content.chars().filter(|c| !c.is_alphanumeric() && !c.is_whitespace()).count();
+        let special_chars = content
+            .chars()
+            .filter(|c| !c.is_alphanumeric() && !c.is_whitespace())
+            .count();
         let special_char_uniqueness = (special_chars as f64 / content.len() as f64 * 10.0).min(1.0);
         uniqueness_factors.push(special_char_uniqueness);
 
@@ -1105,11 +1270,18 @@ mod tests {
         let config = AnalyticsConfig::default();
         let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
-        let memory_entry = MemoryEntry::new("test_key".to_string(), "This is a test memory with some complex content for analysis".to_string(), crate::memory::types::MemoryType::ShortTerm);
+        let memory_entry = MemoryEntry::new(
+            "test_key".to_string(),
+            "This is a test memory with some complex content for analysis".to_string(),
+            crate::memory::types::MemoryType::ShortTerm,
+        );
         let relationships = vec![("related_key".to_string(), 0.8)];
 
-        let intelligence = engine.analyze_memory_intelligence("test_key", &memory_entry, &relationships).await.expect("await should be present");
-        
+        let intelligence = engine
+            .analyze_memory_intelligence("test_key", &memory_entry, &relationships)
+            .await
+            .expect("await should be present");
+
         assert!(intelligence.intelligence_score >= 0.0);
         assert!(intelligence.intelligence_score <= 1.0);
         assert_eq!(intelligence.memory_key, "test_key");
@@ -1128,10 +1300,16 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("test_user".to_string()),
             };
-            engine.process_event(&event).await.expect("await should be present");
+            engine
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
-        let patterns = engine.recognize_patterns().await.expect("await should be present");
+        let patterns = engine
+            .recognize_patterns()
+            .await
+            .expect("await should be present");
         assert!(patterns.len() > 0);
     }
 
@@ -1141,7 +1319,9 @@ mod tests {
         let mut engine = MemoryIntelligenceEngine::new(&config).expect("value should be available");
 
         // Set baseline
-        engine.baseline_metrics.insert("hourly_accesses".to_string(), 5.0);
+        engine
+            .baseline_metrics
+            .insert("hourly_accesses".to_string(), 5.0);
 
         // Add many events to trigger anomaly
         for i in 0..20 {
@@ -1151,12 +1331,20 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("test_user".to_string()),
             };
-            engine.process_event(&event).await.expect("await should be present");
+            engine
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
-        let anomalies = engine.detect_anomalies().await.expect("await should be present");
+        let anomalies = engine
+            .detect_anomalies()
+            .await
+            .expect("await should be present");
         assert!(!anomalies.is_empty());
-        assert!(anomalies.iter().any(|a| a.anomaly_type == AnomalyType::AccessPattern));
+        assert!(anomalies
+            .iter()
+            .any(|a| a.anomaly_type == AnomalyType::AccessPattern));
     }
 
     #[tokio::test]
@@ -1188,7 +1376,10 @@ mod tests {
             recommended_actions: vec!["noop".to_string()],
         });
 
-        let insights = engine.generate_insights().await.expect("await should be present");
+        let insights = engine
+            .generate_insights()
+            .await
+            .expect("await should be present");
         assert!(insights.len() > 0);
     }
 }

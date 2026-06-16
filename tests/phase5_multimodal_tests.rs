@@ -8,31 +8,31 @@ use synaptic::multimodal::{
     code::CodeMemoryProcessor,
     cross_modal::{CrossModalAnalyzer, CrossModalConfig},
     image::ImageMemoryProcessor,
-    unified::{UnifiedMultiModalMemory, UnifiedMultiModalConfig, MultiModalQuery},
-    ContentType, ImageFormat, AudioFormat, CodeLanguage, MultiModalProcessor,
+    unified::{MultiModalQuery, UnifiedMultiModalConfig, UnifiedMultiModalMemory},
+    AudioFormat, CodeLanguage, ContentType, ImageFormat, MultiModalProcessor,
 };
 
 #[cfg(feature = "cross-platform")]
 use synaptic::cross_platform::{
-    CrossPlatformMemoryManager, CrossPlatformConfig, Platform, PlatformFeature,
     offline::{OfflineAdapter, OfflineConfig},
-    sync::{SyncManager, SyncConfig, SyncOperation},
+    sync::{SyncConfig, SyncManager, SyncOperation},
+    CrossPlatformConfig, CrossPlatformMemoryManager, Platform, PlatformFeature,
 };
 
-use synaptic::{AgentMemory, MemoryConfig};
 use std::sync::Arc;
+use synaptic::{AgentMemory, MemoryConfig};
 use tokio::sync::RwLock;
 
 #[cfg(feature = "image-memory")]
 #[tokio::test]
 async fn test_image_memory_processor() {
     let processor = ImageMemoryProcessor::new(Default::default()).unwrap();
-    
+
     // Test format detection
     let png_header = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     let format = processor.detect_format(&png_header).unwrap();
     assert_eq!(format, ImageFormat::Png);
-    
+
     let jpeg_header = vec![0xFF, 0xD8, 0xFF];
     let format = processor.detect_format(&jpeg_header).unwrap();
     assert_eq!(format, ImageFormat::Jpeg);
@@ -59,7 +59,10 @@ async fn test_image_ocr_extraction() {
 
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgba8(img)
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageOutputFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageOutputFormat::Png,
+        )
         .unwrap();
 
     let memory = processor
@@ -85,12 +88,12 @@ async fn test_image_ocr_extraction() {
 #[tokio::test]
 async fn test_audio_memory_processor() {
     let processor = AudioMemoryProcessor::new(Default::default()).unwrap();
-    
+
     // Test format detection
     let wav_header = b"RIFF\x00\x00\x00\x00WAVE";
     let format = processor.detect_format(wav_header).unwrap();
     assert_eq!(format, AudioFormat::Wav);
-    
+
     let mp3_header = vec![0xFF, 0xE0]; // MP3 sync frame
     let format = processor.detect_format(&mp3_header).unwrap();
     assert_eq!(format, AudioFormat::Mp3);
@@ -134,7 +137,7 @@ async fn test_audio_transcription_output() {
 #[tokio::test]
 async fn test_code_memory_processor() {
     let processor = CodeMemoryProcessor::new(Default::default()).unwrap();
-    
+
     // Test language detection
     let rust_code = r#"
         fn main() {
@@ -143,7 +146,7 @@ async fn test_code_memory_processor() {
     "#;
     let language = processor.detect_language(rust_code, Some("main.rs"));
     assert_eq!(language, CodeLanguage::Rust);
-    
+
     let python_code = r#"
         def main():
             print("Hello, world!")
@@ -153,7 +156,7 @@ async fn test_code_memory_processor() {
     "#;
     let language = processor.detect_language(python_code, Some("main.py"));
     assert_eq!(language, CodeLanguage::Python);
-    
+
     let javascript_code = r#"
         function main() {
             console.log("Hello, world!");
@@ -169,7 +172,7 @@ async fn test_code_memory_processor() {
 #[tokio::test]
 async fn test_code_dependency_extraction() {
     let processor = CodeMemoryProcessor::new(Default::default()).unwrap();
-    
+
     let rust_code = r#"
         use std::collections::HashMap;
         use serde::{Serialize, Deserialize};
@@ -179,7 +182,7 @@ async fn test_code_dependency_extraction() {
             println!("Hello, world!");
         }
     "#;
-    
+
     let dependencies = processor.extract_dependencies(rust_code, &CodeLanguage::Rust);
     assert!(dependencies.contains(&"serde".to_string()));
     assert!(dependencies.contains(&"tokio".to_string()));
@@ -190,7 +193,7 @@ async fn test_code_dependency_extraction() {
 #[tokio::test]
 async fn test_code_complexity_metrics() {
     let processor = CodeMemoryProcessor::new(Default::default()).unwrap();
-    
+
     let complex_code = r#"
         fn complex_function(x: i32) -> i32 {
             if x > 10 {
@@ -210,10 +213,10 @@ async fn test_code_complexity_metrics() {
             }
         }
     "#;
-    
+
     let functions = vec![]; // Would be extracted from AST in real implementation
     let metrics = processor.calculate_complexity_metrics(complex_code, &functions);
-    
+
     assert!(metrics.lines_of_code > 0);
     assert!(metrics.maintainability_index <= 100.0);
     assert!(metrics.maintainability_index >= 0.0);
@@ -268,12 +271,14 @@ async fn test_cross_modal_analyzer() {
 #[tokio::test]
 async fn test_unified_multimodal_memory() {
     let core_memory = Arc::new(RwLock::new(
-        AgentMemory::new(MemoryConfig::default()).await.unwrap()
+        AgentMemory::new(MemoryConfig::default()).await.unwrap(),
     ));
-    
+
     let config = UnifiedMultiModalConfig::default();
-    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, config).await.unwrap();
-    
+    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, config)
+        .await
+        .unwrap();
+
     // Test statistics
     let stats = multimodal_memory.get_statistics().await.unwrap();
     assert_eq!(stats.total_memories, 0);
@@ -284,12 +289,14 @@ async fn test_unified_multimodal_memory() {
 #[tokio::test]
 async fn test_multimodal_search() {
     let core_memory = Arc::new(RwLock::new(
-        AgentMemory::new(MemoryConfig::default()).await.unwrap()
+        AgentMemory::new(MemoryConfig::default()).await.unwrap(),
     ));
-    
+
     let config = UnifiedMultiModalConfig::default();
-    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, config).await.unwrap();
-    
+    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, config)
+        .await
+        .unwrap();
+
     let query = MultiModalQuery {
         content: b"test content".to_vec(),
         content_type: None,
@@ -298,7 +305,7 @@ async fn test_multimodal_search() {
         max_results: 10,
         include_relationships: true,
     };
-    
+
     let results = multimodal_memory.search_multimodal(query).await.unwrap();
     assert_eq!(results.len(), 0); // No content stored yet
 }
@@ -308,18 +315,22 @@ async fn test_multimodal_search() {
 async fn test_cross_platform_manager() {
     let config = CrossPlatformConfig::default();
     let manager = CrossPlatformMemoryManager::new(config).unwrap();
-    
+
     // Test platform info
     let platform_info = manager.get_platform_info().unwrap();
     assert!(matches!(
         platform_info.platform,
         Platform::Desktop | Platform::Server | Platform::WebAssembly
     ));
-    
+
     // Test feature support
-    let supports_file_access = manager.supports_feature(PlatformFeature::FileSystemAccess).unwrap();
-    let supports_network = manager.supports_feature(PlatformFeature::NetworkAccess).unwrap();
-    
+    let supports_file_access = manager
+        .supports_feature(PlatformFeature::FileSystemAccess)
+        .unwrap();
+    let supports_network = manager
+        .supports_feature(PlatformFeature::NetworkAccess)
+        .unwrap();
+
     // These should be true for most platforms
     assert!(supports_network);
 }
@@ -328,18 +339,18 @@ async fn test_cross_platform_manager() {
 #[tokio::test]
 async fn test_offline_adapter() {
     let adapter = OfflineAdapter::new().unwrap();
-    
+
     // Test storage operations
     let test_data = b"test data for offline storage";
     adapter.store("test_key", test_data).unwrap();
-    
+
     let retrieved = adapter.retrieve("test_key").unwrap();
     assert_eq!(retrieved, Some(test_data.to_vec()));
-    
+
     // Test deletion
     let deleted = adapter.delete("test_key").unwrap();
     assert!(deleted);
-    
+
     let retrieved_after_delete = adapter.retrieve("test_key").unwrap();
     assert_eq!(retrieved_after_delete, None);
 }
@@ -349,14 +360,18 @@ async fn test_offline_adapter() {
 async fn test_sync_manager() {
     let config = SyncConfig::default();
     let manager = SyncManager::new(config).unwrap();
-    
+
     // Test sync operation creation
-    let store_op = SyncManager::create_store_operation(
-        "test_key".to_string(),
-        b"test_data".to_vec(),
-    );
-    
-    if let SyncOperation::Store { key, data, timestamp, checksum } = store_op {
+    let store_op =
+        SyncManager::create_store_operation("test_key".to_string(), b"test_data".to_vec());
+
+    if let SyncOperation::Store {
+        key,
+        data,
+        timestamp,
+        checksum,
+    } = store_op
+    {
         assert_eq!(key, "test_key");
         assert_eq!(data, b"test_data");
         assert!(timestamp > 0);
@@ -364,10 +379,10 @@ async fn test_sync_manager() {
     } else {
         panic!("Expected Store operation");
     }
-    
+
     // Test delete operation creation
     let delete_op = SyncManager::create_delete_operation("test_key".to_string());
-    
+
     if let SyncOperation::Delete { key, timestamp } = delete_op {
         assert_eq!(key, "test_key");
         assert!(timestamp > 0);
@@ -381,7 +396,7 @@ async fn test_sync_manager() {
 async fn test_sync_statistics() {
     let config = SyncConfig::default();
     let manager = SyncManager::new(config).unwrap();
-    
+
     let stats = manager.get_statistics().await;
     assert_eq!(stats.total_operations, 0);
     assert_eq!(stats.successful_operations, 0);
@@ -395,19 +410,21 @@ async fn test_sync_statistics() {
 async fn test_integrated_multimodal_cross_platform() {
     // Test integration between multimodal and cross-platform features
     let core_memory = Arc::new(RwLock::new(
-        AgentMemory::new(MemoryConfig::default()).await.unwrap()
+        AgentMemory::new(MemoryConfig::default()).await.unwrap(),
     ));
-    
+
     let multimodal_config = UnifiedMultiModalConfig::default();
-    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, multimodal_config).await.unwrap();
-    
+    let multimodal_memory = UnifiedMultiModalMemory::new(core_memory, multimodal_config)
+        .await
+        .unwrap();
+
     let cross_platform_config = CrossPlatformConfig::default();
     let cross_platform_manager = CrossPlatformMemoryManager::new(cross_platform_config).unwrap();
-    
+
     // Test that both systems can coexist
     let multimodal_stats = multimodal_memory.get_statistics().await.unwrap();
     let platform_info = cross_platform_manager.get_platform_info().unwrap();
-    
+
     assert_eq!(multimodal_stats.total_memories, 0);
     assert!(!platform_info.version.is_empty());
 }
@@ -469,23 +486,23 @@ async fn test_phase5_feature_flags() {
 #[tokio::test]
 async fn test_phase5_memory_config_integration() {
     let mut config = MemoryConfig::default();
-    
+
     #[cfg(feature = "multimodal")]
     {
         config.enable_multimodal = true;
         config.multimodal_config = Some(UnifiedMultiModalConfig::default());
     }
-    
+
     #[cfg(feature = "cross-platform")]
     {
         config.enable_cross_platform = true;
         config.cross_platform_config = Some(CrossPlatformConfig::default());
     }
-    
+
     // Test that memory system can be created with Phase 5 features enabled
     let memory = AgentMemory::new(config).await.unwrap();
     let stats = memory.stats();
-    
+
     assert_eq!(stats.short_term_count, 0);
     assert_eq!(stats.long_term_count, 0);
 }

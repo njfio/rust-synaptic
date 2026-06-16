@@ -72,7 +72,7 @@ impl JupyterIntegration {
         let notebook_dir = std::env::current_dir()
             .map_err(|e| SynapticError::IoError(format!("Failed to get current directory: {}", e)))?
             .join("notebooks");
-        
+
         std::fs::create_dir_all(&notebook_dir).map_err(|e| {
             SynapticError::IoError(format!("Failed to create notebook directory: {}", e))
         })?;
@@ -87,7 +87,7 @@ impl JupyterIntegration {
     /// Find Jupyter executable
     fn find_jupyter_executable() -> Result<String> {
         let candidates = vec!["jupyter", "jupyter-lab", "jupyter-notebook"];
-        
+
         for candidate in candidates {
             if let Ok(output) = std::process::Command::new(candidate)
                 .args(&["--version"])
@@ -99,7 +99,7 @@ impl JupyterIntegration {
                 }
             }
         }
-        
+
         Err(SynapticError::IntegrationError(
             "Could not find Jupyter executable".to_string()
         ))
@@ -110,15 +110,15 @@ impl JupyterIntegration {
         let notebook = self.generate_notebook_structure(config)?;
         let notebook_path = self.notebook_dir.join(format!("{}.ipynb", 
             config.title.replace(" ", "_").to_lowercase()));
-        
+
         let notebook_json = serde_json::to_string_pretty(&notebook).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to serialize notebook: {}", e))
         })?;
-        
+
         fs::write(&notebook_path, notebook_json).await.map_err(|e| {
             SynapticError::IoError(format!("Failed to write notebook: {}", e))
         })?;
-        
+
         info!("Created notebook: {}", notebook_path.display());
         Ok(notebook_path.to_string_lossy().to_string())
     }
@@ -127,15 +127,15 @@ impl JupyterIntegration {
     pub async fn add_cell(&self, notebook_path: &str, cell: NotebookCell) -> Result<()> {
         let mut notebook = self.load_notebook(notebook_path).await?;
         notebook.cells.push(cell);
-        
+
         let notebook_json = serde_json::to_string_pretty(&notebook).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to serialize notebook: {}", e))
         })?;
-        
+
         fs::write(notebook_path, notebook_json).await.map_err(|e| {
             SynapticError::IoError(format!("Failed to write notebook: {}", e))
         })?;
-        
+
         debug!("Added cell to notebook: {}", notebook_path);
         Ok(())
     }
@@ -143,7 +143,7 @@ impl JupyterIntegration {
     /// Execute notebook
     pub async fn execute_notebook(&self, notebook_path: &str) -> Result<ExecutionResults> {
         let start_time = std::time::Instant::now();
-        
+
         let output = AsyncCommand::new(&self.jupyter_path)
             .args(&[
                 "nbconvert",
@@ -159,7 +159,7 @@ impl JupyterIntegration {
             })?;
 
         let execution_time = start_time.elapsed().as_secs_f64();
-        
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             warn!("Notebook execution had issues: {}", stderr);
@@ -170,10 +170,10 @@ impl JupyterIntegration {
         let cells_executed = notebook.cells.iter()
             .filter(|cell| matches!(cell.cell_type, CellType::Code))
             .count();
-        
+
         let mut errors = Vec::new();
         let mut outputs = Vec::new();
-        
+
         for cell in &notebook.cells {
             if let Some(cell_outputs) = &cell.outputs {
                 for output in cell_outputs {
@@ -209,7 +209,7 @@ impl JupyterIntegration {
         };
 
         let notebook_path = self.create_notebook(&config).await?;
-        
+
         // Add analysis cells based on type
         match analysis_type {
             "memory_exploration" => {
@@ -237,7 +237,7 @@ impl JupyterIntegration {
     /// Start Jupyter server
     pub async fn start_jupyter_server(&self, port: Option<u16>) -> Result<String> {
         let port = port.unwrap_or(8888);
-        
+
         let output = AsyncCommand::new(&self.jupyter_path)
             .args(&[
                 "lab",
@@ -260,7 +260,7 @@ impl JupyterIntegration {
         let content = fs::read_to_string(notebook_path).await.map_err(|e| {
             SynapticError::IoError(format!("Failed to read notebook: {}", e))
         })?;
-        
+
         serde_json::from_str(&content).map_err(|e| {
             SynapticError::SerializationError(format!("Failed to parse notebook: {}", e))
         })
@@ -278,7 +278,7 @@ impl JupyterIntegration {
             "name": "python",
             "version": "3.8.0"
         }));
-        
+
         // Add custom metadata
         for (key, value) in &config.metadata {
             metadata.insert(key.clone(), value.clone());

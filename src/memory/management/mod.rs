@@ -7,29 +7,30 @@
 //! - Automatic optimization and cleanup
 //! - Memory analytics and insights
 
-pub mod summarization;
-pub mod search;
+pub mod analytics;
 pub mod lifecycle;
 pub mod optimization;
-pub mod analytics;
+pub mod search;
+pub mod summarization;
 
 // Re-export commonly used types
-pub use summarization::{MemorySummarizer, SummaryStrategy, SummaryResult, ConsolidationRule};
-pub use search::{AdvancedSearchEngine, SearchQuery, SearchFilter, SearchResult, RankingStrategy};
-pub use lifecycle::{MemoryLifecycleManager, LifecyclePolicy, MemoryStage, LifecycleEvent};
-pub use optimization::{MemoryOptimizer, OptimizationStrategy, OptimizationResult, PerformanceMetrics};
-pub use analytics::{MemoryAnalytics, AnalyticsReport, InsightType, TrendAnalysis};
+pub use analytics::{AnalyticsReport, InsightType, MemoryAnalytics, TrendAnalysis};
+pub use lifecycle::{LifecycleEvent, LifecyclePolicy, MemoryLifecycleManager, MemoryStage};
+pub use optimization::{
+    MemoryOptimizer, OptimizationResult, OptimizationStrategy, PerformanceMetrics,
+};
+pub use search::{AdvancedSearchEngine, RankingStrategy, SearchFilter, SearchQuery, SearchResult};
+pub use summarization::{ConsolidationRule, MemorySummarizer, SummaryResult, SummaryStrategy};
 
 use crate::error::Result;
-use crate::memory::types::{MemoryEntry, MemoryType};
-use crate::memory::temporal::{TemporalMemoryManager, ChangeType};
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::storage::Storage;
-use chrono::{DateTime, Utc, Duration, Timelike, Datelike};
+use crate::memory::temporal::{ChangeType, TemporalMemoryManager};
+use crate::memory::types::{MemoryEntry, MemoryType};
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
-
+use std::sync::Arc;
 
 /// Simple memory manager for basic operations and testing
 pub struct MemoryManager {
@@ -74,25 +75,37 @@ impl MemoryManager {
 
         // Strategy 1: Knowledge Graph Traversal
         if let Some(kg) = &self.knowledge_graph {
-            related_count += self.count_graph_related_memories(kg, memory, &mut processed_keys).await?;
+            related_count += self
+                .count_graph_related_memories(kg, memory, &mut processed_keys)
+                .await?;
         }
 
         // Strategy 2: Similarity-based matching
-        related_count += self.count_similarity_related_memories(memory, &processed_keys).await?;
+        related_count += self
+            .count_similarity_related_memories(memory, &processed_keys)
+            .await?;
 
         // Strategy 3: Tag-based relationships
-        related_count += self.count_tag_related_memories(memory, &processed_keys).await?;
+        related_count += self
+            .count_tag_related_memories(memory, &processed_keys)
+            .await?;
 
         // Strategy 4: Temporal proximity relationships
-        related_count += self.count_temporal_related_memories(memory, &processed_keys).await?;
+        related_count += self
+            .count_temporal_related_memories(memory, &processed_keys)
+            .await?;
 
         // Strategy 5: Pure content similarity (without temporal constraints)
-        related_count += self.count_content_related_memories(memory, &processed_keys).await?;
+        related_count += self
+            .count_content_related_memories(memory, &processed_keys)
+            .await?;
 
         let duration_ms = start_time.elapsed().as_millis();
         tracing::info!(
             "Found {} related memories for '{}' in {}ms",
-            related_count, memory.key, duration_ms
+            related_count,
+            memory.key,
+            duration_ms
         );
 
         Ok(related_count)
@@ -194,13 +207,18 @@ impl MemoryManager {
                     // Calculate cosine similarity
                     #[cfg(feature = "embeddings")]
                     let similarity = crate::memory::embeddings::similarity::cosine_similarity(
-                        &target_f64, &stored_f64
+                        &target_f64,
+                        &stored_f64,
                     );
 
                     #[cfg(not(feature = "embeddings"))]
                     let similarity = {
                         // Simple fallback similarity calculation when embeddings feature is disabled
-                        let dot_product: f64 = target_f64.iter().zip(stored_f64.iter()).map(|(x, y)| x * y).sum();
+                        let dot_product: f64 = target_f64
+                            .iter()
+                            .zip(stored_f64.iter())
+                            .map(|(x, y)| x * y)
+                            .sum();
                         let magnitude_a: f64 = target_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
                         let magnitude_b: f64 = stored_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
 
@@ -244,7 +262,8 @@ impl MemoryManager {
 
             // Calculate tag overlap using Jaccard similarity
             let memory_tags: std::collections::HashSet<_> = memory.metadata.tags.iter().collect();
-            let stored_tags: std::collections::HashSet<_> = stored_memory.metadata.tags.iter().collect();
+            let stored_tags: std::collections::HashSet<_> =
+                stored_memory.metadata.tags.iter().collect();
 
             let intersection = memory_tags.intersection(&stored_tags).count();
             let union = memory_tags.union(&stored_tags).count();
@@ -293,9 +312,11 @@ impl MemoryManager {
             // Check if within temporal window
             if time_diff <= time_window {
                 // Additional check: ensure some content similarity for temporal relationships
-                let content_similarity = self.calculate_content_similarity(&memory.value, &stored_memory.value);
+                let content_similarity =
+                    self.calculate_content_similarity(&memory.value, &stored_memory.value);
 
-                if content_similarity >= 0.1 { // Lower threshold for temporal relationships
+                if content_similarity >= 0.1 {
+                    // Lower threshold for temporal relationships
                     count += 1;
                 }
             }
@@ -322,7 +343,8 @@ impl MemoryManager {
             }
 
             // Calculate content similarity
-            let content_similarity = self.calculate_content_similarity(&memory.value, &stored_memory.value);
+            let content_similarity =
+                self.calculate_content_similarity(&memory.value, &stored_memory.value);
 
             // Use a lower threshold for pure content similarity
             if content_similarity >= 0.4 {
@@ -363,7 +385,6 @@ impl MemoryManager {
         intersection as f64 / union as f64
     }
 }
-
 
 /// Advanced memory management system providing sophisticated memory operations.
 ///
@@ -512,7 +533,6 @@ pub struct MemoryOperationResult {
     /// Any warnings or messages
     pub messages: Vec<String>,
 }
-
 
 /// Summarization trigger information
 #[derive(Debug, Clone)]
@@ -812,8 +832,6 @@ pub struct ContentQualityMetrics {
     pub metadata_completeness: f64,
 }
 
-
-
 /// User behavior cluster
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehaviorCluster {
@@ -926,7 +944,8 @@ impl AdvancedMemoryManager {
         let mut messages = Vec::new();
 
         // Track the change temporally
-        let _version_id = self.temporal_manager
+        let _version_id = self
+            .temporal_manager
             .track_memory_change(&memory, ChangeType::Created)
             .await?;
 
@@ -938,7 +957,9 @@ impl AdvancedMemoryManager {
 
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
-            self.lifecycle_manager.track_memory_creation(storage, &memory).await?;
+            self.lifecycle_manager
+                .track_memory_creation(storage, &memory)
+                .await?;
         }
 
         // Update analytics
@@ -948,15 +969,21 @@ impl AdvancedMemoryManager {
 
         // Check if summarization is needed
         if self.config.enable_auto_summarization {
-            let summarization_result = self.evaluate_summarization_triggers(&memory, knowledge_graph.as_deref()).await?;
+            let summarization_result = self
+                .evaluate_summarization_triggers(&memory, knowledge_graph.as_deref())
+                .await?;
             if let Some(trigger_info) = summarization_result {
                 messages.push(format!("Summarization triggered: {}", trigger_info.reason));
 
                 // Execute the summarization
-                let summary_result = self.execute_automatic_summarization(storage, trigger_info).await?;
-                messages.push(format!("Summarization completed: {} memories processed", summary_result.processed_count));
+                let summary_result = self
+                    .execute_automatic_summarization(storage, trigger_info)
+                    .await?;
+                messages.push(format!(
+                    "Summarization completed: {} memories processed",
+                    summary_result.processed_count
+                ));
             }
-
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -992,13 +1019,12 @@ impl AdvancedMemoryManager {
             new_value,
             MemoryType::ShortTerm, // This should be determined from existing memory
         );
-  
 
         // Track the change temporally
-        let version_id = self.temporal_manager
+        let version_id = self
+            .temporal_manager
             .track_memory_change(&updated_memory, ChangeType::Updated)
             .await?;
-
 
         // Update in knowledge graph if provided
         if let Some(kg) = knowledge_graph {
@@ -1008,7 +1034,9 @@ impl AdvancedMemoryManager {
 
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
-            self.lifecycle_manager.track_memory_update(storage, &updated_memory).await?;
+            self.lifecycle_manager
+                .track_memory_update(storage, &updated_memory)
+                .await?;
             messages.push("Lifecycle tracking updated".to_string());
         }
 
@@ -1047,18 +1075,14 @@ impl AdvancedMemoryManager {
         let mut messages = Vec::new();
 
         // Create a placeholder for the deleted memory
-        let deleted_memory = MemoryEntry::new(
-            memory_key.to_string(),
-            String::new(),
-            MemoryType::ShortTerm,
-        );
-
+        let deleted_memory =
+            MemoryEntry::new(memory_key.to_string(), String::new(), MemoryType::ShortTerm);
 
         // Track the deletion temporally
-        let version_id = self.temporal_manager
+        let version_id = self
+            .temporal_manager
             .track_memory_change(&deleted_memory, ChangeType::Deleted)
             .await?;
-
 
         // Remove from knowledge graph if provided
         if let Some(_kg) = knowledge_graph {
@@ -1071,7 +1095,9 @@ impl AdvancedMemoryManager {
 
         // Update lifecycle tracking
         if self.config.enable_lifecycle_management {
-            self.lifecycle_manager.track_memory_deletion(memory_key).await?;
+            self.lifecycle_manager
+                .track_memory_deletion(memory_key)
+                .await?;
             messages.push("Lifecycle tracking updated".to_string());
         }
 
@@ -1165,25 +1191,40 @@ impl AdvancedMemoryManager {
         let basic_stats = self.calculate_basic_stats(&all_memories).await?;
 
         // Calculate comprehensive analytics using real data processing
-        let analytics = self.calculate_advanced_analytics(storage, &all_memories).await?;
+        let analytics = self
+            .calculate_advanced_analytics(storage, &all_memories)
+            .await?;
 
         // Calculate comprehensive trend analysis using real algorithms
-        let trends = self.calculate_trend_analysis(storage, &all_memories).await?;
+        let trends = self
+            .calculate_trend_analysis(storage, &all_memories)
+            .await?;
 
         // Calculate comprehensive predictive metrics using real modeling
-        let predictions = self.calculate_predictive_metrics(storage, &all_memories).await?;
+        let predictions = self
+            .calculate_predictive_metrics(storage, &all_memories)
+            .await?;
 
         // Calculate comprehensive performance metrics using real measurement
-        let performance = self.calculate_performance_metrics(storage, &all_memories).await?;
+        let performance = self
+            .calculate_performance_metrics(storage, &all_memories)
+            .await?;
 
         // Calculate comprehensive content analysis using real NLP techniques
-        let content_analysis = self.calculate_content_analysis(storage, &all_memories).await?;
+        let content_analysis = self
+            .calculate_content_analysis(storage, &all_memories)
+            .await?;
 
         // Calculate comprehensive health indicators using real diagnostics
-        let health_indicators = self.calculate_health_indicators(storage, &all_memories).await?;
+        let health_indicators = self
+            .calculate_health_indicators(storage, &all_memories)
+            .await?;
 
         let calculation_time = start_time.elapsed();
-        tracing::info!("Comprehensive memory statistics calculated in {:?}", calculation_time);
+        tracing::info!(
+            "Comprehensive memory statistics calculated in {:?}",
+            calculation_time
+        );
 
         Ok(MemoryManagementStats {
             basic_stats,
@@ -1202,7 +1243,8 @@ impl AdvancedMemoryManager {
 
         // Calculate active memories (accessed within last 7 days)
         let cutoff_time = chrono::Utc::now() - chrono::Duration::days(7);
-        let active_memories = memories.iter()
+        let active_memories = memories
+            .iter()
             .filter(|m| m.metadata.last_accessed > cutoff_time)
             .count();
 
@@ -1222,7 +1264,8 @@ impl AdvancedMemoryManager {
         };
 
         // Calculate average memory age
-        let total_age_days: f64 = memories.iter()
+        let total_age_days: f64 = memories
+            .iter()
             .map(|m| (chrono::Utc::now() - m.metadata.created_at).num_days() as f64)
             .sum();
         let avg_memory_age_days = if total_memories > 0 {
@@ -1294,7 +1337,10 @@ impl AdvancedMemoryManager {
         knowledge_graph: Option<&MemoryKnowledgeGraph>,
     ) -> Result<Option<SummarizationTrigger>> {
         let start_time = std::time::Instant::now();
-        tracing::debug!("Evaluating summarization triggers for memory: {}", memory.key);
+        tracing::debug!(
+            "Evaluating summarization triggers for memory: {}",
+            memory.key
+        );
 
         // Strategy 1: Storage optimization trigger (highest priority for very large memories)
         if let Some(trigger) = self.check_storage_optimization_trigger(memory).await? {
@@ -1302,7 +1348,10 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 2: Semantic density analysis (high priority for dense content)
-        if let Some(trigger) = self.check_semantic_density_trigger(memory, knowledge_graph).await? {
+        if let Some(trigger) = self
+            .check_semantic_density_trigger(memory, knowledge_graph)
+            .await?
+        {
             return Ok(Some(trigger));
         }
 
@@ -1322,26 +1371,40 @@ impl AdvancedMemoryManager {
         }
 
         let duration_ms = start_time.elapsed().as_millis();
-        tracing::debug!("Summarization trigger evaluation completed in {}ms - no triggers activated", duration_ms);
+        tracing::debug!(
+            "Summarization trigger evaluation completed in {}ms - no triggers activated",
+            duration_ms
+        );
 
         Ok(None)
     }
 
     /// Check if related memory count exceeds threshold
-    async fn check_related_memory_threshold(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+    async fn check_related_memory_threshold(
+        &self,
+        memory: &MemoryEntry,
+    ) -> Result<Option<SummarizationTrigger>> {
         // For now, we'll use a simplified approach since we don't have direct storage access
         // In a real implementation, this would query the storage system
         let related_count = 5; // Placeholder - would be calculated from actual storage
 
         if related_count >= self.config.summarization_threshold {
-            let confidence = (related_count as f64 / (self.config.summarization_threshold as f64 * 2.0)).min(1.0);
+            let confidence = (related_count as f64
+                / (self.config.summarization_threshold as f64 * 2.0))
+                .min(1.0);
 
             let mut metadata = std::collections::HashMap::new();
             metadata.insert("related_count".to_string(), related_count.to_string());
-            metadata.insert("threshold".to_string(), self.config.summarization_threshold.to_string());
+            metadata.insert(
+                "threshold".to_string(),
+                self.config.summarization_threshold.to_string(),
+            );
 
             return Ok(Some(SummarizationTrigger {
-                reason: format!("Related memory count ({}) exceeds threshold ({})", related_count, self.config.summarization_threshold),
+                reason: format!(
+                    "Related memory count ({}) exceeds threshold ({})",
+                    related_count, self.config.summarization_threshold
+                ),
                 related_memory_keys: vec![memory.key.clone()], // This would be expanded with actual related keys
                 trigger_type: SummarizationTriggerType::RelatedMemoryThreshold,
                 confidence,
@@ -1353,10 +1416,17 @@ impl AdvancedMemoryManager {
     }
 
     /// Check if content complexity warrants summarization
-    async fn check_content_complexity_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+    async fn check_content_complexity_trigger(
+        &self,
+        memory: &MemoryEntry,
+    ) -> Result<Option<SummarizationTrigger>> {
         let content_length = memory.value.len();
         let word_count = memory.value.split_whitespace().count();
-        let sentence_count = memory.value.split(&['.', '!', '?']).filter(|s| !s.trim().is_empty()).count();
+        let sentence_count = memory
+            .value
+            .split(&['.', '!', '?'])
+            .filter(|s| !s.trim().is_empty())
+            .count();
 
         // Calculate complexity metrics
         let avg_word_length = if word_count > 0 {
@@ -1372,19 +1442,27 @@ impl AdvancedMemoryManager {
         };
 
         // Complexity thresholds (higher threshold to avoid false positives)
-        let complexity_score = (avg_word_length / 6.0) + (avg_sentence_length / 20.0) + (content_length as f64 / 5000.0);
+        let complexity_score = (avg_word_length / 6.0)
+            + (avg_sentence_length / 20.0)
+            + (content_length as f64 / 5000.0);
 
         if complexity_score > 2.5 {
             let confidence = (complexity_score / 3.0).min(1.0);
 
             let mut metadata = std::collections::HashMap::new();
-            metadata.insert("complexity_score".to_string(), format!("{:.2}", complexity_score));
+            metadata.insert(
+                "complexity_score".to_string(),
+                format!("{:.2}", complexity_score),
+            );
             metadata.insert("word_count".to_string(), word_count.to_string());
             metadata.insert("sentence_count".to_string(), sentence_count.to_string());
             metadata.insert("content_length".to_string(), content_length.to_string());
 
             return Ok(Some(SummarizationTrigger {
-                reason: format!("Content complexity score ({:.2}) exceeds threshold (1.5)", complexity_score),
+                reason: format!(
+                    "Content complexity score ({:.2}) exceeds threshold (1.5)",
+                    complexity_score
+                ),
                 related_memory_keys: vec![memory.key.clone()],
                 trigger_type: SummarizationTriggerType::ContentComplexity,
                 confidence,
@@ -1396,7 +1474,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Check if temporal clustering suggests summarization
-    async fn check_temporal_clustering_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+    async fn check_temporal_clustering_trigger(
+        &self,
+        memory: &MemoryEntry,
+    ) -> Result<Option<SummarizationTrigger>> {
         let _memory_time = memory.created_at();
         let _time_window = chrono::Duration::hours(2); // 2-hour clustering window
 
@@ -1413,10 +1494,16 @@ impl AdvancedMemoryManager {
             let mut metadata = std::collections::HashMap::new();
             metadata.insert("cluster_size".to_string(), cluster_size.to_string());
             metadata.insert("time_window_hours".to_string(), "2".to_string());
-            metadata.insert("cluster_threshold".to_string(), cluster_threshold.to_string());
+            metadata.insert(
+                "cluster_threshold".to_string(),
+                cluster_threshold.to_string(),
+            );
 
             return Ok(Some(SummarizationTrigger {
-                reason: format!("Temporal cluster of {} memories detected within 2-hour window", cluster_size),
+                reason: format!(
+                    "Temporal cluster of {} memories detected within 2-hour window",
+                    cluster_size
+                ),
                 related_memory_keys: vec![memory.key.clone()],
                 trigger_type: SummarizationTriggerType::TemporalClustering,
                 confidence,
@@ -1440,7 +1527,8 @@ impl AdvancedMemoryManager {
             .filter(|word| word.len() > 3)
             .collect();
 
-        let concept_density = unique_words.len() as f64 / memory.value.split_whitespace().count().max(1) as f64;
+        let concept_density =
+            unique_words.len() as f64 / memory.value.split_whitespace().count().max(1) as f64;
         let tag_density = memory.metadata.tags.len() as f64 / 10.0; // Normalize to 10 tags max
 
         // Factor in knowledge graph connectivity if available
@@ -1456,13 +1544,25 @@ impl AdvancedMemoryManager {
             let confidence = (semantic_density / 1.5).min(1.0);
 
             let mut metadata = std::collections::HashMap::new();
-            metadata.insert("semantic_density".to_string(), format!("{:.2}", semantic_density));
-            metadata.insert("concept_density".to_string(), format!("{:.2}", concept_density));
+            metadata.insert(
+                "semantic_density".to_string(),
+                format!("{:.2}", semantic_density),
+            );
+            metadata.insert(
+                "concept_density".to_string(),
+                format!("{:.2}", concept_density),
+            );
             metadata.insert("tag_density".to_string(), format!("{:.2}", tag_density));
-            metadata.insert("unique_concepts".to_string(), unique_words.len().to_string());
+            metadata.insert(
+                "unique_concepts".to_string(),
+                unique_words.len().to_string(),
+            );
 
             return Ok(Some(SummarizationTrigger {
-                reason: format!("Semantic density ({:.2}) exceeds threshold (1.2)", semantic_density),
+                reason: format!(
+                    "Semantic density ({:.2}) exceeds threshold (1.2)",
+                    semantic_density
+                ),
                 related_memory_keys: vec![memory.key.clone()],
                 trigger_type: SummarizationTriggerType::SemanticDensity,
                 confidence,
@@ -1474,10 +1574,15 @@ impl AdvancedMemoryManager {
     }
 
     /// Check if storage optimization suggests summarization
-    async fn check_storage_optimization_trigger(&self, memory: &MemoryEntry) -> Result<Option<SummarizationTrigger>> {
+    async fn check_storage_optimization_trigger(
+        &self,
+        memory: &MemoryEntry,
+    ) -> Result<Option<SummarizationTrigger>> {
         // Calculate storage efficiency metrics
         let content_size = memory.value.len();
-        let metadata_size = serde_json::to_string(&memory.metadata).unwrap_or_default().len();
+        let metadata_size = serde_json::to_string(&memory.metadata)
+            .unwrap_or_default()
+            .len();
         let total_size = content_size + metadata_size;
 
         // Check if this memory is particularly large or if we have many similar memories
@@ -1493,7 +1598,10 @@ impl AdvancedMemoryManager {
             metadata.insert("size_threshold".to_string(), size_threshold.to_string());
 
             return Ok(Some(SummarizationTrigger {
-                reason: format!("Memory size ({} bytes) exceeds storage optimization threshold ({} bytes)", total_size, size_threshold),
+                reason: format!(
+                    "Memory size ({} bytes) exceeds storage optimization threshold ({} bytes)",
+                    total_size, size_threshold
+                ),
                 related_memory_keys: vec![memory.key.clone()],
                 trigger_type: SummarizationTriggerType::StorageOptimization,
                 confidence,
@@ -1550,15 +1658,18 @@ impl AdvancedMemoryManager {
                 },
             }
         } else {
-            self.summarizer.summarize_memories(
-                storage,
-                trigger.related_memory_keys.clone(),
-                strategy.clone(),
-            ).await?
+            self.summarizer
+                .summarize_memories(
+                    storage,
+                    trigger.related_memory_keys.clone(),
+                    strategy.clone(),
+                )
+                .await?
         };
 
         // Generate a unique key for the summary
-        let summary_key = format!("summary_{}_{}",
+        let summary_key = format!(
+            "summary_{}_{}",
             format!("{:?}", trigger.trigger_type).to_lowercase(),
             chrono::Utc::now().timestamp()
         );
@@ -1590,13 +1701,18 @@ impl AdvancedMemoryManager {
         memories: &[MemoryEntry],
     ) -> Result<AdvancedMemoryAnalytics> {
         let start_time = std::time::Instant::now();
-        tracing::info!("Calculating advanced analytics for {} memories", memories.len());
+        tracing::info!(
+            "Calculating advanced analytics for {} memories",
+            memories.len()
+        );
 
         // Calculate sophisticated size distribution with statistical analysis
         let size_distribution = self.calculate_size_distribution_advanced(memories).await?;
 
         // Analyze access patterns using temporal and behavioral analysis
-        let access_patterns = self.calculate_access_patterns_advanced(storage, memories).await?;
+        let access_patterns = self
+            .calculate_access_patterns_advanced(storage, memories)
+            .await?;
 
         // Analyze content types using NLP and classification
         let content_types = self.calculate_content_type_distribution(memories).await?;
@@ -1605,10 +1721,14 @@ impl AdvancedMemoryManager {
         let tag_statistics = self.calculate_tag_statistics_advanced(memories).await?;
 
         // Calculate relationship metrics using graph analysis
-        let relationship_metrics = self.calculate_relationship_metrics_advanced(memories).await?;
+        let relationship_metrics = self
+            .calculate_relationship_metrics_advanced(memories)
+            .await?;
 
         // Calculate temporal distribution with pattern detection
-        let temporal_distribution = self.calculate_temporal_distribution_advanced(memories).await?;
+        let temporal_distribution = self
+            .calculate_temporal_distribution_advanced(memories)
+            .await?;
 
         let calculation_time = start_time.elapsed();
         tracing::info!("Advanced analytics calculated in {:?}", calculation_time);
@@ -1624,7 +1744,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate sophisticated size distribution with statistical analysis
-    async fn calculate_size_distribution_advanced(&self, memories: &[MemoryEntry]) -> Result<SizeDistribution> {
+    async fn calculate_size_distribution_advanced(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<SizeDistribution> {
         if memories.is_empty() {
             return Ok(SizeDistribution {
                 min_size: 0,
@@ -1655,7 +1778,8 @@ impl AdvancedMemoryManager {
         ];
 
         for (label, min, max) in buckets {
-            let count = sizes.iter()
+            let count = sizes
+                .iter()
                 .filter(|&&size| size >= min && (max == usize::MAX || size < max))
                 .count();
             size_buckets.insert(label.to_string(), count);
@@ -1704,11 +1828,16 @@ impl AdvancedMemoryManager {
             let recent_cutoff = chrono::Utc::now() - chrono::Duration::days(7);
             let medium_cutoff = chrono::Utc::now() - chrono::Duration::days(30);
 
-            let high_freq = memories.iter()
+            let high_freq = memories
+                .iter()
                 .filter(|m| m.metadata.last_accessed > recent_cutoff)
                 .count();
-            let medium_freq = memories.iter()
-                .filter(|m| m.metadata.last_accessed > medium_cutoff && m.metadata.last_accessed <= recent_cutoff)
+            let medium_freq = memories
+                .iter()
+                .filter(|m| {
+                    m.metadata.last_accessed > medium_cutoff
+                        && m.metadata.last_accessed <= recent_cutoff
+                })
                 .count();
             let low_freq = total_memories - high_freq - medium_freq;
 
@@ -1732,7 +1861,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Detect seasonal patterns in memory access
-    async fn detect_seasonal_patterns(&self, memories: &[MemoryEntry]) -> Result<Vec<SeasonalPattern>> {
+    async fn detect_seasonal_patterns(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<SeasonalPattern>> {
         let mut patterns = Vec::new();
 
         // Analyze monthly access patterns
@@ -1746,12 +1878,15 @@ impl AdvancedMemoryManager {
 
         // Detect significant seasonal variations
         let avg_monthly = monthly_counts.iter().sum::<u32>() as f64 / 12.0;
-        let variance = monthly_counts.iter()
+        let variance = monthly_counts
+            .iter()
             .map(|&count| (count as f64 - avg_monthly).powi(2))
-            .sum::<f64>() / 12.0;
+            .sum::<f64>()
+            / 12.0;
         let std_dev = variance.sqrt();
 
-        if std_dev > avg_monthly * 0.3 { // Significant seasonal variation
+        if std_dev > avg_monthly * 0.3 {
+            // Significant seasonal variation
             patterns.push(SeasonalPattern {
                 pattern_type: "monthly_variation".to_string(),
                 strength: std_dev / avg_monthly,
@@ -1769,7 +1904,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Perform user behavior clustering analysis
-    async fn perform_user_behavior_clustering(&self, memories: &[MemoryEntry]) -> Result<Vec<BehaviorCluster>> {
+    async fn perform_user_behavior_clustering(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<BehaviorCluster>> {
         let mut clusters = Vec::new();
 
         // Extract user context patterns from memory metadata
@@ -1783,12 +1921,14 @@ impl AdvancedMemoryManager {
 
         // Analyze each user's behavior pattern
         for (user_context, user_memories) in user_patterns {
-            if user_memories.len() >= 3 { // Minimum memories for pattern analysis
-                let avg_memory_size = user_memories.iter()
-                    .map(|m| m.value.len())
-                    .sum::<usize>() as f64 / user_memories.len() as f64;
+            if user_memories.len() >= 3 {
+                // Minimum memories for pattern analysis
+                let avg_memory_size = user_memories.iter().map(|m| m.value.len()).sum::<usize>()
+                    as f64
+                    / user_memories.len() as f64;
 
-                let memory_types: HashMap<String, usize> = user_memories.iter()
+                let memory_types: HashMap<String, usize> = user_memories
+                    .iter()
                     .map(|m| format!("{:?}", m.memory_type))
                     .fold(HashMap::new(), |mut acc, mt| {
                         *acc.entry(mt).or_insert(0) += 1;
@@ -1801,7 +1941,10 @@ impl AdvancedMemoryManager {
                     characteristics: vec![
                         format!("avg_memory_size: {:.0}", avg_memory_size),
                         format!("memory_count: {}", user_memories.len()),
-                        format!("dominant_type: {:?}", memory_types.iter().max_by_key(|(_, &count)| count)),
+                        format!(
+                            "dominant_type: {:?}",
+                            memory_types.iter().max_by_key(|(_, &count)| count)
+                        ),
                     ],
                     representative_patterns: vec![
                         format!("Creates {} memories on average", user_memories.len()),
@@ -1815,7 +1958,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate content type distribution using NLP and classification
-    async fn calculate_content_type_distribution(&self, memories: &[MemoryEntry]) -> Result<ContentTypeDistribution> {
+    async fn calculate_content_type_distribution(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<ContentTypeDistribution> {
         let mut type_counts = HashMap::new();
         let mut type_growth_rates = HashMap::new();
 
@@ -1840,10 +1986,15 @@ impl AdvancedMemoryManager {
         // Calculate diversity index (Shannon entropy)
         let total_count = type_counts.values().sum::<usize>() as f64;
         let diversity_index = if total_count > 0.0 {
-            -type_counts.values()
+            -type_counts
+                .values()
                 .map(|&count| {
                     let p = count as f64 / total_count;
-                    if p > 0.0 { p * p.ln() } else { 0.0 }
+                    if p > 0.0 {
+                        p * p.ln()
+                    } else {
+                        0.0
+                    }
                 })
                 .sum::<f64>()
         } else {
@@ -1863,7 +2014,10 @@ impl AdvancedMemoryManager {
         let content_lower = content.to_lowercase();
 
         // Simple heuristic-based classification
-        if content_lower.contains("```") || content_lower.contains("function") || content_lower.contains("class") {
+        if content_lower.contains("```")
+            || content_lower.contains("function")
+            || content_lower.contains("class")
+        {
             "code".to_string()
         } else if content_lower.contains("http") || content_lower.contains("www") {
             "web_content".to_string()
@@ -1877,7 +2031,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate tag usage statistics with effectiveness scoring
-    async fn calculate_tag_statistics_advanced(&self, memories: &[MemoryEntry]) -> Result<TagUsageStats> {
+    async fn calculate_tag_statistics_advanced(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<TagUsageStats> {
         let mut tag_counts = HashMap::new();
         let mut tag_co_occurrence_counts = HashMap::new();
         let mut tag_effectiveness_scores = HashMap::new();
@@ -1915,10 +2072,12 @@ impl AdvancedMemoryManager {
         for (pair, _count) in tag_co_occurrence_counts {
             let tags: Vec<&str> = pair.split('|').collect();
             if tags.len() == 2 {
-                tag_co_occurrence.entry(tags[0].to_string())
+                tag_co_occurrence
+                    .entry(tags[0].to_string())
                     .or_insert_with(Vec::new)
                     .push(tags[1].to_string());
-                tag_co_occurrence.entry(tags[1].to_string())
+                tag_co_occurrence
+                    .entry(tags[1].to_string())
                     .or_insert_with(Vec::new)
                     .push(tags[0].to_string());
             }
@@ -1933,7 +2092,11 @@ impl AdvancedMemoryManager {
         let avg_tags_per_memory = if memories.is_empty() {
             0.0
         } else {
-            memories.iter().map(|m| m.metadata.tags.len()).sum::<usize>() as f64 / memories.len() as f64
+            memories
+                .iter()
+                .map(|m| m.metadata.tags.len())
+                .sum::<usize>() as f64
+                / memories.len() as f64
         };
 
         Ok(TagUsageStats {
@@ -1965,7 +2128,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate relationship metrics using graph analysis
-    async fn calculate_relationship_metrics_advanced(&self, memories: &[MemoryEntry]) -> Result<RelationshipMetrics> {
+    async fn calculate_relationship_metrics_advanced(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<RelationshipMetrics> {
         let mut relationship_types = HashMap::new();
         let mut total_connections = 0;
         let mut connection_counts: HashMap<String, usize> = HashMap::new();
@@ -1978,7 +2144,9 @@ impl AdvancedMemoryManager {
             // Find connections based on shared tags
             for other_memory in memories {
                 if memory.id() != other_memory.id() {
-                    let shared_tags = memory.metadata.tags
+                    let shared_tags = memory
+                        .metadata
+                        .tags
                         .iter()
                         .filter(|tag| other_memory.metadata.tags.contains(tag))
                         .count();
@@ -1995,7 +2163,9 @@ impl AdvancedMemoryManager {
                             "weak_semantic"
                         };
 
-                        *relationship_types.entry(relationship_type.to_string()).or_insert(0) += 1;
+                        *relationship_types
+                            .entry(relationship_type.to_string())
+                            .or_insert(0) += 1;
                     }
                 }
             }
@@ -2018,7 +2188,8 @@ impl AdvancedMemoryManager {
         let network_density = total_connections as f64 / max_possible_connections as f64;
 
         // Calculate clustering coefficient (simplified)
-        let clustering_coefficient = self.calculate_clustering_coefficient(&connection_counts, memories);
+        let clustering_coefficient =
+            self.calculate_clustering_coefficient(&connection_counts, memories);
 
         // Count strongly connected components (simplified - each memory is its own component for now)
         let strongly_connected_components = memories.len();
@@ -2046,7 +2217,9 @@ impl AdvancedMemoryManager {
         let mut nodes_with_connections = 0;
 
         for memory in memories {
-            let connections = connection_counts.get(&memory.id().to_string()).unwrap_or(&0);
+            let connections = connection_counts
+                .get(&memory.id().to_string())
+                .unwrap_or(&0);
             if *connections >= 2 {
                 // For simplicity, assume moderate clustering
                 total_clustering += 0.3;
@@ -2062,7 +2235,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate temporal distribution with pattern detection
-    async fn calculate_temporal_distribution_advanced(&self, memories: &[MemoryEntry]) -> Result<TemporalDistribution> {
+    async fn calculate_temporal_distribution_advanced(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<TemporalDistribution> {
         let mut hourly_distribution = vec![0usize; 24];
         let mut daily_distribution = vec![0usize; 7];
         let mut monthly_distribution = vec![0usize; 12];
@@ -2133,7 +2309,15 @@ impl AdvancedMemoryManager {
         let max_daily = daily.iter().max().unwrap_or(&0);
         let avg_daily = daily.iter().sum::<usize>() as f64 / daily.len() as f64;
 
-        let day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        let day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ];
         for (day, &count) in daily.iter().enumerate() {
             if count as f64 > avg_daily * 1.5 && count == *max_daily {
                 periods.push(ActivityPeriod {
@@ -2282,11 +2466,13 @@ impl AdvancedMemoryManager {
         let base_date = dates[0];
 
         // Convert dates to days since base date
-        let x_values: Vec<f64> = dates.iter()
+        let x_values: Vec<f64> = dates
+            .iter()
             .map(|date| (date.signed_duration_since(*base_date).num_days()) as f64)
             .collect();
 
-        let y_values: Vec<f64> = dates.iter()
+        let y_values: Vec<f64> = dates
+            .iter()
             .map(|date| daily_counts.get(date).unwrap_or(&0))
             .map(|&count| count as f64)
             .collect();
@@ -2296,19 +2482,21 @@ impl AdvancedMemoryManager {
         let y_mean = y_values.iter().sum::<f64>() / n;
 
         // Calculate slope and correlation
-        let numerator: f64 = x_values.iter().zip(y_values.iter())
+        let numerator: f64 = x_values
+            .iter()
+            .zip(y_values.iter())
             .map(|(x, y)| (x - x_mean) * (y - y_mean))
             .sum();
 
-        let x_variance: f64 = x_values.iter()
-            .map(|x| (x - x_mean).powi(2))
-            .sum();
+        let x_variance: f64 = x_values.iter().map(|x| (x - x_mean).powi(2)).sum();
 
-        let y_variance: f64 = y_values.iter()
-            .map(|y| (y - y_mean).powi(2))
-            .sum();
+        let y_variance: f64 = y_values.iter().map(|y| (y - y_mean).powi(2)).sum();
 
-        let slope = if x_variance > 0.0 { numerator / x_variance } else { 0.0 };
+        let slope = if x_variance > 0.0 {
+            numerator / x_variance
+        } else {
+            0.0
+        };
 
         let r_squared = if x_variance > 0.0 && y_variance > 0.0 {
             (numerator / (x_variance.sqrt() * y_variance.sqrt())).powi(2)
@@ -2333,18 +2521,21 @@ impl AdvancedMemoryManager {
             *daily_access_counts.entry(access_date).or_insert(0) += 1;
         }
 
-        let current_value = daily_access_counts.values().sum::<usize>() as f64 / daily_access_counts.len().max(1) as f64;
+        let current_value = daily_access_counts.values().sum::<usize>() as f64
+            / daily_access_counts.len().max(1) as f64;
 
         // Simple trend calculation based on recent vs older access patterns
         let now = chrono::Utc::now().date_naive();
         let week_ago = now - chrono::Duration::days(7);
 
-        let recent_access = daily_access_counts.iter()
+        let recent_access = daily_access_counts
+            .iter()
             .filter(|(date, _)| **date > week_ago)
             .map(|(_, count)| *count)
             .sum::<usize>() as f64;
 
-        let older_access = daily_access_counts.iter()
+        let older_access = daily_access_counts
+            .iter()
             .filter(|(date, _)| **date <= week_ago)
             .map(|(_, count)| *count)
             .sum::<usize>() as f64;
@@ -2390,7 +2581,8 @@ impl AdvancedMemoryManager {
             });
         }
 
-        let current_value = memories.iter().map(|m| m.value.len()).sum::<usize>() as f64 / memories.len() as f64;
+        let current_value =
+            memories.iter().map(|m| m.value.len()).sum::<usize>() as f64 / memories.len() as f64;
 
         // Analyze size trend over time
         let mut daily_avg_sizes = HashMap::new();
@@ -2415,10 +2607,12 @@ impl AdvancedMemoryManager {
         dates.sort();
 
         let slope = if dates.len() >= 2 {
-            let recent_avg = dates.last()
+            let recent_avg = dates
+                .last()
                 .and_then(|date| daily_avg_sizes.get(date))
                 .unwrap_or(&current_value);
-            let older_avg = dates.first()
+            let older_avg = dates
+                .first()
                 .and_then(|date| daily_avg_sizes.get(date))
                 .unwrap_or(&current_value);
             (recent_avg - older_avg) / dates.len() as f64
@@ -2453,9 +2647,11 @@ impl AdvancedMemoryManager {
 
         // Simple trend based on memory age and fragmentation
         let now = chrono::Utc::now();
-        let avg_age_days = memories.iter()
+        let avg_age_days = memories
+            .iter()
             .map(|m| (now - m.metadata.created_at).num_days() as f64)
-            .sum::<f64>() / memories.len().max(1) as f64;
+            .sum::<f64>()
+            / memories.len().max(1) as f64;
 
         // Optimization need increases with age and fragmentation
         let slope = -0.01 * avg_age_days / 30.0; // Slight degradation over time
@@ -2518,20 +2714,28 @@ impl AdvancedMemoryManager {
         let mut score = 1.0;
 
         // Factor in memory age (older memories might need optimization)
-        let avg_age_days = memories.iter()
+        let avg_age_days = memories
+            .iter()
             .map(|m| (now - m.metadata.created_at).num_days() as f64)
-            .sum::<f64>() / memories.len() as f64;
+            .sum::<f64>()
+            / memories.len() as f64;
 
         score -= (avg_age_days / 365.0) * 0.1; // Slight degradation over a year
 
         // Factor in size distribution (very large or very small memories might need optimization)
         let sizes: Vec<usize> = memories.iter().map(|m| m.value.len()).collect();
         let avg_size = sizes.iter().sum::<usize>() as f64 / sizes.len() as f64;
-        let size_variance = sizes.iter()
+        let size_variance = sizes
+            .iter()
             .map(|&size| (size as f64 - avg_size).powi(2))
-            .sum::<f64>() / sizes.len() as f64;
+            .sum::<f64>()
+            / sizes.len() as f64;
 
-        let size_cv = if avg_size > 0.0 { size_variance.sqrt() / avg_size } else { 0.0 };
+        let size_cv = if avg_size > 0.0 {
+            size_variance.sqrt() / avg_size
+        } else {
+            0.0
+        };
         score -= size_cv * 0.1; // High variance indicates potential optimization opportunities
 
         score.max(0.0).min(1.0)
@@ -2549,15 +2753,13 @@ impl AdvancedMemoryManager {
         complexity += (memories.len() as f64).ln() / 10.0;
 
         // Factor in tag diversity
-        let all_tags: std::collections::HashSet<_> = memories.iter()
-            .flat_map(|m| &m.metadata.tags)
-            .collect();
+        let all_tags: std::collections::HashSet<_> =
+            memories.iter().flat_map(|m| &m.metadata.tags).collect();
         complexity += (all_tags.len() as f64).ln() / 20.0;
 
         // Factor in content complexity (average content length)
-        let avg_content_length = memories.iter()
-            .map(|m| m.value.len())
-            .sum::<usize>() as f64 / memories.len() as f64;
+        let avg_content_length =
+            memories.iter().map(|m| m.value.len()).sum::<usize>() as f64 / memories.len() as f64;
         complexity += (avg_content_length.ln() / 1000.0).min(0.5);
 
         complexity.min(1.0)
@@ -2569,26 +2771,33 @@ impl AdvancedMemoryManager {
         _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memories: &[MemoryEntry],
     ) -> Result<MemoryPredictiveMetrics> {
-        tracing::info!("Calculating predictive metrics for {} memories", memories.len());
+        tracing::info!(
+            "Calculating predictive metrics for {} memories",
+            memories.len()
+        );
 
         let current_memory_count = memories.len() as f64;
-        let current_storage_mb = memories.iter()
-            .map(|m| m.value.len())
-            .sum::<usize>() as f64 / 1024.0 / 1024.0;
+        let current_storage_mb =
+            memories.iter().map(|m| m.value.len()).sum::<usize>() as f64 / 1024.0 / 1024.0;
 
         // Predict memory count growth using trend analysis
         let growth_trend = self.calculate_growth_trend(_storage, memories).await?;
         let predicted_memory_count_30d = growth_trend.prediction_30d;
-        let predicted_storage_mb_30d = current_storage_mb * (predicted_memory_count_30d / current_memory_count.max(1.0));
+        let predicted_storage_mb_30d =
+            current_storage_mb * (predicted_memory_count_30d / current_memory_count.max(1.0));
 
         // Calculate optimization forecast
         let optimization_forecast = self.calculate_optimization_forecast(memories).await?;
 
         // Generate capacity recommendations
-        let capacity_recommendations = self.generate_capacity_recommendations(memories, predicted_memory_count_30d).await?;
+        let capacity_recommendations = self
+            .generate_capacity_recommendations(memories, predicted_memory_count_30d)
+            .await?;
 
         // Perform risk assessment
-        let risk_assessment = self.perform_risk_assessment(memories, predicted_memory_count_30d).await?;
+        let risk_assessment = self
+            .perform_risk_assessment(memories, predicted_memory_count_30d)
+            .await?;
 
         Ok(MemoryPredictiveMetrics {
             predicted_memory_count_30d,
@@ -2600,14 +2809,19 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate optimization forecast
-    async fn calculate_optimization_forecast(&self, memories: &[MemoryEntry]) -> Result<OptimizationForecast> {
+    async fn calculate_optimization_forecast(
+        &self,
+        memories: &[MemoryEntry],
+    ) -> Result<OptimizationForecast> {
         let now = chrono::Utc::now();
         let avg_age_days = if memories.is_empty() {
             0.0
         } else {
-            memories.iter()
+            memories
+                .iter()
                 .map(|m| (now - m.metadata.created_at).num_days() as f64)
-                .sum::<f64>() / memories.len() as f64
+                .sum::<f64>()
+                / memories.len() as f64
         };
 
         // Determine optimization urgency based on age and size
@@ -2658,7 +2872,8 @@ impl AdvancedMemoryManager {
         let current_count = memories.len() as f64;
 
         if predicted_count > current_count * 2.0 {
-            recommendations.push("Consider implementing aggressive summarization policies".to_string());
+            recommendations
+                .push("Consider implementing aggressive summarization policies".to_string());
             recommendations.push("Plan for additional storage capacity".to_string());
         } else if predicted_count > current_count * 1.5 {
             recommendations.push("Monitor memory growth closely".to_string());
@@ -2672,7 +2887,8 @@ impl AdvancedMemoryManager {
         };
 
         if avg_size > 10000.0 {
-            recommendations.push("Large memory sizes detected - consider content compression".to_string());
+            recommendations
+                .push("Large memory sizes detected - consider content compression".to_string());
         }
 
         if recommendations.is_empty() {
@@ -2706,7 +2922,8 @@ impl AdvancedMemoryManager {
 
         // Calculate performance risk based on memory age and size
         let now = chrono::Utc::now();
-        let old_memories = memories.iter()
+        let old_memories = memories
+            .iter()
             .filter(|m| (now - m.metadata.created_at).num_days() > 180)
             .count() as f64;
         let performance_risk = (old_memories / current_count.max(1.0)).min(1.0);
@@ -2743,7 +2960,10 @@ impl AdvancedMemoryManager {
         _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memories: &[MemoryEntry],
     ) -> Result<MemoryPerformanceMetrics> {
-        tracing::info!("Calculating performance metrics for {} memories", memories.len());
+        tracing::info!(
+            "Calculating performance metrics for {} memories",
+            memories.len()
+        );
 
         // Simulate performance measurements based on memory characteristics
         let memory_count = memories.len() as f64;
@@ -2764,7 +2984,8 @@ impl AdvancedMemoryManager {
 
         // Estimate cache hit rate based on access patterns
         let recent_cutoff = chrono::Utc::now() - chrono::Duration::days(1);
-        let recent_access_count = memories.iter()
+        let recent_access_count = memories
+            .iter()
             .filter(|m| m.metadata.last_accessed > recent_cutoff)
             .count() as f64;
         let cache_hit_rate = (recent_access_count / memory_count.max(1.0)).min(1.0);
@@ -2776,7 +2997,8 @@ impl AdvancedMemoryManager {
         let compression_effectiveness = self.estimate_compression_effectiveness(memories);
 
         // Calculate response time distribution
-        let response_time_distribution = self.calculate_response_time_distribution(avg_operation_latency_ms);
+        let response_time_distribution =
+            self.calculate_response_time_distribution(avg_operation_latency_ms);
 
         Ok(MemoryPerformanceMetrics {
             avg_operation_latency_ms,
@@ -2796,9 +3018,8 @@ impl AdvancedMemoryManager {
 
         // Analyze tag distribution for indexing efficiency
         let total_tags: usize = memories.iter().map(|m| m.metadata.tags.len()).sum();
-        let unique_tags: std::collections::HashSet<_> = memories.iter()
-            .flat_map(|m| &m.metadata.tags)
-            .collect();
+        let unique_tags: std::collections::HashSet<_> =
+            memories.iter().flat_map(|m| &m.metadata.tags).collect();
 
         let tag_diversity = if total_tags > 0 {
             unique_tags.len() as f64 / total_tags as f64
@@ -2832,7 +3053,8 @@ impl AdvancedMemoryManager {
                 1.0
             };
 
-            estimated_compressed_size += (original_size as f64 * (0.3 + compression_ratio * 0.7)) as usize;
+            estimated_compressed_size +=
+                (original_size as f64 * (0.3 + compression_ratio * 0.7)) as usize;
         }
 
         if total_original_size > 0 {
@@ -2866,7 +3088,10 @@ impl AdvancedMemoryManager {
         _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memories: &[MemoryEntry],
     ) -> Result<MemoryContentAnalysis> {
-        tracing::info!("Calculating content analysis for {} memories", memories.len());
+        tracing::info!(
+            "Calculating content analysis for {} memories",
+            memories.len()
+        );
 
         if memories.is_empty() {
             return Ok(MemoryContentAnalysis {
@@ -2885,9 +3110,8 @@ impl AdvancedMemoryManager {
         }
 
         // Calculate average content length
-        let avg_content_length = memories.iter()
-            .map(|m| m.value.len())
-            .sum::<usize>() as f64 / memories.len() as f64;
+        let avg_content_length =
+            memories.iter().map(|m| m.value.len()).sum::<usize>() as f64 / memories.len() as f64;
 
         // Calculate complexity score using multiple factors
         let complexity_score = self.calculate_content_complexity_score(memories);
@@ -2921,7 +3145,10 @@ impl AdvancedMemoryManager {
         for memory in memories {
             let content = &memory.value;
             let word_count = content.split_whitespace().count();
-            let sentence_count = content.split(&['.', '!', '?']).filter(|s| !s.trim().is_empty()).count();
+            let sentence_count = content
+                .split(&['.', '!', '?'])
+                .filter(|s| !s.trim().is_empty())
+                .count();
             let unique_words: std::collections::HashSet<_> = content
                 .split_whitespace()
                 .map(|w| w.to_lowercase())
@@ -2947,9 +3174,9 @@ impl AdvancedMemoryManager {
             };
 
             // Combine factors into complexity score
-            let complexity = (avg_word_length / 10.0).min(1.0) * 0.3 +
-                           (avg_sentence_length / 30.0).min(1.0) * 0.4 +
-                           vocabulary_richness * 0.3;
+            let complexity = (avg_word_length / 10.0).min(1.0) * 0.3
+                + (avg_sentence_length / 30.0).min(1.0) * 0.4
+                + vocabulary_richness * 0.3;
 
             total_complexity += complexity;
         }
@@ -2995,9 +3222,14 @@ impl AdvancedMemoryManager {
         let mut total_words = 0;
 
         for memory in memories {
-            let words: Vec<String> = memory.value
+            let words: Vec<String> = memory
+                .value
                 .split_whitespace()
-                .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphabetic()).to_string())
+                .map(|w| {
+                    w.to_lowercase()
+                        .trim_matches(|c: char| !c.is_alphabetic())
+                        .to_string()
+                })
                 .filter(|w| w.len() > 2)
                 .collect();
 
@@ -3049,20 +3281,23 @@ impl AdvancedMemoryManager {
     /// Calculate readability score
     fn calculate_readability_score(&self, content: &str) -> f64 {
         let words: Vec<&str> = content.split_whitespace().collect();
-        let sentences: Vec<&str> = content.split(&['.', '!', '?']).filter(|s| !s.trim().is_empty()).collect();
+        let sentences: Vec<&str> = content
+            .split(&['.', '!', '?'])
+            .filter(|s| !s.trim().is_empty())
+            .collect();
 
         if words.is_empty() || sentences.is_empty() {
             return 0.0;
         }
 
         let avg_sentence_length = words.len() as f64 / sentences.len() as f64;
-        let avg_word_length = words.iter()
-            .map(|w| w.len())
-            .sum::<usize>() as f64 / words.len() as f64;
+        let avg_word_length =
+            words.iter().map(|w| w.len()).sum::<usize>() as f64 / words.len() as f64;
 
         // Simplified readability formula (higher is more readable)
-        let readability = 1.0 - ((avg_sentence_length / 20.0).min(1.0) * 0.5 +
-                                (avg_word_length / 8.0).min(1.0) * 0.5);
+        let readability = 1.0
+            - ((avg_sentence_length / 20.0).min(1.0) * 0.5
+                + (avg_word_length / 8.0).min(1.0) * 0.5);
         readability.max(0.0)
     }
 
@@ -3073,9 +3308,8 @@ impl AdvancedMemoryManager {
             return 0.0;
         }
 
-        let unique_words: std::collections::HashSet<_> = words.iter()
-            .map(|w| w.to_lowercase())
-            .collect();
+        let unique_words: std::collections::HashSet<_> =
+            words.iter().map(|w| w.to_lowercase()).collect();
 
         // Information density based on vocabulary richness and content length
         let vocabulary_richness = unique_words.len() as f64 / words.len() as f64;
@@ -3095,10 +3329,13 @@ impl AdvancedMemoryManager {
         let mut consistency_score = 1.0;
 
         // Check for consistent line length patterns
-        let avg_line_length = lines.iter().map(|l| l.len()).sum::<usize>() as f64 / lines.len() as f64;
-        let line_length_variance = lines.iter()
+        let avg_line_length =
+            lines.iter().map(|l| l.len()).sum::<usize>() as f64 / lines.len() as f64;
+        let line_length_variance = lines
+            .iter()
             .map(|l| (l.len() as f64 - avg_line_length).powi(2))
-            .sum::<f64>() / lines.len() as f64;
+            .sum::<f64>()
+            / lines.len() as f64;
 
         if avg_line_length > 0.0 {
             let cv = line_length_variance.sqrt() / avg_line_length;
@@ -3109,7 +3346,10 @@ impl AdvancedMemoryManager {
     }
 
     /// Calculate metadata completeness
-    fn calculate_metadata_completeness(&self, metadata: &crate::memory::types::MemoryMetadata) -> f64 {
+    fn calculate_metadata_completeness(
+        &self,
+        metadata: &crate::memory::types::MemoryMetadata,
+    ) -> f64 {
         let mut completeness = 0.0;
         let total_fields = 5.0; // Total number of metadata fields we check
 
@@ -3152,8 +3392,10 @@ impl AdvancedMemoryManager {
 
         for i in 0..memories.len() {
             for j in (i + 1)..memories.len() {
-                let similarity = self.calculate_content_similarity(&memories[i].value, &memories[j].value);
-                if similarity > 0.8 { // High similarity threshold for duplicates
+                let similarity =
+                    self.calculate_content_similarity(&memories[i].value, &memories[j].value);
+                if similarity > 0.8 {
+                    // High similarity threshold for duplicates
                     duplicate_count += 1;
                 }
             }
@@ -3172,7 +3414,10 @@ impl AdvancedMemoryManager {
         _storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memories: &[MemoryEntry],
     ) -> Result<MemoryHealthIndicators> {
-        tracing::info!("Calculating health indicators for {} memories", memories.len());
+        tracing::info!(
+            "Calculating health indicators for {} memories",
+            memories.len()
+        );
 
         // Calculate data integrity score
         let data_integrity_score = self.calculate_data_integrity_score(memories);
@@ -3184,7 +3429,8 @@ impl AdvancedMemoryManager {
         let storage_health_score = self.calculate_storage_health_score(memories);
 
         // Calculate overall health score
-        let overall_health_score = (data_integrity_score + performance_health_score + storage_health_score) / 3.0;
+        let overall_health_score =
+            (data_integrity_score + performance_health_score + storage_health_score) / 3.0;
 
         // Count active issues
         let active_issues_count = self.count_active_issues(memories);
@@ -3229,8 +3475,9 @@ impl AdvancedMemoryManager {
             }
 
             // Check for reasonable access counts
-            if memory.metadata.access_count == 0 &&
-               (chrono::Utc::now() - memory.metadata.created_at).num_days() > 1 {
+            if memory.metadata.access_count == 0
+                && (chrono::Utc::now() - memory.metadata.created_at).num_days() > 1
+            {
                 issues += 1;
             }
         }
@@ -3249,7 +3496,8 @@ impl AdvancedMemoryManager {
         let now = chrono::Utc::now();
 
         // Check for old memories that might slow down operations
-        let old_memories = memories.iter()
+        let old_memories = memories
+            .iter()
             .filter(|m| (now - m.metadata.created_at).num_days() > 365)
             .count();
 
@@ -3287,11 +3535,17 @@ impl AdvancedMemoryManager {
         }
 
         // Check for fragmentation (high variance in sizes)
-        let size_variance = memories.iter()
+        let size_variance = memories
+            .iter()
             .map(|m| (m.value.len() as f64 - avg_size).powi(2))
-            .sum::<f64>() / memories.len() as f64;
+            .sum::<f64>()
+            / memories.len() as f64;
 
-        let size_cv = if avg_size > 0.0 { size_variance.sqrt() / avg_size } else { 0.0 };
+        let size_cv = if avg_size > 0.0 {
+            size_variance.sqrt() / avg_size
+        } else {
+            0.0
+        };
         if size_cv > 2.0 {
             storage_score -= 0.2; // High fragmentation
         }
@@ -3321,7 +3575,8 @@ impl AdvancedMemoryManager {
             }
 
             // Extremely large memories
-            if memory.value.len() > 1000000 { // 1MB threshold
+            if memory.value.len() > 1000000 {
+                // 1MB threshold
                 issues += 1;
             }
         }
@@ -3340,13 +3595,16 @@ impl AdvancedMemoryManager {
         let mut recommendations = Vec::new();
 
         if data_integrity_score < 0.8 {
-            recommendations.push("Review and clean up corrupted or empty memory entries".to_string());
+            recommendations
+                .push("Review and clean up corrupted or empty memory entries".to_string());
             recommendations.push("Implement data validation checks".to_string());
         }
 
         if performance_health_score < 0.8 {
-            recommendations.push("Archive or summarize old memories to improve performance".to_string());
-            recommendations.push("Consider splitting large memories into smaller chunks".to_string());
+            recommendations
+                .push("Archive or summarize old memories to improve performance".to_string());
+            recommendations
+                .push("Consider splitting large memories into smaller chunks".to_string());
         }
 
         if storage_health_score < 0.8 {
@@ -3355,7 +3613,8 @@ impl AdvancedMemoryManager {
         }
 
         let now = chrono::Utc::now();
-        let old_memories = memories.iter()
+        let old_memories = memories
+            .iter()
             .filter(|m| (now - m.metadata.last_accessed).num_days() > 180)
             .count();
 
@@ -3398,13 +3657,6 @@ impl AdvancedMemoryManager {
 
         intersection as f64 / union as f64
     }
-
-
-
-
-
-
-
 }
 
 #[cfg(test)]

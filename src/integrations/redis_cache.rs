@@ -1,10 +1,9 @@
 // Real Redis Cache Integration
 // Implements actual Redis caching for memory entries and analytics data
 
-use crate::error::{Result, MemoryError};
+use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
-
 
 /// Redis configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +25,8 @@ pub struct RedisConfig {
 impl Default for RedisConfig {
     fn default() -> Self {
         Self {
-            url: std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:11111".to_string()),
+            url: std::env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://localhost:11111".to_string()),
             pool_size: 10,
             connect_timeout_secs: 5,
             default_ttl_secs: 3600, // 1 hour
@@ -69,10 +69,13 @@ impl RedisClient {
     pub async fn new(config: RedisConfig) -> Result<Self> {
         #[cfg(feature = "distributed")]
         {
-            let client = redis::Client::open(config.url.as_str())
-                .map_err(|e| MemoryError::storage(format!("Failed to create Redis client: {}", e)))?;
+            let client = redis::Client::open(config.url.as_str()).map_err(|e| {
+                MemoryError::storage(format!("Failed to create Redis client: {}", e))
+            })?;
 
-            let connection_manager = client.get_multiplexed_async_connection().await
+            let connection_manager = client
+                .get_multiplexed_async_connection()
+                .await
                 .map_err(|e| MemoryError::storage(format!("Failed to connect to Redis: {}", e)))?;
 
             Ok(Self {
@@ -93,9 +96,14 @@ impl RedisClient {
 
     /// Cache a memory entry
     #[cfg(feature = "distributed")]
-    pub async fn cache_memory(&mut self, key: &str, entry: &MemoryEntry, ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_memory(
+        &mut self,
+        key: &str,
+        entry: &MemoryEntry,
+        ttl_secs: Option<u64>,
+    ) -> Result<()> {
         let start_time = std::time::Instant::now();
-        
+
         let cache_key = format!("{}memory:{}", self.config.key_prefix, key);
         let ttl = ttl_secs.unwrap_or(self.config.default_ttl_secs);
 
@@ -103,15 +111,19 @@ impl RedisClient {
         let serialized = if self.config.compression {
             self.compress_and_serialize(entry)?
         } else {
-            serde_json::to_vec(entry)
-                .map_err(|e| MemoryError::storage(format!("Failed to serialize memory entry: {}", e)))?
+            serde_json::to_vec(entry).map_err(|e| {
+                MemoryError::storage(format!("Failed to serialize memory entry: {}", e))
+            })?
         };
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl).await
-                .map_err(|e| MemoryError::storage(format!("Failed to cache memory entry: {}", e)))?;
+
+            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl)
+                .await
+                .map_err(|e| {
+                    MemoryError::storage(format!("Failed to cache memory entry: {}", e))
+                })?;
         }
 
         self.update_metrics(start_time, CacheOperation::Set);
@@ -122,21 +134,24 @@ impl RedisClient {
     #[cfg(feature = "distributed")]
     pub async fn get_cached_memory(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
         let start_time = std::time::Instant::now();
-        
+
         let cache_key = format!("{}memory:{}", self.config.key_prefix, key);
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await
+
+            let cached_data: Option<Vec<u8>> = conn
+                .get(&cache_key)
+                .await
                 .map_err(|e| MemoryError::storage(format!("Failed to get cached memory: {}", e)))?;
 
             if let Some(data) = cached_data {
                 let entry = if self.config.compression {
                     self.decompress_and_deserialize(&data)?
                 } else {
-                    serde_json::from_slice(&data)
-                        .map_err(|e| MemoryError::storage(format!("Failed to deserialize memory entry: {}", e)))?
+                    serde_json::from_slice(&data).map_err(|e| {
+                        MemoryError::storage(format!("Failed to deserialize memory entry: {}", e))
+                    })?
                 };
 
                 self.update_metrics(start_time, CacheOperation::Hit);
@@ -150,20 +165,29 @@ impl RedisClient {
 
     /// Cache analytics data
     #[cfg(feature = "distributed")]
-    pub async fn cache_analytics(&mut self, key: &str, data: &serde_json::Value, ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_analytics(
+        &mut self,
+        key: &str,
+        data: &serde_json::Value,
+        ttl_secs: Option<u64>,
+    ) -> Result<()> {
         let start_time = std::time::Instant::now();
-        
+
         let cache_key = format!("{}analytics:{}", self.config.key_prefix, key);
         let ttl = ttl_secs.unwrap_or(self.config.default_ttl_secs);
 
-        let serialized = serde_json::to_vec(data)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize analytics data: {}", e)))?;
+        let serialized = serde_json::to_vec(data).map_err(|e| {
+            MemoryError::storage(format!("Failed to serialize analytics data: {}", e))
+        })?;
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl).await
-                .map_err(|e| MemoryError::storage(format!("Failed to cache analytics data: {}", e)))?;
+
+            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl)
+                .await
+                .map_err(|e| {
+                    MemoryError::storage(format!("Failed to cache analytics data: {}", e))
+                })?;
         }
 
         self.update_metrics(start_time, CacheOperation::Set);
@@ -174,18 +198,20 @@ impl RedisClient {
     #[cfg(feature = "distributed")]
     pub async fn get_cached_analytics(&mut self, key: &str) -> Result<Option<serde_json::Value>> {
         let start_time = std::time::Instant::now();
-        
+
         let cache_key = format!("{}analytics:{}", self.config.key_prefix, key);
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await
-                .map_err(|e| MemoryError::storage(format!("Failed to get cached analytics: {}", e)))?;
+
+            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await.map_err(|e| {
+                MemoryError::storage(format!("Failed to get cached analytics: {}", e))
+            })?;
 
             if let Some(data) = cached_data {
-                let value = serde_json::from_slice(&data)
-                    .map_err(|e| MemoryError::storage(format!("Failed to deserialize analytics data: {}", e)))?;
+                let value = serde_json::from_slice(&data).map_err(|e| {
+                    MemoryError::storage(format!("Failed to deserialize analytics data: {}", e))
+                })?;
 
                 self.update_metrics(start_time, CacheOperation::Hit);
                 return Ok(Some(value));
@@ -200,19 +226,21 @@ impl RedisClient {
     #[cfg(feature = "distributed")]
     pub async fn delete_cached(&mut self, key: &str) -> Result<()> {
         let start_time = std::time::Instant::now();
-        
+
         let cache_key = format!("{}*:{}", self.config.key_prefix, key);
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
+
             // Get all keys matching the pattern
-            let keys: Vec<String> = conn.keys(&cache_key).await
-                .map_err(|e| MemoryError::storage(format!("Failed to get keys for deletion: {}", e)))?;
+            let keys: Vec<String> = conn.keys(&cache_key).await.map_err(|e| {
+                MemoryError::storage(format!("Failed to get keys for deletion: {}", e))
+            })?;
 
             if !keys.is_empty() {
-                conn.del::<_, ()>(&keys).await
-                    .map_err(|e| MemoryError::storage(format!("Failed to delete cached entries: {}", e)))?;
+                conn.del::<_, ()>(&keys).await.map_err(|e| {
+                    MemoryError::storage(format!("Failed to delete cached entries: {}", e))
+                })?;
             }
         }
 
@@ -222,10 +250,19 @@ impl RedisClient {
 
     /// Cache embeddings
     #[cfg(feature = "distributed")]
-    pub async fn cache_embedding(&mut self, text: &str, embedding: &[f32], ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_embedding(
+        &mut self,
+        text: &str,
+        embedding: &[f32],
+        ttl_secs: Option<u64>,
+    ) -> Result<()> {
         let start_time = std::time::Instant::now();
-        
-        let cache_key = format!("{}embedding:{}", self.config.key_prefix, self.hash_text(text));
+
+        let cache_key = format!(
+            "{}embedding:{}",
+            self.config.key_prefix,
+            self.hash_text(text)
+        );
         let ttl = ttl_secs.unwrap_or(self.config.default_ttl_secs * 24); // Embeddings last longer
 
         let serialized = serde_json::to_vec(embedding)
@@ -233,8 +270,9 @@ impl RedisClient {
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl).await
+
+            conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl)
+                .await
                 .map_err(|e| MemoryError::storage(format!("Failed to cache embedding: {}", e)))?;
         }
 
@@ -246,18 +284,24 @@ impl RedisClient {
     #[cfg(feature = "distributed")]
     pub async fn get_cached_embedding(&mut self, text: &str) -> Result<Option<Vec<f32>>> {
         let start_time = std::time::Instant::now();
-        
-        let cache_key = format!("{}embedding:{}", self.config.key_prefix, self.hash_text(text));
+
+        let cache_key = format!(
+            "{}embedding:{}",
+            self.config.key_prefix,
+            self.hash_text(text)
+        );
 
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await
-                .map_err(|e| MemoryError::storage(format!("Failed to get cached embedding: {}", e)))?;
+
+            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await.map_err(|e| {
+                MemoryError::storage(format!("Failed to get cached embedding: {}", e))
+            })?;
 
             if let Some(data) = cached_data {
-                let embedding = serde_json::from_slice(&data)
-                    .map_err(|e| MemoryError::storage(format!("Failed to deserialize embedding: {}", e)))?;
+                let embedding = serde_json::from_slice(&data).map_err(|e| {
+                    MemoryError::storage(format!("Failed to deserialize embedding: {}", e))
+                })?;
 
                 self.update_metrics(start_time, CacheOperation::Hit);
                 return Ok(Some(embedding));
@@ -296,7 +340,8 @@ impl RedisClient {
             }
 
             let hit_rate = if self.metrics.cache_hits + self.metrics.cache_misses > 0 {
-                self.metrics.cache_hits as f64 / (self.metrics.cache_hits + self.metrics.cache_misses) as f64
+                self.metrics.cache_hits as f64
+                    / (self.metrics.cache_hits + self.metrics.cache_misses) as f64
             } else {
                 0.0
             };
@@ -317,10 +362,12 @@ impl RedisClient {
     async fn get_key_count(&mut self) -> Result<u64> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            let keys: Vec<String> = conn.keys(format!("{}*", self.config.key_prefix)).await
+
+            let keys: Vec<String> = conn
+                .keys(format!("{}*", self.config.key_prefix))
+                .await
                 .map_err(|e| MemoryError::storage(format!("Failed to count keys: {}", e)))?;
-            
+
             return Ok(keys.len() as u64);
         }
         Ok(0)
@@ -329,8 +376,9 @@ impl RedisClient {
     /// Compress and serialize data
     #[cfg(feature = "distributed")]
     fn compress_and_serialize(&self, entry: &MemoryEntry) -> Result<Vec<u8>> {
-        let serialized = serde_json::to_vec(entry)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize for compression: {}", e)))?;
+        let serialized = serde_json::to_vec(entry).map_err(|e| {
+            MemoryError::storage(format!("Failed to serialize for compression: {}", e))
+        })?;
 
         // For now, just return serialized data without compression
         // In production, you would use actual LZ4 compression
@@ -348,8 +396,6 @@ impl RedisClient {
         Ok(entry)
     }
 
-
-
     /// Health check for Redis connection
     pub async fn health_check(&self) -> Result<()> {
         #[cfg(feature = "distributed")]
@@ -357,10 +403,11 @@ impl RedisClient {
             if let Some(ref conn) = self.connection_manager {
                 use redis::AsyncCommands;
                 let mut conn_clone = conn.clone();
-                
+
                 // For MultiplexedConnection, we'll do a simple operation instead of ping
-                let _: Option<String> = conn_clone.get("__health_check__").await
-                    .map_err(|e| MemoryError::storage(format!("Redis health check failed: {}", e)))?;
+                let _: Option<String> = conn_clone.get("__health_check__").await.map_err(|e| {
+                    MemoryError::storage(format!("Redis health check failed: {}", e))
+                })?;
             }
         }
         Ok(())
@@ -385,22 +432,23 @@ impl RedisClient {
     pub async fn clear_cache(&mut self) -> Result<()> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
-            
-            let keys: Vec<String> = conn.keys(format!("{}*", self.config.key_prefix)).await
-                .map_err(|e| MemoryError::storage(format!("Failed to get keys for clearing: {}", e)))?;
+
+            let keys: Vec<String> = conn
+                .keys(format!("{}*", self.config.key_prefix))
+                .await
+                .map_err(|e| {
+                    MemoryError::storage(format!("Failed to get keys for clearing: {}", e))
+                })?;
 
             if !keys.is_empty() {
-                conn.del::<_, ()>(&keys).await
+                conn.del::<_, ()>(&keys)
+                    .await
                     .map_err(|e| MemoryError::storage(format!("Failed to clear cache: {}", e)))?;
             }
         }
         Ok(())
     }
-
-
 }
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheStats {
@@ -414,7 +462,12 @@ pub struct CacheStats {
 // Stub implementations for when distributed feature is not enabled
 #[cfg(not(feature = "distributed"))]
 impl RedisClient {
-    pub async fn cache_memory(&mut self, _key: &str, _entry: &MemoryEntry, _ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_memory(
+        &mut self,
+        _key: &str,
+        _entry: &MemoryEntry,
+        _ttl_secs: Option<u64>,
+    ) -> Result<()> {
         Err(MemoryError::configuration("Redis feature not enabled"))
     }
 
@@ -422,7 +475,12 @@ impl RedisClient {
         Ok(None)
     }
 
-    pub async fn cache_analytics(&mut self, _key: &str, _data: &serde_json::Value, _ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_analytics(
+        &mut self,
+        _key: &str,
+        _data: &serde_json::Value,
+        _ttl_secs: Option<u64>,
+    ) -> Result<()> {
         Err(MemoryError::configuration("Redis feature not enabled"))
     }
 
@@ -434,7 +492,12 @@ impl RedisClient {
         Ok(())
     }
 
-    pub async fn cache_embedding(&mut self, _text: &str, _embedding: &[f32], _ttl_secs: Option<u64>) -> Result<()> {
+    pub async fn cache_embedding(
+        &mut self,
+        _text: &str,
+        _embedding: &[f32],
+        _ttl_secs: Option<u64>,
+    ) -> Result<()> {
         Err(MemoryError::configuration("Redis feature not enabled"))
     }
 

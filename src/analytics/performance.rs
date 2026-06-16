@@ -1,9 +1,9 @@
 // Performance Analytics Module
 // Advanced performance monitoring and optimization recommendations
 
+use crate::analytics::{AnalyticsConfig, AnalyticsInsight, InsightPriority, InsightType};
 use crate::error::Result;
-use crate::analytics::{AnalyticsConfig, AnalyticsInsight, InsightType, InsightPriority};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
@@ -256,7 +256,8 @@ impl PerformanceAnalyzer {
 
     /// Calculate trend for a specific metric
     async fn calculate_trend(&self, metric_name: &str) -> Result<PerformanceTrend> {
-        let values: Vec<f64> = self.snapshots
+        let values: Vec<f64> = self
+            .snapshots
             .iter()
             .map(|snapshot| self.extract_metric_value(snapshot, metric_name))
             .collect();
@@ -285,14 +286,20 @@ impl PerformanceAnalyzer {
         // Calculate R-squared for confidence
         let y_mean = y_sum / n;
         let ss_tot: f64 = values.iter().map(|&y| (y - y_mean).powi(2)).sum();
-        let ss_res: f64 = values.iter().enumerate()
+        let ss_res: f64 = values
+            .iter()
+            .enumerate()
             .map(|(i, &y)| {
                 let predicted = slope * i as f64 + intercept;
                 (y - predicted).powi(2)
             })
             .sum();
 
-        let r_squared = if ss_tot > 0.0 { 1.0 - (ss_res / ss_tot) } else { 0.0 };
+        let r_squared = if ss_tot > 0.0 {
+            1.0 - (ss_res / ss_tot)
+        } else {
+            0.0
+        };
 
         // Determine trend direction and strength
         let (trend_direction, trend_strength) = if slope.abs() < 0.01 {
@@ -349,10 +356,9 @@ impl PerformanceAnalyzer {
         }
 
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / values.len() as f64;
-        
+        let variance =
+            values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
+
         let std_dev = variance.sqrt();
         if mean > 0.0 {
             std_dev / mean
@@ -375,7 +381,10 @@ impl PerformanceAnalyzer {
                     } else {
                         BottleneckSeverity::Major
                     },
-                    description: format!("High CPU usage: {:.1}%", latest_snapshot.cpu_usage_percent),
+                    description: format!(
+                        "High CPU usage: {:.1}%",
+                        latest_snapshot.cpu_usage_percent
+                    ),
                     performance_impact: latest_snapshot.cpu_usage_percent / 100.0,
                     confidence: 0.9,
                     detected_at: Utc::now(),
@@ -394,7 +403,10 @@ impl PerformanceAnalyzer {
                     } else {
                         BottleneckSeverity::Moderate
                     },
-                    description: format!("High response time: {:.1}ms", latest_snapshot.avg_response_time_ms),
+                    description: format!(
+                        "High response time: {:.1}ms",
+                        latest_snapshot.avg_response_time_ms
+                    ),
                     performance_impact: (latest_snapshot.avg_response_time_ms / 100.0).min(1.0),
                     confidence: 0.8,
                     detected_at: Utc::now(),
@@ -413,7 +425,10 @@ impl PerformanceAnalyzer {
                     } else {
                         BottleneckSeverity::Moderate
                     },
-                    description: format!("Low cache hit rate: {:.1}%", latest_snapshot.cache_hit_rate * 100.0),
+                    description: format!(
+                        "Low cache hit rate: {:.1}%",
+                        latest_snapshot.cache_hit_rate * 100.0
+                    ),
                     performance_impact: 1.0 - latest_snapshot.cache_hit_rate,
                     confidence: 0.85,
                     detected_at: Utc::now(),
@@ -432,7 +447,9 @@ impl PerformanceAnalyzer {
         // Analyze trends for recommendations
         for (metric_name, trend) in &self.trends {
             if trend.trend_direction == TrendDirection::Degrading && trend.confidence > 0.7 {
-                let recommendation = self.create_trend_based_recommendation(metric_name, trend).await?;
+                let recommendation = self
+                    .create_trend_based_recommendation(metric_name, trend)
+                    .await?;
                 if let Some(rec) = recommendation {
                     recommendations.push(rec);
                 }
@@ -442,7 +459,9 @@ impl PerformanceAnalyzer {
         // Analyze bottlenecks for recommendations
         for bottleneck in &self.bottlenecks {
             if bottleneck.severity >= BottleneckSeverity::Moderate {
-                let recommendation = self.create_bottleneck_based_recommendation(bottleneck).await?;
+                let recommendation = self
+                    .create_bottleneck_based_recommendation(bottleneck)
+                    .await?;
                 if let Some(rec) = recommendation {
                     recommendations.push(rec);
                 }
@@ -454,7 +473,11 @@ impl PerformanceAnalyzer {
     }
 
     /// Create recommendation based on trend analysis
-    async fn create_trend_based_recommendation(&self, metric_name: &str, trend: &PerformanceTrend) -> Result<Option<OptimizationRecommendation>> {
+    async fn create_trend_based_recommendation(
+        &self,
+        metric_name: &str,
+        trend: &PerformanceTrend,
+    ) -> Result<Option<OptimizationRecommendation>> {
         let recommendation = match metric_name {
             "avg_response_time_ms" => Some(OptimizationRecommendation {
                 id: Uuid::new_v4(),
@@ -503,7 +526,10 @@ impl PerformanceAnalyzer {
     }
 
     /// Create recommendation based on bottleneck analysis
-    async fn create_bottleneck_based_recommendation(&self, bottleneck: &PerformanceBottleneck) -> Result<Option<OptimizationRecommendation>> {
+    async fn create_bottleneck_based_recommendation(
+        &self,
+        bottleneck: &PerformanceBottleneck,
+    ) -> Result<Option<OptimizationRecommendation>> {
         let recommendation = match bottleneck.bottleneck_type {
             BottleneckType::CPU => Some(OptimizationRecommendation {
                 id: Uuid::new_v4(),
@@ -595,7 +621,10 @@ impl PerformanceAnalyzer {
                     confidence: bottleneck.confidence,
                     evidence: vec![
                         format!("Bottleneck type: {:?}", bottleneck.bottleneck_type),
-                        format!("Performance impact: {:.1}%", bottleneck.performance_impact * 100.0),
+                        format!(
+                            "Performance impact: {:.1}%",
+                            bottleneck.performance_impact * 100.0
+                        ),
                     ],
                     generated_at: Utc::now(),
                     priority: match bottleneck.severity {
@@ -686,12 +715,15 @@ mod tests {
                 cache_hit_rate: 0.85,
                 error_rate: 0.001,
             };
-            analyzer.record_snapshot(snapshot).await.expect("await should be present");
+            analyzer
+                .record_snapshot(snapshot)
+                .await
+                .expect("await should be present");
         }
 
         // Should have calculated trends
         assert!(!analyzer.trends.is_empty());
-        
+
         if let Some(ops_trend) = analyzer.trends.get("ops_per_second") {
             assert_eq!(ops_trend.trend_direction, TrendDirection::Improving);
         }
@@ -714,11 +746,17 @@ mod tests {
             error_rate: 0.001,
         };
 
-        analyzer.record_snapshot(snapshot).await.expect("await should be present");
+        analyzer
+            .record_snapshot(snapshot)
+            .await
+            .expect("await should be present");
 
         // Should detect CPU bottleneck
         assert!(!analyzer.bottlenecks.is_empty());
-        assert!(analyzer.bottlenecks.iter().any(|b| b.bottleneck_type == BottleneckType::CPU));
+        assert!(analyzer
+            .bottlenecks
+            .iter()
+            .any(|b| b.bottleneck_type == BottleneckType::CPU));
     }
 
     #[tokio::test]
@@ -735,9 +773,14 @@ mod tests {
             analysis_period: Duration::hours(1),
             confidence: 0.9,
         };
-        analyzer.trends.insert("avg_response_time_ms".to_string(), trend);
+        analyzer
+            .trends
+            .insert("avg_response_time_ms".to_string(), trend);
 
-        let recommendations = analyzer.generate_recommendations().await.expect("await should be present");
+        let recommendations = analyzer
+            .generate_recommendations()
+            .await
+            .expect("await should be present");
         assert!(!recommendations.is_empty());
     }
 
@@ -757,7 +800,10 @@ mod tests {
         };
         analyzer.trends.insert("ops_per_second".to_string(), trend);
 
-        let insights = analyzer.generate_insights().await.expect("await should be present");
+        let insights = analyzer
+            .generate_insights()
+            .await
+            .expect("await should be present");
         assert!(!insights.is_empty());
     }
 }

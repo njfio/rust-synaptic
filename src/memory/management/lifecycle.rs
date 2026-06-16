@@ -2,11 +2,11 @@
 
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use chrono::{DateTime, Utc, Duration, Datelike};
+use chrono::{DateTime, Datelike, Duration, Utc};
+use lz4_flex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use lz4_flex;
 
 /// Manages the lifecycle of memories from creation to archival
 pub struct MemoryLifecycleManager {
@@ -225,11 +225,25 @@ pub struct LifecyclePrediction {
 /// Types of predicted actions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PredictedAction {
-    Archive { confidence: f64, estimated_date: DateTime<Utc> },
-    Delete { confidence: f64, estimated_date: DateTime<Utc> },
-    Compress { confidence: f64, estimated_date: DateTime<Utc> },
-    Optimize { confidence: f64, estimated_date: DateTime<Utc> },
-    NoAction { confidence: f64 },
+    Archive {
+        confidence: f64,
+        estimated_date: DateTime<Utc>,
+    },
+    Delete {
+        confidence: f64,
+        estimated_date: DateTime<Utc>,
+    },
+    Compress {
+        confidence: f64,
+        estimated_date: DateTime<Utc>,
+    },
+    Optimize {
+        confidence: f64,
+        estimated_date: DateTime<Utc>,
+    },
+    NoAction {
+        confidence: f64,
+    },
 }
 
 /// Memory lifecycle prediction analysis
@@ -439,14 +453,6 @@ struct ActionAnalysisResult {
     pub warnings_added: usize,
 }
 
-
-
-
-
-
-
-
-
 #[allow(dead_code)]
 impl MemoryLifecycleManager {
     /// Create a new lifecycle manager
@@ -504,7 +510,7 @@ impl MemoryLifecycleManager {
     ) -> Result<()> {
         if let Some(state) = self.memory_states.get_mut(&memory.key) {
             state.last_updated = Utc::now();
-            
+
             // Update stage if appropriate
             if state.stage == MemoryStage::Created {
                 state.stage = MemoryStage::Active;
@@ -564,17 +570,28 @@ impl MemoryLifecycleManager {
         };
 
         // Get active policies sorted by priority (clone to avoid borrowing issues)
-        let active_policies: Vec<LifecyclePolicy> = self.get_active_policies().into_iter().cloned().collect();
+        let active_policies: Vec<LifecyclePolicy> =
+            self.get_active_policies().into_iter().cloned().collect();
         let mut actions_to_execute = Vec::new();
 
         for policy in active_policies {
-            tracing::debug!("Evaluating policy '{}' for memory '{}'", policy.name, memory_key);
+            tracing::debug!(
+                "Evaluating policy '{}' for memory '{}'",
+                policy.name,
+                memory_key
+            );
 
             // Check if all conditions are met
-            let conditions_met = self.evaluate_policy_conditions(storage, &policy, memory_key, &memory_state).await?;
+            let conditions_met = self
+                .evaluate_policy_conditions(storage, &policy, memory_key, &memory_state)
+                .await?;
 
             if conditions_met {
-                tracing::info!("Policy '{}' triggered for memory '{}'", policy.name, memory_key);
+                tracing::info!(
+                    "Policy '{}' triggered for memory '{}'",
+                    policy.name,
+                    memory_key
+                );
 
                 // Record policy trigger event
                 let event = LifecycleEvent {
@@ -599,11 +616,16 @@ impl MemoryLifecycleManager {
 
         // Execute actions
         for (action, policy_id) in actions_to_execute {
-            self.execute_lifecycle_action(storage, memory_key, &action, &policy_id).await?;
+            self.execute_lifecycle_action(storage, memory_key, &action, &policy_id)
+                .await?;
         }
 
         let duration = start_time.elapsed();
-        tracing::debug!("Policy evaluation completed for memory '{}' in {:?}", memory_key, duration);
+        tracing::debug!(
+            "Policy evaluation completed for memory '{}' in {:?}",
+            memory_key,
+            duration
+        );
 
         Ok(())
     }
@@ -617,14 +639,24 @@ impl MemoryLifecycleManager {
         memory_state: &MemoryLifecycleState,
     ) -> Result<bool> {
         for condition in &policy.conditions {
-            let condition_met = self.evaluate_single_condition(storage, condition, memory_key, memory_state).await?;
+            let condition_met = self
+                .evaluate_single_condition(storage, condition, memory_key, memory_state)
+                .await?;
             if !condition_met {
-                tracing::debug!("Condition {:?} not met for memory '{}'", condition, memory_key);
+                tracing::debug!(
+                    "Condition {:?} not met for memory '{}'",
+                    condition,
+                    memory_key
+                );
                 return Ok(false);
             }
         }
 
-        tracing::debug!("All conditions met for policy '{}' on memory '{}'", policy.name, memory_key);
+        tracing::debug!(
+            "All conditions met for policy '{}' on memory '{}'",
+            policy.name,
+            memory_key
+        );
         Ok(true)
     }
 
@@ -647,8 +679,12 @@ impl MemoryLifecycleManager {
 
             LifecycleCondition::NotAccessedFor { days } => {
                 // Find last access event
-                let last_access = self.events.iter()
-                    .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed)
+                let last_access = self
+                    .events
+                    .iter()
+                    .filter(|e| {
+                        e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed
+                    })
                     .max_by_key(|e| e.timestamp);
 
                 let last_access_time = last_access
@@ -673,9 +709,9 @@ impl MemoryLifecycleManager {
             LifecycleCondition::SizeExceeds { bytes } => {
                 // Get the actual memory entry to check size
                 if let Some(memory) = storage.retrieve(memory_key).await? {
-                    let memory_size = memory.value.len() +
-                        memory.metadata.tags.iter().map(|t| t.len()).sum::<usize>() +
-                        memory.key.len();
+                    let memory_size = memory.value.len()
+                        + memory.metadata.tags.iter().map(|t| t.len()).sum::<usize>()
+                        + memory.key.len();
                     Ok(memory_size > *bytes)
                 } else {
                     // Memory not found, consider it as not exceeding size
@@ -686,7 +722,8 @@ impl MemoryLifecycleManager {
             LifecycleCondition::HasTags { tags } => {
                 // Get the actual memory entry to check tags
                 if let Some(memory) = storage.retrieve(memory_key).await? {
-                    let has_matching_tag = tags.iter().any(|tag| memory.metadata.tags.contains(tag));
+                    let has_matching_tag =
+                        tags.iter().any(|tag| memory.metadata.tags.contains(tag));
                     Ok(has_matching_tag)
                 } else {
                     // Memory not found, consider it as not having tags
@@ -695,8 +732,12 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleCondition::AccessCountBelow { count } => {
-                let access_count = self.events.iter()
-                    .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed)
+                let access_count = self
+                    .events
+                    .iter()
+                    .filter(|e| {
+                        e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed
+                    })
                     .count() as u64;
                 Ok(access_count < *count)
             }
@@ -717,7 +758,12 @@ impl MemoryLifecycleManager {
         action: &LifecycleAction,
         policy_id: &str,
     ) -> Result<()> {
-        tracing::info!("Executing lifecycle action {:?} on memory '{}' (policy: {})", action, memory_key, policy_id);
+        tracing::info!(
+            "Executing lifecycle action {:?} on memory '{}' (policy: {})",
+            action,
+            memory_key,
+            policy_id
+        );
 
         match action {
             LifecycleAction::Archive => {
@@ -737,7 +783,8 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleAction::ReduceImportance { factor } => {
-                self.reduce_memory_importance(storage, memory_key, *factor).await?;
+                self.reduce_memory_importance(storage, memory_key, *factor)
+                    .await?;
             }
 
             LifecycleAction::AddWarningTag { tag } => {
@@ -834,14 +881,21 @@ impl MemoryLifecycleManager {
             // Update lifecycle state
             if let Some(state) = self.memory_states.get_mut(memory_key) {
                 state.last_updated = chrono::Utc::now();
-                state.warnings.push(format!("Compressed: {} -> {} bytes ({:.1}% reduction)",
-                    original_size, compressed_size,
-                    (1.0 - compressed_size as f64 / original_size as f64) * 100.0));
+                state.warnings.push(format!(
+                    "Compressed: {} -> {} bytes ({:.1}% reduction)",
+                    original_size,
+                    compressed_size,
+                    (1.0 - compressed_size as f64 / original_size as f64) * 100.0
+                ));
             }
 
-            tracing::info!("Memory '{}' compressed: {} -> {} bytes ({:.1}% reduction)",
-                memory_key, original_size, compressed_size,
-                (1.0 - compressed_size as f64 / original_size as f64) * 100.0);
+            tracing::info!(
+                "Memory '{}' compressed: {} -> {} bytes ({:.1}% reduction)",
+                memory_key,
+                original_size,
+                compressed_size,
+                (1.0 - compressed_size as f64 / original_size as f64) * 100.0
+            );
         } else {
             tracing::warn!("Memory '{}' not found for compression", memory_key);
         }
@@ -872,12 +926,20 @@ impl MemoryLifecycleManager {
             if let Some(state) = self.memory_states.get_mut(memory_key) {
                 state.stage = MemoryStage::Archived;
                 state.last_updated = chrono::Utc::now();
-                state.warnings.push("Moved to long-term storage".to_string());
+                state
+                    .warnings
+                    .push("Moved to long-term storage".to_string());
             }
 
-            tracing::info!("Memory '{}' moved to long-term storage successfully", memory_key);
+            tracing::info!(
+                "Memory '{}' moved to long-term storage successfully",
+                memory_key
+            );
         } else {
-            tracing::warn!("Memory '{}' not found for long-term storage move", memory_key);
+            tracing::warn!(
+                "Memory '{}' not found for long-term storage move",
+                memory_key
+            );
         }
 
         Ok(())
@@ -900,7 +962,10 @@ impl MemoryLifecycleManager {
             memory.metadata.last_accessed = chrono::Utc::now();
 
             // Add tag to indicate importance reduction
-            memory.metadata.tags.push(format!("importance_reduced_{:.2}", factor));
+            memory
+                .metadata
+                .tags
+                .push(format!("importance_reduced_{:.2}", factor));
 
             // Store the updated memory back
             storage.store(&memory).await?;
@@ -908,12 +973,19 @@ impl MemoryLifecycleManager {
             // Update lifecycle state
             if let Some(state) = self.memory_states.get_mut(memory_key) {
                 state.last_updated = chrono::Utc::now();
-                state.warnings.push(format!("Importance reduced: {:.3} -> {:.3} (factor: {:.2})",
-                    original_importance, memory.metadata.importance, factor));
+                state.warnings.push(format!(
+                    "Importance reduced: {:.3} -> {:.3} (factor: {:.2})",
+                    original_importance, memory.metadata.importance, factor
+                ));
             }
 
-            tracing::info!("Memory '{}' importance reduced: {:.3} -> {:.3} (factor: {:.2})",
-                memory_key, original_importance, memory.metadata.importance, factor);
+            tracing::info!(
+                "Memory '{}' importance reduced: {:.3} -> {:.3} (factor: {:.2})",
+                memory_key,
+                original_importance,
+                memory.metadata.importance,
+                factor
+            );
         } else {
             tracing::warn!("Memory '{}' not found for importance reduction", memory_key);
         }
@@ -949,7 +1021,10 @@ impl MemoryLifecycleManager {
             // Update memory with summary
             memory.value = summary;
             memory.metadata.tags.push("summarized".to_string());
-            memory.metadata.tags.push(format!("original_length_{}", original_length));
+            memory
+                .metadata
+                .tags
+                .push(format!("original_length_{}", original_length));
             memory.metadata.last_accessed = chrono::Utc::now();
 
             // Reduce importance slightly since it's now summarized
@@ -961,14 +1036,21 @@ impl MemoryLifecycleManager {
             // Update lifecycle state
             if let Some(state) = self.memory_states.get_mut(memory_key) {
                 state.last_updated = chrono::Utc::now();
-                state.warnings.push(format!("Summarized: {} -> {} chars ({:.1}% reduction)",
-                    original_length, summary_length,
-                    (1.0 - summary_length as f64 / original_length as f64) * 100.0));
+                state.warnings.push(format!(
+                    "Summarized: {} -> {} chars ({:.1}% reduction)",
+                    original_length,
+                    summary_length,
+                    (1.0 - summary_length as f64 / original_length as f64) * 100.0
+                ));
             }
 
-            tracing::info!("Memory '{}' summarized: {} -> {} chars ({:.1}% reduction)",
-                memory_key, original_length, summary_length,
-                (1.0 - summary_length as f64 / original_length as f64) * 100.0);
+            tracing::info!(
+                "Memory '{}' summarized: {} -> {} chars ({:.1}% reduction)",
+                memory_key,
+                original_length,
+                summary_length,
+                (1.0 - summary_length as f64 / original_length as f64) * 100.0
+            );
         } else {
             tracing::warn!("Memory '{}' not found for summarization", memory_key);
         }
@@ -983,7 +1065,10 @@ impl MemoryLifecycleManager {
         }
 
         // Strategy 1: Extract first and last sentences
-        let sentences: Vec<&str> = content.split('.').filter(|s| !s.trim().is_empty()).collect();
+        let sentences: Vec<&str> = content
+            .split('.')
+            .filter(|s| !s.trim().is_empty())
+            .collect();
         if sentences.len() >= 2 {
             let first_sentence = sentences[0].trim();
             let last_sentence = sentences[sentences.len() - 1].trim();
@@ -994,7 +1079,8 @@ impl MemoryLifecycleManager {
         }
 
         // Strategy 2: Extract key phrases (words longer than 4 characters)
-        let key_words: Vec<&str> = content.split_whitespace()
+        let key_words: Vec<&str> = content
+            .split_whitespace()
             .filter(|word| word.len() > 4 && word.chars().all(|c| c.is_alphabetic()))
             .take(10)
             .collect();
@@ -1010,7 +1096,11 @@ impl MemoryLifecycleManager {
 
     /// Execute a custom action with real implementation
     async fn execute_custom_action(&mut self, memory_key: &str, action: &str) -> Result<()> {
-        tracing::info!("Executing custom action '{}' on memory '{}'", action, memory_key);
+        tracing::info!(
+            "Executing custom action '{}' on memory '{}'",
+            action,
+            memory_key
+        );
 
         match action {
             "backup_to_external" => {
@@ -1045,12 +1135,23 @@ impl MemoryLifecycleManager {
             }
             _ => {
                 // For unknown custom actions, log and continue
-                tracing::warn!("Unknown custom action '{}' for memory '{}', skipping", action, memory_key);
-                return Err(crate::error::MemoryError::configuration(format!("Unknown custom action: {}", action)));
+                tracing::warn!(
+                    "Unknown custom action '{}' for memory '{}', skipping",
+                    action,
+                    memory_key
+                );
+                return Err(crate::error::MemoryError::configuration(format!(
+                    "Unknown custom action: {}",
+                    action
+                )));
             }
         }
 
-        tracing::info!("Custom action '{}' completed successfully for memory '{}'", action, memory_key);
+        tracing::info!(
+            "Custom action '{}' completed successfully for memory '{}'",
+            action,
+            memory_key
+        );
         Ok(())
     }
 
@@ -1075,17 +1176,28 @@ impl MemoryLifecycleManager {
             timestamp: backup_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Memory backed up to external storage (backup_id: {})", backup_id),
+            description: format!(
+                "Memory backed up to external storage (backup_id: {})",
+                backup_id
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
         // Update memory state with backup information
         if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!("Backed up at {} (ID: {})", backup_timestamp.format("%Y-%m-%d %H:%M:%S"), backup_id));
+            state.warnings.push(format!(
+                "Backed up at {} (ID: {})",
+                backup_timestamp.format("%Y-%m-%d %H:%M:%S"),
+                backup_id
+            ));
         }
 
-        tracing::info!("Memory '{}' successfully backed up with ID: {}", memory_key, backup_id);
+        tracing::info!(
+            "Memory '{}' successfully backed up with ID: {}",
+            memory_key,
+            backup_id
+        );
         Ok(())
     }
 
@@ -1117,10 +1229,17 @@ impl MemoryLifecycleManager {
 
         // Update memory state with encryption information
         if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!("Encrypted at {} using {}", encryption_timestamp.format("%Y-%m-%d %H:%M:%S"), encryption_algorithm));
+            state.warnings.push(format!(
+                "Encrypted at {} using {}",
+                encryption_timestamp.format("%Y-%m-%d %H:%M:%S"),
+                encryption_algorithm
+            ));
         }
 
-        tracing::info!("Memory '{}' sensitive data successfully encrypted", memory_key);
+        tracing::info!(
+            "Memory '{}' sensitive data successfully encrypted",
+            memory_key
+        );
         Ok(())
     }
 
@@ -1137,11 +1256,15 @@ impl MemoryLifecycleManager {
 
         // Simulate analytics generation
         let report_timestamp = Utc::now();
-        let access_count = self.events.iter()
+        let access_count = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed)
             .count();
 
-        let update_count = self.events.iter()
+        let update_count = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Updated)
             .count();
 
@@ -1151,12 +1274,20 @@ impl MemoryLifecycleManager {
             timestamp: report_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Analytics report generated: {} accesses, {} updates", access_count, update_count),
+            description: format!(
+                "Analytics report generated: {} accesses, {} updates",
+                access_count, update_count
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
-        tracing::info!("Analytics report generated for memory '{}': {} accesses, {} updates", memory_key, access_count, update_count);
+        tracing::info!(
+            "Analytics report generated for memory '{}': {} accesses, {} updates",
+            memory_key,
+            access_count,
+            update_count
+        );
         Ok(())
     }
 
@@ -1188,10 +1319,18 @@ impl MemoryLifecycleManager {
 
         // Update memory state with sync information
         if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!("Cloud synced at {} (ID: {})", sync_timestamp.format("%Y-%m-%d %H:%M:%S"), sync_id));
+            state.warnings.push(format!(
+                "Cloud synced at {} (ID: {})",
+                sync_timestamp.format("%Y-%m-%d %H:%M:%S"),
+                sync_id
+            ));
         }
 
-        tracing::info!("Memory '{}' successfully synced to cloud with ID: {}", memory_key, sync_id);
+        tracing::info!(
+            "Memory '{}' successfully synced to cloud with ID: {}",
+            memory_key,
+            sync_id
+        );
         Ok(())
     }
 
@@ -1208,7 +1347,10 @@ impl MemoryLifecycleManager {
 
         // Simulate integrity validation
         let validation_timestamp = Utc::now();
-        let checksum = format!("sha256:{}", Uuid::new_v4().to_string().replace("-", "")[..16].to_string());
+        let checksum = format!(
+            "sha256:{}",
+            Uuid::new_v4().to_string().replace("-", "")[..16].to_string()
+        );
         let integrity_status = "VALID"; // In real implementation, this would be calculated
 
         // Record validation event
@@ -1217,12 +1359,20 @@ impl MemoryLifecycleManager {
             timestamp: validation_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Integrity validation: {} (checksum: {})", integrity_status, checksum),
+            description: format!(
+                "Integrity validation: {} (checksum: {})",
+                integrity_status, checksum
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
-        tracing::info!("Memory '{}' integrity validation completed: {} (checksum: {})", memory_key, integrity_status, checksum);
+        tracing::info!(
+            "Memory '{}' integrity validation completed: {} (checksum: {})",
+            memory_key,
+            integrity_status,
+            checksum
+        );
         Ok(())
     }
 
@@ -1248,12 +1398,19 @@ impl MemoryLifecycleManager {
             timestamp: optimization_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Storage optimized: {} bytes saved via {}", space_saved, optimization_type),
+            description: format!(
+                "Storage optimized: {} bytes saved via {}",
+                space_saved, optimization_type
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
-        tracing::info!("Memory '{}' storage optimized: {} bytes saved", memory_key, space_saved);
+        tracing::info!(
+            "Memory '{}' storage optimized: {} bytes saved",
+            memory_key,
+            space_saved
+        );
         Ok(())
     }
 
@@ -1279,17 +1436,29 @@ impl MemoryLifecycleManager {
             timestamp: snapshot_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Snapshot created: {} (version: {})", snapshot_id, snapshot_version),
+            description: format!(
+                "Snapshot created: {} (version: {})",
+                snapshot_id, snapshot_version
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
         // Update memory state with snapshot information
         if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!("Snapshot {} created at {}", snapshot_id, snapshot_timestamp.format("%Y-%m-%d %H:%M:%S")));
+            state.warnings.push(format!(
+                "Snapshot {} created at {}",
+                snapshot_id,
+                snapshot_timestamp.format("%Y-%m-%d %H:%M:%S")
+            ));
         }
 
-        tracing::info!("Memory '{}' snapshot created: {} (version: {})", memory_key, snapshot_id, snapshot_version);
+        tracing::info!(
+            "Memory '{}' snapshot created: {} (version: {})",
+            memory_key,
+            snapshot_id,
+            snapshot_version
+        );
         Ok(())
     }
 
@@ -1306,17 +1475,27 @@ impl MemoryLifecycleManager {
 
         // Simulate access audit
         let audit_timestamp = Utc::now();
-        let access_events = self.events.iter()
+        let access_events = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed)
             .count();
 
-        let last_access = self.events.iter()
+        let last_access = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key && e.event_type == LifecycleEventType::Accessed)
             .max_by_key(|e| e.timestamp)
             .map(|e| e.timestamp)
             .unwrap_or(audit_timestamp);
 
-        let audit_status = if access_events > 100 { "HIGH_ACTIVITY" } else if access_events > 10 { "NORMAL_ACTIVITY" } else { "LOW_ACTIVITY" };
+        let audit_status = if access_events > 100 {
+            "HIGH_ACTIVITY"
+        } else if access_events > 10 {
+            "NORMAL_ACTIVITY"
+        } else {
+            "LOW_ACTIVITY"
+        };
 
         // Record audit event
         let event = LifecycleEvent {
@@ -1324,12 +1503,22 @@ impl MemoryLifecycleManager {
             timestamp: audit_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Access audit completed: {} ({} access events, last: {})", audit_status, access_events, last_access.format("%Y-%m-%d %H:%M:%S")),
+            description: format!(
+                "Access audit completed: {} ({} access events, last: {})",
+                audit_status,
+                access_events,
+                last_access.format("%Y-%m-%d %H:%M:%S")
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
-        tracing::info!("Memory '{}' access audit completed: {} ({} access events)", memory_key, audit_status, access_events);
+        tracing::info!(
+            "Memory '{}' access audit completed: {} ({} access events)",
+            memory_key,
+            audit_status,
+            access_events
+        );
         Ok(())
     }
 
@@ -1355,12 +1544,21 @@ impl MemoryLifecycleManager {
             timestamp: refresh_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Metadata refreshed: {} fields updated, new importance: {:.2}", metadata_fields_updated.len(), new_importance),
+            description: format!(
+                "Metadata refreshed: {} fields updated, new importance: {:.2}",
+                metadata_fields_updated.len(),
+                new_importance
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
-        tracing::info!("Memory '{}' metadata refreshed: {} fields updated, new importance: {:.2}", memory_key, metadata_fields_updated.len(), new_importance);
+        tracing::info!(
+            "Memory '{}' metadata refreshed: {} fields updated, new importance: {:.2}",
+            memory_key,
+            metadata_fields_updated.len(),
+            new_importance
+        );
         Ok(())
     }
 
@@ -1387,17 +1585,29 @@ impl MemoryLifecycleManager {
             timestamp: migration_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Format migrated from {} to {} using {}", old_format, new_format, migration_type),
+            description: format!(
+                "Format migrated from {} to {} using {}",
+                old_format, new_format, migration_type
+            ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
         // Update memory state with migration information
         if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!("Format migrated to {} at {}", new_format, migration_timestamp.format("%Y-%m-%d %H:%M:%S")));
+            state.warnings.push(format!(
+                "Format migrated to {} at {}",
+                new_format,
+                migration_timestamp.format("%Y-%m-%d %H:%M:%S")
+            ));
         }
 
-        tracing::info!("Memory '{}' format migrated from {} to {}", memory_key, old_format, new_format);
+        tracing::info!(
+            "Memory '{}' format migrated from {} to {}",
+            memory_key,
+            old_format,
+            new_format
+        );
         Ok(())
     }
 
@@ -1428,7 +1638,8 @@ impl MemoryLifecycleManager {
             match self.evaluate_policies(storage, &memory_key).await {
                 Ok(()) => {
                     // Advanced action analysis and impact assessment
-                    let action_analysis = self.analyze_policy_actions(&memory_key, start_time).await?;
+                    let action_analysis =
+                        self.analyze_policy_actions(&memory_key, start_time).await?;
 
                     // Update performance metrics
                     self.update_policy_performance_metrics(&memory_key, &action_analysis);
@@ -1441,7 +1652,9 @@ impl MemoryLifecycleManager {
                     report.warnings_added += action_analysis.warnings_added;
                 }
                 Err(e) => {
-                    report.errors.push(format!("Error evaluating memory '{}': {}", memory_key, e));
+                    report
+                        .errors
+                        .push(format!("Error evaluating memory '{}': {}", memory_key, e));
                 }
             }
         }
@@ -1492,14 +1705,16 @@ impl MemoryLifecycleManager {
 
     /// Get all memories in a specific stage
     pub fn get_memories_in_stage(&self, stage: &MemoryStage) -> Vec<&MemoryLifecycleState> {
-        self.memory_states.values()
+        self.memory_states
+            .values()
             .filter(|state| &state.stage == stage)
             .collect()
     }
 
     /// Get lifecycle events for a memory
     pub fn get_memory_events(&self, memory_key: &str) -> Vec<&LifecycleEvent> {
-        self.events.iter()
+        self.events
+            .iter()
             .filter(|event| event.memory_key == memory_key)
             .collect()
     }
@@ -1559,36 +1774,53 @@ impl MemoryLifecycleManager {
 
         for memory_key in &memory_keys {
             // Analyze memory patterns and predict future actions
-            let prediction = self.analyze_memory_lifecycle_patterns(storage, memory_key).await?;
+            let prediction = self
+                .analyze_memory_lifecycle_patterns(storage, memory_key)
+                .await?;
 
             // Add to appropriate prediction categories
             match prediction.predicted_action {
-                PredictedAction::Archive { confidence, estimated_date } => {
-                    report.predicted_archival_candidates.push(LifecyclePrediction {
-                        memory_key: memory_key.clone(),
-                        predicted_action: prediction.predicted_action,
-                        confidence_score: confidence,
-                        estimated_date,
-                        reasoning: prediction.reasoning,
-                    });
+                PredictedAction::Archive {
+                    confidence,
+                    estimated_date,
+                } => {
+                    report
+                        .predicted_archival_candidates
+                        .push(LifecyclePrediction {
+                            memory_key: memory_key.clone(),
+                            predicted_action: prediction.predicted_action,
+                            confidence_score: confidence,
+                            estimated_date,
+                            reasoning: prediction.reasoning,
+                        });
                 }
-                PredictedAction::Delete { confidence, estimated_date } => {
-                    report.predicted_deletion_candidates.push(LifecyclePrediction {
-                        memory_key: memory_key.clone(),
-                        predicted_action: prediction.predicted_action,
-                        confidence_score: confidence,
-                        estimated_date,
-                        reasoning: prediction.reasoning,
-                    });
+                PredictedAction::Delete {
+                    confidence,
+                    estimated_date,
+                } => {
+                    report
+                        .predicted_deletion_candidates
+                        .push(LifecyclePrediction {
+                            memory_key: memory_key.clone(),
+                            predicted_action: prediction.predicted_action,
+                            confidence_score: confidence,
+                            estimated_date,
+                            reasoning: prediction.reasoning,
+                        });
                 }
-                PredictedAction::Optimize { confidence, estimated_date } => {
-                    report.optimization_recommendations.push(OptimizationRecommendation {
-                        memory_key: memory_key.clone(),
-                        optimization_type: "storage_compression".to_string(),
-                        estimated_savings: prediction.estimated_impact,
-                        confidence_score: confidence,
-                        implementation_date: estimated_date,
-                    });
+                PredictedAction::Optimize {
+                    confidence,
+                    estimated_date,
+                } => {
+                    report
+                        .optimization_recommendations
+                        .push(OptimizationRecommendation {
+                            memory_key: memory_key.clone(),
+                            optimization_type: "storage_compression".to_string(),
+                            estimated_savings: prediction.estimated_impact,
+                            confidence_score: confidence,
+                            implementation_date: estimated_date,
+                        });
                 }
                 _ => {}
             }
@@ -1599,7 +1831,9 @@ impl MemoryLifecycleManager {
                 report.risk_assessments.push(risk_assessment);
             }
 
-            report.confidence_scores.insert(memory_key.clone(), prediction.confidence_score);
+            report
+                .confidence_scores
+                .insert(memory_key.clone(), prediction.confidence_score);
         }
 
         // Generate storage projections
@@ -1628,17 +1862,21 @@ impl MemoryLifecycleManager {
 
         // Get memory state and events
         let _memory_state = self.memory_states.get(memory_key);
-        let memory_events: Vec<&LifecycleEvent> = self.events.iter()
+        let memory_events: Vec<&LifecycleEvent> = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key)
             .collect();
 
         // Calculate access patterns
-        let access_events: Vec<&LifecycleEvent> = memory_events.iter()
+        let access_events: Vec<&LifecycleEvent> = memory_events
+            .iter()
             .filter(|e| e.event_type == LifecycleEventType::Accessed)
             .cloned()
             .collect();
 
-        let last_access = access_events.iter()
+        let last_access = access_events
+            .iter()
             .max_by_key(|e| e.timestamp)
             .map(|e| e.timestamp)
             .unwrap_or(now - Duration::days(365));
@@ -1654,42 +1892,50 @@ impl MemoryLifecycleManager {
         };
 
         // Predict action based on patterns
-        let (predicted_action, confidence_score, reasoning) = if days_since_access > 180 && memory_importance < 0.3 {
-            (
-                PredictedAction::Delete {
-                    confidence: 0.85,
-                    estimated_date: now + Duration::days(30),
-                },
-                0.85,
-                format!("Low importance ({:.2}) and not accessed for {} days", memory_importance, days_since_access)
-            )
-        } else if days_since_access > 90 && access_frequency < 0.1 {
-            (
-                PredictedAction::Archive {
-                    confidence: 0.75,
-                    estimated_date: now + Duration::days(60),
-                },
-                0.75,
-                format!("Low access frequency ({:.3}/day) and {} days since last access", access_frequency, days_since_access)
-            )
-        } else if memory_importance > 0.7 && access_frequency > 1.0 {
-            (
-                PredictedAction::Optimize {
-                    confidence: 0.65,
-                    estimated_date: now + Duration::days(14),
-                },
-                0.65,
-                format!("High importance ({:.2}) and frequent access ({:.1}/day)", memory_importance, access_frequency)
-            )
-        } else {
-            (
-                PredictedAction::NoAction {
-                    confidence: 0.9,
-                },
-                0.9,
-                "Memory patterns indicate stable usage".to_string()
-            )
-        };
+        let (predicted_action, confidence_score, reasoning) =
+            if days_since_access > 180 && memory_importance < 0.3 {
+                (
+                    PredictedAction::Delete {
+                        confidence: 0.85,
+                        estimated_date: now + Duration::days(30),
+                    },
+                    0.85,
+                    format!(
+                        "Low importance ({:.2}) and not accessed for {} days",
+                        memory_importance, days_since_access
+                    ),
+                )
+            } else if days_since_access > 90 && access_frequency < 0.1 {
+                (
+                    PredictedAction::Archive {
+                        confidence: 0.75,
+                        estimated_date: now + Duration::days(60),
+                    },
+                    0.75,
+                    format!(
+                        "Low access frequency ({:.3}/day) and {} days since last access",
+                        access_frequency, days_since_access
+                    ),
+                )
+            } else if memory_importance > 0.7 && access_frequency > 1.0 {
+                (
+                    PredictedAction::Optimize {
+                        confidence: 0.65,
+                        estimated_date: now + Duration::days(14),
+                    },
+                    0.65,
+                    format!(
+                        "High importance ({:.2}) and frequent access ({:.1}/day)",
+                        memory_importance, access_frequency
+                    ),
+                )
+            } else {
+                (
+                    PredictedAction::NoAction { confidence: 0.9 },
+                    0.9,
+                    "Memory patterns indicate stable usage".to_string(),
+                )
+            };
 
         Ok(MemoryLifecyclePrediction {
             memory_key: memory_key.to_string(),
@@ -1709,7 +1955,9 @@ impl MemoryLifecycleManager {
         let now = Utc::now();
 
         // Get memory events for risk analysis
-        let memory_events: Vec<&LifecycleEvent> = self.events.iter()
+        let memory_events: Vec<&LifecycleEvent> = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key)
             .collect();
 
@@ -1717,7 +1965,8 @@ impl MemoryLifecycleManager {
         let mut risk_score = 0.0;
 
         // Check for data corruption risks
-        let update_events: Vec<&LifecycleEvent> = memory_events.iter()
+        let update_events: Vec<&LifecycleEvent> = memory_events
+            .iter()
             .filter(|e| e.event_type == LifecycleEventType::Updated)
             .cloned()
             .collect();
@@ -1728,13 +1977,15 @@ impl MemoryLifecycleManager {
         }
 
         // Check for access pattern anomalies
-        let access_events: Vec<&LifecycleEvent> = memory_events.iter()
+        let access_events: Vec<&LifecycleEvent> = memory_events
+            .iter()
             .filter(|e| e.event_type == LifecycleEventType::Accessed)
             .cloned()
             .collect();
 
         if access_events.len() > 1000 {
-            risk_factors.push("Extremely high access frequency may indicate security concern".to_string());
+            risk_factors
+                .push("Extremely high access frequency may indicate security concern".to_string());
             risk_score += 0.4;
         }
 
@@ -1742,7 +1993,8 @@ impl MemoryLifecycleManager {
         if let Some(state) = self.memory_states.get(memory_key) {
             let age_days = (now - state.last_updated).num_days();
             if age_days > 1000 {
-                risk_factors.push("Very old memory may have outdated or irrelevant data".to_string());
+                risk_factors
+                    .push("Very old memory may have outdated or irrelevant data".to_string());
                 risk_score += 0.2;
             }
         }
@@ -1750,7 +2002,8 @@ impl MemoryLifecycleManager {
         // Check for size-related risks
         if let Some(memory) = storage.retrieve(memory_key).await? {
             let memory_size = memory.value.len();
-            if memory_size > 10_000_000 { // > 10MB
+            if memory_size > 10_000_000 {
+                // > 10MB
                 risk_factors.push("Large memory size may impact system performance".to_string());
                 risk_score += 0.25;
             }
@@ -1779,7 +2032,10 @@ impl MemoryLifecycleManager {
     }
 
     /// Generate advanced storage projections using machine learning-based forecasting
-    async fn generate_storage_projections(&self, memory_keys: &[String]) -> Result<StorageProjection> {
+    async fn generate_storage_projections(
+        &self,
+        memory_keys: &[String],
+    ) -> Result<StorageProjection> {
         // Analyze historical growth patterns
         let historical_data = self.analyze_historical_storage_patterns().await?;
 
@@ -1787,33 +2043,47 @@ impl MemoryLifecycleManager {
         let current_size_analysis = self.calculate_detailed_storage_usage(memory_keys).await?;
 
         // Use multiple forecasting models
-        let linear_projection = self.calculate_linear_growth_projection(&historical_data, &current_size_analysis);
-        let exponential_projection = self.calculate_exponential_growth_projection(&historical_data, &current_size_analysis);
-        let seasonal_projection = self.calculate_seasonal_growth_projection(&historical_data, &current_size_analysis);
-        let ml_projection = self.calculate_ml_based_projection(&historical_data, &current_size_analysis).await?;
+        let linear_projection =
+            self.calculate_linear_growth_projection(&historical_data, &current_size_analysis);
+        let exponential_projection =
+            self.calculate_exponential_growth_projection(&historical_data, &current_size_analysis);
+        let seasonal_projection =
+            self.calculate_seasonal_growth_projection(&historical_data, &current_size_analysis);
+        let ml_projection = self
+            .calculate_ml_based_projection(&historical_data, &current_size_analysis)
+            .await?;
 
         // Ensemble forecasting - combine multiple models
         let ensemble_weights = [0.2, 0.3, 0.2, 0.3]; // Linear, Exponential, Seasonal, ML
-        let projected_30_days = self.ensemble_forecast(&[
-            linear_projection.projected_30_days,
-            exponential_projection.projected_30_days,
-            seasonal_projection.projected_30_days,
-            ml_projection.projected_30_days,
-        ], &ensemble_weights);
+        let projected_30_days = self.ensemble_forecast(
+            &[
+                linear_projection.projected_30_days,
+                exponential_projection.projected_30_days,
+                seasonal_projection.projected_30_days,
+                ml_projection.projected_30_days,
+            ],
+            &ensemble_weights,
+        );
 
-        let projected_90_days = self.ensemble_forecast(&[
-            linear_projection.projected_90_days,
-            exponential_projection.projected_90_days,
-            seasonal_projection.projected_90_days,
-            ml_projection.projected_90_days,
-        ], &ensemble_weights);
+        let projected_90_days = self.ensemble_forecast(
+            &[
+                linear_projection.projected_90_days,
+                exponential_projection.projected_90_days,
+                seasonal_projection.projected_90_days,
+                ml_projection.projected_90_days,
+            ],
+            &ensemble_weights,
+        );
 
-        let projected_365_days = self.ensemble_forecast(&[
-            linear_projection.projected_365_days,
-            exponential_projection.projected_365_days,
-            seasonal_projection.projected_365_days,
-            ml_projection.projected_365_days,
-        ], &ensemble_weights);
+        let projected_365_days = self.ensemble_forecast(
+            &[
+                linear_projection.projected_365_days,
+                exponential_projection.projected_365_days,
+                seasonal_projection.projected_365_days,
+                ml_projection.projected_365_days,
+            ],
+            &ensemble_weights,
+        );
 
         // Calculate dynamic growth rate based on recent trends
         let dynamic_growth_rate = self.calculate_dynamic_growth_rate(&historical_data);
@@ -1840,14 +2110,16 @@ impl MemoryLifecycleManager {
                 mitigations.push("Implement data validation checks before updates".to_string());
                 mitigations.push("Consider implementing update rate limiting".to_string());
             } else if factor.contains("access frequency") {
-                mitigations.push("Review access patterns for potential security threats".to_string());
+                mitigations
+                    .push("Review access patterns for potential security threats".to_string());
                 mitigations.push("Implement access monitoring and alerting".to_string());
             } else if factor.contains("old memory") {
                 mitigations.push("Schedule memory content review and validation".to_string());
                 mitigations.push("Consider archiving or updating outdated information".to_string());
             } else if factor.contains("size") {
                 mitigations.push("Implement data compression or summarization".to_string());
-                mitigations.push("Consider splitting large memories into smaller chunks".to_string());
+                mitigations
+                    .push("Consider splitting large memories into smaller chunks".to_string());
             }
         }
 
@@ -1869,10 +2141,18 @@ impl MemoryLifecycleManager {
         let analysis_start = now - Duration::days(90);
 
         // Group events by day
-        let mut daily_events: std::collections::HashMap<i64, Vec<&LifecycleEvent>> = std::collections::HashMap::new();
+        let mut daily_events: std::collections::HashMap<i64, Vec<&LifecycleEvent>> =
+            std::collections::HashMap::new();
         for event in &self.events {
             if event.timestamp >= analysis_start {
-                let day = event.timestamp.date_naive().and_hms_opt(0, 0, 0).expect("value should be available").and_utc().timestamp() / 86400;
+                let day = event
+                    .timestamp
+                    .date_naive()
+                    .and_hms_opt(0, 0, 0)
+                    .expect("value should be available")
+                    .and_utc()
+                    .timestamp()
+                    / 86400;
                 daily_events.entry(day).or_default().push(event);
             }
         }
@@ -1885,10 +2165,22 @@ impl MemoryLifecycleManager {
             let day_events = daily_events.get(&day_timestamp).unwrap_or(&empty_vec);
 
             // Estimate daily storage size based on events
-            let creates = day_events.iter().filter(|e| e.event_type == LifecycleEventType::Created).count() as f64;
-            let deletes = day_events.iter().filter(|e| e.event_type == LifecycleEventType::Deleted).count() as f64;
-            let updates = day_events.iter().filter(|e| e.event_type == LifecycleEventType::Updated).count() as f64;
-            let accesses = day_events.iter().filter(|e| e.event_type == LifecycleEventType::Accessed).count() as f64;
+            let creates = day_events
+                .iter()
+                .filter(|e| e.event_type == LifecycleEventType::Created)
+                .count() as f64;
+            let deletes = day_events
+                .iter()
+                .filter(|e| e.event_type == LifecycleEventType::Deleted)
+                .count() as f64;
+            let updates = day_events
+                .iter()
+                .filter(|e| e.event_type == LifecycleEventType::Updated)
+                .count() as f64;
+            let accesses = day_events
+                .iter()
+                .filter(|e| e.event_type == LifecycleEventType::Accessed)
+                .count() as f64;
 
             // Estimate size change (simplified model)
             let estimated_size_change = creates * 1024.0 - deletes * 1024.0 + updates * 100.0;
@@ -1914,7 +2206,10 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate detailed storage usage analysis
-    async fn calculate_detailed_storage_usage(&self, memory_keys: &[String]) -> Result<DetailedStorageAnalysis> {
+    async fn calculate_detailed_storage_usage(
+        &self,
+        memory_keys: &[String],
+    ) -> Result<DetailedStorageAnalysis> {
         let mut total_size = 0;
         let mut size_distribution = std::collections::HashMap::new();
         let mut type_distribution = std::collections::HashMap::new();
@@ -1937,7 +2232,9 @@ impl MemoryLifecycleManager {
             } else {
                 "xlarge"
             };
-            *size_distribution.entry(size_bucket.to_string()).or_insert(0) += 1;
+            *size_distribution
+                .entry(size_bucket.to_string())
+                .or_insert(0) += 1;
 
             // Memory type distribution (simplified)
             let memory_type = if memory_key.contains("temp") {
@@ -1947,7 +2244,9 @@ impl MemoryLifecycleManager {
             } else {
                 "persistent"
             };
-            *type_distribution.entry(memory_type.to_string()).or_insert(0) += 1;
+            *type_distribution
+                .entry(memory_type.to_string())
+                .or_insert(0) += 1;
 
             // Age distribution
             if let Some(state) = self.memory_states.get(memory_key) {
@@ -1971,22 +2270,39 @@ impl MemoryLifecycleManager {
             size_distribution,
             _type_distribution: type_distribution,
             _age_distribution: age_distribution,
-            average_memory_size: if memory_keys.is_empty() { 0.0 } else { total_size as f64 / memory_keys.len() as f64 },
+            average_memory_size: if memory_keys.is_empty() {
+                0.0
+            } else {
+                total_size as f64 / memory_keys.len() as f64
+            },
         })
     }
 
     /// Calculate linear growth projection
-    fn calculate_linear_growth_projection(&self, historical_data: &HistoricalStorageData, current_analysis: &DetailedStorageAnalysis) -> GrowthProjection {
+    fn calculate_linear_growth_projection(
+        &self,
+        historical_data: &HistoricalStorageData,
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> GrowthProjection {
         if historical_data.daily_sizes.len() < 2 {
             return GrowthProjection::default();
         }
 
         // Simple linear regression
         let n = historical_data.daily_sizes.len() as f64;
-        let x_sum: f64 = (0..historical_data.daily_sizes.len()).map(|i| i as f64).sum();
+        let x_sum: f64 = (0..historical_data.daily_sizes.len())
+            .map(|i| i as f64)
+            .sum();
         let y_sum: f64 = historical_data.daily_sizes.iter().sum();
-        let xy_sum: f64 = historical_data.daily_sizes.iter().enumerate().map(|(i, &y)| i as f64 * y).sum();
-        let x_sq_sum: f64 = (0..historical_data.daily_sizes.len()).map(|i| (i as f64).powi(2)).sum();
+        let xy_sum: f64 = historical_data
+            .daily_sizes
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| i as f64 * y)
+            .sum();
+        let x_sq_sum: f64 = (0..historical_data.daily_sizes.len())
+            .map(|i| (i as f64).powi(2))
+            .sum();
 
         let slope = (n * xy_sum - x_sum * y_sum) / (n * x_sq_sum - x_sum.powi(2));
         let _intercept = (y_sum - slope * x_sum) / n;
@@ -2003,13 +2319,18 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate exponential growth projection
-    fn calculate_exponential_growth_projection(&self, historical_data: &HistoricalStorageData, current_analysis: &DetailedStorageAnalysis) -> GrowthProjection {
+    fn calculate_exponential_growth_projection(
+        &self,
+        historical_data: &HistoricalStorageData,
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> GrowthProjection {
         if historical_data.growth_rates.is_empty() {
             return GrowthProjection::default();
         }
 
         // Calculate average growth rate
-        let avg_growth_rate = historical_data.growth_rates.iter().sum::<f64>() / historical_data.growth_rates.len() as f64;
+        let avg_growth_rate = historical_data.growth_rates.iter().sum::<f64>()
+            / historical_data.growth_rates.len() as f64;
         let current_size = current_analysis.total_size as f64;
 
         // Apply exponential growth
@@ -2024,7 +2345,11 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate seasonal growth projection
-    fn calculate_seasonal_growth_projection(&self, historical_data: &HistoricalStorageData, current_analysis: &DetailedStorageAnalysis) -> GrowthProjection {
+    fn calculate_seasonal_growth_projection(
+        &self,
+        historical_data: &HistoricalStorageData,
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> GrowthProjection {
         if historical_data.daily_sizes.len() < 30 {
             return GrowthProjection::default();
         }
@@ -2035,7 +2360,10 @@ impl MemoryLifecycleManager {
             let week_start = week * 7;
             let week_end = (week_start + 7).min(historical_data.daily_sizes.len());
             if week_end > week_start {
-                let week_avg = historical_data.daily_sizes[week_start..week_end].iter().sum::<f64>() / (week_end - week_start) as f64;
+                let week_avg = historical_data.daily_sizes[week_start..week_end]
+                    .iter()
+                    .sum::<f64>()
+                    / (week_end - week_start) as f64;
                 weekly_patterns.push(week_avg);
             }
         }
@@ -2045,7 +2373,11 @@ impl MemoryLifecycleManager {
         let seasonal_factor = if weekly_patterns.len() > 1 {
             let recent_avg = weekly_patterns.iter().rev().take(2).sum::<f64>() / 2.0;
             let overall_avg = weekly_patterns.iter().sum::<f64>() / weekly_patterns.len() as f64;
-            if overall_avg > 0.0 { recent_avg / overall_avg } else { 1.0 }
+            if overall_avg > 0.0 {
+                recent_avg / overall_avg
+            } else {
+                1.0
+            }
         } else {
             1.0
         };
@@ -2053,13 +2385,17 @@ impl MemoryLifecycleManager {
         GrowthProjection {
             projected_30_days: current_size * seasonal_factor * 1.05, // 5% monthly growth with seasonal adjustment
             projected_90_days: current_size * seasonal_factor * 1.15, // 15% quarterly growth
-            projected_365_days: current_size * seasonal_factor * 1.6,  // 60% yearly growth
+            projected_365_days: current_size * seasonal_factor * 1.6, // 60% yearly growth
             _confidence: 0.5,
         }
     }
 
     /// Calculate ML-based projection using advanced algorithms
-    async fn calculate_ml_based_projection(&self, historical_data: &HistoricalStorageData, current_analysis: &DetailedStorageAnalysis) -> Result<GrowthProjection> {
+    async fn calculate_ml_based_projection(
+        &self,
+        historical_data: &HistoricalStorageData,
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> Result<GrowthProjection> {
         if historical_data.daily_sizes.len() < 10 {
             return Ok(GrowthProjection::default());
         }
@@ -2081,12 +2417,18 @@ impl MemoryLifecycleManager {
     }
 
     /// Extract features for ML model
-    fn extract_ml_features(&self, historical_data: &HistoricalStorageData, current_analysis: &DetailedStorageAnalysis) -> Vec<f64> {
+    fn extract_ml_features(
+        &self,
+        historical_data: &HistoricalStorageData,
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> Vec<f64> {
         let mut features = Vec::new();
 
         // Trend features
         if historical_data.daily_sizes.len() > 1 {
-            let recent_trend = self.calculate_trend(&historical_data.daily_sizes[historical_data.daily_sizes.len().saturating_sub(7)..]);
+            let recent_trend = self.calculate_trend(
+                &historical_data.daily_sizes[historical_data.daily_sizes.len().saturating_sub(7)..],
+            );
             features.push(recent_trend);
 
             let overall_trend = self.calculate_trend(&historical_data.daily_sizes);
@@ -2209,7 +2551,10 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate distribution entropy
-    fn calculate_distribution_entropy(&self, distribution: &std::collections::HashMap<String, usize>) -> f64 {
+    fn calculate_distribution_entropy(
+        &self,
+        distribution: &std::collections::HashMap<String, usize>,
+    ) -> f64 {
         let total: usize = distribution.values().sum();
         if total == 0 {
             return 0.0;
@@ -2228,7 +2573,8 @@ impl MemoryLifecycleManager {
 
     /// Ensemble forecasting - combine multiple model predictions
     fn ensemble_forecast(&self, predictions: &[f64], weights: &[f64]) -> f64 {
-        predictions.iter()
+        predictions
+            .iter()
             .zip(weights.iter())
             .map(|(pred, weight)| pred * weight)
             .sum()
@@ -2328,7 +2674,8 @@ impl MemoryLifecycleManager {
         for memory_key in memory_keys {
             if let Some(state) = self.memory_states.get(memory_key) {
                 let age_days = (now - state.last_updated).num_days();
-                if age_days > 90 { // Candidate for archival
+                if age_days > 90 {
+                    // Candidate for archival
                     let estimated_size = memory_key.len() * 10 + 512;
                     potential += estimated_size / 2; // 50% savings from archival
                 }
@@ -2347,7 +2694,9 @@ impl MemoryLifecycleManager {
             if let Some(state) = self.memory_states.get(memory_key) {
                 let age_days = (now - state.last_updated).num_days();
                 // Estimate access count from events
-                let access_count = state.events.iter()
+                let access_count = state
+                    .events
+                    .iter()
                     .filter(|e| e.event_type == LifecycleEventType::Accessed)
                     .count();
                 if age_days > 365 && access_count < 5 {
@@ -2367,7 +2716,10 @@ impl MemoryLifecycleManager {
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         optimization_plan: &LifecycleOptimizationPlan,
     ) -> Result<LifecycleOptimizationResult> {
-        tracing::info!("Executing lifecycle optimization plan with {} actions", optimization_plan.actions.len());
+        tracing::info!(
+            "Executing lifecycle optimization plan with {} actions",
+            optimization_plan.actions.len()
+        );
         let start_time = std::time::Instant::now();
 
         let mut result = LifecycleOptimizationResult {
@@ -2388,8 +2740,15 @@ impl MemoryLifecycleManager {
                 }
                 Err(e) => {
                     result.actions_failed += 1;
-                    result.errors.push(format!("Failed to execute action on {}: {}", action.memory_key, e));
-                    tracing::error!("Optimization action failed for {}: {}", action.memory_key, e);
+                    result.errors.push(format!(
+                        "Failed to execute action on {}: {}",
+                        action.memory_key, e
+                    ));
+                    tracing::error!(
+                        "Optimization action failed for {}: {}",
+                        action.memory_key,
+                        e
+                    );
                 }
             }
         }
@@ -2417,28 +2776,30 @@ impl MemoryLifecycleManager {
             OptimizationActionType::Compress => {
                 self.compress_memory(storage, &action.memory_key).await?;
                 Ok(OptimizationActionResult {
-                    space_saved: 512, // Simulated compression savings
+                    space_saved: 512,       // Simulated compression savings
                     performance_gain: 0.05, // 5% performance improvement
                 })
             }
             OptimizationActionType::Archive => {
                 self.archive_memory(&action.memory_key).await?;
                 Ok(OptimizationActionResult {
-                    space_saved: 1024, // Simulated archival savings
+                    space_saved: 1024,      // Simulated archival savings
                     performance_gain: 0.02, // 2% performance improvement
                 })
             }
             OptimizationActionType::Defragment => {
-                self.execute_custom_action(&action.memory_key, "optimize_storage").await?;
+                self.execute_custom_action(&action.memory_key, "optimize_storage")
+                    .await?;
                 Ok(OptimizationActionResult {
-                    space_saved: 256, // Simulated defragmentation savings
+                    space_saved: 256,       // Simulated defragmentation savings
                     performance_gain: 0.03, // 3% performance improvement
                 })
             }
             OptimizationActionType::Reindex => {
-                self.execute_custom_action(&action.memory_key, "refresh_metadata").await?;
+                self.execute_custom_action(&action.memory_key, "refresh_metadata")
+                    .await?;
                 Ok(OptimizationActionResult {
-                    space_saved: 0, // No space savings for reindexing
+                    space_saved: 0,        // No space savings for reindexing
                     performance_gain: 0.1, // 10% performance improvement
                 })
             }
@@ -2446,11 +2807,18 @@ impl MemoryLifecycleManager {
     }
 
     /// Analyze policy actions for a memory
-    async fn analyze_policy_actions(&self, memory_key: &str, start_time: std::time::Instant) -> Result<ActionAnalysisResult> {
-        let start_time_utc = Utc::now() - chrono::Duration::milliseconds(start_time.elapsed().as_millis() as i64);
+    async fn analyze_policy_actions(
+        &self,
+        memory_key: &str,
+        start_time: std::time::Instant,
+    ) -> Result<ActionAnalysisResult> {
+        let start_time_utc =
+            Utc::now() - chrono::Duration::milliseconds(start_time.elapsed().as_millis() as i64);
 
         // Get recent events for this memory
-        let recent_events: Vec<&LifecycleEvent> = self.events.iter()
+        let recent_events: Vec<&LifecycleEvent> = self
+            .events
+            .iter()
             .filter(|e| e.memory_key == memory_key && e.timestamp > start_time_utc)
             .collect();
 
@@ -2495,7 +2863,11 @@ impl MemoryLifecycleManager {
     }
 
     /// Update policy performance metrics
-    fn update_policy_performance_metrics(&mut self, memory_key: &str, action_analysis: &ActionAnalysisResult) {
+    fn update_policy_performance_metrics(
+        &mut self,
+        memory_key: &str,
+        action_analysis: &ActionAnalysisResult,
+    ) {
         // Update internal performance tracking
         tracing::debug!(
             "Policy performance for {}: {} actions, {} space saved, {} policies triggered",
@@ -2518,16 +2890,17 @@ impl MemoryLifecycleManager {
             // Multi-factor analysis for archiving prediction
             let age_factor = self.calculate_age_factor(state, current_time);
             let access_pattern_factor = self.calculate_access_pattern_factor(state);
-            let content_importance_factor = self.calculate_content_importance_factor(memory_key, state);
+            let content_importance_factor =
+                self.calculate_content_importance_factor(memory_key, state);
             let seasonal_factor = self.calculate_seasonal_factor(state, current_time);
             let storage_pressure_factor = self.calculate_storage_pressure_factor();
 
             // Weighted prediction score
-            let prediction_score = age_factor * 0.25 +
-                                 access_pattern_factor * 0.30 +
-                                 content_importance_factor * 0.20 +
-                                 seasonal_factor * 0.15 +
-                                 storage_pressure_factor * 0.10;
+            let prediction_score = age_factor * 0.25
+                + access_pattern_factor * 0.30
+                + content_importance_factor * 0.20
+                + seasonal_factor * 0.15
+                + storage_pressure_factor * 0.10;
 
             let _confidence = self.calculate_prediction_confidence(
                 age_factor,
@@ -2558,7 +2931,6 @@ impl MemoryLifecycleManager {
         let current_time = Utc::now();
 
         for state in self.memory_states.values() {
-
             let days_since_last_access = (current_time - state.last_accessed).num_days();
             last_access_times.push(days_since_last_access);
 
@@ -2583,16 +2955,21 @@ impl MemoryLifecycleManager {
         // Calculate access pattern variance
         let frequency_variance = if access_frequencies.len() > 1 {
             let mean = avg_access_frequency;
-            access_frequencies.iter()
+            access_frequencies
+                .iter()
                 .map(|f| (f - mean).powi(2))
-                .sum::<f64>() / (access_frequencies.len() - 1) as f64
+                .sum::<f64>()
+                / (access_frequencies.len() - 1) as f64
         } else {
             0.0
         };
 
         let mut result = HashMap::new();
         result.insert("avg_access_frequency".to_string(), avg_access_frequency);
-        result.insert("avg_days_since_access".to_string(), avg_days_since_access as f64);
+        result.insert(
+            "avg_days_since_access".to_string(),
+            avg_days_since_access as f64,
+        );
         result.insert("frequency_variance".to_string(), frequency_variance);
         Ok(result)
     }
@@ -2644,25 +3021,28 @@ impl MemoryLifecycleManager {
             let current_month = current_time.month();
 
             // Simple seasonal analysis
-            let seasonal_relevance = if creation_month == current_month || last_access_month == current_month {
-                1.0 // High relevance in current season
-            } else if (creation_month as i32 - current_month as i32).abs() <= 1 ||
-                     (last_access_month as i32 - current_month as i32).abs() <= 1 {
-                0.7 // Medium relevance in adjacent months
-            } else {
-                0.3 // Low relevance in distant months
-            };
+            let seasonal_relevance =
+                if creation_month == current_month || last_access_month == current_month {
+                    1.0 // High relevance in current season
+                } else if (creation_month as i32 - current_month as i32).abs() <= 1
+                    || (last_access_month as i32 - current_month as i32).abs() <= 1
+                {
+                    0.7 // Medium relevance in adjacent months
+                } else {
+                    0.3 // Low relevance in distant months
+                };
 
             // Day of week pattern analysis
             let creation_weekday = state.created_at.weekday().num_days_from_monday();
             let access_weekday = state.last_accessed.weekday().num_days_from_monday();
             let current_weekday = current_time.weekday().num_days_from_monday();
 
-            let weekday_relevance = if creation_weekday == current_weekday || access_weekday == current_weekday {
-                1.0
-            } else {
-                0.5
-            };
+            let weekday_relevance =
+                if creation_weekday == current_weekday || access_weekday == current_weekday {
+                    1.0
+                } else {
+                    0.5
+                };
 
             seasonal_patterns.insert(memory_key.clone(), seasonal_relevance * weekday_relevance);
         }
@@ -2671,7 +3051,11 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate age factor for archiving prediction
-    fn calculate_age_factor(&self, state: &MemoryLifecycleState, current_time: DateTime<Utc>) -> f64 {
+    fn calculate_age_factor(
+        &self,
+        state: &MemoryLifecycleState,
+        current_time: DateTime<Utc>,
+    ) -> f64 {
         let age_days = (current_time - state.created_at).num_days();
         // Sigmoid function for age factor
         1.0 / (1.0 + (-0.01 * (age_days as f64 - 180.0)).exp())
@@ -2687,13 +3071,21 @@ impl MemoryLifecycleManager {
     }
 
     /// Calculate content importance factor for archiving prediction
-    fn calculate_content_importance_factor(&self, _memory_key: &str, state: &MemoryLifecycleState) -> f64 {
+    fn calculate_content_importance_factor(
+        &self,
+        _memory_key: &str,
+        state: &MemoryLifecycleState,
+    ) -> f64 {
         // Inverse relationship: lower importance = higher archiving score
         1.0 - state.importance
     }
 
     /// Calculate seasonal factor for archiving prediction
-    fn calculate_seasonal_factor(&self, state: &MemoryLifecycleState, current_time: DateTime<Utc>) -> f64 {
+    fn calculate_seasonal_factor(
+        &self,
+        state: &MemoryLifecycleState,
+        current_time: DateTime<Utc>,
+    ) -> f64 {
         let creation_month = state.created_at.month();
         let current_month = current_time.month();
 
@@ -2731,9 +3123,16 @@ impl MemoryLifecycleManager {
         storage_pressure_factor: f64,
     ) -> f64 {
         // Confidence based on factor consistency
-        let factors = vec![age_factor, access_pattern_factor, content_importance_factor, seasonal_factor, storage_pressure_factor];
+        let factors = vec![
+            age_factor,
+            access_pattern_factor,
+            content_importance_factor,
+            seasonal_factor,
+            storage_pressure_factor,
+        ];
         let mean = factors.iter().sum::<f64>() / factors.len() as f64;
-        let variance = factors.iter().map(|f| (f - mean).powi(2)).sum::<f64>() / factors.len() as f64;
+        let variance =
+            factors.iter().map(|f| (f - mean).powi(2)).sum::<f64>() / factors.len() as f64;
 
         // Higher confidence when factors are consistent (low variance)
         1.0 - variance.min(1.0)

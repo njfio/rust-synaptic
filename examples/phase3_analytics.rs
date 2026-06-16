@@ -1,18 +1,20 @@
 // Phase 3: Advanced Analytics Example
 // Demonstrates the comprehensive analytics capabilities
 
-use synaptic::{AgentMemory, MemoryConfig};
 use std::error::Error;
+use synaptic::{AgentMemory, MemoryConfig};
 
 #[cfg(feature = "analytics")]
 use synaptic::analytics::{
-    AnalyticsEngine, AnalyticsConfig, AnalyticsEvent, AccessType, ModificationType,
-    InsightType, InsightPriority,
-    predictive::PredictiveAnalytics,
     behavioral::BehavioralAnalyzer,
-    visualization::{VisualizationEngine, TimelineVisualizationType, TemporalDataType, TemporalDataPoint},
     intelligence::MemoryIntelligenceEngine,
     performance::{PerformanceAnalyzer, PerformanceSnapshot},
+    predictive::PredictiveAnalytics,
+    visualization::{
+        TemporalDataPoint, TemporalDataType, TimelineVisualizationType, VisualizationEngine,
+    },
+    AccessType, AnalyticsConfig, AnalyticsEngine, AnalyticsEvent, InsightPriority, InsightType,
+    ModificationType,
 };
 
 #[tokio::main]
@@ -92,12 +94,19 @@ async fn analytics_overview_demo() -> Result<(), Box<dyn Error>> {
 
     // Generate insights
     let insights = engine.generate_insights().await?;
-    
-    println!(" Processed {} events", engine.get_metrics().events_processed);
+
+    println!(
+        " Processed {} events",
+        engine.get_metrics().events_processed
+    );
     println!(" Generated {} insights", insights.len());
-    
+
     for insight in insights.iter().take(3) {
-        println!("   • {} (confidence: {:.1}%)", insight.title, insight.confidence * 100.0);
+        println!(
+            "   • {} (confidence: {:.1}%)",
+            insight.title,
+            insight.confidence * 100.0
+        );
     }
 
     Ok(())
@@ -128,7 +137,8 @@ async fn predictive_analytics_demo() -> Result<(), Box<dyn Error>> {
     println!(" Generated {} access predictions", predictions.len());
 
     for prediction in predictions.iter().take(2) {
-        println!("   • {} will likely be accessed at {} (confidence: {:.1}%)",
+        println!(
+            "   • {} will likely be accessed at {} (confidence: {:.1}%)",
             prediction.memory_key,
             prediction.predicted_time.format("%Y-%m-%d %H:%M"),
             prediction.confidence * 100.0
@@ -140,7 +150,8 @@ async fn predictive_analytics_demo() -> Result<(), Box<dyn Error>> {
     println!(" Generated {} caching recommendations", cache_recs.len());
 
     for rec in cache_recs.iter().take(2) {
-        println!("   • Cache '{}' with {:?} priority (hit rate: {:.1}%)",
+        println!(
+            "   • Cache '{}' with {:?} priority (hit rate: {:.1}%)",
             rec.memory_key,
             rec.priority,
             rec.expected_hit_rate * 100.0
@@ -179,7 +190,8 @@ async fn behavioral_analysis_demo() -> Result<(), Box<dyn Error>> {
     println!("👥 Analyzed {} user profiles", profiles.len());
 
     for (user_id, profile) in profiles.iter().take(2) {
-        println!("   • {}: {:?} activity, {} preferred hours",
+        println!(
+            "   • {}: {:?} activity, {} preferred hours",
             user_id,
             profile.interaction_frequency,
             profile.preferred_hours.len()
@@ -206,8 +218,14 @@ async fn visualization_demo() -> Result<(), Box<dyn Error>> {
     let mut engine = VisualizationEngine::new(&config)?;
 
     // Create visual nodes
-    let memory_entry = synaptic::memory::types::MemoryEntry::new("viz_memory".to_string(), "Visualization test content".to_string(), synaptic::memory::types::MemoryType::ShortTerm);
-    let node_id = engine.create_visual_node("viz_memory", &memory_entry).await?;
+    let memory_entry = synaptic::memory::types::MemoryEntry::new(
+        "viz_memory".to_string(),
+        "Visualization test content".to_string(),
+        synaptic::memory::types::MemoryType::ShortTerm,
+    );
+    let node_id = engine
+        .create_visual_node("viz_memory", &memory_entry)
+        .await?;
     println!(" Created visual node: {}", node_id);
 
     // Create temporal timeline
@@ -228,16 +246,19 @@ async fn visualization_demo() -> Result<(), Box<dyn Error>> {
         },
     ];
 
-    let timeline_id = engine.create_temporal_timeline(
-        "Access Frequency Timeline",
-        data_points,
-        TimelineVisualizationType::LineChart
-    ).await?;
+    let timeline_id = engine
+        .create_temporal_timeline(
+            "Access Frequency Timeline",
+            data_points,
+            TimelineVisualizationType::LineChart,
+        )
+        .await?;
     println!(" Created timeline: {}", timeline_id);
 
     // Export visualization data
     let export = engine.export_visualization_data().await?;
-    println!("📤 Exported {} nodes, {} timelines",
+    println!(
+        "📤 Exported {} nodes, {} timelines",
         export.nodes.len(),
         export.timelines.len()
     );
@@ -265,18 +286,25 @@ async fn intelligence_analysis_demo() -> Result<(), Box<dyn Error>> {
         ("computer_vision".to_string(), 0.7),
     ];
 
-    let intelligence = engine.analyze_memory_intelligence(
-        "ai_research",
-        &memory_entry,
-        &relationships
-    ).await?;
+    let intelligence = engine
+        .analyze_memory_intelligence("ai_research", &memory_entry, &relationships)
+        .await?;
 
-    println!(" Intelligence Score: {:.2}", intelligence.intelligence_score);
-    println!("🔗 Relationships: {} direct, {} indirect",
-        intelligence.relationship_intelligence.direct_relationships,
-        intelligence.relationship_intelligence.indirect_relationships
+    println!(
+        " Intelligence Score: {:.2}",
+        intelligence.intelligence_score
     );
-    println!(" Complexity: {:.2}", intelligence.complexity.overall_complexity);
+    println!(
+        "🔗 Relationships: {} direct, {} indirect",
+        intelligence.relationship_intelligence.direct_relationships,
+        intelligence
+            .relationship_intelligence
+            .indirect_relationships
+    );
+    println!(
+        " Complexity: {:.2}",
+        intelligence.complexity.overall_complexity
+    );
 
     // Pattern recognition
     for i in 0..25 {
@@ -327,7 +355,8 @@ async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
     println!(" Analyzed {} performance trends", trends.len());
 
     for (metric, trend) in trends.iter().take(3) {
-        println!("   • {}: {:?} trend (confidence: {:.1}%)",
+        println!(
+            "   • {}: {:?} trend (confidence: {:.1}%)",
             metric,
             trend.trend_direction,
             trend.confidence * 100.0
@@ -336,7 +365,10 @@ async fn performance_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Generate optimization recommendations
     let recommendations = analyzer.generate_recommendations().await?;
-    println!(" Generated {} optimization recommendations", recommendations.len());
+    println!(
+        " Generated {} optimization recommendations",
+        recommendations.len()
+    );
 
     for rec in recommendations.iter().take(2) {
         println!("   • {} (priority: {:?})", rec.title, rec.priority);
@@ -359,10 +391,22 @@ async fn integrated_analytics_demo() -> Result<(), Box<dyn Error>> {
 
     // Simulate realistic usage
     let memories = vec![
-        ("project_plan", "Comprehensive project planning document with milestones and deliverables"),
-        ("meeting_notes", "Weekly team meeting notes discussing progress and blockers"),
-        ("code_review", "Code review feedback and suggestions for improvement"),
-        ("research_data", "Research findings and data analysis results"),
+        (
+            "project_plan",
+            "Comprehensive project planning document with milestones and deliverables",
+        ),
+        (
+            "meeting_notes",
+            "Weekly team meeting notes discussing progress and blockers",
+        ),
+        (
+            "code_review",
+            "Code review feedback and suggestions for improvement",
+        ),
+        (
+            "research_data",
+            "Research findings and data analysis results",
+        ),
     ];
 
     for (key, content) in memories {

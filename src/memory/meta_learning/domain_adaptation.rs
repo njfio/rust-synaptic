@@ -3,9 +3,9 @@
 //! Implements sophisticated domain adaptation algorithms including adversarial training,
 //! feature alignment, and domain-invariant representations for memory systems.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Domain adaptation configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,14 +55,9 @@ pub enum DomainAdaptationStrategy {
         gradient_reversal_lambda: f64,
     },
     /// Maximum Mean Discrepancy (MMD) alignment
-    MMD {
-        kernel_type: String,
-        bandwidth: f64,
-    },
+    MMD { kernel_type: String, bandwidth: f64 },
     /// Correlation Alignment (CORAL)
-    CORAL {
-        lambda: f64,
-    },
+    CORAL { lambda: f64 },
     /// Deep Adaptation Networks (DAN)
     DAN {
         adaptation_layers: Vec<String>,
@@ -211,9 +206,7 @@ impl DomainAdaptationEngine {
         let layer_sizes = vec![512, 256, 128, 64];
         for (i, &size) in layer_sizes.iter().enumerate() {
             let layer_name = format!("feature_layer_{}", i);
-            let weights: Vec<f64> = (0..size)
-                .map(|_| rng.gen_range(-0.1..0.1))
-                .collect();
+            let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
             params.insert(layer_name, weights);
         }
 
@@ -231,9 +224,7 @@ impl DomainAdaptationEngine {
         let layer_sizes = vec![256, 128, 64, 1];
         for (i, &size) in layer_sizes.iter().enumerate() {
             let layer_name = format!("discriminator_layer_{}", i);
-            let weights: Vec<f64> = (0..size)
-                .map(|_| rng.gen_range(-0.1..0.1))
-                .collect();
+            let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
             params.insert(layer_name, weights);
         }
 
@@ -247,7 +238,7 @@ impl DomainAdaptationEngine {
         // Validate domain
         if domain.sample_count == 0 {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Domain must have at least one sample".to_string()
+                message: "Domain must have at least one sample".to_string(),
             });
         }
 
@@ -268,19 +259,22 @@ impl DomainAdaptationEngine {
     ) -> crate::error::Result<DomainAdaptationResult> {
         let start_time = std::time::Instant::now();
 
-        tracing::info!("Starting domain adaptation from {} to {}",
-                      source_domain_id, target_domain_id);
+        tracing::info!(
+            "Starting domain adaptation from {} to {}",
+            source_domain_id,
+            target_domain_id
+        );
 
         // Validate domains exist
         if !self.domains.contains_key(source_domain_id) {
             return Err(crate::error::MemoryError::NotFound {
-                key: format!("Source domain not found: {}", source_domain_id)
+                key: format!("Source domain not found: {}", source_domain_id),
             });
         }
 
         if !self.domains.contains_key(target_domain_id) {
             return Err(crate::error::MemoryError::NotFound {
-                key: format!("Target domain not found: {}", target_domain_id)
+                key: format!("Target domain not found: {}", target_domain_id),
             });
         }
 
@@ -292,7 +286,9 @@ impl DomainAdaptationEngine {
         let target_features = self.extract_domain_features(target_data).await?;
 
         // Perform domain adaptation
-        let result = self.perform_adaptation(&source_features, &target_features, &adaptation_strategy).await?;
+        let result = self
+            .perform_adaptation(&source_features, &target_features, &adaptation_strategy)
+            .await?;
 
         // Add small delay to ensure realistic timing
         tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
@@ -312,17 +308,23 @@ impl DomainAdaptationEngine {
         // Store adaptation result
         self.adaptation_history.push(final_result.clone());
 
-        tracing::info!("Domain adaptation completed in {}ms with loss: {:.4}",
-                      adaptation_time, final_result.adaptation_loss);
+        tracing::info!(
+            "Domain adaptation completed in {}ms with loss: {:.4}",
+            adaptation_time,
+            final_result.adaptation_loss
+        );
 
         Ok(final_result)
     }
 
     /// Extract features from domain data
-    async fn extract_domain_features(&self, data: &[crate::memory::types::MemoryEntry]) -> crate::error::Result<Vec<Vec<f64>>> {
+    async fn extract_domain_features(
+        &self,
+        data: &[crate::memory::types::MemoryEntry],
+    ) -> crate::error::Result<Vec<Vec<f64>>> {
         if data.is_empty() {
             return Err(crate::error::MemoryError::InvalidInput {
-                message: "Empty data provided".to_string()
+                message: "Empty data provided".to_string(),
             });
         }
 
@@ -340,7 +342,10 @@ impl DomainAdaptationEngine {
     }
 
     /// Extract features from a single memory entry
-    async fn extract_memory_features(&self, entry: &crate::memory::types::MemoryEntry) -> crate::error::Result<Vec<f64>> {
+    async fn extract_memory_features(
+        &self,
+        entry: &crate::memory::types::MemoryEntry,
+    ) -> crate::error::Result<Vec<f64>> {
         // Content-based feature extraction
         let content_features = self.extract_content_features(&entry.value).await?;
 
@@ -381,7 +386,10 @@ impl DomainAdaptationEngine {
     }
 
     /// Extract metadata-based features
-    async fn extract_metadata_features(&self, entry: &crate::memory::types::MemoryEntry) -> crate::error::Result<Vec<f64>> {
+    async fn extract_metadata_features(
+        &self,
+        entry: &crate::memory::types::MemoryEntry,
+    ) -> crate::error::Result<Vec<f64>> {
         let mut features = Vec::new();
 
         // Memory type encoding
@@ -464,7 +472,8 @@ impl DomainAdaptationEngine {
         }
 
         // Average word length
-        let avg_word_length: f64 = words.iter().map(|w| w.len()).sum::<usize>() as f64 / words.len() as f64;
+        let avg_word_length: f64 =
+            words.iter().map(|w| w.len()).sum::<usize>() as f64 / words.len() as f64;
         features[0] = avg_word_length / 20.0; // Normalized
 
         // Vocabulary richness (unique words / total words)
@@ -480,7 +489,10 @@ impl DomainAdaptationEngine {
         features[3] = short_words as f64 / words.len() as f64;
 
         // Capitalized word ratio
-        let capitalized_words = words.iter().filter(|w| w.chars().next().map_or(false, |c| c.is_uppercase())).count();
+        let capitalized_words = words
+            .iter()
+            .filter(|w| w.chars().next().map_or(false, |c| c.is_uppercase()))
+            .count();
         features[4] = capitalized_words as f64 / words.len() as f64;
 
         features
@@ -492,10 +504,26 @@ impl DomainAdaptationEngine {
 
         // Simple keyword-based semantic analysis
         let keywords = [
-            "important", "urgent", "critical", "high", "priority",
-            "memory", "remember", "forget", "recall", "learn",
-            "data", "information", "knowledge", "fact", "detail",
-            "task", "work", "project", "goal", "objective"
+            "important",
+            "urgent",
+            "critical",
+            "high",
+            "priority",
+            "memory",
+            "remember",
+            "forget",
+            "recall",
+            "learn",
+            "data",
+            "information",
+            "knowledge",
+            "fact",
+            "detail",
+            "task",
+            "work",
+            "project",
+            "goal",
+            "objective",
         ];
 
         let content_lower = content.to_lowercase();
@@ -517,7 +545,8 @@ impl DomainAdaptationEngine {
         tracing::debug!("Starting domain adaptation with strategy: {:?}", strategy);
 
         // Calculate initial domain discrepancy
-        let initial_discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+        let initial_discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         let mut current_discrepancy = initial_discrepancy;
         let mut total_loss = 0.0;
 
@@ -525,21 +554,31 @@ impl DomainAdaptationEngine {
         for iteration in 0..self.config.max_iterations.min(100) {
             // Calculate adaptation loss based on strategy
             let iteration_loss = match strategy {
-                DomainAdaptationStrategy::Adversarial { gradient_reversal_lambda, .. } => {
-                    self.calculate_adversarial_loss(source_features, target_features, *gradient_reversal_lambda)?
-                },
+                DomainAdaptationStrategy::Adversarial {
+                    gradient_reversal_lambda,
+                    ..
+                } => self.calculate_adversarial_loss(
+                    source_features,
+                    target_features,
+                    *gradient_reversal_lambda,
+                )?,
                 DomainAdaptationStrategy::MMD { bandwidth, .. } => {
                     self.calculate_mmd_loss(source_features, target_features, *bandwidth)?
-                },
+                }
                 DomainAdaptationStrategy::CORAL { lambda } => {
                     self.calculate_coral_loss(source_features, target_features, *lambda)?
-                },
+                }
                 DomainAdaptationStrategy::DAN { mmd_kernels, .. } => {
                     self.calculate_dan_loss(source_features, target_features, mmd_kernels)?
-                },
-                DomainAdaptationStrategy::CDAN { entropy_conditioning, .. } => {
-                    self.calculate_cdan_loss(source_features, target_features, *entropy_conditioning)?
-                },
+                }
+                DomainAdaptationStrategy::CDAN {
+                    entropy_conditioning,
+                    ..
+                } => self.calculate_cdan_loss(
+                    source_features,
+                    target_features,
+                    *entropy_conditioning,
+                )?,
             };
 
             total_loss += iteration_loss;
@@ -549,7 +588,8 @@ impl DomainAdaptationEngine {
 
             // Check convergence every 10 iterations
             if iteration % 10 == 0 {
-                current_discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+                current_discrepancy =
+                    self.calculate_domain_discrepancy_simple(source_features, target_features)?;
                 if current_discrepancy < self.config.convergence_threshold {
                     tracing::info!("Domain adaptation converged at iteration {}", iteration);
                     break;
@@ -564,37 +604,55 @@ impl DomainAdaptationEngine {
         let mut metrics = HashMap::new();
         metrics.insert("initial_discrepancy".to_string(), initial_discrepancy);
         metrics.insert("final_discrepancy".to_string(), current_discrepancy);
-        metrics.insert("discrepancy_reduction".to_string(), initial_discrepancy - current_discrepancy);
+        metrics.insert(
+            "discrepancy_reduction".to_string(),
+            initial_discrepancy - current_discrepancy,
+        );
 
         // Add strategy-specific metrics that tests expect
         match strategy {
-            DomainAdaptationStrategy::Adversarial { gradient_reversal_lambda, .. } => {
-                metrics.insert("gradient_reversal_lambda".to_string(), *gradient_reversal_lambda);
+            DomainAdaptationStrategy::Adversarial {
+                gradient_reversal_lambda,
+                ..
+            } => {
+                metrics.insert(
+                    "gradient_reversal_lambda".to_string(),
+                    *gradient_reversal_lambda,
+                );
                 metrics.insert("discriminator_loss".to_string(), final_loss * 0.5);
                 metrics.insert("feature_loss".to_string(), final_loss * 0.5);
-            },
+            }
             DomainAdaptationStrategy::MMD { bandwidth, .. } => {
                 metrics.insert("initial_mmd".to_string(), initial_discrepancy);
                 metrics.insert("final_mmd".to_string(), current_discrepancy);
-                metrics.insert("mmd_reduction".to_string(), initial_discrepancy - current_discrepancy);
+                metrics.insert(
+                    "mmd_reduction".to_string(),
+                    initial_discrepancy - current_discrepancy,
+                );
                 metrics.insert("bandwidth".to_string(), *bandwidth);
-            },
+            }
             DomainAdaptationStrategy::CORAL { lambda } => {
                 metrics.insert("initial_coral".to_string(), initial_discrepancy);
                 metrics.insert("final_coral".to_string(), current_discrepancy);
                 metrics.insert("lambda".to_string(), *lambda);
-            },
+            }
             DomainAdaptationStrategy::DAN { mmd_kernels, .. } => {
                 metrics.insert("multi_kernel_mmd".to_string(), current_discrepancy);
                 metrics.insert("num_kernels".to_string(), mmd_kernels.len() as f64);
                 metrics.insert("kernel_count".to_string(), mmd_kernels.len() as f64);
                 let kernel_avg = mmd_kernels.iter().sum::<f64>() / mmd_kernels.len() as f64;
                 metrics.insert("avg_kernel_bandwidth".to_string(), kernel_avg);
-            },
-            DomainAdaptationStrategy::CDAN { entropy_conditioning, .. } => {
-                metrics.insert("entropy_conditioning".to_string(), if *entropy_conditioning { 1.0 } else { 0.0 });
+            }
+            DomainAdaptationStrategy::CDAN {
+                entropy_conditioning,
+                ..
+            } => {
+                metrics.insert(
+                    "entropy_conditioning".to_string(),
+                    if *entropy_conditioning { 1.0 } else { 0.0 },
+                );
                 metrics.insert("conditional_adversarial_loss".to_string(), final_loss);
-            },
+            }
         }
 
         Ok(DomainAdaptationResult {
@@ -614,7 +672,11 @@ impl DomainAdaptationEngine {
     }
 
     /// Calculate domain discrepancy using simple mean difference
-    fn calculate_domain_discrepancy_simple(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>]) -> crate::error::Result<f64> {
+    fn calculate_domain_discrepancy_simple(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+    ) -> crate::error::Result<f64> {
         if source_features.is_empty() || target_features.is_empty() {
             return Ok(1.0); // Maximum discrepancy
         }
@@ -623,13 +685,17 @@ impl DomainAdaptationEngine {
         let mut total_diff = 0.0;
 
         for dim in 0..feature_dim {
-            let source_mean: f64 = source_features.iter()
+            let source_mean: f64 = source_features
+                .iter()
                 .map(|f| f.get(dim).unwrap_or(&0.0))
-                .sum::<f64>() / source_features.len() as f64;
+                .sum::<f64>()
+                / source_features.len() as f64;
 
-            let target_mean: f64 = target_features.iter()
+            let target_mean: f64 = target_features
+                .iter()
                 .map(|f| f.get(dim).unwrap_or(&0.0))
-                .sum::<f64>() / target_features.len() as f64;
+                .sum::<f64>()
+                / target_features.len() as f64;
 
             total_diff += (source_mean - target_mean).abs();
         }
@@ -638,33 +704,63 @@ impl DomainAdaptationEngine {
     }
 
     /// Calculate adversarial loss
-    fn calculate_adversarial_loss(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>], lambda: f64) -> crate::error::Result<f64> {
-        let discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+    fn calculate_adversarial_loss(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+        lambda: f64,
+    ) -> crate::error::Result<f64> {
+        let discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         Ok(discrepancy * lambda)
     }
 
     /// Calculate MMD loss
-    fn calculate_mmd_loss(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>], bandwidth: f64) -> crate::error::Result<f64> {
-        let discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+    fn calculate_mmd_loss(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+        bandwidth: f64,
+    ) -> crate::error::Result<f64> {
+        let discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         Ok(discrepancy * bandwidth)
     }
 
     /// Calculate CORAL loss
-    fn calculate_coral_loss(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>], lambda: f64) -> crate::error::Result<f64> {
-        let discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+    fn calculate_coral_loss(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+        lambda: f64,
+    ) -> crate::error::Result<f64> {
+        let discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         Ok(discrepancy * lambda)
     }
 
     /// Calculate DAN loss
-    fn calculate_dan_loss(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>], kernels: &[f64]) -> crate::error::Result<f64> {
-        let discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+    fn calculate_dan_loss(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+        kernels: &[f64],
+    ) -> crate::error::Result<f64> {
+        let discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         let kernel_avg = kernels.iter().sum::<f64>() / kernels.len() as f64;
         Ok(discrepancy * kernel_avg)
     }
 
     /// Calculate CDAN loss
-    fn calculate_cdan_loss(&self, source_features: &[Vec<f64>], target_features: &[Vec<f64>], entropy_conditioning: bool) -> crate::error::Result<f64> {
-        let discrepancy = self.calculate_domain_discrepancy_simple(source_features, target_features)?;
+    fn calculate_cdan_loss(
+        &self,
+        source_features: &[Vec<f64>],
+        target_features: &[Vec<f64>],
+        entropy_conditioning: bool,
+    ) -> crate::error::Result<f64> {
+        let discrepancy =
+            self.calculate_domain_discrepancy_simple(source_features, target_features)?;
         let entropy_weight = if entropy_conditioning { 1.5 } else { 1.0 };
         Ok(discrepancy * entropy_weight)
     }
@@ -684,7 +780,10 @@ impl DomainAdaptationEngine {
     }
 
     /// Update metrics after adaptation
-    async fn update_metrics(&mut self, result: &DomainAdaptationResult) -> crate::error::Result<()> {
+    async fn update_metrics(
+        &mut self,
+        result: &DomainAdaptationResult,
+    ) -> crate::error::Result<()> {
         self.metrics.total_adaptations += 1;
 
         if result.success {
@@ -709,9 +808,19 @@ impl DomainAdaptationEngine {
 
         // Update strategy performance
         let strategy_name = format!("{:?}", result.strategy);
-        let current_perf = self.metrics.strategy_performance.get(&strategy_name).unwrap_or(&0.0);
-        let new_perf = if result.success { current_perf + 1.0 } else { *current_perf };
-        self.metrics.strategy_performance.insert(strategy_name, new_perf);
+        let current_perf = self
+            .metrics
+            .strategy_performance
+            .get(&strategy_name)
+            .unwrap_or(&0.0);
+        let new_perf = if result.success {
+            current_perf + 1.0
+        } else {
+            *current_perf
+        };
+        self.metrics
+            .strategy_performance
+            .insert(strategy_name, new_perf);
 
         self.metrics.last_updated = Utc::now();
 

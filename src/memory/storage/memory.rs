@@ -1,15 +1,18 @@
 //! In-memory storage implementation for the memory system
 
 use crate::error::{MemoryError, Result};
-use crate::memory::storage::{Storage, StorageStats, BatchStorage, StorageTransaction, TransactionalStorage, TransactionHandle};
+use crate::memory::storage::{
+    BatchStorage, Storage, StorageStats, StorageTransaction, TransactionHandle,
+    TransactionalStorage,
+};
 use crate::memory::types::{MemoryEntry, MemoryFragment};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Backup data structure for in-memory storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,12 +125,13 @@ impl MemoryStorage {
     fn update_stats(&self) {
         let mut stats = self.stats.write();
         stats.total_entries = self.entries.len();
-        
-        let total_size: usize = self.entries
+
+        let total_size: usize = self
+            .entries
             .iter()
             .map(|entry| entry.value().estimated_size())
             .sum();
-        
+
         stats.total_size_bytes = total_size;
         stats.average_entry_size = if stats.total_entries > 0 {
             total_size as f64 / stats.total_entries as f64
@@ -144,18 +148,18 @@ impl MemoryStorage {
         for entry_ref in self.entries.iter() {
             let entry = entry_ref.value();
             let content_lower = entry.value.to_lowercase();
-            
+
             // Simple relevance scoring based on query term frequency
             let relevance_score = if content_lower.contains(&query_lower) {
                 // Count occurrences of query terms
                 let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
                 let mut score = 0.0;
-                
+
                 for term in query_terms {
                     let occurrences = content_lower.matches(term).count();
                     score += occurrences as f64;
                 }
-                
+
                 // Normalize by content length
                 score / content_lower.len() as f64
             } else {
@@ -173,7 +177,11 @@ impl MemoryStorage {
         }
 
         // Sort by relevance score (highest first)
-        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -241,7 +249,11 @@ impl Storage for MemoryStorage {
     }
 
     async fn list_keys(&self) -> Result<Vec<String>> {
-        Ok(self.entries.iter().map(|entry| entry.key().clone()).collect())
+        Ok(self
+            .entries
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect())
     }
 
     async fn count(&self) -> Result<usize> {
@@ -271,25 +283,36 @@ impl Storage for MemoryStorage {
     }
 
     async fn backup(&self, path: &str) -> Result<()> {
-        self.backup_with_options(path, BackupOptions::default()).await
+        self.backup_with_options(path, BackupOptions::default())
+            .await
     }
 
     async fn restore(&self, path: &str) -> Result<()> {
-        self.restore_with_options(path, RestoreOptions::default()).await
+        self.restore_with_options(path, RestoreOptions::default())
+            .await
     }
 
     async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
-        Ok(self.entries.iter().map(|entry| entry.value().clone()).collect())
+        Ok(self
+            .entries
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect())
     }
 }
 
 impl MemoryStorage {
     /// Create a backup with specific options
     pub async fn backup_with_options(&self, path: &str, options: BackupOptions) -> Result<()> {
-        tracing::info!("Creating backup of in-memory storage to: {} with options: {:?}", path, options);
+        tracing::info!(
+            "Creating backup of in-memory storage to: {} with options: {:?}",
+            path,
+            options
+        );
 
         // Collect all entries
-        let entries: Vec<MemoryEntry> = self.entries
+        let entries: Vec<MemoryEntry> = self
+            .entries
             .iter()
             .map(|entry| entry.value().clone())
             .collect();
@@ -298,8 +321,9 @@ impl MemoryStorage {
         let total_size = entries.iter().map(|e| e.estimated_size()).sum();
 
         // Create backup metadata
-        let json_data = serde_json::to_string_pretty(&entries)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize entries for checksum: {}", e)))?;
+        let json_data = serde_json::to_string_pretty(&entries).map_err(|e| {
+            MemoryError::storage(format!("Failed to serialize entries for checksum: {}", e))
+        })?;
 
         let checksum = self.calculate_checksum(&json_data);
 
@@ -326,7 +350,8 @@ impl MemoryStorage {
             serde_json::to_string_pretty(&backup_data)
         } else {
             serde_json::to_string(&backup_data)
-        }.map_err(|e| MemoryError::storage(format!("Failed to serialize backup data: {}", e)))?;
+        }
+        .map_err(|e| MemoryError::storage(format!("Failed to serialize backup data: {}", e)))?;
 
         // Apply compression if requested
         let final_data = if options.compression.is_some() {
@@ -337,12 +362,14 @@ impl MemoryStorage {
 
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(path).parent() {
-            tokio::fs::create_dir_all(parent).await
-                .map_err(|e| MemoryError::storage(format!("Failed to create backup directory: {}", e)))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                MemoryError::storage(format!("Failed to create backup directory: {}", e))
+            })?;
         }
 
         // Write to file
-        tokio::fs::write(path, final_data).await
+        tokio::fs::write(path, final_data)
+            .await
             .map_err(|e| MemoryError::storage(format!("Failed to write backup file: {}", e)))?;
 
         tracing::info!(
@@ -356,16 +383,22 @@ impl MemoryStorage {
 
     /// Restore from backup with specific options
     pub async fn restore_with_options(&self, path: &str, options: RestoreOptions) -> Result<()> {
-        tracing::info!("Restoring in-memory storage from: {} with options: {:?}", path, options);
+        tracing::info!(
+            "Restoring in-memory storage from: {} with options: {:?}",
+            path,
+            options
+        );
 
         // Read backup file
-        let file_data = tokio::fs::read(path).await
+        let file_data = tokio::fs::read(path)
+            .await
             .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
 
         // Decompress if needed
         let json_data = if self.is_compressed_data(&file_data) {
-            String::from_utf8(self.decompress_data(&file_data)?)
-                .map_err(|e| MemoryError::storage(format!("Failed to decode decompressed data: {}", e)))?
+            String::from_utf8(self.decompress_data(&file_data)?).map_err(|e| {
+                MemoryError::storage(format!("Failed to decode decompressed data: {}", e))
+            })?
         } else {
             String::from_utf8(file_data)
                 .map_err(|e| MemoryError::storage(format!("Failed to decode backup file: {}", e)))?
@@ -408,7 +441,10 @@ impl MemoryStorage {
         let mut skipped_count = 0;
 
         for entry in backup_data.entries {
-            if options.merge_strategy && self.entries.contains_key(&entry.key) && !options.overwrite_existing {
+            if options.merge_strategy
+                && self.entries.contains_key(&entry.key)
+                && !options.overwrite_existing
+            {
                 skipped_count += 1;
                 continue;
             }
@@ -443,9 +479,11 @@ impl MemoryStorage {
     fn compress_data(&self, data: &str) -> Result<Vec<u8>> {
         use std::io::Write;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(data.as_bytes())
+        encoder
+            .write_all(data.as_bytes())
             .map_err(|e| MemoryError::storage(format!("Compression failed: {}", e)))?;
-        encoder.finish()
+        encoder
+            .finish()
             .map_err(|e| MemoryError::storage(format!("Compression finalization failed: {}", e)))
     }
 
@@ -461,7 +499,8 @@ impl MemoryStorage {
         use std::io::Read;
         let mut decoder = flate2::read::GzDecoder::new(data);
         let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed)
+        decoder
+            .read_to_end(&mut decompressed)
             .map_err(|e| MemoryError::storage(format!("Decompression failed: {}", e)))?;
         Ok(decompressed)
     }
@@ -485,16 +524,19 @@ impl MemoryStorage {
 
     /// Verify backup integrity using checksum
     fn verify_backup_integrity(&self, backup_data: &MemoryStorageBackup) -> Result<()> {
-        let entries_json = serde_json::to_string_pretty(&backup_data.entries)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize entries for verification: {}", e)))?;
+        let entries_json = serde_json::to_string_pretty(&backup_data.entries).map_err(|e| {
+            MemoryError::storage(format!(
+                "Failed to serialize entries for verification: {}",
+                e
+            ))
+        })?;
 
         let calculated_checksum = self.calculate_checksum(&entries_json);
 
         if calculated_checksum != backup_data.metadata.checksum {
             return Err(MemoryError::storage(format!(
                 "Backup integrity verification failed. Expected checksum: {}, calculated: {}",
-                backup_data.metadata.checksum,
-                calculated_checksum
+                backup_data.metadata.checksum, calculated_checksum
             )));
         }
 
@@ -514,13 +556,22 @@ impl MemoryStorage {
             entry_count: usize,
         }
 
-        let legacy_backup: LegacyBackup = serde_json::from_str(json_data)
-            .map_err(|e| MemoryError::storage(format!("Failed to parse legacy backup format: {}", e)))?;
+        let legacy_backup: LegacyBackup = serde_json::from_str(json_data).map_err(|e| {
+            MemoryError::storage(format!("Failed to parse legacy backup format: {}", e))
+        })?;
 
         // Convert to new format
-        let total_size = legacy_backup.entries.iter().map(|e| e.estimated_size()).sum();
-        let entries_json = serde_json::to_string(&legacy_backup.entries)
-            .map_err(|e| MemoryError::storage(format!("Failed to serialize legacy entries for checksum: {}", e)))?;
+        let total_size = legacy_backup
+            .entries
+            .iter()
+            .map(|e| e.estimated_size())
+            .sum();
+        let entries_json = serde_json::to_string(&legacy_backup.entries).map_err(|e| {
+            MemoryError::storage(format!(
+                "Failed to serialize legacy entries for checksum: {}",
+                e
+            ))
+        })?;
         let checksum = self.calculate_checksum(&entries_json);
 
         Ok(MemoryStorageBackup {
@@ -541,20 +592,23 @@ impl MemoryStorage {
 
     /// Get backup information without restoring
     pub async fn get_backup_info(&self, path: &str) -> Result<BackupInfo> {
-        let file_data = tokio::fs::read(path).await
+        let file_data = tokio::fs::read(path)
+            .await
             .map_err(|e| MemoryError::storage(format!("Failed to read backup file: {}", e)))?;
 
         let is_compressed = self.is_compressed_data(&file_data);
         let json_data = if self.is_compressed_data(&file_data) {
-            String::from_utf8(self.decompress_data(&file_data)?)
-                .map_err(|e| MemoryError::storage(format!("Failed to decode decompressed data: {}", e)))?
+            String::from_utf8(self.decompress_data(&file_data)?).map_err(|e| {
+                MemoryError::storage(format!("Failed to decode decompressed data: {}", e))
+            })?
         } else {
             String::from_utf8(file_data)
                 .map_err(|e| MemoryError::storage(format!("Failed to decode backup file: {}", e)))?
         };
 
-        let backup_data: MemoryStorageBackup = serde_json::from_str(&json_data)
-            .map_err(|e| MemoryError::storage(format!("Failed to deserialize backup data: {}", e)))?;
+        let backup_data: MemoryStorageBackup = serde_json::from_str(&json_data).map_err(|e| {
+            MemoryError::storage(format!("Failed to deserialize backup data: {}", e))
+        })?;
 
         Ok(BackupInfo {
             version: backup_data.version,
@@ -739,6 +793,8 @@ impl TransactionalStorage for MemoryStorage {
     }
 
     async fn begin_transaction(&self) -> Result<Box<dyn TransactionHandle>> {
-        Ok(Box::new(MemoryTransactionHandle::new(Arc::clone(&self.entries))))
+        Ok(Box::new(MemoryTransactionHandle::new(Arc::clone(
+            &self.entries,
+        ))))
     }
 }

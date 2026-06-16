@@ -12,13 +12,13 @@ pub mod ollama;
 pub mod cohere;
 
 // Re-export providers
-pub use tfidf::{TfIdfProvider, TfIdfConfig};
+pub use tfidf::{TfIdfConfig, TfIdfProvider};
 
 #[cfg(feature = "llm-integration")]
-pub use openai::{OpenAIProvider, OpenAIConfig, OpenAIModel};
+pub use openai::{OpenAIConfig, OpenAIModel, OpenAIProvider};
 
 #[cfg(feature = "llm-integration")]
-pub use ollama::{OllamaProvider, OllamaConfig};
+pub use ollama::{OllamaConfig, OllamaProvider};
 
 #[cfg(feature = "llm-integration")]
-pub use cohere::{CohereProvider, CohereConfig, CohereModel, CohereInputType};
+pub use cohere::{CohereConfig, CohereInputType, CohereModel, CohereProvider};

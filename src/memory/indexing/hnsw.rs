@@ -4,7 +4,7 @@
 //! the HNSW algorithm, which offers excellent recall with logarithmic
 //! search complexity.
 
-use super::vector::{VectorIndex, IndexStats, IndexConfig, DistanceMetric};
+use super::vector::{DistanceMetric, IndexConfig, IndexStats, VectorIndex};
 use crate::error::{MemoryError, Result};
 use hnsw_rs::prelude::*;
 use std::collections::HashMap;
@@ -125,20 +125,26 @@ impl HnswIndex {
 
     /// Get or create internal ID for UUID
     fn get_or_create_id(&self, uuid: Uuid) -> Result<usize> {
-        let mut uuid_map = self.uuid_to_id.write()
+        let mut uuid_map = self
+            .uuid_to_id
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock UUID map: {}", e)))?;
 
         if let Some(&id) = uuid_map.get(&uuid) {
             Ok(id)
         } else {
-            let mut next_id = self.next_id.write()
+            let mut next_id = self
+                .next_id
+                .write()
                 .map_err(|e| MemoryError::Internal(format!("Failed to lock next_id: {}", e)))?;
             let id = *next_id;
             *next_id += 1;
 
             uuid_map.insert(uuid, id);
 
-            let mut id_map = self.id_to_uuid.write()
+            let mut id_map = self
+                .id_to_uuid
+                .write()
                 .map_err(|e| MemoryError::Internal(format!("Failed to lock ID map: {}", e)))?;
             id_map.insert(id, uuid);
 
@@ -148,7 +154,9 @@ impl HnswIndex {
 
     /// Get UUID for internal ID
     fn get_uuid(&self, id: usize) -> Result<Uuid> {
-        let id_map = self.id_to_uuid.read()
+        let id_map = self
+            .id_to_uuid
+            .read()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock ID map: {}", e)))?;
 
         id_map
@@ -189,7 +197,9 @@ impl VectorIndex for HnswIndex {
         let internal_id = self.get_or_create_id(id)?;
         let processed_vector = self.preprocess_vector(vector);
 
-        let mut index = self.index.write()
+        let mut index = self
+            .index
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
 
         index.insert((&processed_vector, internal_id));
@@ -208,7 +218,9 @@ impl VectorIndex for HnswIndex {
 
         let processed_query = self.preprocess_vector(query);
 
-        let index = self.index.read()
+        let index = self
+            .index
+            .read()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
 
         // Search with ef_search parameter
@@ -227,11 +239,15 @@ impl VectorIndex for HnswIndex {
     fn remove(&mut self, id: Uuid) -> Result<()> {
         // HNSW doesn't support efficient removal
         // We just remove from our mappings
-        let mut uuid_map = self.uuid_to_id.write()
+        let mut uuid_map = self
+            .uuid_to_id
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock UUID map: {}", e)))?;
 
         if let Some(internal_id) = uuid_map.remove(&id) {
-            let mut id_map = self.id_to_uuid.write()
+            let mut id_map = self
+                .id_to_uuid
+                .write()
                 .map_err(|e| MemoryError::Internal(format!("Failed to lock ID map: {}", e)))?;
             id_map.remove(&internal_id);
         }
@@ -254,19 +270,27 @@ impl VectorIndex for HnswIndex {
             DistL2,
         );
 
-        let mut index = self.index.write()
+        let mut index = self
+            .index
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
         *index = new_hnsw;
 
-        let mut uuid_map = self.uuid_to_id.write()
+        let mut uuid_map = self
+            .uuid_to_id
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock UUID map: {}", e)))?;
         uuid_map.clear();
 
-        let mut id_map = self.id_to_uuid.write()
+        let mut id_map = self
+            .id_to_uuid
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock ID map: {}", e)))?;
         id_map.clear();
 
-        let mut next_id = self.next_id.write()
+        let mut next_id = self
+            .next_id
+            .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock next_id: {}", e)))?;
         *next_id = 0;
 
@@ -282,7 +306,9 @@ impl VectorIndex for HnswIndex {
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        let index = self.index.read()
+        let index = self
+            .index
+            .read()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;
 
         // hnsw_rs 0.3 `file_dump` takes a target directory plus a basename and
@@ -294,12 +320,15 @@ impl VectorIndex for HnswIndex {
             .unwrap_or("hnsw_index");
         std::fs::create_dir_all(dir)
             .map_err(|e| MemoryError::External(format!("Failed to create dump dir: {}", e)))?;
-        index.file_dump(dir, basename)
+        index
+            .file_dump(dir, basename)
             .map_err(|e| MemoryError::External(format!("Failed to save HNSW index: {:?}", e)))?;
 
         // Save UUID mappings
         let uuid_map_path = path.with_extension("uuid_map");
-        let uuid_map = self.uuid_to_id.read()
+        let uuid_map = self
+            .uuid_to_id
+            .read()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock UUID map: {}", e)))?;
 
         let serialized = bincode::serialize(&*uuid_map)
@@ -322,7 +351,8 @@ impl VectorIndex for HnswIndex {
         Err(MemoryError::External(
             "Loading a persisted HNSW index is not supported with hnsw_rs 0.3 \
              (HnswIo::load_hnsw return type is lifetime-bound to the loader); \
-             rebuild the index by re-inserting vectors instead".to_string(),
+             rebuild the index by re-inserting vectors instead"
+                .to_string(),
         ))
     }
 
@@ -330,10 +360,22 @@ impl VectorIndex for HnswIndex {
         let vector_count = self.len();
         let mut parameters = std::collections::HashMap::new();
 
-        parameters.insert("max_connections".to_string(), self.hnsw_params.max_connections.to_string());
-        parameters.insert("ef_construction".to_string(), self.hnsw_params.ef_construction.to_string());
-        parameters.insert("ef_search".to_string(), self.hnsw_params.ef_search.to_string());
-        parameters.insert("max_layer".to_string(), self.hnsw_params.max_layer.to_string());
+        parameters.insert(
+            "max_connections".to_string(),
+            self.hnsw_params.max_connections.to_string(),
+        );
+        parameters.insert(
+            "ef_construction".to_string(),
+            self.hnsw_params.ef_construction.to_string(),
+        );
+        parameters.insert(
+            "ef_search".to_string(),
+            self.hnsw_params.ef_search.to_string(),
+        );
+        parameters.insert(
+            "max_layer".to_string(),
+            self.hnsw_params.max_layer.to_string(),
+        );
 
         // Rough memory estimation
         let bytes_per_vector = self.config.dimension * 4; // f32

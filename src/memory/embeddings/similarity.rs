@@ -1,5 +1,5 @@
 //! Similarity functions for vector embeddings
-//! 
+//!
 //! This module provides various similarity and distance metrics
 //! for comparing embedding vectors.
 
@@ -80,10 +80,7 @@ pub fn manhattan_distance(a: &[f64], b: &[f64]) -> f64 {
         return f64::INFINITY;
     }
 
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).abs())
-        .sum()
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum()
 }
 
 /// Calculate dot product between two vectors
@@ -136,7 +133,7 @@ pub fn angular_distance(a: &[f64], b: &[f64]) -> f64 {
 /// Normalize a vector to unit length
 pub fn normalize_vector(vector: &mut [f64]) {
     let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
-    
+
     if magnitude > 0.0 {
         for value in vector.iter_mut() {
             *value /= magnitude;
@@ -163,7 +160,7 @@ pub fn find_k_most_similar(
 
     // Sort by similarity (highest first)
     similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("value should be available"));
-    
+
     // Take top k
     similarities.truncate(k);
     similarities
@@ -224,7 +221,7 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let c = vec![0.0, 1.0, 0.0];
-        
+
         assert!((cosine_similarity(&a, &b) - 1.0).abs() < f64::EPSILON);
         assert!((cosine_similarity(&a, &c) - 0.0).abs() < f64::EPSILON);
     }
@@ -234,7 +231,7 @@ mod tests {
         let a = vec![0.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let c = vec![1.0, 1.0, 0.0];
-        
+
         assert!((euclidean_distance(&a, &b) - 1.0).abs() < f64::EPSILON);
         assert!((euclidean_distance(&a, &c) - 2.0_f64.sqrt()).abs() < f64::EPSILON);
     }
@@ -244,7 +241,7 @@ mod tests {
         let a = vec![0.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let c = vec![1.0, 1.0, 0.0];
-        
+
         assert!((manhattan_distance(&a, &b) - 1.0).abs() < f64::EPSILON);
         assert!((manhattan_distance(&a, &c) - 2.0).abs() < f64::EPSILON);
     }
@@ -253,7 +250,7 @@ mod tests {
     fn test_jaccard_similarity() {
         let a = vec![1.0, 0.0, 1.0, 0.0];
         let b = vec![1.0, 1.0, 0.0, 0.0];
-        
+
         // Intersection: 1 element (first position)
         // Union: 3 elements (first, second, third positions)
         let expected = 1.0 / 3.0;
@@ -264,7 +261,7 @@ mod tests {
     fn test_vector_normalization() {
         let mut vector = vec![3.0, 4.0, 0.0];
         normalize_vector(&mut vector);
-        
+
         let magnitude = vector_magnitude(&vector);
         assert!((magnitude - 1.0).abs() < f64::EPSILON);
     }
@@ -273,10 +270,10 @@ mod tests {
     fn test_similarity_metrics_enum() {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
-        
+
         let cosine_sim = SimilarityMetric::Cosine.calculate(&a, &b);
         assert!((cosine_sim - 1.0).abs() < f64::EPSILON);
-        
+
         assert_eq!(SimilarityMetric::Cosine.name(), "cosine");
     }
 
@@ -288,9 +285,9 @@ mod tests {
             (vec![0.5, 0.5, 0.0], 1), // Partial match
             (vec![0.0, 1.0, 0.0], 2), // Orthogonal
         ];
-        
+
         let results = find_k_most_similar(&query, &vectors, 2, cosine_similarity);
-        
+
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, 0); // Perfect match should be first
         assert!(results[0].1 > results[1].1); // First should have higher similarity

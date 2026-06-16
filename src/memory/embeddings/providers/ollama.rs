@@ -4,7 +4,7 @@
 //! fully private and self-hosted embedding generation.
 
 use super::super::provider::{
-    EmbeddingProvider, Embedding, EmbedOptions, ProviderCapabilities, compute_content_hash,
+    compute_content_hash, EmbedOptions, Embedding, EmbeddingProvider, ProviderCapabilities,
 };
 use crate::error::{MemoryError, Result};
 use async_trait::async_trait;
@@ -78,8 +78,8 @@ impl OllamaConfig {
     pub fn from_env() -> Self {
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        let model = std::env::var("OLLAMA_MODEL")
-            .unwrap_or_else(|_| "nomic-embed-text".to_string());
+        let model =
+            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
         let embedding_dim = std::env::var("OLLAMA_EMBEDDING_DIM")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -214,7 +214,10 @@ impl OllamaProvider {
                         }
                     } else {
                         let status = resp.status();
-                        let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                        let error_text = resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unknown error".to_string());
                         last_error = Some(MemoryError::External(format!(
                             "Ollama API error {}: {}",
                             status, error_text
@@ -317,7 +320,7 @@ impl EmbeddingProvider for OllamaProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
             supports_batch: true,
-            max_batch_size: None, // No hard limit, but sequential processing
+            max_batch_size: None,   // No hard limit, but sequential processing
             max_input_length: None, // Model-dependent
             supports_input_types: false,
             requires_api_key: false,
@@ -440,15 +443,28 @@ mod tests {
             return;
         }
 
-        let emb1 = provider.embed("machine learning and AI", None).await.expect("await should be present");
-        let emb2 = provider.embed("deep learning and neural networks", None).await.expect("await should be present");
-        let emb3 = provider.embed("cooking pasta recipes", None).await.expect("await should be present");
+        let emb1 = provider
+            .embed("machine learning and AI", None)
+            .await
+            .expect("await should be present");
+        let emb2 = provider
+            .embed("deep learning and neural networks", None)
+            .await
+            .expect("await should be present");
+        let emb3 = provider
+            .embed("cooking pasta recipes", None)
+            .await
+            .expect("await should be present");
 
         let sim_related = emb1.cosine_similarity(&emb2);
         let sim_unrelated = emb1.cosine_similarity(&emb3);
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        tracing::info!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!(
+            "Related similarity: {}, Unrelated similarity: {}",
+            sim_related,
+            sim_unrelated
+        );
     }
 }

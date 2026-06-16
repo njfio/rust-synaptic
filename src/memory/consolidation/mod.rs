@@ -1,15 +1,15 @@
 //! Memory Consolidation System
-//! 
+//!
 //! Implements catastrophic forgetting prevention with selective memory replay
 //! and importance-weighted updates following state-of-the-art continual learning algorithms.
 
-pub mod importance_scoring;
-pub mod selective_replay;
+pub mod adaptive_replay;
 pub mod consolidation_strategies;
 pub mod elastic_weight_consolidation;
-pub mod synaptic_intelligence;
 pub mod gradual_forgetting;
-pub mod adaptive_replay;
+pub mod importance_scoring;
+pub mod selective_replay;
+pub mod synaptic_intelligence;
 
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
@@ -206,14 +206,23 @@ impl MemoryConsolidationSystem {
     }
 
     /// Perform memory consolidation using configured strategies
-    pub async fn consolidate_memories(&mut self, memories: &[MemoryEntry]) -> Result<ConsolidationResult> {
+    pub async fn consolidate_memories(
+        &mut self,
+        memories: &[MemoryEntry],
+    ) -> Result<ConsolidationResult> {
         let start_time = std::time::Instant::now();
         let operation_id = Uuid::new_v4();
 
-        tracing::info!("Starting memory consolidation with {} memories", memories.len());
+        tracing::info!(
+            "Starting memory consolidation with {} memories",
+            memories.len()
+        );
 
         // Calculate importance scores for all memories
-        let importance_scores = self.importance_scorer.calculate_batch_importance(memories).await?;
+        let importance_scores = self
+            .importance_scorer
+            .calculate_batch_importance(memories)
+            .await?;
 
         // Add small delay to ensure realistic processing time for tests
         tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
@@ -226,7 +235,9 @@ impl MemoryConsolidationSystem {
         for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
             if importance.importance_score >= self.config.importance_threshold {
                 // Add to replay buffer for future consolidation
-                self.replay_manager.add_to_buffer(memory, importance).await?;
+                self.replay_manager
+                    .add_to_buffer(memory, importance)
+                    .await?;
                 consolidated_count += 1;
                 total_importance += importance.importance_score;
             } else {
@@ -246,22 +257,33 @@ impl MemoryConsolidationSystem {
 
         // Apply EWC if enabled
         if self.config.enable_ewc {
-            self.ewc.update_fisher_information(&importance_scores).await?;
+            self.ewc
+                .update_fisher_information(&importance_scores)
+                .await?;
         }
 
         // Apply Synaptic Intelligence consolidation
         let task_id = format!("consolidation_{}", operation_id);
-        self.synaptic_intelligence.consolidate_task(&task_id, memories).await?;
+        self.synaptic_intelligence
+            .consolidate_task(&task_id, memories)
+            .await?;
 
         // Apply Gradual Forgetting evaluation
         if self.gradual_forgetting.should_evaluate() {
-            let forgetting_decisions = self.gradual_forgetting.evaluate_memories(memories, &importance_scores).await?;
-            let forgotten_by_gradual = forgetting_decisions.iter()
+            let forgetting_decisions = self
+                .gradual_forgetting
+                .evaluate_memories(memories, &importance_scores)
+                .await?;
+            let forgotten_by_gradual = forgetting_decisions
+                .iter()
                 .filter(|d| d.should_forget)
                 .count();
 
-            tracing::info!("Gradual forgetting evaluated {} memories, {} marked for forgetting",
-                          forgetting_decisions.len(), forgotten_by_gradual);
+            tracing::info!(
+                "Gradual forgetting evaluated {} memories, {} marked for forgetting",
+                forgetting_decisions.len(),
+                forgotten_by_gradual
+            );
         }
 
         // Apply Adaptive Replay Mechanisms
@@ -278,16 +300,23 @@ impl MemoryConsolidationSystem {
                 timestamp: Utc::now(),
             };
 
-            let decision = self.adaptive_replay.make_adaptive_decision(memory, importance, &context).await?;
+            let decision = self
+                .adaptive_replay
+                .make_adaptive_decision(memory, importance, &context)
+                .await?;
             adaptive_decisions.push(decision);
         }
 
-        let high_priority_replays = adaptive_decisions.iter()
+        let high_priority_replays = adaptive_decisions
+            .iter()
             .filter(|d| d.replay_priority > 0.7)
             .count();
 
-        tracing::info!("Adaptive replay evaluated {} memories, {} high-priority replays scheduled",
-                      adaptive_decisions.len(), high_priority_replays);
+        tracing::info!(
+            "Adaptive replay evaluated {} memories, {} high-priority replays scheduled",
+            adaptive_decisions.len(),
+            high_priority_replays
+        );
 
         let processing_time = start_time.elapsed().as_millis() as u64;
         let avg_importance = if consolidated_count > 0 {
@@ -310,15 +339,19 @@ impl MemoryConsolidationSystem {
             memories_forgotten: forgotten_count,
             avg_importance_score: avg_importance,
             processing_time_ms: processing_time,
-            effectiveness_score: self.calculate_effectiveness_score(consolidated_count, forgotten_count),
+            effectiveness_score: self
+                .calculate_effectiveness_score(consolidated_count, forgotten_count),
             timestamp: Utc::now(),
         };
 
         self.consolidation_history.push(result.clone());
         self.last_consolidation = Some(Utc::now());
 
-        tracing::info!("Memory consolidation completed: {} consolidated, {} forgotten", 
-                      consolidated_count, forgotten_count);
+        tracing::info!(
+            "Memory consolidation completed: {} consolidated, {} forgotten",
+            consolidated_count,
+            forgotten_count
+        );
 
         Ok(result)
     }
@@ -332,8 +365,12 @@ impl MemoryConsolidationSystem {
 
         // Effectiveness based on retention rate and importance threshold adherence
         let retention_rate = consolidated as f64 / total as f64;
-        let threshold_adherence = if retention_rate > 0.5 { 1.0 } else { retention_rate * 2.0 };
-        
+        let threshold_adherence = if retention_rate > 0.5 {
+            1.0
+        } else {
+            retention_rate * 2.0
+        };
+
         (retention_rate * 0.7 + threshold_adherence * 0.3).min(1.0)
     }
 
@@ -343,30 +380,47 @@ impl MemoryConsolidationSystem {
 
         if !self.consolidation_history.is_empty() {
             let total_operations = self.consolidation_history.len() as f64;
-            let avg_effectiveness = self.consolidation_history.iter()
+            let avg_effectiveness = self
+                .consolidation_history
+                .iter()
                 .map(|r| r.effectiveness_score)
-                .sum::<f64>() / total_operations;
-            let avg_processing_time = self.consolidation_history.iter()
+                .sum::<f64>()
+                / total_operations;
+            let avg_processing_time = self
+                .consolidation_history
+                .iter()
                 .map(|r| r.processing_time_ms as f64)
-                .sum::<f64>() / total_operations;
+                .sum::<f64>()
+                / total_operations;
 
             stats.insert("total_operations".to_string(), total_operations);
             stats.insert("avg_effectiveness".to_string(), avg_effectiveness);
             stats.insert("avg_processing_time_ms".to_string(), avg_processing_time);
         }
 
-        stats.insert("replay_buffer_size".to_string(), self.replay_manager.buffer_size() as f64);
+        stats.insert(
+            "replay_buffer_size".to_string(),
+            self.replay_manager.buffer_size() as f64,
+        );
         stats
     }
 
     /// Force immediate consolidation regardless of timing
-    pub async fn force_consolidation(&mut self, memories: &[MemoryEntry]) -> Result<ConsolidationResult> {
+    pub async fn force_consolidation(
+        &mut self,
+        memories: &[MemoryEntry],
+    ) -> Result<ConsolidationResult> {
         self.consolidate_memories(memories).await
     }
 
     /// Get memory importance scores without performing consolidation
-    pub async fn get_importance_scores(&mut self, memories: &[MemoryEntry]) -> Result<Vec<MemoryImportance>> {
-        self.importance_scorer.calculate_batch_importance(memories).await
+    pub async fn get_importance_scores(
+        &mut self,
+        memories: &[MemoryEntry],
+    ) -> Result<Vec<MemoryImportance>> {
+        self.importance_scorer
+            .calculate_batch_importance(memories)
+            .await
     }
 
     /// Get recent consolidation results
@@ -395,7 +449,7 @@ mod tests {
     async fn test_should_consolidate() {
         let config = ConsolidationConfig::default();
         let system = MemoryConsolidationSystem::new(config).expect("value should be available");
-        
+
         // Should consolidate on first run
         assert!(system.should_consolidate());
     }
@@ -406,12 +460,23 @@ mod tests {
         let mut system = MemoryConsolidationSystem::new(config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Important memory content".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "Less important content".to_string(), MemoryType::ShortTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "Important memory content".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "Less important content".to_string(),
+                MemoryType::ShortTerm,
+            ),
         ];
 
-        let result = system.consolidate_memories(&memories).await.expect("await should be present");
-        
+        let result = system
+            .consolidate_memories(&memories)
+            .await
+            .expect("await should be present");
+
         assert_eq!(result.memories_processed, 2);
         assert!(result.effectiveness_score >= 0.0);
         assert!(result.effectiveness_score <= 1.0);

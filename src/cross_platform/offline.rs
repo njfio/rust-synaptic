@@ -4,29 +4,29 @@
 //! conflict resolution, and seamless online/offline transitions.
 
 use super::{
-    CrossPlatformAdapter, PlatformConfig, PlatformFeature, PlatformInfo, Platform,
-    PerformanceProfile, StorageBackend, StorageStats,
+    CrossPlatformAdapter, PerformanceProfile, Platform, PlatformConfig, PlatformFeature,
+    PlatformInfo, StorageBackend, StorageStats,
 };
 use crate::error::MemoryError as SynapticError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Offline storage adapter
 pub struct OfflineAdapter {
     /// Local storage backend
     storage: Arc<RwLock<LocalStorage>>,
-    
+
     /// Offline configuration
     config: OfflineConfig,
-    
+
     /// Sync queue for when online
     sync_queue: Arc<RwLock<Vec<SyncOperation>>>,
-    
+
     /// Conflict resolution strategy
     conflict_resolver: Box<dyn ConflictResolver>,
 
@@ -39,22 +39,22 @@ pub struct OfflineAdapter {
 pub struct OfflineConfig {
     /// Local storage directory
     pub storage_dir: PathBuf,
-    
+
     /// Enable automatic sync when online
     pub auto_sync: bool,
-    
+
     /// Enable conflict detection
     pub enable_conflict_detection: bool,
-    
+
     /// Maximum offline storage size (bytes)
     pub max_offline_storage: usize,
-    
+
     /// Sync queue size limit
     pub max_sync_queue_size: usize,
-    
+
     /// Enable data compression
     pub enable_compression: bool,
-    
+
     /// Enable encryption for local storage
     pub enable_encryption: bool,
 }
@@ -78,13 +78,13 @@ impl Default for OfflineConfig {
 struct LocalStorage {
     /// In-memory storage for fast access
     memory_store: HashMap<String, StoredItem>,
-    
+
     /// File system storage for persistence
     file_store: HashMap<String, PathBuf>,
-    
+
     /// Storage directory
     storage_dir: PathBuf,
-    
+
     /// Total storage used
     total_size: usize,
 }
@@ -94,19 +94,19 @@ struct LocalStorage {
 struct StoredItem {
     /// Item data
     data: Vec<u8>,
-    
+
     /// Creation timestamp
     created_at: u64,
-    
+
     /// Last modified timestamp
     modified_at: u64,
-    
+
     /// Version for conflict resolution
     version: u64,
-    
+
     /// Checksum for integrity
     checksum: String,
-    
+
     /// Sync status
     sync_status: SyncStatus,
 }
@@ -116,16 +116,16 @@ struct StoredItem {
 enum SyncStatus {
     /// Item is synced with remote
     Synced,
-    
+
     /// Item needs to be uploaded
     PendingUpload,
-    
+
     /// Item needs to be downloaded
     PendingDownload,
-    
+
     /// Item has conflicts
     Conflicted,
-    
+
     /// Item is being synced
     Syncing,
 }
@@ -139,18 +139,13 @@ pub enum SyncOperation {
         data: Vec<u8>,
         version: u64,
     },
-    
+
     /// Download remote item to local
-    Download {
-        key: String,
-        remote_version: u64,
-    },
-    
+    Download { key: String, remote_version: u64 },
+
     /// Delete item from remote
-    Delete {
-        key: String,
-    },
-    
+    Delete { key: String },
+
     /// Resolve conflict
     ResolveConflict {
         key: String,
@@ -165,13 +160,13 @@ pub enum SyncOperation {
 pub enum ConflictResolution {
     /// Use local version
     UseLocal,
-    
+
     /// Use remote version
     UseRemote,
-    
+
     /// Merge versions (if possible)
     Merge,
-    
+
     /// Create new version
     CreateNew,
 }
@@ -226,27 +221,24 @@ pub struct InMemoryRemoteBackend {
 
 impl RemoteBackend for InMemoryRemoteBackend {
     fn upload(&self, key: &str, data: &[u8], version: u64) -> Result<(), SynapticError> {
-        let mut store = self
-            .store
-            .write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        let mut store = self.store.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e))
+        })?;
         store.insert(key.to_string(), (data.to_vec(), version));
         Ok(())
     }
 
     fn download(&self, key: &str) -> Result<Option<(Vec<u8>, u64)>, SynapticError> {
-        let store = self
-            .store
-            .read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        let store = self.store.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e))
+        })?;
         Ok(store.get(key).cloned())
     }
 
     fn delete(&self, key: &str) -> Result<(), SynapticError> {
-        let mut store = self
-            .store
-            .write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e)))?;
+        let mut store = self.store.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to lock remote store: {}", e))
+        })?;
         store.remove(key);
         Ok(())
     }
@@ -256,8 +248,9 @@ impl LocalStorage {
     /// Create new local storage
     fn new(storage_dir: PathBuf) -> Result<Self, SynapticError> {
         // Create storage directory if it doesn't exist
-        std::fs::create_dir_all(&storage_dir)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to create storage directory: {}", e)))?;
+        std::fs::create_dir_all(&storage_dir).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to create storage directory: {}", e))
+        })?;
 
         Ok(Self {
             memory_store: HashMap::new(),
@@ -271,7 +264,9 @@ impl LocalStorage {
     fn store(&mut self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get system time: {}", e))
+            })?
             .as_secs();
 
         // Calculate checksum
@@ -291,8 +286,9 @@ impl LocalStorage {
 
         // Store to file system
         let file_path = self.storage_dir.join(format!("{}.dat", key));
-        let serialized = bincode::serialize(&item)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to serialize item: {}", e)))?;
+        let serialized = bincode::serialize(&item).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to serialize item: {}", e))
+        })?;
 
         std::fs::write(&file_path, serialized)
             .map_err(|e| SynapticError::ProcessingError(format!("Failed to write file: {}", e)))?;
@@ -313,16 +309,20 @@ impl LocalStorage {
         // Check file system
         if let Some(file_path) = self.file_store.get(key) {
             if file_path.exists() {
-                let serialized = std::fs::read(file_path)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to read file: {}", e)))?;
+                let serialized = std::fs::read(file_path).map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to read file: {}", e))
+                })?;
 
-                let item: StoredItem = bincode::deserialize(&serialized)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to deserialize item: {}", e)))?;
+                let item: StoredItem = bincode::deserialize(&serialized).map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to deserialize item: {}", e))
+                })?;
 
                 // Verify checksum
                 let checksum = format!("{:x}", md5::compute(&item.data));
                 if checksum != item.checksum {
-                    return Err(SynapticError::ProcessingError("Data corruption detected".to_string()));
+                    return Err(SynapticError::ProcessingError(
+                        "Data corruption detected".to_string(),
+                    ));
                 }
 
                 // Cache in memory
@@ -348,8 +348,9 @@ impl LocalStorage {
         // Remove from file system
         if let Some(file_path) = self.file_store.remove(key) {
             if file_path.exists() {
-                std::fs::remove_file(file_path)
-                    .map_err(|e| SynapticError::ProcessingError(format!("Failed to delete file: {}", e)))?;
+                std::fs::remove_file(file_path).map_err(|e| {
+                    SynapticError::ProcessingError(format!("Failed to delete file: {}", e))
+                })?;
                 deleted = true;
             }
         }
@@ -390,21 +391,25 @@ impl LocalStorage {
             return Ok(());
         }
 
-        let entries = std::fs::read_dir(&self.storage_dir)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to read storage directory: {}", e)))?;
+        let entries = std::fs::read_dir(&self.storage_dir).map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to read storage directory: {}", e))
+        })?;
 
         for entry in entries {
-            let entry = entry
-                .map_err(|e| SynapticError::ProcessingError(format!("Failed to read directory entry: {}", e)))?;
-            
+            let entry = entry.map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to read directory entry: {}", e))
+            })?;
+
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("dat") {
                 if let Some(key) = path.file_stem().and_then(|s| s.to_str()) {
-                    let serialized = std::fs::read(&path)
-                        .map_err(|e| SynapticError::ProcessingError(format!("Failed to read file: {}", e)))?;
+                    let serialized = std::fs::read(&path).map_err(|e| {
+                        SynapticError::ProcessingError(format!("Failed to read file: {}", e))
+                    })?;
 
-                    let item: StoredItem = bincode::deserialize(&serialized)
-                        .map_err(|e| SynapticError::ProcessingError(format!("Failed to deserialize item: {}", e)))?;
+                    let item: StoredItem = bincode::deserialize(&serialized).map_err(|e| {
+                        SynapticError::ProcessingError(format!("Failed to deserialize item: {}", e))
+                    })?;
 
                     self.total_size += item.data.len();
                     self.file_store.insert(key.to_string(), path);
@@ -423,7 +428,9 @@ impl OfflineAdapter {
     }
 
     /// Create new offline adapter with custom remote backend
-    pub fn with_remote_backend(remote_backend: Arc<dyn RemoteBackend>) -> Result<Self, SynapticError> {
+    pub fn with_remote_backend(
+        remote_backend: Arc<dyn RemoteBackend>,
+    ) -> Result<Self, SynapticError> {
         let config = OfflineConfig::default();
         let mut storage = LocalStorage::new(config.storage_dir.clone())?;
         storage.load_existing()?;
@@ -439,8 +446,9 @@ impl OfflineAdapter {
 
     /// Add operation to sync queue
     pub fn queue_sync_operation(&self, operation: SyncOperation) -> Result<(), SynapticError> {
-        let mut queue = self.sync_queue.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e)))?;
+        let mut queue = self.sync_queue.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e))
+        })?;
 
         if queue.len() >= self.config.max_sync_queue_size {
             // Remove oldest operation
@@ -453,24 +461,27 @@ impl OfflineAdapter {
 
     /// Get pending sync operations
     pub fn get_pending_operations(&self) -> Result<Vec<SyncOperation>, SynapticError> {
-        let queue = self.sync_queue.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e)))?;
-        
+        let queue = self.sync_queue.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e))
+        })?;
+
         Ok(queue.clone())
     }
 
     /// Clear sync queue
     pub fn clear_sync_queue(&self) -> Result<(), SynapticError> {
-        let mut queue = self.sync_queue.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e)))?;
-        
+        let mut queue = self.sync_queue.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire sync queue lock: {}", e))
+        })?;
+
         queue.clear();
         Ok(())
     }
 
     /// Check if online by attempting a TCP connection
     pub fn is_online(&self) -> bool {
-        let addr = std::env::var("SYNC_ONLINE_TEST_ADDR").unwrap_or_else(|_| "example.com:80".to_string());
+        let addr =
+            std::env::var("SYNC_ONLINE_TEST_ADDR").unwrap_or_else(|_| "example.com:80".to_string());
         if let Ok(mut addrs) = addr.to_socket_addrs() {
             if let Some(sock) = addrs.next() {
                 return TcpStream::connect_timeout(&sock, Duration::from_secs(1)).is_ok();
@@ -502,11 +513,21 @@ impl OfflineAdapter {
                 SyncOperation::Delete { key } => {
                     self.remote_backend.delete(&key)?;
                 }
-                SyncOperation::ResolveConflict { key, resolution, local_version, remote_version: _ } => {
+                SyncOperation::ResolveConflict {
+                    key,
+                    resolution,
+                    local_version,
+                    remote_version: _,
+                } => {
                     match resolution {
                         ConflictResolution::UseLocal => {
                             let data = {
-                                let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                                let mut storage = self.storage.write().map_err(|e| {
+                                    SynapticError::ProcessingError(format!(
+                                        "Failed to acquire storage lock: {}",
+                                        e
+                                    ))
+                                })?;
                                 storage.retrieve(&key)?
                             };
                             if let Some(data) = data {
@@ -515,7 +536,12 @@ impl OfflineAdapter {
                         }
                         ConflictResolution::UseRemote => {
                             if let Some((data, _)) = self.remote_backend.download(&key)? {
-                                let mut storage = self.storage.write().map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
+                                let mut storage = self.storage.write().map_err(|e| {
+                                    SynapticError::ProcessingError(format!(
+                                        "Failed to acquire storage lock: {}",
+                                        e
+                                    ))
+                                })?;
                                 storage.store(&key, &data)?;
                             } else {
                                 // remote version missing, nothing to do
@@ -539,15 +565,18 @@ impl CrossPlatformAdapter for OfflineAdapter {
     }
 
     fn store(&self, key: &str, data: &[u8]) -> Result<(), SynapticError> {
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         storage.store(key, data)?;
 
         // Queue sync operation
         let version = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to get system time: {}", e)))?
+            .map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to get system time: {}", e))
+            })?
             .as_secs();
 
         self.queue_sync_operation(SyncOperation::Upload {
@@ -560,16 +589,18 @@ impl CrossPlatformAdapter for OfflineAdapter {
     }
 
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>, SynapticError> {
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         storage.retrieve(key)
     }
 
     fn delete(&self, key: &str) -> Result<bool, SynapticError> {
-        let mut storage = self.storage.write()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let mut storage = self.storage.write().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         let result = storage.delete(key)?;
 
         if result {
@@ -583,16 +614,18 @@ impl CrossPlatformAdapter for OfflineAdapter {
     }
 
     fn list_keys(&self) -> Result<Vec<String>, SynapticError> {
-        let storage = self.storage.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let storage = self.storage.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         Ok(storage.list_keys())
     }
 
     fn get_stats(&self) -> Result<StorageStats, SynapticError> {
-        let storage = self.storage.read()
-            .map_err(|e| SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e)))?;
-        
+        let storage = self.storage.read().map_err(|e| {
+            SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
+        })?;
+
         Ok(storage.get_stats())
     }
 
@@ -612,7 +645,7 @@ impl CrossPlatformAdapter for OfflineAdapter {
         PlatformInfo {
             platform: Platform::Desktop, // Assuming desktop for offline adapter
             version: "1.0.0".to_string(),
-            available_memory: 1024 * 1024 * 1024, // 1GB
+            available_memory: 1024 * 1024 * 1024,       // 1GB
             available_storage: 10 * 1024 * 1024 * 1024, // 10GB
             supported_features: vec![
                 PlatformFeature::FileSystemAccess,

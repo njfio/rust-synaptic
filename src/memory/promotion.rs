@@ -4,9 +4,9 @@
 //! memories from short-term to long-term storage based on various criteria such as
 //! access frequency, age, importance scores, and hybrid combinations.
 
-use crate::memory::types::{MemoryEntry, MemoryType};
 use crate::error::Result;
-use chrono::{DateTime, Utc, Duration as ChronoDuration};
+use crate::memory::types::{MemoryEntry, MemoryType};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for memory promotion behavior.
@@ -65,9 +65,9 @@ impl PromotionConfig {
             PromotionPolicyType::AccessFrequency => {
                 Box::new(AccessFrequencyPolicy::new(self.access_threshold))
             }
-            PromotionPolicyType::TimeBased => {
-                Box::new(TimeBasedPolicy::new(ChronoDuration::days(self.min_age_days)))
-            }
+            PromotionPolicyType::TimeBased => Box::new(TimeBasedPolicy::new(ChronoDuration::days(
+                self.min_age_days,
+            ))),
             PromotionPolicyType::Importance => {
                 Box::new(ImportancePolicy::new(self.importance_threshold))
             }
@@ -78,7 +78,9 @@ impl PromotionConfig {
                     self.hybrid_access_weight,
                 );
                 hybrid.add_policy(
-                    Box::new(TimeBasedPolicy::new(ChronoDuration::days(self.min_age_days))),
+                    Box::new(TimeBasedPolicy::new(ChronoDuration::days(
+                        self.min_age_days,
+                    ))),
                     self.hybrid_time_weight,
                 );
                 hybrid.add_policy(
@@ -592,7 +594,9 @@ mod tests {
 
         assert!(manager.should_promote(&memory));
 
-        memory = manager.promote_memory(memory).expect("value should be available");
+        memory = manager
+            .promote_memory(memory)
+            .expect("value should be available");
         assert_eq!(memory.memory_type, MemoryType::LongTerm);
     }
 

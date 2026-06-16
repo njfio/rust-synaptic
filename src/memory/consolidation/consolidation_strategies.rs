@@ -1,11 +1,11 @@
 //! Memory Consolidation Strategies
-//! 
+//!
 //! Implements various consolidation strategies including gradual forgetting,
 //! knowledge distillation, and hierarchical compression.
 
+use super::{ConsolidationConfig, ConsolidationStrategy, MemoryImportance};
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
-use super::{ConsolidationConfig, MemoryImportance, ConsolidationStrategy};
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -118,25 +118,31 @@ impl ConsolidationStrategies {
         };
 
         let mut policies = HashMap::new();
-        
+
         // Default policy for long-term memories
-        policies.insert("long_term".to_string(), ConsolidationPolicy {
-            strategy: ConsolidationStrategy::Hybrid(vec![
-                ConsolidationStrategy::ElasticWeightConsolidation,
-                ConsolidationStrategy::SelectiveReplay,
-            ]),
-            min_importance: 0.5,
-            max_age_hours: 168, // 1 week
-            frequency_hours: 24,
-        });
+        policies.insert(
+            "long_term".to_string(),
+            ConsolidationPolicy {
+                strategy: ConsolidationStrategy::Hybrid(vec![
+                    ConsolidationStrategy::ElasticWeightConsolidation,
+                    ConsolidationStrategy::SelectiveReplay,
+                ]),
+                min_importance: 0.5,
+                max_age_hours: 168, // 1 week
+                frequency_hours: 24,
+            },
+        );
 
         // Default policy for short-term memories
-        policies.insert("short_term".to_string(), ConsolidationPolicy {
-            strategy: ConsolidationStrategy::GradualForgetting,
-            min_importance: 0.3,
-            max_age_hours: 24, // 1 day
-            frequency_hours: 6,
-        });
+        policies.insert(
+            "short_term".to_string(),
+            ConsolidationPolicy {
+                strategy: ConsolidationStrategy::GradualForgetting,
+                min_importance: 0.3,
+                max_age_hours: 24, // 1 day
+                frequency_hours: 6,
+            },
+        );
 
         Ok(Self {
             config: config.clone(),
@@ -159,29 +165,36 @@ impl ConsolidationStrategies {
 
         let result = match strategy {
             ConsolidationStrategy::GradualForgetting => {
-                self.apply_gradual_forgetting(memories, importance_scores).await?
-            },
+                self.apply_gradual_forgetting(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::SelectiveReplay => {
-                self.apply_selective_replay(memories, importance_scores).await?
-            },
+                self.apply_selective_replay(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::ElasticWeightConsolidation => {
                 self.apply_ewc(memories, importance_scores).await?
-            },
+            }
             ConsolidationStrategy::SynapticIntelligence => {
-                self.apply_synaptic_intelligence(memories, importance_scores).await?
-            },
+                self.apply_synaptic_intelligence(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::KnowledgeDistillation => {
-                self.apply_knowledge_distillation(memories, importance_scores).await?
-            },
+                self.apply_knowledge_distillation(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::HierarchicalCompression => {
-                self.apply_hierarchical_compression(memories, importance_scores).await?
-            },
+                self.apply_hierarchical_compression(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::ImportanceWeighted => {
-                self.apply_importance_weighted(memories, importance_scores).await?
-            },
+                self.apply_importance_weighted(memories, importance_scores)
+                    .await?
+            }
             ConsolidationStrategy::Hybrid(strategies) => {
-                self.apply_hybrid_strategy(strategies, memories, importance_scores).await?
-            },
+                self.apply_hybrid_strategy(strategies, memories, importance_scores)
+                    .await?
+            }
         };
 
         let processing_time = start_time.elapsed().as_millis() as u64;
@@ -189,7 +202,8 @@ impl ConsolidationStrategies {
         final_result.processing_time_ms = processing_time;
 
         // Record performance for future optimization
-        self.record_strategy_performance(strategy.clone(), &final_result).await?;
+        self.record_strategy_performance(strategy.clone(), &final_result)
+            .await?;
 
         Ok(final_result)
     }
@@ -204,7 +218,9 @@ impl ConsolidationStrategies {
         let mut total_quality = 0.0;
 
         for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
-            let forgetting_probability = self.calculate_forgetting_probability(memory, importance).await?;
+            let forgetting_probability = self
+                .calculate_forgetting_probability(memory, importance)
+                .await?;
 
             use rand::Rng;
             if forgetting_probability > rand::thread_rng().gen::<f64>() {
@@ -255,8 +271,10 @@ impl ConsolidationStrategies {
 
         // Select memories for replay based on importance and temporal factors
         for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
-            let replay_probability = self.calculate_replay_probability(memory, importance).await?;
-            
+            let replay_probability = self
+                .calculate_replay_probability(memory, importance)
+                .await?;
+
             if replay_probability > 0.5 {
                 replayed_count += 1;
                 let quality = self.simulate_replay_quality(memory, importance).await?;
@@ -335,8 +353,10 @@ impl ConsolidationStrategies {
         let mut total_quality = 0.0;
 
         for (memory, importance) in memories.iter().zip(importance_scores.iter()) {
-            let synaptic_importance = self.calculate_synaptic_importance(memory, importance).await?;
-            
+            let synaptic_importance = self
+                .calculate_synaptic_importance(memory, importance)
+                .await?;
+
             if synaptic_importance > 0.6 {
                 protected_count += 1;
                 total_quality += synaptic_importance;
@@ -375,7 +395,9 @@ impl ConsolidationStrategies {
         let mut total_quality = 0.0;
 
         // Group memories by similarity for distillation
-        let memory_groups = self.group_memories_by_similarity(memories, importance_scores).await?;
+        let memory_groups = self
+            .group_memories_by_similarity(memories, importance_scores)
+            .await?;
         let total_groups = memory_groups.len();
 
         for group in memory_groups {
@@ -429,7 +451,9 @@ impl ConsolidationStrategies {
         let mut total_quality = 0.0;
 
         // Create hierarchical clusters
-        let hierarchy = self.create_memory_hierarchy(memories, importance_scores).await?;
+        let hierarchy = self
+            .create_memory_hierarchy(memories, importance_scores)
+            .await?;
 
         for (level, level_clusters) in hierarchy.iter().enumerate() {
             for cluster in level_clusters {
@@ -450,13 +474,15 @@ impl ConsolidationStrategies {
         };
 
         let avg_compression = if compressed_count > 0 {
-            total_compression / (compressed_count as f64 / self.hierarchical_config.min_cluster_size as f64)
+            total_compression
+                / (compressed_count as f64 / self.hierarchical_config.min_cluster_size as f64)
         } else {
             0.0
         };
 
         let avg_quality = if compressed_count > 0 {
-            total_quality / (compressed_count as f64 / self.hierarchical_config.min_cluster_size as f64)
+            total_quality
+                / (compressed_count as f64 / self.hierarchical_config.min_cluster_size as f64)
         } else {
             1.0
         };
@@ -484,7 +510,9 @@ impl ConsolidationStrategies {
 
             if update_weight > 0.3 {
                 updated_count += 1;
-                let quality = self.calculate_weighted_update_quality(memory, importance).await?;
+                let quality = self
+                    .calculate_weighted_update_quality(memory, importance)
+                    .await?;
                 total_quality += quality;
             }
         }
@@ -525,30 +553,36 @@ impl ConsolidationStrategies {
             // Apply individual strategies directly to avoid recursion
             let result = match strategy {
                 ConsolidationStrategy::GradualForgetting => {
-                    self.apply_gradual_forgetting(memories, importance_scores).await?
-                },
+                    self.apply_gradual_forgetting(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::SelectiveReplay => {
-                    self.apply_selective_replay(memories, importance_scores).await?
-                },
+                    self.apply_selective_replay(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::ElasticWeightConsolidation => {
                     self.apply_ewc(memories, importance_scores).await?
-                },
+                }
                 ConsolidationStrategy::SynapticIntelligence => {
-                    self.apply_synaptic_intelligence(memories, importance_scores).await?
-                },
+                    self.apply_synaptic_intelligence(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::KnowledgeDistillation => {
-                    self.apply_knowledge_distillation(memories, importance_scores).await?
-                },
+                    self.apply_knowledge_distillation(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::HierarchicalCompression => {
-                    self.apply_hierarchical_compression(memories, importance_scores).await?
-                },
+                    self.apply_hierarchical_compression(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::ImportanceWeighted => {
-                    self.apply_importance_weighted(memories, importance_scores).await?
-                },
+                    self.apply_importance_weighted(memories, importance_scores)
+                        .await?
+                }
                 ConsolidationStrategy::Hybrid(_) => {
                     // Skip nested hybrid strategies to avoid infinite recursion
                     continue;
-                },
+                }
             };
 
             combined_success += result.success_rate;
@@ -569,46 +603,74 @@ impl ConsolidationStrategies {
 
     // Helper methods for strategy calculations
 
-    async fn calculate_forgetting_probability(&self, memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_forgetting_probability(
+        &self,
+        memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         let base_rate = self.forgetting_params.base_rate;
         let importance_protection = 1.0 - importance.importance_score;
         let age_factor = self.calculate_age_factor(memory).await?;
-        
+
         let forgetting_prob = base_rate * importance_protection * age_factor;
         Ok(forgetting_prob.min(1.0).max(0.0))
     }
 
-    async fn calculate_replay_probability(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_replay_probability(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         let importance_factor = importance.importance_score;
         let recency_factor = importance.recency_score;
         let centrality_factor = importance.centrality_score;
-        
+
         let replay_prob = importance_factor * 0.5 + recency_factor * 0.3 + centrality_factor * 0.2;
         Ok(replay_prob.min(1.0).max(0.0))
     }
 
-    async fn calculate_quality_retention(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_quality_retention(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         // Quality retention based on importance and consolidation effectiveness
         let base_quality = 0.8;
         let importance_bonus = importance.importance_score * 0.2;
         Ok((base_quality + importance_bonus).min(1.0))
     }
 
-    async fn simulate_replay_quality(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn simulate_replay_quality(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         // Simulate quality improvement from replay
         let base_quality = 0.7;
         let replay_improvement = importance.importance_score * 0.3;
         Ok((base_quality + replay_improvement).min(1.0))
     }
 
-    async fn calculate_ewc_quality(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_ewc_quality(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         // EWC quality based on Fisher information and importance
-        let fisher_quality = if importance.fisher_information.is_some() { 0.9 } else { 0.7 };
+        let fisher_quality = if importance.fisher_information.is_some() {
+            0.9
+        } else {
+            0.7
+        };
         let importance_quality = importance.importance_score;
         Ok((fisher_quality * 0.6 + importance_quality * 0.4).min(1.0))
     }
 
-    async fn calculate_synaptic_importance(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_synaptic_importance(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         // Synaptic intelligence importance calculation
         let temporal_factor = importance.temporal_consistency;
         let access_factor = importance.access_frequency;
@@ -616,7 +678,11 @@ impl ConsolidationStrategies {
         Ok(synaptic_importance.min(1.0))
     }
 
-    async fn calculate_weighted_update_quality(&self, _memory: &MemoryEntry, importance: &MemoryImportance) -> Result<f64> {
+    async fn calculate_weighted_update_quality(
+        &self,
+        _memory: &MemoryEntry,
+        importance: &MemoryImportance,
+    ) -> Result<f64> {
         // Quality of importance-weighted updates
         let weight_quality = importance.importance_score;
         let consistency_quality = importance.temporal_consistency;
@@ -629,32 +695,42 @@ impl ConsolidationStrategies {
         Ok(age_factor)
     }
 
-    async fn record_strategy_performance(&mut self, strategy: ConsolidationStrategy, result: &StrategyResult) -> Result<()> {
+    async fn record_strategy_performance(
+        &mut self,
+        strategy: ConsolidationStrategy,
+        result: &StrategyResult,
+    ) -> Result<()> {
         self.performance_history
             .entry(strategy)
             .or_insert_with(Vec::new)
             .push(result.clone());
-        
+
         // Keep only recent performance data
         if let Some(history) = self.performance_history.get_mut(&result.strategy) {
             if history.len() > 100 {
                 history.remove(0);
             }
         }
-        
+
         Ok(())
     }
 
     /// Get strategy performance statistics
-    pub fn get_strategy_performance(&self, strategy: &ConsolidationStrategy) -> Option<(f64, f64, f64)> {
+    pub fn get_strategy_performance(
+        &self,
+        strategy: &ConsolidationStrategy,
+    ) -> Option<(f64, f64, f64)> {
         if let Some(history) = self.performance_history.get(strategy) {
             if history.is_empty() {
                 return None;
             }
 
-            let avg_success = history.iter().map(|r| r.success_rate).sum::<f64>() / history.len() as f64;
-            let avg_compression = history.iter().map(|r| r.compression_ratio).sum::<f64>() / history.len() as f64;
-            let avg_quality = history.iter().map(|r| r.quality_score).sum::<f64>() / history.len() as f64;
+            let avg_success =
+                history.iter().map(|r| r.success_rate).sum::<f64>() / history.len() as f64;
+            let avg_compression =
+                history.iter().map(|r| r.compression_ratio).sum::<f64>() / history.len() as f64;
+            let avg_quality =
+                history.iter().map(|r| r.quality_score).sum::<f64>() / history.len() as f64;
 
             Some((avg_success, avg_compression, avg_quality))
         } else {
@@ -673,9 +749,15 @@ impl ConsolidationStrategies {
             }
 
             let score = match optimize_for {
-                "success_rate" => history.iter().map(|r| r.success_rate).sum::<f64>() / history.len() as f64,
-                "compression" => history.iter().map(|r| r.compression_ratio).sum::<f64>() / history.len() as f64,
-                "quality" => history.iter().map(|r| r.quality_score).sum::<f64>() / history.len() as f64,
+                "success_rate" => {
+                    history.iter().map(|r| r.success_rate).sum::<f64>() / history.len() as f64
+                }
+                "compression" => {
+                    history.iter().map(|r| r.compression_ratio).sum::<f64>() / history.len() as f64
+                }
+                "quality" => {
+                    history.iter().map(|r| r.quality_score).sum::<f64>() / history.len() as f64
+                }
                 _ => continue,
             };
 
@@ -706,12 +788,16 @@ impl ConsolidationStrategies {
             used_indices.insert(i);
 
             // Find similar memories
-            for (j, (other_memory, other_importance)) in memories.iter().zip(importance_scores.iter()).enumerate() {
+            for (j, (other_memory, other_importance)) in
+                memories.iter().zip(importance_scores.iter()).enumerate()
+            {
                 if i == j || used_indices.contains(&j) {
                     continue;
                 }
 
-                let similarity = self.calculate_semantic_similarity(memory, other_memory).await?;
+                let similarity = self
+                    .calculate_semantic_similarity(memory, other_memory)
+                    .await?;
                 if similarity >= self.distillation_config.similarity_threshold {
                     group.push((other_memory.clone(), other_importance.clone()));
                     used_indices.insert(j);
@@ -725,7 +811,11 @@ impl ConsolidationStrategies {
     }
 
     /// Calculate semantic similarity between two memories
-    async fn calculate_semantic_similarity(&self, memory1: &MemoryEntry, memory2: &MemoryEntry) -> Result<f64> {
+    async fn calculate_semantic_similarity(
+        &self,
+        memory1: &MemoryEntry,
+        memory2: &MemoryEntry,
+    ) -> Result<f64> {
         // Simplified similarity calculation based on content overlap
         let content1 = memory1.value.to_lowercase();
         let content2 = memory2.value.to_lowercase();
@@ -746,7 +836,10 @@ impl ConsolidationStrategies {
     }
 
     /// Distill a group of similar memories into a compressed representation
-    async fn distill_memory_group(&self, group: &[(MemoryEntry, MemoryImportance)]) -> Result<DistillationResult> {
+    async fn distill_memory_group(
+        &self,
+        group: &[(MemoryEntry, MemoryImportance)],
+    ) -> Result<DistillationResult> {
         if group.is_empty() {
             return Ok(DistillationResult {
                 compression_ratio: 0.0,
@@ -785,12 +878,16 @@ impl ConsolidationStrategies {
         let mut hierarchy = Vec::new();
 
         // Create initial clusters at level 0
-        let mut current_level = self.create_initial_clusters(memories, importance_scores).await?;
+        let mut current_level = self
+            .create_initial_clusters(memories, importance_scores)
+            .await?;
         hierarchy.push(current_level.clone());
 
         // Create subsequent levels
         for level in 1..self.hierarchical_config.hierarchy_levels {
-            let next_level = self.create_next_level_clusters(&current_level, level).await?;
+            let next_level = self
+                .create_next_level_clusters(&current_level, level)
+                .await?;
             if next_level.is_empty() {
                 break;
             }
@@ -818,8 +915,11 @@ impl ConsolidationStrategies {
             // Add similar memories to cluster
             let mut i = 0;
             while i < remaining.len() && cluster.len() < self.hierarchical_config.max_cluster_size {
-                let similarity = self.calculate_semantic_similarity(seed.0, remaining[i].0).await?;
-                if similarity > 0.3 { // Threshold for clustering
+                let similarity = self
+                    .calculate_semantic_similarity(seed.0, remaining[i].0)
+                    .await?;
+                if similarity > 0.3 {
+                    // Threshold for clustering
                     let item = remaining.remove(i);
                     cluster.push((item.0.clone(), item.1.clone()));
                 } else {
@@ -842,13 +942,22 @@ impl ConsolidationStrategies {
         level: usize,
     ) -> Result<Vec<Vec<(MemoryEntry, MemoryImportance)>>> {
         let mut next_level = Vec::new();
-        let compression_factor = self.hierarchical_config.compression_factor.powi(level as i32);
+        let compression_factor = self
+            .hierarchical_config
+            .compression_factor
+            .powi(level as i32);
 
         for cluster in current_level {
-            if cluster.len() >= (self.hierarchical_config.min_cluster_size as f64 * compression_factor) as usize {
+            if cluster.len()
+                >= (self.hierarchical_config.min_cluster_size as f64 * compression_factor) as usize
+            {
                 // Compress cluster by selecting most important memories
                 let mut compressed_cluster = cluster.clone();
-                compressed_cluster.sort_by(|a, b| b.1.importance_score.partial_cmp(&a.1.importance_score).expect("value should be available"));
+                compressed_cluster.sort_by(|a, b| {
+                    b.1.importance_score
+                        .partial_cmp(&a.1.importance_score)
+                        .expect("value should be available")
+                });
 
                 let target_size = (cluster.len() as f64 * compression_factor) as usize;
                 compressed_cluster.truncate(target_size.max(1));
@@ -868,7 +977,10 @@ impl ConsolidationStrategies {
         cluster: &[(MemoryEntry, MemoryImportance)],
         level: usize,
     ) -> Result<CompressionResult> {
-        let compression_factor = self.hierarchical_config.compression_factor.powi(level as i32);
+        let compression_factor = self
+            .hierarchical_config
+            .compression_factor
+            .powi(level as i32);
         let target_size = (cluster.len() as f64 * compression_factor) as usize;
 
         let compression_ratio = 1.0 - (target_size as f64 / cluster.len() as f64);
@@ -921,31 +1033,35 @@ mod tests {
     #[tokio::test]
     async fn test_gradual_forgetting_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
-        let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-        ];
+        let memories = vec![MemoryEntry::new(
+            "key1".to_string(),
+            "Content 1".to_string(),
+            MemoryType::LongTerm,
+        )];
 
-        let importance_scores = vec![
-            MemoryImportance {
-                memory_key: "key1".to_string(),
-                importance_score: 0.8,
-                access_frequency: 0.7,
-                recency_score: 0.6,
-                centrality_score: 0.5,
-                uniqueness_score: 0.4,
-                temporal_consistency: 0.3,
-                calculated_at: Utc::now(),
-                fisher_information: None,
-            },
-        ];
+        let importance_scores = vec![MemoryImportance {
+            memory_key: "key1".to_string(),
+            importance_score: 0.8,
+            access_frequency: 0.7,
+            recency_score: 0.6,
+            centrality_score: 0.5,
+            uniqueness_score: 0.4,
+            temporal_consistency: 0.3,
+            calculated_at: Utc::now(),
+            fisher_information: None,
+        }];
 
-        let result = strategies.apply_strategy(
-            &ConsolidationStrategy::GradualForgetting,
-            &memories,
-            &importance_scores,
-        ).await.expect("await should be present");
+        let result = strategies
+            .apply_strategy(
+                &ConsolidationStrategy::GradualForgetting,
+                &memories,
+                &importance_scores,
+            )
+            .await
+            .expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -954,12 +1070,25 @@ mod tests {
     #[tokio::test]
     async fn test_knowledge_distillation_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "machine learning models".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key3".to_string(), "deep learning networks".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "machine learning algorithms".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "machine learning models".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key3".to_string(),
+                "deep learning networks".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
         let importance_scores = vec![
@@ -998,11 +1127,14 @@ mod tests {
             },
         ];
 
-        let result = strategies.apply_strategy(
-            &ConsolidationStrategy::KnowledgeDistillation,
-            &memories,
-            &importance_scores,
-        ).await.expect("await should be present");
+        let result = strategies
+            .apply_strategy(
+                &ConsolidationStrategy::KnowledgeDistillation,
+                &memories,
+                &importance_scores,
+            )
+            .await
+            .expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -1014,18 +1146,39 @@ mod tests {
     #[tokio::test]
     async fn test_hierarchical_compression_strategy() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "data structure array".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "data structure list".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key3".to_string(), "data structure tree".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key4".to_string(), "algorithm sorting".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key5".to_string(), "algorithm searching".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "data structure array".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "data structure list".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key3".to_string(),
+                "data structure tree".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key4".to_string(),
+                "algorithm sorting".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key5".to_string(),
+                "algorithm searching".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
-        let importance_scores: Vec<MemoryImportance> = (0..5).map(|i| {
-            MemoryImportance {
+        let importance_scores: Vec<MemoryImportance> = (0..5)
+            .map(|i| MemoryImportance {
                 memory_key: format!("key{}", i + 1),
                 importance_score: 0.8 - (i as f64 * 0.1),
                 access_frequency: 0.7 - (i as f64 * 0.1),
@@ -1035,14 +1188,17 @@ mod tests {
                 temporal_consistency: 0.3 - (i as f64 * 0.1),
                 calculated_at: Utc::now(),
                 fisher_information: None,
-            }
-        }).collect();
+            })
+            .collect();
 
-        let result = strategies.apply_strategy(
-            &ConsolidationStrategy::HierarchicalCompression,
-            &memories,
-            &importance_scores,
-        ).await.expect("await should be present");
+        let result = strategies
+            .apply_strategy(
+                &ConsolidationStrategy::HierarchicalCompression,
+                &memories,
+                &importance_scores,
+            )
+            .await
+            .expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);
@@ -1056,12 +1212,30 @@ mod tests {
         let config = ConsolidationConfig::default();
         let strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
-        let memory1 = MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm);
-        let memory2 = MemoryEntry::new("key2".to_string(), "machine learning models".to_string(), MemoryType::LongTerm);
-        let memory3 = MemoryEntry::new("key3".to_string(), "database systems".to_string(), MemoryType::LongTerm);
+        let memory1 = MemoryEntry::new(
+            "key1".to_string(),
+            "machine learning algorithms".to_string(),
+            MemoryType::LongTerm,
+        );
+        let memory2 = MemoryEntry::new(
+            "key2".to_string(),
+            "machine learning models".to_string(),
+            MemoryType::LongTerm,
+        );
+        let memory3 = MemoryEntry::new(
+            "key3".to_string(),
+            "database systems".to_string(),
+            MemoryType::LongTerm,
+        );
 
-        let similarity_high = strategies.calculate_semantic_similarity(&memory1, &memory2).await.expect("await should be present");
-        let similarity_low = strategies.calculate_semantic_similarity(&memory1, &memory3).await.expect("await should be present");
+        let similarity_high = strategies
+            .calculate_semantic_similarity(&memory1, &memory2)
+            .await
+            .expect("await should be present");
+        let similarity_low = strategies
+            .calculate_semantic_similarity(&memory1, &memory3)
+            .await
+            .expect("await should be present");
 
         assert!(similarity_high > similarity_low);
         assert!(similarity_high >= 0.0);
@@ -1076,13 +1250,25 @@ mod tests {
         let strategies = ConsolidationStrategies::new(&config).expect("value should be available");
 
         let memories = vec![
-            MemoryEntry::new("key1".to_string(), "machine learning algorithms".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key2".to_string(), "machine learning models".to_string(), MemoryType::LongTerm),
-            MemoryEntry::new("key3".to_string(), "database systems".to_string(), MemoryType::LongTerm),
+            MemoryEntry::new(
+                "key1".to_string(),
+                "machine learning algorithms".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key2".to_string(),
+                "machine learning models".to_string(),
+                MemoryType::LongTerm,
+            ),
+            MemoryEntry::new(
+                "key3".to_string(),
+                "database systems".to_string(),
+                MemoryType::LongTerm,
+            ),
         ];
 
-        let importance_scores: Vec<MemoryImportance> = (0..3).map(|i| {
-            MemoryImportance {
+        let importance_scores: Vec<MemoryImportance> = (0..3)
+            .map(|i| MemoryImportance {
                 memory_key: format!("key{}", i + 1),
                 importance_score: 0.8,
                 access_frequency: 0.7,
@@ -1092,10 +1278,13 @@ mod tests {
                 temporal_consistency: 0.3,
                 calculated_at: Utc::now(),
                 fisher_information: None,
-            }
-        }).collect();
+            })
+            .collect();
 
-        let groups = strategies.group_memories_by_similarity(&memories, &importance_scores).await.expect("await should be present");
+        let groups = strategies
+            .group_memories_by_similarity(&memories, &importance_scores)
+            .await
+            .expect("await should be present");
 
         assert!(!groups.is_empty());
         assert!(groups.len() <= memories.len());
@@ -1104,7 +1293,8 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_performance_tracking() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
         let result = StrategyResult {
             strategy: ConsolidationStrategy::GradualForgetting,
@@ -1114,9 +1304,13 @@ mod tests {
             processing_time_ms: 100,
         };
 
-        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result).await.expect("await should be present");
+        strategies
+            .record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result)
+            .await
+            .expect("await should be present");
 
-        let performance = strategies.get_strategy_performance(&ConsolidationStrategy::GradualForgetting);
+        let performance =
+            strategies.get_strategy_performance(&ConsolidationStrategy::GradualForgetting);
         assert!(performance.is_some());
 
         let (success, compression, quality) = performance.expect("performance should be valid");
@@ -1128,7 +1322,8 @@ mod tests {
     #[tokio::test]
     async fn test_best_strategy_selection() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
         // Add performance data for different strategies
         let result1 = StrategyResult {
@@ -1147,38 +1342,51 @@ mod tests {
             processing_time_ms: 150,
         };
 
-        strategies.record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result1).await.expect("await should be present");
-        strategies.record_strategy_performance(ConsolidationStrategy::SelectiveReplay, &result2).await.expect("await should be present");
+        strategies
+            .record_strategy_performance(ConsolidationStrategy::GradualForgetting, &result1)
+            .await
+            .expect("await should be present");
+        strategies
+            .record_strategy_performance(ConsolidationStrategy::SelectiveReplay, &result2)
+            .await
+            .expect("await should be present");
 
         let best_for_success = strategies.get_best_strategy("success_rate");
-        assert_eq!(best_for_success, Some(ConsolidationStrategy::SelectiveReplay));
+        assert_eq!(
+            best_for_success,
+            Some(ConsolidationStrategy::SelectiveReplay)
+        );
 
         let best_for_quality = strategies.get_best_strategy("quality");
-        assert_eq!(best_for_quality, Some(ConsolidationStrategy::GradualForgetting));
+        assert_eq!(
+            best_for_quality,
+            Some(ConsolidationStrategy::GradualForgetting)
+        );
     }
 
     #[tokio::test]
     async fn test_hybrid_strategy_with_new_strategies() {
         let config = ConsolidationConfig::default();
-        let mut strategies = ConsolidationStrategies::new(&config).expect("value should be available");
+        let mut strategies =
+            ConsolidationStrategies::new(&config).expect("value should be available");
 
-        let memories = vec![
-            MemoryEntry::new("key1".to_string(), "Content 1".to_string(), MemoryType::LongTerm),
-        ];
+        let memories = vec![MemoryEntry::new(
+            "key1".to_string(),
+            "Content 1".to_string(),
+            MemoryType::LongTerm,
+        )];
 
-        let importance_scores = vec![
-            MemoryImportance {
-                memory_key: "key1".to_string(),
-                importance_score: 0.8,
-                access_frequency: 0.7,
-                recency_score: 0.6,
-                centrality_score: 0.5,
-                uniqueness_score: 0.4,
-                temporal_consistency: 0.3,
-                calculated_at: Utc::now(),
-                fisher_information: None,
-            },
-        ];
+        let importance_scores = vec![MemoryImportance {
+            memory_key: "key1".to_string(),
+            importance_score: 0.8,
+            access_frequency: 0.7,
+            recency_score: 0.6,
+            centrality_score: 0.5,
+            uniqueness_score: 0.4,
+            temporal_consistency: 0.3,
+            calculated_at: Utc::now(),
+            fisher_information: None,
+        }];
 
         let hybrid_strategies = vec![
             ConsolidationStrategy::KnowledgeDistillation,
@@ -1186,11 +1394,14 @@ mod tests {
             ConsolidationStrategy::GradualForgetting,
         ];
 
-        let result = strategies.apply_strategy(
-            &ConsolidationStrategy::Hybrid(hybrid_strategies),
-            &memories,
-            &importance_scores,
-        ).await.expect("await should be present");
+        let result = strategies
+            .apply_strategy(
+                &ConsolidationStrategy::Hybrid(hybrid_strategies),
+                &memories,
+                &importance_scores,
+            )
+            .await
+            .expect("await should be present");
 
         assert!(result.success_rate >= 0.0);
         assert!(result.success_rate <= 1.0);

@@ -130,15 +130,15 @@ impl Default for HealthCheckConfig {
 pub trait HealthChecker: Send + Sync {
     /// Perform the health check
     async fn check_health(&self) -> Result<HealthCheckResult>;
-    
+
     /// Get the component name
     fn component_name(&self) -> &str;
-    
+
     /// Get check priority (lower numbers = higher priority)
     fn priority(&self) -> u8 {
         100
     }
-    
+
     /// Whether this check is critical for overall system health
     fn is_critical(&self) -> bool {
         false
@@ -170,7 +170,7 @@ impl CircuitBreaker {
             config,
         }
     }
-    
+
     /// Execute a function with circuit breaker protection
     pub async fn execute<F, T>(&self, operation: F) -> Result<T>
     where
@@ -180,7 +180,7 @@ impl CircuitBreaker {
         if !self.can_execute().await {
             return Err(SynapticError::CircuitBreakerOpen(self.name.clone()));
         }
-        
+
         // Execute the operation
         match operation.await {
             Ok(result) => {
@@ -193,11 +193,11 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Check if the circuit breaker allows execution
     async fn can_execute(&self) -> bool {
         let state = *self.state.read().await;
-        
+
         match state {
             CircuitBreakerState::Closed => true,
             CircuitBreakerState::Open => {
@@ -218,12 +218,12 @@ impl CircuitBreaker {
             CircuitBreakerState::HalfOpen => true,
         }
     }
-    
+
     /// Record a successful operation
     async fn record_success(&self) {
         let mut success_count = self.success_count.write().await;
         *success_count += 1;
-        
+
         let state = *self.state.read().await;
         if state == CircuitBreakerState::HalfOpen {
             if *success_count >= self.config.recovery_threshold as u64 {
@@ -234,23 +234,22 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Record a failed operation
     async fn record_failure(&self) {
         let mut failure_count = self.failure_count.write().await;
         *failure_count += 1;
         *self.last_failure.write().await = Some(SystemTime::now());
-        
+
         if *failure_count >= self.config.failure_threshold as u64 {
             // Transition to open
             *self.state.write().await = CircuitBreakerState::Open;
-            *self.next_attempt.write().await = Some(
-                SystemTime::now() + self.config.circuit_breaker_timeout
-            );
+            *self.next_attempt.write().await =
+                Some(SystemTime::now() + self.config.circuit_breaker_timeout);
             warn!("Circuit breaker '{}' transitioned to OPEN", self.name);
         }
     }
-    
+
     /// Get current circuit breaker status
     pub async fn status(&self) -> CircuitBreakerStatus {
         CircuitBreakerStatus {
@@ -279,7 +278,7 @@ impl HealthCheckManager {
     /// Create a new health check manager
     pub fn new(config: HealthCheckConfig) -> Self {
         let semaphore = Arc::new(Semaphore::new(config.max_concurrent_checks));
-        
+
         Self {
             checkers: Arc::new(RwLock::new(HashMap::new())),
             circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
@@ -297,41 +296,50 @@ impl HealthCheckManager {
             })),
         }
     }
-    
+
     /// Register a health checker
     pub async fn register_checker(&self, checker: Box<dyn HealthChecker>) {
         let component_name = checker.component_name().to_string();
-        
+
         // Create circuit breaker for this component
-        let circuit_breaker = CircuitBreaker::new(
-            component_name.clone(),
-            self.config.clone(),
+        let circuit_breaker = CircuitBreaker::new(component_name.clone(), self.config.clone());
+
+        self.checkers
+            .write()
+            .await
+            .insert(component_name.clone(), checker);
+        self.circuit_breakers
+            .write()
+            .await
+            .insert(component_name.clone(), circuit_breaker);
+
+        info!(
+            "Registered health checker for component: {}",
+            component_name
         );
-        
-        self.checkers.write().await.insert(component_name.clone(), checker);
-        self.circuit_breakers.write().await.insert(component_name.clone(), circuit_breaker);
-        
-        info!("Registered health checker for component: {}", component_name);
     }
-    
+
     /// Unregister a health checker
     pub async fn unregister_checker(&self, component_name: &str) {
         self.checkers.write().await.remove(component_name);
         self.circuit_breakers.write().await.remove(component_name);
-        
-        info!("Unregistered health checker for component: {}", component_name);
+
+        info!(
+            "Unregistered health checker for component: {}",
+            component_name
+        );
     }
-    
+
     /// Perform health checks for all registered components
     pub async fn check_all_health(&self) -> SystemHealthReport {
         let start_time = Instant::now();
         let mut component_results = HashMap::new();
         let mut overall_status = HealthStatus::Healthy;
-        
+
         // Get all checkers
         let checkers = self.checkers.read().await;
         let mut check_futures = Vec::new();
-        
+
         // Create futures for all health checks
         for (name, checker) in checkers.iter() {
             let checker_name = name.clone();
@@ -339,31 +347,41 @@ impl HealthCheckManager {
             let circuit_breakers = self.circuit_breakers.clone();
             let semaphore = self.semaphore.clone();
             let timeout_duration = self.config.timeout;
-            
+
             let future = async move {
                 let _permit = semaphore.acquire().await.expect("await should be present");
-                
-                let circuit_breaker = circuit_breakers.read().await
+
+                let circuit_breaker = circuit_breakers
+                    .read()
+                    .await
                     .get(&checker_name)
                     .expect("value should be available")
                     .clone();
-                
-                let result = circuit_breaker.execute(async {
-                    timeout(timeout_duration, checker_ref.check_health()).await
-                        .map_err(|_| SynapticError::Timeout(format!("Health check timeout for {}", checker_name)))?
-                }).await;
-                
+
+                let result = circuit_breaker
+                    .execute(async {
+                        timeout(timeout_duration, checker_ref.check_health())
+                            .await
+                            .map_err(|_| {
+                                SynapticError::Timeout(format!(
+                                    "Health check timeout for {}",
+                                    checker_name
+                                ))
+                            })?
+                    })
+                    .await;
+
                 (checker_name, result)
             };
-            
+
             check_futures.push(future);
         }
-        
+
         drop(checkers);
-        
+
         // Execute all health checks concurrently
         let results = futures::future::join_all(check_futures).await;
-        
+
         // Process results
         for (component_name, result) in results {
             let health_result = match result {
@@ -388,22 +406,22 @@ impl HealthCheckManager {
                     }
                 }
             };
-            
+
             component_results.insert(component_name, health_result);
         }
-        
+
         // Update metrics
         self.update_metrics(&component_results).await;
-        
+
         // Get circuit breaker statuses
         let circuit_breaker_statuses = self.get_circuit_breaker_statuses().await;
-        
+
         // Get dependency health
         let dependencies = self.dependencies.read().await.clone();
-        
+
         // Get current metrics
         let metrics = self.metrics.read().await.clone();
-        
+
         SystemHealthReport {
             overall_status,
             timestamp: SystemTime::now(),
@@ -418,17 +436,33 @@ impl HealthCheckManager {
     /// Check health of a specific component
     pub async fn check_component_health(&self, component_name: &str) -> Result<HealthCheckResult> {
         let checkers = self.checkers.read().await;
-        let checker = checkers.get(component_name)
-            .ok_or_else(|| SynapticError::NotFound(format!("Health checker for component '{}' not found", component_name)))?;
+        let checker = checkers.get(component_name).ok_or_else(|| {
+            SynapticError::NotFound(format!(
+                "Health checker for component '{}' not found",
+                component_name
+            ))
+        })?;
 
         let circuit_breakers = self.circuit_breakers.read().await;
-        let circuit_breaker = circuit_breakers.get(component_name)
-            .ok_or_else(|| SynapticError::NotFound(format!("Circuit breaker for component '{}' not found", component_name)))?;
+        let circuit_breaker = circuit_breakers.get(component_name).ok_or_else(|| {
+            SynapticError::NotFound(format!(
+                "Circuit breaker for component '{}' not found",
+                component_name
+            ))
+        })?;
 
-        let result = circuit_breaker.execute(async {
-            timeout(self.config.timeout, checker.check_health()).await
-                .map_err(|_| SynapticError::Timeout(format!("Health check timeout for {}", component_name)))?
-        }).await;
+        let result = circuit_breaker
+            .execute(async {
+                timeout(self.config.timeout, checker.check_health())
+                    .await
+                    .map_err(|_| {
+                        SynapticError::Timeout(format!(
+                            "Health check timeout for {}",
+                            component_name
+                        ))
+                    })?
+            })
+            .await;
 
         result
     }
@@ -445,12 +479,21 @@ impl HealthCheckManager {
             availability: 100.0,
         };
 
-        self.dependencies.write().await.insert(name.clone(), dependency);
+        self.dependencies
+            .write()
+            .await
+            .insert(name.clone(), dependency);
         info!("Registered dependency: {}", name);
     }
 
     /// Update dependency health status
-    pub async fn update_dependency_health(&self, name: &str, status: HealthStatus, response_time: Duration, error_occurred: bool) {
+    pub async fn update_dependency_health(
+        &self,
+        name: &str,
+        status: HealthStatus,
+        response_time: Duration,
+        error_occurred: bool,
+    ) {
         let mut dependencies = self.dependencies.write().await;
         if let Some(dependency) = dependencies.get_mut(name) {
             dependency.status = status;
@@ -464,7 +507,10 @@ impl HealthCheckManager {
             // Update availability
             dependency.availability = (1.0 - dependency.error_rate) * 100.0;
 
-            debug!("Updated dependency health for {}: {} ({:?})", name, status, response_time);
+            debug!(
+                "Updated dependency health for {}: {} ({:?})",
+                name, status, response_time
+            );
         }
     }
 
@@ -485,14 +531,13 @@ impl HealthCheckManager {
         let mut metrics = self.metrics.write().await;
 
         let total_checks = results.len() as u64;
-        let successful_checks = results.values()
+        let successful_checks = results
+            .values()
             .filter(|r| r.status == HealthStatus::Healthy)
             .count() as u64;
         let failed_checks = total_checks - successful_checks;
 
-        let total_duration: Duration = results.values()
-            .map(|r| r.duration)
-            .sum();
+        let total_duration: Duration = results.values().map(|r| r.duration).sum();
         let average_response_time = if total_checks > 0 {
             total_duration / total_checks as u32
         } else {
@@ -532,24 +577,38 @@ impl HealthCheckManager {
                         debug!("System health check completed: {}", report.overall_status);
                     }
                     HealthStatus::Degraded => {
-                        warn!("System health check completed: {} - Some components are degraded", report.overall_status);
+                        warn!(
+                            "System health check completed: {} - Some components are degraded",
+                            report.overall_status
+                        );
                     }
                     HealthStatus::Unhealthy => {
-                        error!("System health check completed: {} - System is unhealthy", report.overall_status);
+                        error!(
+                            "System health check completed: {} - System is unhealthy",
+                            report.overall_status
+                        );
                     }
                     HealthStatus::Unknown => {
-                        warn!("System health check completed: {} - Status unknown", report.overall_status);
+                        warn!(
+                            "System health check completed: {} - Status unknown",
+                            report.overall_status
+                        );
                     }
                 }
 
                 // Trigger auto-recovery if enabled
-                if manager.config.enable_auto_recovery && report.overall_status != HealthStatus::Healthy {
+                if manager.config.enable_auto_recovery
+                    && report.overall_status != HealthStatus::Healthy
+                {
                     manager.attempt_auto_recovery(&report).await;
                 }
             }
         });
 
-        info!("Started periodic health checks with interval: {:?}", self.config.check_interval);
+        info!(
+            "Started periodic health checks with interval: {:?}",
+            self.config.check_interval
+        );
         Ok(())
     }
 
@@ -561,7 +620,10 @@ impl HealthCheckManager {
 
                 // Here you would implement component-specific recovery logic
                 // For now, we just log the attempt
-                warn!("Auto-recovery not implemented for component: {}", component_name);
+                warn!(
+                    "Auto-recovery not implemented for component: {}",
+                    component_name
+                );
             }
         }
     }
@@ -641,18 +703,26 @@ impl HealthChecker for DatabaseHealthChecker {
         match self.connection_pool.ping().await {
             Ok(ping_duration) => {
                 let mut details = HashMap::new();
-                details.insert("ping_duration_ms".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from(ping_duration.as_millis() as u64)));
+                details.insert(
+                    "ping_duration_ms".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(
+                        ping_duration.as_millis() as u64
+                    )),
+                );
 
                 // Get connection pool information
                 if let Ok(active_connections) = self.connection_pool.get_connection_count().await {
-                    details.insert("active_connections".to_string(),
-                        serde_json::Value::Number(serde_json::Number::from(active_connections)));
+                    details.insert(
+                        "active_connections".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(active_connections)),
+                    );
                 }
 
                 if let Ok(max_connections) = self.connection_pool.get_max_connections().await {
-                    details.insert("max_connections".to_string(),
-                        serde_json::Value::Number(serde_json::Number::from(max_connections)));
+                    details.insert(
+                        "max_connections".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(max_connections)),
+                    );
                 }
 
                 let status = if ping_duration > Duration::from_millis(1000) {
@@ -671,17 +741,15 @@ impl HealthChecker for DatabaseHealthChecker {
                     error: None,
                 })
             }
-            Err(error) => {
-                Ok(HealthCheckResult {
-                    component: self.name.clone(),
-                    status: HealthStatus::Unhealthy,
-                    message: "Database ping failed".to_string(),
-                    details: HashMap::new(),
-                    timestamp,
-                    duration: start_time.elapsed(),
-                    error: Some(error.to_string()),
-                })
-            }
+            Err(error) => Ok(HealthCheckResult {
+                component: self.name.clone(),
+                status: HealthStatus::Unhealthy,
+                message: "Database ping failed".to_string(),
+                details: HashMap::new(),
+                timestamp,
+                duration: start_time.elapsed(),
+                error: Some(error.to_string()),
+            }),
         }
     }
 
@@ -738,12 +806,21 @@ impl HealthChecker for MemoryHealthChecker {
         match self.get_memory_usage() {
             Ok((used_memory, total_memory, usage_percent)) => {
                 let mut details = HashMap::new();
-                details.insert("used_memory_bytes".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from(used_memory)));
-                details.insert("total_memory_bytes".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from(total_memory)));
-                details.insert("usage_percent".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from_f64(usage_percent).expect("value should be available")));
+                details.insert(
+                    "used_memory_bytes".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(used_memory)),
+                );
+                details.insert(
+                    "total_memory_bytes".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(total_memory)),
+                );
+                details.insert(
+                    "usage_percent".to_string(),
+                    serde_json::Value::Number(
+                        serde_json::Number::from_f64(usage_percent)
+                            .expect("value should be available"),
+                    ),
+                );
 
                 let status = if usage_percent >= self.critical_threshold {
                     HealthStatus::Unhealthy
@@ -753,8 +830,10 @@ impl HealthChecker for MemoryHealthChecker {
                     HealthStatus::Healthy
                 };
 
-                let message = format!("Memory usage: {:.1}% ({} / {} bytes)",
-                    usage_percent, used_memory, total_memory);
+                let message = format!(
+                    "Memory usage: {:.1}% ({} / {} bytes)",
+                    usage_percent, used_memory, total_memory
+                );
 
                 Ok(HealthCheckResult {
                     component: self.name.clone(),
@@ -766,17 +845,15 @@ impl HealthChecker for MemoryHealthChecker {
                     error: None,
                 })
             }
-            Err(error) => {
-                Ok(HealthCheckResult {
-                    component: self.name.clone(),
-                    status: HealthStatus::Unknown,
-                    message: "Failed to get memory usage".to_string(),
-                    details: HashMap::new(),
-                    timestamp,
-                    duration: start_time.elapsed(),
-                    error: Some(error.to_string()),
-                })
-            }
+            Err(error) => Ok(HealthCheckResult {
+                component: self.name.clone(),
+                status: HealthStatus::Unknown,
+                message: "Failed to get memory usage".to_string(),
+                details: HashMap::new(),
+                timestamp,
+                duration: start_time.elapsed(),
+                error: Some(error.to_string()),
+            }),
         }
     }
 

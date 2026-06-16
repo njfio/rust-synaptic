@@ -1,16 +1,16 @@
 // Phase 3: Advanced Analytics Module
 // Super professional implementation with zero mocking
 
-/// Predictive analytics for memory patterns
-pub mod predictive;
 /// Behavioral analysis of memory usage
 pub mod behavioral;
-/// Visualization and graphical analytics
-pub mod visualization;
 /// Intelligence and anomaly detection
 pub mod intelligence;
 /// Performance analytics and optimization
 pub mod performance;
+/// Predictive analytics for memory patterns
+pub mod predictive;
+/// Visualization and graphical analytics
+pub mod visualization;
 
 #[cfg(test)]
 mod tests;
@@ -269,9 +269,10 @@ impl AnalyticsEngine {
 
         // Update metrics
         self.metrics.events_processed += 1;
-        self.metrics.avg_processing_time_ms = 
-            (self.metrics.avg_processing_time_ms * (self.metrics.events_processed - 1) as f64 + 
-             start_time.elapsed().as_millis() as f64) / self.metrics.events_processed as f64;
+        self.metrics.avg_processing_time_ms = (self.metrics.avg_processing_time_ms
+            * (self.metrics.events_processed - 1) as f64
+            + start_time.elapsed().as_millis() as f64)
+            / self.metrics.events_processed as f64;
         self.metrics.last_updated = Utc::now();
 
         Ok(())
@@ -310,11 +311,7 @@ impl AnalyticsEngine {
 
     /// Get recent insights
     pub fn get_recent_insights(&self, limit: usize) -> Vec<&AnalyticsInsight> {
-        self.insights
-            .iter()
-            .rev()
-            .take(limit)
-            .collect()
+        self.insights.iter().rev().take(limit).collect()
     }
 
     /// Get insights by type
@@ -338,20 +335,17 @@ impl AnalyticsEngine {
         let cutoff_date = Utc::now() - chrono::Duration::days(self.config.retention_days as i64);
 
         // Remove old events
-        self.event_history.retain(|event| {
-            match event {
-                AnalyticsEvent::MemoryAccess { timestamp, .. } => *timestamp > cutoff_date,
-                AnalyticsEvent::MemoryModification { timestamp, .. } => *timestamp > cutoff_date,
-                AnalyticsEvent::SearchQuery { timestamp, .. } => *timestamp > cutoff_date,
-                AnalyticsEvent::RelationshipDiscovery { timestamp, .. } => *timestamp > cutoff_date,
-            }
+        self.event_history.retain(|event| match event {
+            AnalyticsEvent::MemoryAccess { timestamp, .. } => *timestamp > cutoff_date,
+            AnalyticsEvent::MemoryModification { timestamp, .. } => *timestamp > cutoff_date,
+            AnalyticsEvent::SearchQuery { timestamp, .. } => *timestamp > cutoff_date,
+            AnalyticsEvent::RelationshipDiscovery { timestamp, .. } => *timestamp > cutoff_date,
         });
 
         // Remove old insights
-        self.insights.retain(|insight| insight.generated_at > cutoff_date);
+        self.insights
+            .retain(|insight| insight.generated_at > cutoff_date);
 
         Ok(())
     }
 }
-
-

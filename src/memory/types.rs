@@ -313,13 +313,41 @@ mod tests {
 
     #[test]
     fn test_memory_type_from_str() {
-        assert_eq!("short_term".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
-        assert_eq!("short".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
-        assert_eq!("st".parse::<MemoryType>().expect("value should be available"), MemoryType::ShortTerm);
+        assert_eq!(
+            "short_term"
+                .parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::ShortTerm
+        );
+        assert_eq!(
+            "short"
+                .parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::ShortTerm
+        );
+        assert_eq!(
+            "st".parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::ShortTerm
+        );
 
-        assert_eq!("long_term".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
-        assert_eq!("long".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
-        assert_eq!("lt".parse::<MemoryType>().expect("value should be available"), MemoryType::LongTerm);
+        assert_eq!(
+            "long_term"
+                .parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::LongTerm
+        );
+        assert_eq!(
+            "long"
+                .parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::LongTerm
+        );
+        assert_eq!(
+            "lt".parse::<MemoryType>()
+                .expect("value should be available"),
+            MemoryType::LongTerm
+        );
 
         assert!("invalid".parse::<MemoryType>().is_err());
     }
@@ -382,8 +410,14 @@ mod tests {
         metadata.set_custom_field("author".to_string(), "Alice".to_string());
         metadata.set_custom_field("version".to_string(), "1.0".to_string());
 
-        assert_eq!(metadata.get_custom_field("author"), Some(&"Alice".to_string()));
-        assert_eq!(metadata.get_custom_field("version"), Some(&"1.0".to_string()));
+        assert_eq!(
+            metadata.get_custom_field("author"),
+            Some(&"Alice".to_string())
+        );
+        assert_eq!(
+            metadata.get_custom_field("version"),
+            Some(&"1.0".to_string())
+        );
         assert_eq!(metadata.get_custom_field("missing"), None);
     }
 
@@ -428,14 +462,10 @@ mod tests {
 
     #[test]
     fn test_memory_entry_builder_pattern() {
-        let entry = MemoryEntry::new(
-            "key".to_string(),
-            "value".to_string(),
-            MemoryType::LongTerm,
-        )
-        .with_tags(vec!["tag1".to_string()])
-        .with_importance(0.9)
-        .with_embedding(vec![1.0, 2.0, 3.0]);
+        let entry = MemoryEntry::new("key".to_string(), "value".to_string(), MemoryType::LongTerm)
+            .with_tags(vec!["tag1".to_string()])
+            .with_importance(0.9)
+            .with_embedding(vec![1.0, 2.0, 3.0]);
 
         assert_eq!(entry.tags().len(), 1);
         assert_eq!(entry.metadata.importance, 0.9);

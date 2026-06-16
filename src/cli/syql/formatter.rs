@@ -3,7 +3,7 @@
 //! This module implements various output formatters for SyQL query results,
 //! supporting multiple output formats with customizable styling and layout.
 
-use super::{QueryResult, QueryValue, OutputFormat};
+use super::{OutputFormat, QueryResult, QueryValue};
 use crate::error::Result;
 use serde_json;
 use std::collections::HashMap;
@@ -41,9 +41,11 @@ impl ResultFormatter {
         }
 
         let mut output = String::new();
-        
+
         // Get column names from the first row
-        let columns: Vec<String> = result.metadata.columns
+        let columns: Vec<String> = result
+            .metadata
+            .columns
             .iter()
             .map(|col| col.name.clone())
             .collect();
@@ -54,7 +56,7 @@ impl ResultFormatter {
 
         // Calculate column widths
         let mut widths: HashMap<String, usize> = HashMap::new();
-        
+
         // Initialize with column name lengths
         for col in &columns {
             widths.insert(col.clone(), col.len());
@@ -73,7 +75,7 @@ impl ResultFormatter {
 
         // Create header separator
         let separator = self.create_table_separator(&columns, &widths);
-        
+
         // Add header
         output.push_str(&separator);
         output.push('|');
@@ -89,27 +91,33 @@ impl ResultFormatter {
             output.push('|');
             for col in &columns {
                 let width = widths.get(col).unwrap_or(&10);
-                let value = row.values.get(col)
+                let value = row
+                    .values
+                    .get(col)
                     .map(|v| self.format_value(v))
                     .unwrap_or_else(|| "NULL".to_string());
                 output.push_str(&format!(" {:width$} |", value, width = width));
             }
             output.push('\n');
         }
-        
+
         output.push_str(&separator);
 
         // Add statistics
-        output.push_str(&format!("\n{} rows returned in {}ms\n", 
-            result.statistics.rows_returned,
-            result.statistics.execution_time_ms
+        output.push_str(&format!(
+            "\n{} rows returned in {}ms\n",
+            result.statistics.rows_returned, result.statistics.execution_time_ms
         ));
 
         Ok(output)
     }
 
     /// Create table separator line
-    fn create_table_separator(&self, columns: &[String], widths: &HashMap<String, usize>) -> String {
+    fn create_table_separator(
+        &self,
+        columns: &[String],
+        widths: &HashMap<String, usize>,
+    ) -> String {
         let mut separator = String::from("+");
         for col in columns {
             let width = widths.get(col).unwrap_or(&10);
@@ -156,9 +164,11 @@ impl ResultFormatter {
         }
 
         let mut output = String::new();
-        
+
         // Get column names
-        let columns: Vec<String> = result.metadata.columns
+        let columns: Vec<String> = result
+            .metadata
+            .columns
             .iter()
             .map(|col| col.name.clone())
             .collect();
@@ -172,7 +182,8 @@ impl ResultFormatter {
             let values: Vec<String> = columns
                 .iter()
                 .map(|col| {
-                    row.values.get(col)
+                    row.values
+                        .get(col)
                         .map(|v| self.format_csv_value(v))
                         .unwrap_or_else(|| String::new())
                 })
@@ -211,7 +222,7 @@ impl ResultFormatter {
     /// Format as ASCII graph visualization
     fn format_graph(&self, result: &QueryResult) -> Result<String> {
         let mut output = String::new();
-        
+
         output.push_str("Graph Visualization:\n");
         output.push_str("===================\n\n");
 
@@ -224,18 +235,20 @@ impl ResultFormatter {
             if let (Some(from), Some(to)) = (row.values.get("from_id"), row.values.get("to_id")) {
                 let from_str = self.format_value(from);
                 let to_str = self.format_value(to);
-                
+
                 if !nodes.contains(&from_str) {
                     nodes.push(from_str.clone());
                 }
                 if !nodes.contains(&to_str) {
                     nodes.push(to_str.clone());
                 }
-                
-                let rel_type = row.values.get("relationship_type")
+
+                let rel_type = row
+                    .values
+                    .get("relationship_type")
                     .map(|v| self.format_value(v))
                     .unwrap_or_else(|| "relates_to".to_string());
-                
+
                 edges.push(format!("{} --[{}]--> {}", from_str, rel_type, to_str));
             } else if let Some(id) = row.values.get("id") {
                 let id_str = self.format_value(id);
@@ -265,24 +278,28 @@ impl ResultFormatter {
     /// Format as tree structure
     fn format_tree(&self, result: &QueryResult) -> Result<String> {
         let mut output = String::new();
-        
+
         output.push_str("Tree Structure:\n");
         output.push_str("===============\n\n");
 
         // Group rows by some hierarchy (simplified)
         let mut tree_map: HashMap<String, Vec<String>> = HashMap::new();
-        
+
         for row in &result.rows {
-            let parent = row.values.get("parent_id")
+            let parent = row
+                .values
+                .get("parent_id")
                 .or_else(|| row.values.get("from_id"))
                 .map(|v| self.format_value(v))
                 .unwrap_or_else(|| "root".to_string());
-            
-            let child = row.values.get("id")
+
+            let child = row
+                .values
+                .get("id")
                 .or_else(|| row.values.get("to_id"))
                 .map(|v| self.format_value(v))
                 .unwrap_or_else(|| "unknown".to_string());
-            
+
             tree_map.entry(parent).or_insert_with(Vec::new).push(child);
         }
 
@@ -293,10 +310,16 @@ impl ResultFormatter {
     }
 
     /// Display tree node recursively
-    fn display_tree_node(&self, output: &mut String, tree_map: &HashMap<String, Vec<String>>, node: &str, depth: usize) {
+    fn display_tree_node(
+        &self,
+        output: &mut String,
+        tree_map: &HashMap<String, Vec<String>>,
+        node: &str,
+        depth: usize,
+    ) {
         let indent = "  ".repeat(depth);
         output.push_str(&format!("{}├─ {}\n", indent, node));
-        
+
         if let Some(children) = tree_map.get(node) {
             for child in children {
                 self.display_tree_node(output, tree_map, child, depth + 1);
@@ -314,25 +337,28 @@ impl ResultFormatter {
             QueryValue::Boolean(b) => b.to_string(),
             QueryValue::DateTime(dt) => dt.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
             QueryValue::Memory(mem) => format!("Memory({})", mem.id),
-            QueryValue::Relationship(rel) => format!("Rel({} -> {})", rel.from_memory, rel.to_memory),
+            QueryValue::Relationship(rel) => {
+                format!("Rel({} -> {})", rel.from_memory, rel.to_memory)
+            }
             QueryValue::Path(path) => format!("Path(length: {})", path.length),
             QueryValue::List(list) => {
                 let items: Vec<String> = list.iter().map(|v| self.format_value(v)).collect();
                 format!("[{}]", items.join(", "))
-            },
+            }
             QueryValue::Map(map) => {
-                let items: Vec<String> = map.iter()
+                let items: Vec<String> = map
+                    .iter()
                     .map(|(k, v)| format!("{}: {}", k, self.format_value(v)))
                     .collect();
                 format!("{{{}}}", items.join(", "))
-            },
+            }
         }
     }
 
     /// Format value for CSV (with proper escaping)
     fn format_csv_value(&self, value: &QueryValue) -> String {
         let formatted = self.format_value(value);
-        
+
         // Escape CSV special characters
         if formatted.contains(',') || formatted.contains('"') || formatted.contains('\n') {
             format!("\"{}\"", formatted.replace('"', "\"\""))
@@ -348,7 +374,7 @@ impl ResultFormatter {
             QueryValue::String(s) => serde_json::Value::String(s.clone()),
             QueryValue::Integer(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
             QueryValue::Float(f) => serde_json::Value::Number(
-                serde_json::Number::from_f64(*f).unwrap_or_else(|| serde_json::Number::from(0))
+                serde_json::Number::from_f64(*f).unwrap_or_else(|| serde_json::Number::from(0)),
             ),
             QueryValue::Boolean(b) => serde_json::Value::Bool(*b),
             QueryValue::DateTime(dt) => serde_json::Value::String(dt.to_rfc3339()),
@@ -375,17 +401,17 @@ impl ResultFormatter {
                 "relationships": path.relationships.len()
             }),
             QueryValue::List(list) => {
-                let json_list: Vec<serde_json::Value> = list.iter()
-                    .map(|v| self.value_to_json(v))
-                    .collect();
+                let json_list: Vec<serde_json::Value> =
+                    list.iter().map(|v| self.value_to_json(v)).collect();
                 serde_json::Value::Array(json_list)
-            },
+            }
             QueryValue::Map(map) => {
-                let json_map: serde_json::Map<String, serde_json::Value> = map.iter()
+                let json_map: serde_json::Map<String, serde_json::Value> = map
+                    .iter()
                     .map(|(k, v)| (k.clone(), self.value_to_json(v)))
                     .collect();
                 serde_json::Value::Object(json_map)
-            },
+            }
         }
     }
 }

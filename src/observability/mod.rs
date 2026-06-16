@@ -4,16 +4,16 @@
 //! memory system including Prometheus metrics, OpenTelemetry tracing, Grafana
 //! dashboards, and integrated monitoring solutions following industry best practices.
 
-pub mod prometheus_metrics;
-pub mod opentelemetry_tracing;
 pub mod grafana_dashboards;
 pub mod health_check;
+pub mod opentelemetry_tracing;
+pub mod prometheus_metrics;
 
 use crate::error::Result;
-use prometheus_metrics::{PrometheusMetrics, MetricTimer};
-use opentelemetry_tracing::{OpenTelemetryTracing, TracingConfig};
 use grafana_dashboards::GrafanaDashboardManager;
-use health_check::{HealthCheckManager, HealthCheckConfig, SystemHealthReport};
+use health_check::{HealthCheckConfig, HealthCheckManager, SystemHealthReport};
+use opentelemetry_tracing::{OpenTelemetryTracing, TracingConfig};
+use prometheus_metrics::{MetricTimer, PrometheusMetrics};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -61,7 +61,7 @@ impl ObservabilityManager {
     /// Create a new observability manager with the provided configuration
     pub async fn new(config: ObservabilityConfig) -> Result<Self> {
         info!("Initializing Synaptic observability manager");
-        
+
         // Initialize Prometheus metrics
         let metrics = if config.enable_metrics {
             PrometheusMetrics::new()?
@@ -69,7 +69,7 @@ impl ObservabilityManager {
             info!("Metrics collection disabled");
             PrometheusMetrics::new()? // Still create for API compatibility
         };
-        
+
         // Initialize OpenTelemetry tracing
         let tracing = if config.enable_tracing {
             let tracing_instance = OpenTelemetryTracing::new(config.tracing_config.clone()).await?;
@@ -78,7 +78,7 @@ impl ObservabilityManager {
             info!("Distributed tracing disabled");
             Arc::new(RwLock::new(None))
         };
-        
+
         // Initialize Grafana dashboard manager
         let mut dashboard_manager = GrafanaDashboardManager::new();
         if config.enable_dashboards {
@@ -104,25 +104,33 @@ impl ObservabilityManager {
             config,
         })
     }
-    
+
     /// Get the Prometheus metrics instance
     pub fn metrics(&self) -> &PrometheusMetrics {
         &self.metrics
     }
-    
+
     /// Get the OpenTelemetry tracing instance
     pub async fn tracing(&self) -> Option<OpenTelemetryTracing> {
         self.tracing.read().await.clone()
     }
-    
+
     /// Start a memory operation with both metrics and tracing
-    pub async fn start_memory_operation(&self, operation: &str, memory_type: &str) -> Result<ObservabilityContext> {
+    pub async fn start_memory_operation(
+        &self,
+        operation: &str,
+        memory_type: &str,
+    ) -> Result<ObservabilityContext> {
         let timer = if self.config.enable_metrics {
-            Some(MetricTimer::new_memory_timer(self.metrics.clone(), operation, memory_type))
+            Some(MetricTimer::new_memory_timer(
+                self.metrics.clone(),
+                operation,
+                memory_type,
+            ))
         } else {
             None
         };
-        
+
         let span_id = if self.config.enable_tracing {
             if let Some(tracing) = self.tracing.read().await.as_ref() {
                 Some(tracing.start_memory_span(operation, memory_type).await?)
@@ -132,9 +140,9 @@ impl ObservabilityManager {
         } else {
             None
         };
-        
+
         debug!("Started memory operation: {} {}", operation, memory_type);
-        
+
         Ok(ObservabilityContext {
             operation_type: OperationType::Memory,
             timer,
@@ -142,15 +150,25 @@ impl ObservabilityManager {
             observability: self.clone(),
         })
     }
-    
+
     /// Start a query operation with both metrics and tracing
-    pub async fn start_query_operation(&self, query_type: &str, complexity: &str, result_size: &str) -> Result<ObservabilityContext> {
+    pub async fn start_query_operation(
+        &self,
+        query_type: &str,
+        complexity: &str,
+        result_size: &str,
+    ) -> Result<ObservabilityContext> {
         let timer = if self.config.enable_metrics {
-            Some(MetricTimer::new_query_timer(self.metrics.clone(), query_type, complexity, result_size))
+            Some(MetricTimer::new_query_timer(
+                self.metrics.clone(),
+                query_type,
+                complexity,
+                result_size,
+            ))
         } else {
             None
         };
-        
+
         let span_id = if self.config.enable_tracing {
             if let Some(tracing) = self.tracing.read().await.as_ref() {
                 Some(tracing.start_query_span(query_type, complexity).await?)
@@ -160,11 +178,14 @@ impl ObservabilityManager {
         } else {
             None
         };
-        
-        debug!("Started query operation: {} {} {}", query_type, complexity, result_size);
-        
+
+        debug!(
+            "Started query operation: {} {} {}",
+            query_type, complexity, result_size
+        );
+
         Ok(ObservabilityContext {
-            operation_type: OperationType::Query { 
+            operation_type: OperationType::Query {
                 query_type: query_type.to_string(),
                 complexity: complexity.to_string(),
                 result_size: result_size.to_string(),
@@ -174,9 +195,13 @@ impl ObservabilityManager {
             observability: self.clone(),
         })
     }
-    
+
     /// Start an analytics operation with both metrics and tracing
-    pub async fn start_analytics_operation(&self, operation: &str, algorithm: &str) -> Result<ObservabilityContext> {
+    pub async fn start_analytics_operation(
+        &self,
+        operation: &str,
+        algorithm: &str,
+    ) -> Result<ObservabilityContext> {
         let span_id = if self.config.enable_tracing {
             if let Some(tracing) = self.tracing.read().await.as_ref() {
                 Some(tracing.start_analytics_span(operation, algorithm).await?)
@@ -186,9 +211,9 @@ impl ObservabilityManager {
         } else {
             None
         };
-        
+
         debug!("Started analytics operation: {} {}", operation, algorithm);
-        
+
         Ok(ObservabilityContext {
             operation_type: OperationType::Analytics {
                 operation: operation.to_string(),
@@ -199,9 +224,13 @@ impl ObservabilityManager {
             observability: self.clone(),
         })
     }
-    
+
     /// Start a storage operation with both metrics and tracing
-    pub async fn start_storage_operation(&self, operation: &str, backend: &str) -> Result<ObservabilityContext> {
+    pub async fn start_storage_operation(
+        &self,
+        operation: &str,
+        backend: &str,
+    ) -> Result<ObservabilityContext> {
         let span_id = if self.config.enable_tracing {
             if let Some(tracing) = self.tracing.read().await.as_ref() {
                 Some(tracing.start_storage_span(operation, backend).await?)
@@ -211,9 +240,9 @@ impl ObservabilityManager {
         } else {
             None
         };
-        
+
         debug!("Started storage operation: {} {}", operation, backend);
-        
+
         Ok(ObservabilityContext {
             operation_type: OperationType::Storage {
                 operation: operation.to_string(),
@@ -224,21 +253,32 @@ impl ObservabilityManager {
             observability: self.clone(),
         })
     }
-    
+
     /// Start a security operation with both metrics and tracing
-    pub async fn start_security_operation(&self, operation: &str, resource_type: &str) -> Result<ObservabilityContext> {
+    pub async fn start_security_operation(
+        &self,
+        operation: &str,
+        resource_type: &str,
+    ) -> Result<ObservabilityContext> {
         let span_id = if self.config.enable_tracing {
             if let Some(tracing) = self.tracing.read().await.as_ref() {
-                Some(tracing.start_security_span(operation, resource_type).await?)
+                Some(
+                    tracing
+                        .start_security_span(operation, resource_type)
+                        .await?,
+                )
             } else {
                 None
             }
         } else {
             None
         };
-        
-        debug!("Started security operation: {} {}", operation, resource_type);
-        
+
+        debug!(
+            "Started security operation: {} {}",
+            operation, resource_type
+        );
+
         Ok(ObservabilityContext {
             operation_type: OperationType::Security {
                 operation: operation.to_string(),
@@ -249,54 +289,63 @@ impl ObservabilityManager {
             observability: self.clone(),
         })
     }
-    
+
     /// Update system health metrics
-    pub async fn update_system_health(&self, memory_usage: i64, cpu_usage: f64, active_connections: i64) {
+    pub async fn update_system_health(
+        &self,
+        memory_usage: i64,
+        cpu_usage: f64,
+        active_connections: i64,
+    ) {
         if self.config.enable_metrics {
             self.metrics.update_system_memory_usage(memory_usage);
             self.metrics.update_system_cpu_usage(cpu_usage);
             self.metrics.update_active_connections(active_connections);
         }
     }
-    
+
     /// Record a security event
     pub async fn record_security_event(&self, event_type: &str, severity: &str, source: &str) {
         if self.config.enable_metrics {
             match severity {
                 "critical" | "high" => {
-                    self.metrics.record_security_violation(event_type, severity, source);
+                    self.metrics
+                        .record_security_violation(event_type, severity, source);
                 }
                 _ => {
                     // Record as general security metric
                 }
             }
         }
-        
-        warn!("Security event recorded: {} {} {}", event_type, severity, source);
+
+        warn!(
+            "Security event recorded: {} {} {}",
+            event_type, severity, source
+        );
     }
-    
+
     /// Flush all observability data
     pub async fn flush(&self) -> Result<()> {
         if let Some(tracing) = self.tracing.read().await.as_ref() {
             tracing.flush().await?;
         }
-        
+
         info!("Observability data flushed");
         Ok(())
     }
-    
+
     /// Shutdown observability systems
     pub async fn shutdown(&self) -> Result<()> {
         info!("Shutting down observability systems");
-        
+
         if let Some(tracing) = self.tracing.write().await.take() {
             tracing.shutdown().await?;
         }
-        
+
         info!("Observability shutdown complete");
         Ok(())
     }
-    
+
     /// Get observability configuration
     pub fn config(&self) -> &ObservabilityConfig {
         &self.config
@@ -364,17 +413,19 @@ impl ObservabilityContext {
         }
         Ok(())
     }
-    
+
     /// Record an error in the current operation
     pub async fn record_error(&self, error: &str, error_type: &str) -> Result<()> {
         if let Some(span_id) = &self.span_id {
             if let Some(tracing) = self.observability.tracing.read().await.as_ref() {
-                tracing.record_span_error(span_id, error, error_type).await?;
+                tracing
+                    .record_span_error(span_id, error, error_type)
+                    .await?;
             }
         }
         Ok(())
     }
-    
+
     /// Finish the operation successfully
     pub async fn finish_success(self, result_size: Option<usize>) -> Result<()> {
         // Finish span
@@ -383,7 +434,7 @@ impl ObservabilityContext {
                 tracing.finish_span_success(span_id, result_size).await?;
             }
         }
-        
+
         // Finish timer and record metrics
         if let Some(timer) = self.timer {
             match self.operation_type {
@@ -398,19 +449,21 @@ impl ObservabilityContext {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Finish the operation with an error
     pub async fn finish_error(self, error: &str, error_type: &str) -> Result<()> {
         // Finish span with error
         if let Some(span_id) = &self.span_id {
             if let Some(tracing) = self.observability.tracing.read().await.as_ref() {
-                tracing.finish_span_error(span_id, error, error_type).await?;
+                tracing
+                    .finish_span_error(span_id, error, error_type)
+                    .await?;
             }
         }
-        
+
         // Finish timer and record metrics
         if let Some(timer) = self.timer {
             match self.operation_type {
@@ -425,7 +478,7 @@ impl ObservabilityContext {
                 }
             }
         }
-        
+
         Ok(())
     }
 }

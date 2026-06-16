@@ -407,14 +407,14 @@ impl ClusterManager {
     /// Create new cluster manager
     pub async fn new(node_id: String, config: ClusterConfig) -> Result<Self> {
         info!("Initializing cluster manager for node: {}", node_id);
-        
+
         let node_registry = Arc::new(RwLock::new(NodeRegistry::new()));
         let health_monitor = Arc::new(HealthMonitor::new(config.health_check.clone()));
         let load_balancer = Arc::new(LoadBalancer::new(config.load_balancing.clone()));
         let consensus_engine = Arc::new(ConsensusEngine::new(node_id.clone(), config.consensus.clone()));
         let partition_manager = Arc::new(PartitionManager::new(config.partitioning.clone()));
         let failure_detector = Arc::new(FailureDetector::new());
-        
+
         Ok(Self {
             node_id,
             cluster_config: config,
@@ -430,22 +430,22 @@ impl ClusterManager {
     /// Start cluster operations
     pub async fn start(&self) -> Result<()> {
         info!("Starting cluster manager");
-        
+
         // Start node discovery
         self.start_node_discovery().await?;
-        
+
         // Start health monitoring
         self.start_health_monitoring().await?;
-        
+
         // Start consensus engine
         self.start_consensus().await?;
-        
+
         // Start failure detection
         self.start_failure_detection().await?;
-        
+
         // Start partition management
         self.start_partition_management().await?;
-        
+
         info!("Cluster manager started successfully");
         Ok(())
     }
@@ -453,21 +453,21 @@ impl ClusterManager {
     /// Join the cluster
     pub async fn join_cluster(&self, node_info: ClusterNode) -> Result<()> {
         info!("Joining cluster with node: {}", node_info.id);
-        
+
         // Add node to registry
         {
             let mut registry = self.node_registry.write().await;
             registry.add_node(node_info.clone());
         }
-        
+
         // Announce join through consensus
         let command = ConsensusCommand::NodeJoin {
             node_id: node_info.id.clone(),
             node_info,
         };
-        
+
         self.consensus_engine.propose_command(command).await?;
-        
+
         info!("Successfully joined cluster");
         Ok(())
     }
@@ -475,20 +475,20 @@ impl ClusterManager {
     /// Leave the cluster
     pub async fn leave_cluster(&self) -> Result<()> {
         info!("Leaving cluster");
-        
+
         // Announce leave through consensus
         let command = ConsensusCommand::NodeLeave {
             node_id: self.node_id.clone(),
         };
-        
+
         self.consensus_engine.propose_command(command).await?;
-        
+
         // Remove from registry
         {
             let mut registry = self.node_registry.write().await;
             registry.remove_node(&self.node_id);
         }
-        
+
         info!("Successfully left cluster");
         Ok(())
     }
@@ -500,11 +500,11 @@ impl ClusterManager {
             let registry = self.node_registry.read().await;
             registry.get_healthy_nodes()
         };
-        
+
         if nodes.is_empty() {
             return Err(SynapticError::ClusterError("No healthy nodes available".to_string()));
         }
-        
+
         // Use load balancer to select node
         if let Some(node_id) = self.load_balancer.select_node(&nodes, &request).await {
             Ok(node_id)
@@ -518,7 +518,7 @@ impl ClusterManager {
         let registry = self.node_registry.read().await;
         let consensus_state = self.consensus_engine.get_state().await;
         let partition_info = self.partition_manager.get_partition_info().await;
-        
+
         ClusterStatus {
             cluster_name: self.cluster_config.cluster_name.clone(),
             node_count: registry.node_count(),

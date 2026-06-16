@@ -1,10 +1,10 @@
 // Behavioral Analysis Module
 // User interaction pattern recognition and personalized recommendations
 
+use crate::analytics::{AnalyticsConfig, AnalyticsEvent};
+use crate::analytics::{AnalyticsInsight, InsightPriority, InsightType};
 use crate::error::Result;
-use crate::analytics::{AnalyticsEvent, AnalyticsConfig};
-use crate::analytics::{AnalyticsInsight, InsightType, InsightPriority};
-use chrono::{DateTime, Utc, Duration, Timelike};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -129,8 +129,6 @@ impl BehavioralSession {
         self.activities.push(event);
     }
 
-
-
     fn is_active(&self, current_time: DateTime<Utc>, timeout_minutes: i64) -> bool {
         current_time - self.last_activity < Duration::minutes(timeout_minutes)
     }
@@ -179,11 +177,11 @@ impl BehavioralAnalyzer {
     pub async fn process_event(&mut self, event: &AnalyticsEvent) -> Result<()> {
         // Extract user context if available
         let user_id = self.extract_user_context(event);
-        
+
         if let Some(user_id) = user_id {
             // Update or create session
             self.update_session(&user_id, event.clone()).await?;
-            
+
             // Update user profile
             self.update_user_profile(&user_id, event).await?;
         }
@@ -205,7 +203,7 @@ impl BehavioralAnalyzer {
     /// Update or create user session
     async fn update_session(&mut self, user_id: &str, event: AnalyticsEvent) -> Result<()> {
         let current_time = Utc::now();
-        
+
         // Check if user has an active session
         let needs_new_session = if let Some(session) = self.active_sessions.get(user_id) {
             !session.is_active(current_time, self.session_timeout)
@@ -217,7 +215,8 @@ impl BehavioralAnalyzer {
             // Create new session
             let mut new_session = BehavioralSession::new(user_id.to_string(), current_time);
             new_session.add_activity(event);
-            self.active_sessions.insert(user_id.to_string(), new_session);
+            self.active_sessions
+                .insert(user_id.to_string(), new_session);
         } else {
             // Add to existing session
             if let Some(session) = self.active_sessions.get_mut(user_id) {
@@ -232,7 +231,8 @@ impl BehavioralAnalyzer {
     async fn update_user_profile(&mut self, user_id: &str, event: &AnalyticsEvent) -> Result<()> {
         // First, update the profile data
         {
-            let profile = self.user_profiles
+            let profile = self
+                .user_profiles
                 .entry(user_id.to_string())
                 .or_insert_with(|| UserProfile {
                     user_id: user_id.to_string(),
@@ -253,8 +253,12 @@ impl BehavioralAnalyzer {
                     }
                     profile.last_activity = *timestamp;
                 }
-                AnalyticsEvent::SearchQuery { query, timestamp, .. } => {
-                    if !profile.search_patterns.contains(query) && profile.search_patterns.len() < 50 {
+                AnalyticsEvent::SearchQuery {
+                    query, timestamp, ..
+                } => {
+                    if !profile.search_patterns.contains(query)
+                        && profile.search_patterns.len() < 50
+                    {
                         profile.search_patterns.push(query.clone());
                     }
                     profile.last_activity = *timestamp;
@@ -266,7 +270,8 @@ impl BehavioralAnalyzer {
         // Then update interaction frequency in a separate scope
         let user_id_clone = user_id.to_string();
         if let Some(_profile) = self.user_profiles.get_mut(&user_id_clone) {
-            self.update_interaction_frequency_for_user(&user_id_clone).await?;
+            self.update_interaction_frequency_for_user(&user_id_clone)
+                .await?;
         }
 
         Ok(())
@@ -278,7 +283,8 @@ impl BehavioralAnalyzer {
         let day_ago = Utc::now() - Duration::days(1);
 
         if let Some(session) = self.active_sessions.get(user_id) {
-            let recent_activities = session.activities
+            let recent_activities = session
+                .activities
                 .iter()
                 .filter(|event| {
                     if let Some(timestamp) = session.extract_timestamp(event) {
@@ -303,13 +309,17 @@ impl BehavioralAnalyzer {
         Ok(())
     }
 
-
-
     /// Update memory usage patterns
     async fn update_memory_patterns(&mut self, event: &AnalyticsEvent) -> Result<()> {
         match event {
-            AnalyticsEvent::MemoryAccess { memory_key, timestamp, user_context, .. } => {
-                let pattern = self.memory_patterns
+            AnalyticsEvent::MemoryAccess {
+                memory_key,
+                timestamp,
+                user_context,
+                ..
+            } => {
+                let pattern = self
+                    .memory_patterns
                     .entry(memory_key.clone())
                     .or_insert_with(|| MemoryUsagePattern {
                         memory_key: memory_key.clone(),
@@ -344,16 +354,19 @@ impl BehavioralAnalyzer {
     }
 
     /// Generate personalized recommendations
-    pub async fn generate_recommendations(&mut self, user_id: &str) -> Result<Vec<PersonalizedRecommendation>> {
+    pub async fn generate_recommendations(
+        &mut self,
+        user_id: &str,
+    ) -> Result<Vec<PersonalizedRecommendation>> {
         let mut recommendations = Vec::new();
 
         if let Some(profile) = self.user_profiles.get(user_id) {
             // Generate timing optimization recommendations
             recommendations.extend(self.generate_timing_recommendations(profile).await?);
-            
+
             // Generate memory access recommendations
             recommendations.extend(self.generate_memory_recommendations(profile).await?);
-            
+
             // Generate collaboration recommendations
             recommendations.extend(self.generate_collaboration_recommendations(profile).await?);
         }
@@ -365,7 +378,10 @@ impl BehavioralAnalyzer {
     }
 
     /// Generate timing optimization recommendations
-    async fn generate_timing_recommendations(&self, profile: &UserProfile) -> Result<Vec<PersonalizedRecommendation>> {
+    async fn generate_timing_recommendations(
+        &self,
+        profile: &UserProfile,
+    ) -> Result<Vec<PersonalizedRecommendation>> {
         let mut recommendations = Vec::new();
 
         if !profile.preferred_hours.is_empty() {
@@ -376,7 +392,8 @@ impl BehavioralAnalyzer {
             }
 
             if let Some((&peak_hour, &count)) = hour_counts.iter().max_by_key(|(_, &count)| count) {
-                if count > 2 { // Only recommend if there's a clear pattern
+                if count > 2 {
+                    // Only recommend if there's a clear pattern
                     let recommendation = PersonalizedRecommendation {
                         id: Uuid::new_v4(),
                         user_id: profile.user_id.clone(),
@@ -400,7 +417,10 @@ impl BehavioralAnalyzer {
     }
 
     /// Generate memory access recommendations
-    async fn generate_memory_recommendations(&self, profile: &UserProfile) -> Result<Vec<PersonalizedRecommendation>> {
+    async fn generate_memory_recommendations(
+        &self,
+        profile: &UserProfile,
+    ) -> Result<Vec<PersonalizedRecommendation>> {
         let mut recommendations = Vec::new();
 
         // Recommend memories that are frequently accessed by similar users
@@ -408,7 +428,7 @@ impl BehavioralAnalyzer {
             if pattern.users.len() > 1 && !pattern.users.contains(&profile.user_id) {
                 // Check if this user has similar patterns to users who access this memory
                 let similarity_score = self.calculate_user_similarity(profile, pattern).await?;
-                
+
                 if similarity_score > 0.7 {
                     let recommendation = PersonalizedRecommendation {
                         id: Uuid::new_v4(),
@@ -432,7 +452,10 @@ impl BehavioralAnalyzer {
     }
 
     /// Generate collaboration recommendations
-    async fn generate_collaboration_recommendations(&self, profile: &UserProfile) -> Result<Vec<PersonalizedRecommendation>> {
+    async fn generate_collaboration_recommendations(
+        &self,
+        profile: &UserProfile,
+    ) -> Result<Vec<PersonalizedRecommendation>> {
         let mut recommendations = Vec::new();
 
         // Find memories that could benefit from collaboration
@@ -440,8 +463,10 @@ impl BehavioralAnalyzer {
             if pattern.users.contains(&profile.user_id) && pattern.users.len() == 1 {
                 // This user is the only one accessing this memory
                 // Check if other users might be interested
-                let potential_collaborators = self.find_potential_collaborators(profile, memory_key).await?;
-                
+                let potential_collaborators = self
+                    .find_potential_collaborators(profile, memory_key)
+                    .await?;
+
                 if !potential_collaborators.is_empty() {
                     let recommendation = PersonalizedRecommendation {
                         id: Uuid::new_v4(),
@@ -453,7 +478,9 @@ impl BehavioralAnalyzer {
                             "Found {} potential collaborators with similar interests",
                             potential_collaborators.len()
                         ),
-                        expected_benefit: "Collaboration could enhance the value and accuracy of this memory".to_string(),
+                        expected_benefit:
+                            "Collaboration could enhance the value and accuracy of this memory"
+                                .to_string(),
                         generated_at: Utc::now(),
                     };
                     recommendations.push(recommendation);
@@ -465,29 +492,42 @@ impl BehavioralAnalyzer {
     }
 
     /// Calculate similarity between user and memory pattern users
-    async fn calculate_user_similarity(&self, profile: &UserProfile, pattern: &MemoryUsagePattern) -> Result<f64> {
+    async fn calculate_user_similarity(
+        &self,
+        profile: &UserProfile,
+        pattern: &MemoryUsagePattern,
+    ) -> Result<f64> {
         let mut similarity_scores = Vec::new();
 
         for user_id in &pattern.users {
             if let Some(other_profile) = self.user_profiles.get(user_id) {
                 // Compare preferred hours
-                let hour_overlap = profile.preferred_hours
+                let hour_overlap = profile
+                    .preferred_hours
                     .iter()
                     .filter(|hour| other_profile.preferred_hours.contains(hour))
                     .count();
-                
-                let hour_similarity = if profile.preferred_hours.is_empty() || other_profile.preferred_hours.is_empty() {
+
+                let hour_similarity = if profile.preferred_hours.is_empty()
+                    || other_profile.preferred_hours.is_empty()
+                {
                     0.0
                 } else {
-                    hour_overlap as f64 / profile.preferred_hours.len().max(other_profile.preferred_hours.len()) as f64
+                    hour_overlap as f64
+                        / profile
+                            .preferred_hours
+                            .len()
+                            .max(other_profile.preferred_hours.len())
+                            as f64
                 };
 
                 // Compare interaction frequency
-                let freq_similarity = if profile.interaction_frequency == other_profile.interaction_frequency {
-                    1.0
-                } else {
-                    0.5
-                };
+                let freq_similarity =
+                    if profile.interaction_frequency == other_profile.interaction_frequency {
+                        1.0
+                    } else {
+                        0.5
+                    };
 
                 let overall_similarity = (hour_similarity + freq_similarity) / 2.0;
                 similarity_scores.push(overall_similarity);
@@ -502,7 +542,11 @@ impl BehavioralAnalyzer {
     }
 
     /// Find potential collaborators for a memory
-    async fn find_potential_collaborators(&self, profile: &UserProfile, memory_key: &str) -> Result<Vec<String>> {
+    async fn find_potential_collaborators(
+        &self,
+        profile: &UserProfile,
+        memory_key: &str,
+    ) -> Result<Vec<String>> {
         // Collect memory keys accessed by the target user
         let user_memories: HashSet<String> = self
             .memory_patterns
@@ -526,16 +570,11 @@ impl BehavioralAnalyzer {
                 .map(|(k, _)| k.clone())
                 .collect();
 
-            let access_overlap = user_memories
-                .intersection(&other_memories)
-                .count();
+            let access_overlap = user_memories.intersection(&other_memories).count();
             let access_similarity = if user_memories.is_empty() || other_memories.is_empty() {
                 0.0
             } else {
-                access_overlap as f64
-                    / user_memories
-                        .len()
-                        .max(other_memories.len()) as f64
+                access_overlap as f64 / user_memories.len().max(other_memories.len()) as f64
             };
 
             // Overlap of search queries
@@ -593,7 +632,8 @@ impl BehavioralAnalyzer {
                     title: format!("High Activity User: {}", user_id),
                     description: format!(
                         "User {} shows very high interaction frequency with {} preferred hours",
-                        user_id, profile.preferred_hours.len()
+                        user_id,
+                        profile.preferred_hours.len()
                     ),
                     confidence: 0.9,
                     evidence: vec![
@@ -616,7 +656,8 @@ impl BehavioralAnalyzer {
                     title: format!("Highly Collaborative Memory: {}", memory_key),
                     description: format!(
                         "Memory '{}' is accessed by {} users, indicating high collaborative value",
-                        memory_key, pattern.users.len()
+                        memory_key,
+                        pattern.users.len()
                     ),
                     confidence: 0.8,
                     evidence: vec![
@@ -683,7 +724,10 @@ mod tests {
             user_context: Some("test_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.expect("await should be present");
+        analyzer
+            .process_event(&event)
+            .await
+            .expect("await should be present");
         assert!(analyzer.user_profiles.contains_key("test_user"));
     }
 
@@ -699,7 +743,10 @@ mod tests {
             user_context: Some("session_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.expect("await should be present");
+        analyzer
+            .process_event(&event)
+            .await
+            .expect("await should be present");
         assert!(analyzer.active_sessions.contains_key("session_user"));
     }
 
@@ -716,9 +763,15 @@ mod tests {
             user_context: Some("rec_user".to_string()),
         };
 
-        analyzer.process_event(&event).await.expect("await should be present");
+        analyzer
+            .process_event(&event)
+            .await
+            .expect("await should be present");
 
-        let _recommendations = analyzer.generate_recommendations("rec_user").await.expect("await should be present");
+        let _recommendations = analyzer
+            .generate_recommendations("rec_user")
+            .await
+            .expect("await should be present");
         // Should not error, recommendations may be empty initially
         // Recommendations should be generated (empty is valid initially)
     }
@@ -736,10 +789,16 @@ mod tests {
                 timestamp: Utc::now(),
                 user_context: Some("insight_user".to_string()),
             };
-            analyzer.process_event(&event).await.expect("await should be present");
+            analyzer
+                .process_event(&event)
+                .await
+                .expect("await should be present");
         }
 
-        let _insights = analyzer.generate_insights().await.expect("await should be present");
+        let _insights = analyzer
+            .generate_insights()
+            .await
+            .expect("await should be present");
         // Should generate insights based on user behavior
         // Insights should be generated based on user behavior
     }

@@ -1,18 +1,18 @@
 //! Advanced Key Management Module
-//! 
+//!
 //! Implements enterprise-grade key management with automatic rotation,
 //! secure storage, and cryptographic key lifecycle management.
 
 use crate::error::{MemoryError, Result};
 use crate::security::SecurityConfig;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use aes_gcm::aead::{generic_array::GenericArray, Aead, KeyInit, Payload};
+use aes_gcm::{Aes256Gcm, Key};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use aes_gcm::{Aes256Gcm, Key};
-use aes_gcm::aead::{Aead, KeyInit, Payload, generic_array::GenericArray};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Key management system
 #[derive(Debug, Clone)]
@@ -37,7 +37,7 @@ impl KeyManager {
 
         // Initialize with a master key
         manager.generate_master_key("default").await?;
-        
+
         Ok(manager)
     }
 
@@ -55,28 +55,38 @@ impl KeyManager {
         };
 
         self.master_keys.insert(key_id.to_string(), master_key);
-        
+
         // Schedule rotation
         self.schedule_key_rotation(key_id).await?;
-        
+
         self.metrics.total_master_keys_generated += 1;
         Ok(key_id.to_string())
     }
 
     /// Generate a new data encryption key
-    pub async fn generate_data_key(&mut self, master_key_id: &str, context: &crate::security::SecurityContext) -> Result<String> {
+    pub async fn generate_data_key(
+        &mut self,
+        master_key_id: &str,
+        context: &crate::security::SecurityContext,
+    ) -> Result<String> {
         // Validate security context
         if !context.is_session_valid() {
-            return Err(MemoryError::access_denied("Invalid session for key generation".to_string()));
+            return Err(MemoryError::access_denied(
+                "Invalid session for key generation".to_string(),
+            ));
         }
 
         // Check master key status first
         {
-            let master_key = self.master_keys.get(master_key_id)
+            let master_key = self
+                .master_keys
+                .get(master_key_id)
                 .ok_or_else(|| MemoryError::key_management("Master key not found".to_string()))?;
 
             if master_key.status != KeyStatus::Active {
-                return Err(MemoryError::key_management("Master key is not active".to_string()));
+                return Err(MemoryError::key_management(
+                    "Master key is not active".to_string(),
+                ));
             }
         }
 
@@ -85,8 +95,11 @@ impl KeyManager {
 
         // Encrypt the data key with the master key
         let encrypted_key = {
-            let master_key = self.master_keys.get(master_key_id)
-                .ok_or_else(|| MemoryError::key_management("Master key not found for data key creation".to_string()))?;
+            let master_key = self.master_keys.get(master_key_id).ok_or_else(|| {
+                MemoryError::key_management(
+                    "Master key not found for data key creation".to_string(),
+                )
+            })?;
             self.encrypt_with_master_key(&plaintext_key, master_key)?
         };
 
@@ -97,7 +110,8 @@ impl KeyManager {
             plaintext_key: Some(plaintext_key), // In production, this would be cleared after use
             algorithm: "AES-256-GCM".to_string(),
             created_at: Utc::now(),
-            expires_at: Utc::now() + chrono::Duration::hours(self.config.key_rotation_interval_hours as i64),
+            expires_at: Utc::now()
+                + chrono::Duration::hours(self.config.key_rotation_interval_hours as i64),
             status: KeyStatus::Active,
             usage_count: 0,
         };
@@ -108,29 +122,41 @@ impl KeyManager {
         if let Some(master_key) = self.master_keys.get_mut(master_key_id) {
             master_key.usage_count += 1;
         }
-        
+
         self.metrics.total_data_keys_generated += 1;
         Ok(data_key_id)
     }
 
     /// Get a data key for encryption/decryption
-    pub async fn get_data_key(&mut self, key_id: &str, context: &crate::security::SecurityContext) -> Result<Vec<u8>> {
+    pub async fn get_data_key(
+        &mut self,
+        key_id: &str,
+        context: &crate::security::SecurityContext,
+    ) -> Result<Vec<u8>> {
         // Validate security context
         if !context.is_session_valid() {
-            return Err(MemoryError::access_denied("Invalid session for key retrieval".to_string()));
+            return Err(MemoryError::access_denied(
+                "Invalid session for key retrieval".to_string(),
+            ));
         }
 
         // First check if we need to decrypt the key
         let needs_decryption = {
-            let data_key = self.data_keys.get(key_id)
+            let data_key = self
+                .data_keys
+                .get(key_id)
                 .ok_or_else(|| MemoryError::key_management("Data key not found".to_string()))?;
 
             if data_key.status != KeyStatus::Active {
-                return Err(MemoryError::key_management("Data key is not active".to_string()));
+                return Err(MemoryError::key_management(
+                    "Data key is not active".to_string(),
+                ));
             }
 
             if Utc::now() > data_key.expires_at {
-                return Err(MemoryError::key_management("Data key has expired".to_string()));
+                return Err(MemoryError::key_management(
+                    "Data key has expired".to_string(),
+                ));
             }
 
             data_key.plaintext_key.is_none()
@@ -139,12 +165,18 @@ impl KeyManager {
         // If plaintext key is not available, decrypt it
         if needs_decryption {
             let (master_key_id, encrypted_key) = {
-                let data_key = self.data_keys.get(key_id)
-                    .ok_or_else(|| MemoryError::key_management("Data key not found for decryption".to_string()))?;
-                (data_key.master_key_id.clone(), data_key.encrypted_key.clone())
+                let data_key = self.data_keys.get(key_id).ok_or_else(|| {
+                    MemoryError::key_management("Data key not found for decryption".to_string())
+                })?;
+                (
+                    data_key.master_key_id.clone(),
+                    data_key.encrypted_key.clone(),
+                )
             };
 
-            let master_key = self.master_keys.get(&master_key_id)
+            let master_key = self
+                .master_keys
+                .get(&master_key_id)
                 .ok_or_else(|| MemoryError::key_management("Master key not found".to_string()))?;
 
             let plaintext_key = self.decrypt_with_master_key(&encrypted_key, master_key)?;
@@ -157,11 +189,16 @@ impl KeyManager {
 
         // Update usage count and return the key
         let result = {
-            let data_key = self.data_keys.get_mut(key_id)
-                .ok_or_else(|| MemoryError::key_management("Data key not found for usage update".to_string()))?;
+            let data_key = self.data_keys.get_mut(key_id).ok_or_else(|| {
+                MemoryError::key_management("Data key not found for usage update".to_string())
+            })?;
             data_key.usage_count += 1;
-            data_key.plaintext_key.as_ref()
-                .ok_or_else(|| MemoryError::key_management("Plaintext key not available".to_string()))?
+            data_key
+                .plaintext_key
+                .as_ref()
+                .ok_or_else(|| {
+                    MemoryError::key_management("Plaintext key not available".to_string())
+                })?
                 .clone()
         };
 
@@ -173,7 +210,9 @@ impl KeyManager {
     pub async fn rotate_master_key(&mut self, key_id: &str) -> Result<String> {
         // Get old key info and mark as deprecated
         let (new_version, algorithm) = {
-            let old_key = self.master_keys.get_mut(key_id)
+            let old_key = self
+                .master_keys
+                .get_mut(key_id)
                 .ok_or_else(|| MemoryError::key_management("Master key not found".to_string()))?;
 
             // Mark old key as deprecated
@@ -196,13 +235,13 @@ impl KeyManager {
         };
 
         self.master_keys.insert(new_key_id.clone(), new_master_key);
-        
+
         // Re-encrypt all data keys with new master key
         self.re_encrypt_data_keys(key_id, &new_key_id).await?;
-        
+
         // Schedule next rotation
         self.schedule_key_rotation(&new_key_id).await?;
-        
+
         self.metrics.total_key_rotations += 1;
         Ok(new_key_id)
     }
@@ -230,7 +269,9 @@ impl KeyManager {
         let mut rotated_keys = Vec::new();
 
         // Find keys that need rotation
-        let keys_to_rotate: Vec<String> = self.key_rotation_schedule.iter()
+        let keys_to_rotate: Vec<String> = self
+            .key_rotation_schedule
+            .iter()
             .filter(|task| now >= task.scheduled_time && task.status == RotationStatus::Pending)
             .map(|task| task.key_id.clone())
             .collect();
@@ -240,16 +281,22 @@ impl KeyManager {
                 Ok(new_key_id) => {
                     rotated_keys.push(new_key_id);
                     // Update rotation task status
-                    if let Some(task) = self.key_rotation_schedule.iter_mut()
-                        .find(|t| t.key_id == key_id) {
+                    if let Some(task) = self
+                        .key_rotation_schedule
+                        .iter_mut()
+                        .find(|t| t.key_id == key_id)
+                    {
                         task.status = RotationStatus::Completed;
                         task.completed_at = Some(now);
                     }
-                },
+                }
                 Err(e) => {
                     // Log error and mark as failed
-                    if let Some(task) = self.key_rotation_schedule.iter_mut()
-                        .find(|t| t.key_id == key_id) {
+                    if let Some(task) = self
+                        .key_rotation_schedule
+                        .iter_mut()
+                        .find(|t| t.key_id == key_id)
+                    {
                         task.status = RotationStatus::Failed;
                         task.error_message = Some(format!("Rotation failed: {}", e));
                     }
@@ -263,23 +310,31 @@ impl KeyManager {
     /// Get key management metrics
     pub async fn get_metrics(&self) -> Result<KeyManagementMetrics> {
         let mut metrics = self.metrics.clone();
-        
+
         // Calculate current statistics
-        metrics.active_master_keys = self.master_keys.values()
+        metrics.active_master_keys = self
+            .master_keys
+            .values()
             .filter(|k| k.status == KeyStatus::Active)
             .count() as u64;
-        
-        metrics.active_data_keys = self.data_keys.values()
+
+        metrics.active_data_keys = self
+            .data_keys
+            .values()
             .filter(|k| k.status == KeyStatus::Active)
             .count() as u64;
-        
+
         // Count expired master keys
-        let expired_master_keys = self.master_keys.values()
+        let expired_master_keys = self
+            .master_keys
+            .values()
             .filter(|k| k.status == KeyStatus::Expired)
             .count();
 
         // Count expired data keys
-        let expired_data_keys = self.data_keys.values()
+        let expired_data_keys = self
+            .data_keys
+            .values()
             .filter(|k| k.status == KeyStatus::Expired)
             .count();
 
@@ -331,7 +386,13 @@ impl KeyManager {
         OsRng.fill_bytes(&mut iv);
         let nonce = GenericArray::from_slice(&iv);
         let mut encrypted = cipher
-            .encrypt(nonce, Payload { msg: plaintext, aad: &[] })
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: &[],
+                },
+            )
             .map_err(|_| MemoryError::key_management("Master key encryption failed"))?;
         let mut result = Vec::with_capacity(iv.len() + encrypted.len());
         result.extend_from_slice(&iv);
@@ -339,22 +400,35 @@ impl KeyManager {
         Ok(result)
     }
 
-    fn decrypt_with_master_key(&self, ciphertext: &[u8], master_key: &MasterKey) -> Result<Vec<u8>> {
+    fn decrypt_with_master_key(
+        &self,
+        ciphertext: &[u8],
+        master_key: &MasterKey,
+    ) -> Result<Vec<u8>> {
         if ciphertext.len() < 12 + 16 {
-            return Err(MemoryError::key_management("Ciphertext too short".to_string()));
+            return Err(MemoryError::key_management(
+                "Ciphertext too short".to_string(),
+            ));
         }
         let (iv, data) = ciphertext.split_at(12);
         let nonce = GenericArray::from_slice(iv);
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&master_key.key_data));
         let decrypted = cipher
-            .decrypt(nonce, Payload { msg: data, aad: &[] })
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: data,
+                    aad: &[],
+                },
+            )
             .map_err(|_| MemoryError::key_management("Master key decryption failed"))?;
         Ok(decrypted)
     }
 
     async fn schedule_key_rotation(&mut self, key_id: &str) -> Result<()> {
-        let rotation_time = Utc::now() + chrono::Duration::hours(self.config.key_rotation_interval_hours as i64);
-        
+        let rotation_time =
+            Utc::now() + chrono::Duration::hours(self.config.key_rotation_interval_hours as i64);
+
         let task = KeyRotationTask {
             id: Uuid::new_v4().to_string(),
             key_id: key_id.to_string(),
@@ -369,12 +443,20 @@ impl KeyManager {
         Ok(())
     }
 
-    async fn re_encrypt_data_keys(&mut self, old_master_key_id: &str, new_master_key_id: &str) -> Result<()> {
-        let old_master_key = self.master_keys.get(old_master_key_id)
+    async fn re_encrypt_data_keys(
+        &mut self,
+        old_master_key_id: &str,
+        new_master_key_id: &str,
+    ) -> Result<()> {
+        let old_master_key = self
+            .master_keys
+            .get(old_master_key_id)
             .ok_or_else(|| MemoryError::key_management("Old master key not found".to_string()))?
             .clone();
 
-        let new_master_key = self.master_keys.get(new_master_key_id)
+        let new_master_key = self
+            .master_keys
+            .get(new_master_key_id)
             .ok_or_else(|| MemoryError::key_management("New master key not found".to_string()))?
             .clone();
 
@@ -504,13 +586,25 @@ trait KeyInfo {
 }
 
 impl KeyInfo for MasterKey {
-    fn get_status(&self) -> &KeyStatus { &self.status }
-    fn get_created_at(&self) -> DateTime<Utc> { self.created_at }
-    fn get_expires_at(&self) -> DateTime<Utc> { self.expires_at }
+    fn get_status(&self) -> &KeyStatus {
+        &self.status
+    }
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    fn get_expires_at(&self) -> DateTime<Utc> {
+        self.expires_at
+    }
 }
 
 impl KeyInfo for DataKey {
-    fn get_status(&self) -> &KeyStatus { &self.status }
-    fn get_created_at(&self) -> DateTime<Utc> { self.created_at }
-    fn get_expires_at(&self) -> DateTime<Utc> { self.expires_at }
+    fn get_status(&self) -> &KeyStatus {
+        &self.status
+    }
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    fn get_expires_at(&self) -> DateTime<Utc> {
+        self.expires_at
+    }
 }

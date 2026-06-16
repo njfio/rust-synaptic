@@ -616,7 +616,7 @@ impl OptimizedVectorSearch {
         let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
         let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-        
+
         if norm_a == 0.0 || norm_b == 0.0 {
             0.0
         } else {
@@ -628,7 +628,7 @@ impl OptimizedVectorSearch {
     fn hash_query(&self, query: &ArrayView1<f32>) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         for &value in query.iter() {
             value.to_bits().hash(&mut hasher);
@@ -660,7 +660,7 @@ impl VectorIndex {
             new_vectors.slice_mut(s![self.vectors.nrows().., ..]).assign(&vectors);
             self.vectors = new_vectors;
         }
-        
+
         self.metadata.extend(metadata);
         Ok(())
     }
@@ -722,7 +722,7 @@ impl SearchCache {
         if self.cache.len() >= self.max_size {
             self.evict_lru();
         }
-        
+
         self.cache.insert(key, results);
         self.access_times.insert(key, chrono::Utc::now());
     }
