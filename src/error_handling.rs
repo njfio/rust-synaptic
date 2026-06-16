@@ -49,20 +49,20 @@ impl<T, E: Debug> SafeUnwrap<T> for std::result::Result<T, E> {
 /// Safe lock operations that handle poison errors gracefully
 pub trait SafeLock<T> {
     /// Safely acquire a read lock
-    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<T>>;
+    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<'_, T>>;
 
     /// Safely acquire a write lock
-    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<T>>;
+    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<'_, T>>;
 }
 
 impl<T> SafeLock<T> for std::sync::RwLock<T> {
-    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<T>> {
+    fn safe_read(&self, context: &str) -> Result<RwLockReadGuard<'_, T>> {
         self.read().map_err(|e| {
             MemoryError::concurrency(format!("Failed to acquire read lock in {}: {}", context, e))
         })
     }
 
-    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<T>> {
+    fn safe_write(&self, context: &str) -> Result<RwLockWriteGuard<'_, T>> {
         self.write().map_err(|e| {
             MemoryError::concurrency(format!(
                 "Failed to acquire write lock in {}: {}",
@@ -75,11 +75,11 @@ impl<T> SafeLock<T> for std::sync::RwLock<T> {
 /// Safe mutex operations
 pub trait SafeMutex<T> {
     /// Safely acquire a mutex lock
-    fn safe_lock(&self, context: &str) -> Result<MutexGuard<T>>;
+    fn safe_lock(&self, context: &str) -> Result<MutexGuard<'_, T>>;
 }
 
 impl<T> SafeMutex<T> for std::sync::Mutex<T> {
-    fn safe_lock(&self, context: &str) -> Result<MutexGuard<T>> {
+    fn safe_lock(&self, context: &str) -> Result<MutexGuard<'_, T>> {
         self.lock().map_err(|e| {
             MemoryError::concurrency(format!(
                 "Failed to acquire mutex lock in {}: {}",

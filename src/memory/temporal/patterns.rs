@@ -2655,7 +2655,7 @@ impl PatternDetector {
             return false;
         }
         let diff = evidence.timestamp - pattern.time_range.start;
-        let hours = diff.num_hours().abs() as u64;
+        let hours = diff.num_hours().unsigned_abs();
         hours % period_hours == 0
     }
 

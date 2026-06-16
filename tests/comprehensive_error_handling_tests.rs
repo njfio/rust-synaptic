@@ -144,7 +144,11 @@ fn test_utility_functions() -> Result<()> {
     assert_eq!(parsed_int, 42);
 
     let parsed_float: f64 = safe_parse("3.14", "parse float")?;
-    assert_eq!(parsed_float, 3.14);
+    // 3.14 is intentional test data, not an approximation of std::f64::consts::PI.
+    #[allow(clippy::approx_constant)]
+    {
+        assert_eq!(parsed_float, 3.14);
+    }
 
     assert!(safe_parse::<i32>("not_a_number", "invalid parse").is_err());
 

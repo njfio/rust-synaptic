@@ -329,7 +329,6 @@ async fn test_cache_miss_updates_state_not_storage() {
     // mocking, but the design should ensure only state is updated
 }
 
-#[cfg(feature = "knowledge-graph")]
 #[tokio::test]
 async fn test_cache_miss_refreshes_knowledge_graph() {
     // Verify that knowledge graph is updated when memory is rehydrated from storage

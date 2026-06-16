@@ -349,8 +349,7 @@ impl CostModel {
         statistics: &'a QueryStatistics,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<f64>> + Send + 'a>> {
         let from = from.clone();
-        let statistics = statistics;
-        Box::pin(async move { self.estimate_from_cost_impl(&from, &statistics).await })
+        Box::pin(async move { self.estimate_from_cost_impl(&from, statistics).await })
     }
 
     /// Implementation of estimate_from_cost

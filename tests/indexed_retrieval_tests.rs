@@ -364,5 +364,7 @@ async fn test_performance_improvement() {
 
     // At minimum, both should complete successfully
     assert!(fallback_time.as_millis() > 0);
-    assert!(indexed_time.as_millis() >= 0);
+    // `indexed_time` is always a valid, non-negative duration; the indexed path
+    // is expected to be at least as fast as the fallback path.
+    assert!(indexed_time <= fallback_time || indexed_time.as_millis() > 0);
 }

@@ -1411,12 +1411,10 @@ impl ProfileCommands {
                 profiler.collect_metrics().await?;
                 tokio::time::sleep(StdDuration::from_millis(100)).await;
 
-                // Print real-time stats every second
-                if start_time.elapsed().as_secs() % 1 == 0 {
-                    // Collect current metrics instead
-                    profiler.collect_metrics().await?;
-                    crate::cli_outln!("Profiling metrics collected");
-                }
+                // Print real-time stats on each polling cycle.
+                // Collect current metrics instead
+                profiler.collect_metrics().await?;
+                crate::cli_outln!("Profiling metrics collected");
             }
         } else {
             crate::cli_outln!("Running batch profiling for {} seconds...", duration);

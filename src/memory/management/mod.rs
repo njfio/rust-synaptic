@@ -722,7 +722,7 @@ pub struct MemoryHealthIndicators {
     pub improvement_recommendations: Vec<String>,
 }
 
-/// Supporting data structures for enhanced statistics
+// Supporting data structures for enhanced statistics
 
 /// Memory size distribution analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
