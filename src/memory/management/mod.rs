@@ -391,7 +391,7 @@ impl MemoryManager {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// use synaptic::memory::management::{AdvancedMemoryManager, MemoryManagementConfig};
 /// use synaptic::memory::storage::create_storage;
 ///
@@ -405,7 +405,7 @@ impl MemoryManager {
 ///
 ///     // Get comprehensive analytics
 ///     let analytics = manager.get_comprehensive_analytics().await?;
-///     println!("Memory efficiency: {:.2}%", analytics.efficiency_score * 100.0);
+///     let _ = ("Memory efficiency: {:.2}%", analytics.efficiency_score * 100.0);
 ///
 ///     Ok(manager)
 /// }

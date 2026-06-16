@@ -298,7 +298,7 @@ mod phase3_analytics_tests {
         }
 
         let elapsed = start_time.elapsed();
-        println!("Processed 1000 events in {:?}", elapsed);
+        tracing::info!("Processed 1000 events in {:?}", elapsed);
 
         // Should process events efficiently
         assert!(elapsed.as_millis() < 5000); // Less than 5 seconds
@@ -312,7 +312,7 @@ mod phase3_analytics_tests {
         let insights = engine.generate_insights().await.unwrap();
         let insight_elapsed = insight_start.elapsed();
         
-        println!("Generated {} insights in {:?}", insights.len(), insight_elapsed);
+        tracing::info!("Generated {} insights in {:?}", insights.len(), insight_elapsed);
         assert!(insight_elapsed.as_millis() < 2000); // Less than 2 seconds
     }
 
@@ -418,9 +418,9 @@ mod phase3_integration_tests {
         let usage_insights = engine.get_insights_by_type(InsightType::UsagePattern);
         let performance_insights = engine.get_insights_by_type(InsightType::PerformanceOptimization);
         
-        println!("Generated {} total insights", insights.len());
-        println!("Usage insights: {}", usage_insights.len());
-        println!("Performance insights: {}", performance_insights.len());
+        tracing::info!("Generated {} total insights", insights.len());
+        tracing::info!("Usage insights: {}", usage_insights.len());
+        tracing::info!("Performance insights: {}", performance_insights.len());
 
         // Verify metrics
         let metrics = engine.get_metrics();

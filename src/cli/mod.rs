@@ -4,6 +4,8 @@
 //! providing an interactive shell with SyQL query support, performance profiling,
 //! and comprehensive memory exploration capabilities.
 
+#[macro_use]
+pub mod output;
 pub mod syql;
 pub mod shell;
 pub mod commands;
@@ -524,7 +526,7 @@ impl CliRunner {
                     }
                 } else {
                     // Show help
-                    println!("Use --help for usage information or --interactive to start the shell");
+                    crate::cli_outln!("Use --help for usage information or --interactive to start the shell");
                     Ok(())
                 }
             }
@@ -634,7 +636,7 @@ impl CliRunner {
 
     /// Show system information (placeholder)
     async fn show_info(&self, _detailed: bool) -> Result<()> {
-        println!("System info not yet implemented");
+        crate::cli_outln!("System info not yet implemented");
         Ok(())
     }
 }

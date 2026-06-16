@@ -115,7 +115,7 @@ impl MemoryPool {
         // Apply pool size optimization
         if let Some(size_str) = parameters.get("pool_size_mb") {
             if let Ok(size_mb) = size_str.parse::<usize>() {
-                println!("Optimizing memory pool size to {}MB", size_mb);
+                tracing::info!("Optimizing memory pool size to {}MB", size_mb);
                 self.resize_pools(size_mb).await?;
             }
         }
@@ -123,7 +123,7 @@ impl MemoryPool {
         // Apply chunk size optimization
         if let Some(chunk_str) = parameters.get("chunk_size_kb") {
             if let Ok(chunk_kb) = chunk_str.parse::<usize>() {
-                println!("Optimizing memory pool chunk size to {}KB", chunk_kb);
+                tracing::info!("Optimizing memory pool chunk size to {}KB", chunk_kb);
                 self.optimize_chunk_sizes(chunk_kb * 1024).await?;
             }
         }
@@ -186,9 +186,9 @@ impl MemoryPool {
         
         // Analyze allocation patterns to determine optimal chunk sizes
         // This is a simplified implementation
-        println!("Optimizing chunk sizes based on allocation patterns");
-        println!("Base chunk size: {} bytes", base_chunk_size);
-        println!("Total allocations: {}", stats.total_allocations);
+        tracing::debug!("Optimizing chunk sizes based on allocation patterns");
+        tracing::debug!("Base chunk size: {} bytes", base_chunk_size);
+        tracing::debug!("Total allocations: {}", stats.total_allocations);
         
         Ok(())
     }

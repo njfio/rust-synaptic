@@ -377,9 +377,9 @@ mod tests {
         assert!(available.is_ok());
 
         if available.unwrap() {
-            println!("Ollama server is available");
+            tracing::info!("Ollama server is available");
         } else {
-            println!("Ollama server is not running");
+            tracing::info!("Ollama server is not running");
         }
     }
 
@@ -390,7 +390,7 @@ mod tests {
 
         // Check if server is available
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
@@ -410,7 +410,7 @@ mod tests {
         let provider = OllamaProvider::default().unwrap();
 
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
@@ -436,7 +436,7 @@ mod tests {
         let provider = OllamaProvider::default().unwrap();
 
         if !provider.check_availability().await.unwrap_or(false) {
-            println!("Skipping integration test: Ollama server not available");
+            tracing::info!("Skipping integration test: Ollama server not available");
             return;
         }
 
@@ -449,6 +449,6 @@ mod tests {
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        println!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
     }
 }

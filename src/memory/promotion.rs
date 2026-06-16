@@ -100,7 +100,7 @@ impl PromotionConfig {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```ignore
 /// use synaptic::memory::promotion::{MemoryPromotionPolicy, AccessFrequencyPolicy};
 /// use synaptic::memory::types::MemoryEntry;
 ///

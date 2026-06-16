@@ -230,7 +230,7 @@ impl MetricsCollector {
                 }
                 
                 if let Err(e) = collector.collect_metrics().await {
-                    eprintln!("Error collecting metrics: {}", e);
+                    tracing::warn!("Error collecting metrics: {}", e);
                 }
             }
         });

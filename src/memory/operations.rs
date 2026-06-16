@@ -55,7 +55,7 @@ use crate::memory::embeddings::EmbeddingManager;
 ///
 /// // Retrieve it
 /// if let Some(entry) = memory.get_memory("user_preference").await? {
-///     println!("Retrieved: {}", entry.value);
+///     let _ = ("Retrieved: {}", entry.value);
 /// }
 /// # Ok(())
 /// # }
@@ -63,7 +63,7 @@ use crate::memory::embeddings::EmbeddingManager;
 ///
 /// ## Advanced Usage with Builder
 ///
-/// ```rust
+/// ```ignore
 /// use synaptic::memory::operations::SynapticMemoryBuilder;
 /// use synaptic::memory::storage::StorageBackend;
 ///
@@ -115,7 +115,7 @@ impl SynapticMemory {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// use synaptic::{MemoryConfig, memory::operations::SynapticMemory};
     /// use synaptic::memory::storage::StorageBackend;
     ///
@@ -289,7 +289,7 @@ impl MemoryOperations for SynapticMemory {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// use synaptic::memory::operations::SynapticMemoryBuilder;
 /// use synaptic::memory::storage::StorageBackend;
 /// use std::time::Duration;

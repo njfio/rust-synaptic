@@ -338,7 +338,7 @@ impl AgentMemory {
         #[cfg(feature = "embeddings")]
         if let Some(ref mut em) = self.embedding_manager {
             let _ = em.add_memory(entry.clone()).map_err(|e| {
-                eprintln!("Warning: Failed to generate embedding: {}", e);
+                tracing::warn!("Failed to generate embedding: {}", e);
             });
         }
 

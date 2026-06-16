@@ -488,7 +488,7 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_embedding_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
@@ -511,7 +511,7 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_batch_embedding_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
@@ -541,7 +541,7 @@ mod tests {
     #[ignore] // Run with --ignored flag when testing with real API
     async fn test_cohere_similarity_integration() {
         let Some(api_key) = get_test_api_key() else {
-            println!("Skipping integration test: COHERE_API_KEY not set");
+            tracing::info!("Skipping integration test: COHERE_API_KEY not set");
             return;
         };
 
@@ -559,6 +559,6 @@ mod tests {
 
         // Related concepts should have higher similarity
         assert!(sim_related > sim_unrelated);
-        println!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
+        tracing::info!("Related similarity: {}, Unrelated similarity: {}", sim_related, sim_unrelated);
     }
 }

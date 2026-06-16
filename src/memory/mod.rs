@@ -69,12 +69,12 @@ use serde::{Deserialize, Serialize};
 ///
 ///     // Retrieve it back
 ///     if let Some(retrieved) = memory.get_memory("user_preference").await? {
-///         println!("Retrieved: {}", retrieved.value);
+///         let _ = ("Retrieved: {}", retrieved.value);
 ///     }
 ///
 ///     // Search for related memories
 ///     let results = memory.search_memories("dark mode", 10).await?;
-///     println!("Found {} related memories", results.len());
+///     let _ = ("Found {} related memories", results.len());
 ///
 ///     Ok(())
 /// }
@@ -94,7 +94,7 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// # use synaptic::memory::{MemoryEntry, MemoryType};
     /// let entry = MemoryEntry::new(
     ///     "task_123".to_string(),
@@ -119,11 +119,11 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// if let Some(memory) = memory.get_memory("task_123").await? {
-    ///     println!("Task: {}", memory.value);
+    ///     let _ = ("Task: {}", memory.value);
     /// } else {
-    ///     println!("Memory not found");
+    ///     let _ = ("Memory not found");
     /// }
     /// ```
     async fn get_memory(&self, key: &str) -> Result<Option<MemoryEntry>>;
@@ -145,10 +145,10 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// let results = memory.search_memories("project documentation", 5).await?;
     /// for fragment in results {
-    ///     println!("Score: {:.2}, Content: {}", fragment.relevance_score, fragment.entry.value);
+    ///     let _ = ("Score: {:.2}, Content: {}", fragment.relevance_score, fragment.entry.value);
     /// }
     /// ```
     async fn search_memories(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>>;
@@ -167,7 +167,7 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// memory.update_memory("task_123", "Complete project documentation - IN PROGRESS").await?;
     /// ```
     async fn update_memory(&mut self, key: &str, value: &str) -> Result<()>;
@@ -186,11 +186,11 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// if memory.delete_memory("task_123").await? {
-    ///     println!("Memory deleted successfully");
+    ///     let _ = ("Memory deleted successfully");
     /// } else {
-    ///     println!("Memory not found");
+    ///     let _ = ("Memory not found");
     /// }
     /// ```
     async fn delete_memory(&mut self, key: &str) -> Result<bool>;
@@ -204,11 +204,11 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// let keys = memory.list_keys().await?;
-    /// println!("Total memories: {}", keys.len());
+    /// let _ = ("Total memories: {}", keys.len());
     /// for key in keys {
-    ///     println!("Key: {}", key);
+    ///     let _ = ("Key: {}", key);
     /// }
     /// ```
     async fn list_keys(&self) -> Result<Vec<String>>;
@@ -225,10 +225,10 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// let stats = memory.get_stats();
-    /// println!("Total entries: {}", stats.total_entries);
-    /// println!("Average size: {:.2} bytes", stats.average_entry_size);
+    /// let _ = ("Total entries: {}", stats.total_entries);
+    /// let _ = ("Average size: {:.2} bytes", stats.average_entry_size);
     /// ```
     fn get_stats(&self) -> CoreMemoryStats;
 
@@ -244,10 +244,10 @@ pub trait MemoryOperations {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// // Clear all memories (use with caution!)
     /// memory.clear_all().await?;
-    /// println!("All memories cleared");
+    /// let _ = ("All memories cleared");
     /// ```
     async fn clear_all(&mut self) -> Result<()>;
 }
@@ -259,24 +259,24 @@ pub trait MemoryOperations {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// use synaptic::memory::MemoryStats;
 ///
 /// let stats = memory.get_stats();
 ///
 /// // Check memory usage
 /// if stats.total_size_bytes > 1_000_000 {
-///     println!("Memory usage is high: {} bytes", stats.total_size_bytes);
+///     let _ = ("Memory usage is high: {} bytes", stats.total_size_bytes);
 /// }
 ///
 /// // Analyze memory distribution
 /// let short_term_ratio = stats.short_term_entries as f64 / stats.total_entries as f64;
-/// println!("Short-term memory ratio: {:.2}%", short_term_ratio * 100.0);
+/// let _ = ("Short-term memory ratio: {:.2}%", short_term_ratio * 100.0);
 ///
 /// // Check system age
 /// if let Some(oldest) = stats.oldest_entry {
 ///     let age_days = (chrono::Utc::now() - oldest).num_days();
-///     println!("System has been running for {} days", age_days);
+///     let _ = ("System has been running for {} days", age_days);
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]

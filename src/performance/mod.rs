@@ -227,7 +227,7 @@ impl PerformanceManager {
                 interval_timer.tick().await;
                 
                 if let Err(e) = manager.optimize().await {
-                    eprintln!("Auto-optimization failed: {}", e);
+                    tracing::warn!("Auto-optimization failed: {}", e);
                 }
             }
         });

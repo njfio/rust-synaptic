@@ -137,7 +137,7 @@ impl MLModelManager {
             // Load model weights
             let weights_path = model_path.join("model.safetensors");
             if weights_path.exists() {
-                println!("Model weights found, loading BERT model...");
+                tracing::info!("Model weights found, loading BERT model...");
 
                 let vb = unsafe {
                     VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &self.device)
@@ -145,9 +145,9 @@ impl MLModelManager {
                 let model = BertModel::load(vb, &bert_config)?;
 
                 self.embedding_model = Some(Box::new(SimpleBertModel::new(model, tokenizer, self.device.clone())?));
-                println!("BERT model loaded successfully");
+                tracing::info!("BERT model loaded successfully");
             } else {
-                println!("Warning: Model weights not found at: {}", weights_path.display());
+                tracing::warn!("Model weights not found at: {}", weights_path.display());
             }
         }
 

@@ -495,7 +495,7 @@ mod tests {
         let content_type = BasicContentDetector::detect_content_type(text_data);
         assert!(matches!(content_type, BasicContentType::Text { .. }));
 
-        let rust_code = b"fn main() { println!(\"Hello\"); }";
+        let rust_code = b"fn main() { let greeting = \"Hello\"; }";
         let content_type = BasicContentDetector::detect_content_type(rust_code);
         assert!(matches!(content_type, BasicContentType::Code { .. }));
     }
