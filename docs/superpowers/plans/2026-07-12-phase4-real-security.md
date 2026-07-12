@@ -1,6 +1,6 @@
 # Phase 4: Real Security Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. **DO NOT EXECUTE until the maintainer resolves the Decision Gates below.**
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Decision gates below are RESOLVED (2026-07-12); execution authorized.
 
 **Goal:** Replace every fail-closed security stub from Phase 0 with a real implementation (or an explicit, documented descope), so that `security`-feature claims are cryptographically true.
 
@@ -8,14 +8,13 @@
 
 **Tech Stack:** bellman 0.14, bls12_381, tfhe, sha2, zeroize, proptest (dev), rand OsRng.
 
-## Decision Gates (maintainer input required before execution)
+## Decision Gates — RESOLVED by maintainer 2026-07-12 (do not re-ask)
 
-1. **ZK statement design.** Phase 0 review found `generate_access_proof`/`generate_content_proof` hash an internally-timestamped statement no external caller can reproduce — real verification can never match statements as currently designed. Options:
-   - **A (recommended):** caller supplies the statement (or its nonce/timestamp) so verify is reproducible; breaking API change to proof-generation signatures.
-   - **B:** proof carries the timestamped statement; verifier checks proof-vs-carried-statement plus a caller-supplied predicate on freshness. Weaker binding, no API break.
-2. **Hash-in-circuit choice.** Knowledge-of-preimage circuit needs a SNARK-friendly hash. Options: Poseidon over BLS12-381 scalar field via a vetted gadget crate (**recommended**; small circuit, needs new dependency) vs SHA-256 gadget (huge circuit, slow proving, no new dep). Affects proving time by ~100x.
-3. **Homomorphic scope.** TFHE FheUint32 supports the encrypt/decrypt/sum/average ops. `homomorphic_search`/`homomorphic_similarity` over encrypted vectors are research-grade problems — recommend **descoping them permanently** (keep fail-closed error, document as unsupported) rather than shipping a slow toy. Also: `homomorphic_count` currently returns plaintext counts — decide fail-closed vs documented-plaintext-metadata.
-4. **Precision contract for HE.** Current scaling is `(value * 1000).abs() as u32` — silently drops sign and truncates. Options: FheInt64 with documented fixed-point scale (recommended) vs keep u32 and document unsigned-millis contract.
+1. **ZK statement design: Option A.** Caller supplies the statement/nonce; breaking API change to proof-generation signatures approved. Delete `align_statement_hash` once external verification round-trips.
+2. **Hash-in-circuit: Poseidon** via a well-maintained bls12_381 gadget crate; justify crate choice in the task report and pin the version.
+3. **Homomorphic scope: descope search/similarity permanently** (fail-closed stays, documented unsupported); **`homomorphic_count` becomes fail-closed too.** Sum/average/encrypt/decrypt get real TFHE implementations.
+4. **HE precision: FheInt64 fixed-point** with documented scale; signed values round-trip exactly at the documented precision, with sign-preservation tests.
+5. **(Added from final sweep) Real authentication — new Task 4.7:** argon2 password verification, TOTP-based MFA (replace "any 6 digits"), policy_engine.
 
 ## Global Constraints
 
@@ -57,11 +56,22 @@
 **Files:** Modify src/security/{encryption,zero_knowledge,key_management}.rs (locate real file names first); Cargo.toml (zeroize).
 **Scope:** Key material zeroized on drop (`zeroize::Zeroizing` wrappers); no `Debug` derive exposes key bytes (manual impl redacts); audit `md5` usage (`grep -rn "md5" src/`) — replace with sha2 if any security path touches it, else document fingerprint-only use at the use site.
 
+### Task 4.7: Real authentication and authorization
+
+**Files:** Modify src/security/access_control.rs (password/API-key/MFA verification), src/security/policy_engine.rs (condition evaluation); Cargo.toml (argon2, a TOTP crate); Test tests/phase4_security_tests.rs (MFA tests) + tests/auth_tests.rs (new).
+**Scope:**
+- Password verification via `argon2` (PHC-string verify), replacing `password.len() >= 8` at access_control.rs:223. Store/verify against an argon2 hash; provide a hashing helper for provisioning.
+- API-key verification replacing `starts_with("sk-")` at :230 — constant-time compare against a stored hash (sha256 of the key), not a prefix check.
+- MFA: TOTP (RFC 6238) verification replacing `verify_mfa_token` accepting any 6 digits at :266 — verify against a per-user shared secret with a ±1 time-step window; justify the TOTP crate + pin version in the report.
+- policy_engine.rs: remove the catch-all `_ => Ok(true)` in condition evaluation — unknown conditions **deny** (`Ok(false)` or an explicit error). Audit every match arm for other permissive defaults.
+- Acceptance tests: correct password/token/key pass; wrong ones fail; unknown policy condition denies; the previously-failing MFA tests in phase4_security_tests.rs (documented in task-hygiene-report.md) turn green. TDD throughout.
+- Commit: "feat(security)!: real argon2/TOTP authentication and deny-by-default policy".
+
 ---
 
 ## Execution order & sizing
 
-4.1 → 4.2 → 4.3 are strictly sequential (same file, same abstractions). 4.4, 4.5, 4.6 are independent of the ZK chain and each other. Estimated: 4.1-4.3 are the hard core (days, and proving-time performance needs watching); 4.4-4.6 are each half-day scale.
+4.1 → 4.2 → 4.3 are strictly sequential (same file, same abstractions). 4.4, 4.5, 4.6, 4.7 are independent of the ZK chain and each other. Estimated: 4.1-4.3 are the hard core (proving-time performance needs watching); 4.4-4.7 are each ~half-day scale.
 
 ## Out of scope (recorded for later phases)
 
