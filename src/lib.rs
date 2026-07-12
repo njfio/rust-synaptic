@@ -542,24 +542,51 @@ impl AgentMemory {
     }
 
     /// Restore from a checkpoint
+    ///
+    /// This is a non-destructive, upsert-then-prune restore: the checkpoint's
+    /// entries are written to storage first (idempotent upserts), and only
+    /// once every write has succeeded are the storage keys that are absent
+    /// from the checkpoint deleted. `self.state` is swapped last, after
+    /// storage reconciliation has fully succeeded. If any step fails, the
+    /// error is returned and both storage and `self.state` are left exactly
+    /// as they were before the call — no `clear()` is ever used, so data
+    /// already durably persisted before a failure is never lost.
     pub async fn restore_checkpoint(&mut self, checkpoint_id: Uuid) -> Result<()> {
-        let state = self
+        let restored_state = self
             .checkpoint_manager
             .restore_checkpoint(checkpoint_id)
             .await?;
-        self.state = state;
 
-        // Also need to sync the storage with the restored state
-        // For now, we'll clear storage and re-populate it from the state
-        self.storage.clear().await?;
-
-        // Re-populate storage with memories from restored state
-        for entry in self.state.get_short_term_memories().values() {
+        // Step 1: upsert every checkpoint entry into storage first. These
+        // writes are idempotent, so a failure partway through leaves
+        // storage with a superset of the checkpoint's data plus whatever
+        // was already there beforehand — nothing is lost.
+        for entry in restored_state.get_short_term_memories().values() {
             self.storage.store(entry).await?;
         }
-        for entry in self.state.get_long_term_memories().values() {
+        for entry in restored_state.get_long_term_memories().values() {
             self.storage.store(entry).await?;
         }
+
+        // Step 2: only after all upserts succeeded, compute keys present in
+        // storage but absent from the checkpoint, and delete only those.
+        let checkpoint_keys: std::collections::HashSet<&str> = restored_state
+            .get_short_term_memories()
+            .keys()
+            .chain(restored_state.get_long_term_memories().keys())
+            .map(|k| k.as_str())
+            .collect();
+
+        let storage_keys = self.storage.list_keys().await?;
+        for key in storage_keys {
+            if !checkpoint_keys.contains(key.as_str()) {
+                self.storage.delete(&key).await?;
+            }
+        }
+
+        // Step 3: only now that storage matches the checkpoint exactly,
+        // swap the in-process state cache.
+        self.state = restored_state;
 
         Ok(())
     }

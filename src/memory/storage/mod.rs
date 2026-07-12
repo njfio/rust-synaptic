@@ -200,6 +200,99 @@ impl Storage for FailingStorage {
     }
 }
 
+/// A `Storage` implementation that succeeds for the first `fail_after` calls
+/// to `store` and fails on every call thereafter. Used to test that
+/// mid-operation storage failures (e.g. partway through a multi-entry
+/// restore) cannot destroy data that was already durably persisted before
+/// the failure occurred. All other methods, including reads, delegate to an
+/// inner `MemoryStorage` that receives every successful write.
+#[cfg(feature = "test-utils")]
+pub struct FlakyStorage {
+    inner: memory::MemoryStorage,
+    fail_after: usize,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(feature = "test-utils")]
+impl FlakyStorage {
+    /// Create a new flaky storage backend, seeded with `inner`'s entries,
+    /// that allows the first `fail_after` `store` calls to succeed and
+    /// fails every `store` call after that.
+    pub fn new(inner: memory::MemoryStorage, fail_after: usize) -> Self {
+        Self {
+            inner,
+            fail_after,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl Storage for FlakyStorage {
+    async fn store(&self, entry: &MemoryEntry) -> Result<()> {
+        let call = self
+            .calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if call >= self.fail_after {
+            return Err(crate::error::MemoryError::storage("injected failure"));
+        }
+        self.inner.store(entry).await
+    }
+
+    async fn retrieve(&self, key: &str) -> Result<Option<MemoryEntry>> {
+        self.inner.retrieve(key).await
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
+        self.inner.search(query, limit).await
+    }
+
+    async fn update(&self, key: &str, entry: &MemoryEntry) -> Result<()> {
+        self.inner.update(key, entry).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<bool> {
+        self.inner.delete(key).await
+    }
+
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        self.inner.list_keys().await
+    }
+
+    async fn count(&self) -> Result<usize> {
+        self.inner.count().await
+    }
+
+    async fn clear(&self) -> Result<()> {
+        self.inner.clear().await
+    }
+
+    async fn exists(&self, key: &str) -> Result<bool> {
+        self.inner.exists(key).await
+    }
+
+    async fn stats(&self) -> Result<StorageStats> {
+        self.inner.stats().await
+    }
+
+    async fn maintenance(&self) -> Result<()> {
+        self.inner.maintenance().await
+    }
+
+    async fn backup(&self, path: &str) -> Result<()> {
+        self.inner.backup(path).await
+    }
+
+    async fn restore(&self, path: &str) -> Result<()> {
+        self.inner.restore(path).await
+    }
+
+    async fn get_all_entries(&self) -> Result<Vec<MemoryEntry>> {
+        self.inner.get_all_entries().await
+    }
+}
+
 /// Batch operations for efficient bulk storage operations
 #[async_trait]
 pub trait BatchStorage: Storage {
