@@ -21,20 +21,6 @@ mod bellman_tests {
         context
     }
 
-    /// Proof generation stamps its own timestamp into the statement it hashes,
-    /// so a test-held statement never hash-matches the proof. Align the proof's
-    /// statement hash with the test statement so verification proceeds past the
-    /// hash check to the (currently fail-closed) cryptographic step.
-    fn align_statement_hash<T: serde::Serialize>(
-        proof: &mut synaptic::security::zero_knowledge::ZKProof,
-        statement: &T,
-    ) -> Result<(), Box<dyn Error>> {
-        let serialized = serde_json::to_string(statement)?;
-        proof.statement_hash =
-            synaptic::security::zero_knowledge::hash_content_for_test(&serialized);
-        Ok(())
-    }
-
     #[tokio::test]
     async fn test_real_zero_knowledge_proof_generation() -> Result<(), Box<dyn Error>> {
         // Initialize security manager with zero-knowledge proofs enabled
@@ -66,7 +52,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(&memory_entry.key, &context, access_statement.access_type)
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         // Verify proof properties
@@ -95,17 +81,12 @@ mod bellman_tests {
         };
 
         // Generate proof
-        let mut proof = security_manager
+        let proof = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
-        align_statement_hash(&mut proof, &access_statement)?;
 
         // Real Groth16 verification (Phase 4, task 4.2): an honest proof
         // verifies true.
@@ -146,13 +127,12 @@ mod bellman_tests {
         );
 
         // Generate content proof
-        let mut proof = security_manager
+        let proof = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_content_proof(&memory_entry, content_statement.predicate.clone(), &context)
+            .generate_content_proof(&memory_entry, &content_statement, &context)
             .await?;
-        align_statement_hash(&mut proof, &content_statement)?;
 
         // Real Groth16 verification (Phase 4, task 4.2): an honest content
         // proof verifies true.
@@ -203,11 +183,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_aggregate_proof(
-                &entries,
-                aggregate_statement.aggregate_type.clone(),
-                &context,
-            )
+            .generate_aggregate_proof(&entries, &aggregate_statement, &context)
             .await?;
 
         // Create a statement that matches what was actually computed
@@ -246,19 +222,14 @@ mod bellman_tests {
 
             // Measure proof generation time
             let start_time = std::time::Instant::now();
-            let mut proof = security_manager
+            let proof = security_manager
                 .zero_knowledge_manager
                 .as_mut()
                 .unwrap()
-                .generate_access_proof(
-                    &access_statement.memory_key,
-                    &context,
-                    access_statement.access_type.clone(),
-                )
+                .generate_access_proof(&access_statement, &context)
                 .await?;
             let proof_time = start_time.elapsed();
             proof_times.push(proof_time);
-            align_statement_hash(&mut proof, &access_statement)?;
 
             // Measure real Groth16 verification time.
             let start_time = std::time::Instant::now();
@@ -319,11 +290,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         // Create different statement for verification (should fail)
@@ -371,11 +338,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &invalid_context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &invalid_context)
             .await;
         assert!(result.is_err());
 
@@ -398,17 +361,12 @@ mod bellman_tests {
         };
 
         // Generate proof
-        let mut proof = security_manager
+        let proof = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
-        align_statement_hash(&mut proof, &access_statement)?;
 
         // Test serialization/deserialization
         let serialized = serde_json::to_string(&proof)?;
@@ -464,11 +422,7 @@ mod fallback_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         assert!(!proof.id.is_empty());

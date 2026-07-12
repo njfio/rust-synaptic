@@ -80,8 +80,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate zero-knowledge proof for memory access
     println!(" Generating zero-knowledge proof for memory access...");
+    let access_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "sensitive_data".to_string(),
+        user_id: admin_context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     match security_manager
-        .generate_access_proof("sensitive_data", &admin_context, AccessType::Read)
+        .generate_access_proof(&access_statement, &admin_context)
         .await
     {
         Ok(access_proof) => {
@@ -93,12 +99,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate content proof without revealing content
     println!(" Generating zero-knowledge proof for content properties...");
+    let content_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: sensitive_entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("financial".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     match security_manager
-        .generate_content_proof(
-            &sensitive_entry,
-            ContentPredicate::ContainsKeyword("financial".to_string()),
-            &admin_context,
-        )
+        .generate_content_proof(&sensitive_entry, &content_statement, &admin_context)
         .await
     {
         Ok(content_proof) => {

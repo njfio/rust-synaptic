@@ -415,12 +415,29 @@ impl SecurityManager {
                         serde_json::from_str(proof_json).map_err(|_| {
                             MemoryError::access_denied("Invalid proof format".to_string())
                         })?;
-                    let statement = zero_knowledge::AccessStatement {
-                        memory_key: encrypted_entry.id.clone(),
-                        user_id: context.user_id.clone(),
-                        access_type: zero_knowledge::AccessType::Read,
-                        timestamp: Utc::now(),
-                    };
+                    // The statement is caller-supplied (it carries the
+                    // timestamp/nonce the proof was generated over) and must
+                    // match both the entry and the requesting user.
+                    let statement_json =
+                        context
+                            .attributes
+                            .get("zk_access_statement")
+                            .ok_or_else(|| {
+                                MemoryError::access_denied(
+                                    "Access statement required alongside access proof".to_string(),
+                                )
+                            })?;
+                    let statement: zero_knowledge::AccessStatement =
+                        serde_json::from_str(statement_json).map_err(|_| {
+                            MemoryError::access_denied("Invalid statement format".to_string())
+                        })?;
+                    if statement.memory_key != encrypted_entry.id
+                        || statement.user_id != context.user_id
+                    {
+                        return Err(MemoryError::access_denied(
+                            "Access statement does not match this entry and user".to_string(),
+                        ));
+                    }
                     let valid = zkm.verify_access_proof(&proof, &statement).await?;
                     if !valid {
                         return Err(MemoryError::access_denied(
@@ -480,16 +497,17 @@ impl SecurityManager {
         Ok(result)
     }
 
-    /// Generate zero-knowledge proof for memory access
+    /// Generate zero-knowledge proof for memory access.
+    ///
+    /// The caller supplies the complete statement (including timestamp), so
+    /// any verifier holding the same statement can verify the proof.
     pub async fn generate_access_proof(
         &mut self,
-        memory_key: &str,
+        statement: &zero_knowledge::AccessStatement,
         context: &SecurityContext,
-        access_type: zero_knowledge::AccessType,
     ) -> Result<zero_knowledge::ZKProof> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_access_proof(memory_key, context, access_type)
-                .await
+            zkm.generate_access_proof(statement, context).await
         } else {
             Err(MemoryError::access_denied(
                 "Zero-knowledge features not enabled",
@@ -512,15 +530,16 @@ impl SecurityManager {
         }
     }
 
-    /// Generate content proof without revealing content
+    /// Generate content proof without revealing content.
+    /// The caller supplies the complete statement (including timestamp).
     pub async fn generate_content_proof(
         &mut self,
         entry: &MemoryEntry,
-        predicate: zero_knowledge::ContentPredicate,
+        statement: &zero_knowledge::ContentStatement,
         context: &SecurityContext,
     ) -> Result<zero_knowledge::ZKProof> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_content_proof(entry, predicate, context).await
+            zkm.generate_content_proof(entry, statement, context).await
         } else {
             Err(MemoryError::access_denied(
                 "Zero-knowledge features not enabled",

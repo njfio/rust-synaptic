@@ -63,6 +63,78 @@ pub fn hash_content_for_test(content: &str) -> String {
     hash_content(content)
 }
 
+/// Verify a zero-knowledge proof against a prepared Groth16 verifying key
+/// and the expected statement hash. Any malformed envelope content (wrong
+/// public-input length, non-canonical scalar, corrupted proof points)
+/// verifies `false` rather than erroring, so tampering can never escalate.
+#[cfg(feature = "zero-knowledge-proofs")]
+fn verify_with_prepared_key(
+    prepared_vk: &PreparedVerifyingKey<Bls12>,
+    proof: &ZKProof,
+    expected_statement_hash: &str,
+) -> Result<bool> {
+    let start_time = std::time::Instant::now();
+
+    // The proof envelope must be bound to the statement being verified.
+    if proof.statement_hash != expected_statement_hash {
+        tracing::warn!("Statement hash mismatch in proof verification");
+        return Ok(false);
+    }
+
+    // Parse the public input (the Poseidon digest the prover committed to).
+    let digest_bytes: [u8; 32] = match proof.public_inputs.as_slice().try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            tracing::warn!("Malformed public input length in proof");
+            return Ok(false);
+        }
+    };
+    let digest = match Option::<Scalar>::from(Scalar::from_bytes(&digest_bytes)) {
+        Some(digest) => digest,
+        None => {
+            tracing::warn!("Non-canonical public input scalar in proof");
+            return Ok(false);
+        }
+    };
+
+    // Deserialize the Groth16 proof; corrupted points fail verification.
+    let groth16_proof = match ProofSystem::deserialize_proof(&proof.proof_data) {
+        Ok(groth16_proof) => groth16_proof,
+        Err(_) => {
+            tracing::warn!("Failed to deserialize Groth16 proof data");
+            return Ok(false);
+        }
+    };
+
+    let is_valid = verify_proof(prepared_vk, &groth16_proof, &[digest]).is_ok();
+
+    tracing::debug!(
+        is_valid,
+        "zk-SNARK Groth16 verification completed in {:?}",
+        start_time.elapsed()
+    );
+    Ok(is_valid)
+}
+
+/// Verify a proof as an external verifier, holding only the statement, the
+/// proof, and the serialized verifying key (see
+/// [`ZeroKnowledgeManager::verifying_key_bytes`]). No access to the
+/// generating manager or its proving material is required.
+#[cfg(feature = "zero-knowledge-proofs")]
+pub fn verify_proof_external<T: Serialize>(
+    statement: &T,
+    proof: &ZKProof,
+    verifying_key_bytes: &[u8],
+) -> Result<bool> {
+    let vk = bellman::groth16::VerifyingKey::<Bls12>::read(verifying_key_bytes).map_err(|e| {
+        MemoryError::encryption(format!("Failed to deserialize Groth16 verifying key: {e}"))
+    })?;
+    let prepared_vk = prepare_verifying_key(&vk);
+    let serialized = serde_json::to_string(statement)
+        .map_err(|_| MemoryError::access_denied("Statement serialization failed"))?;
+    verify_with_prepared_key(&prepared_vk, proof, &hash_content(&serialized))
+}
+
 /// Configuration for zero-knowledge features
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZeroKnowledgeConfig {
@@ -211,35 +283,30 @@ impl ZeroKnowledgeManager {
         self.proof_system.prepared_verifying_key()
     }
 
-    /// Generate a zero-knowledge proof for memory access
+    /// Generate a zero-knowledge proof for memory access.
+    ///
+    /// The caller supplies the complete [`AccessStatement`] (including its
+    /// timestamp/nonce); the statement is hashed exactly as provided, so any
+    /// verifier holding the same statement can reproduce the binding.
     pub async fn generate_access_proof(
         &mut self,
-        memory_key: &str,
+        statement: &AccessStatement,
         user_context: &SecurityContext,
-        access_type: AccessType,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
         // Validate security context comprehensively
         user_context.validate_comprehensive(true)?; // ZK proofs always require MFA
 
-        // Create the statement to prove
-        let statement = AccessStatement {
-            memory_key: memory_key.to_string(),
-            user_id: user_context.user_id.clone(),
-            access_type,
-            timestamp: Utc::now(),
-        };
-
         // Generate witness (private information)
         let witness = self
-            .generate_access_witness(&statement, user_context)
+            .generate_access_witness(statement, user_context)
             .await?;
 
         // Generate the proof
         let proof = self
             .proof_system
-            .generate_proof(&statement, &witness)
+            .generate_proof(statement, &witness)
             .await?;
 
         // Update metrics
@@ -271,29 +338,23 @@ impl ZeroKnowledgeManager {
         Ok(is_valid)
     }
 
-    /// Generate a zero-knowledge proof for memory content without revealing it
+    /// Generate a zero-knowledge proof for memory content without revealing
+    /// it. The caller supplies the complete [`ContentStatement`].
     pub async fn generate_content_proof(
         &mut self,
         entry: &MemoryEntry,
-        predicate: ContentPredicate,
+        statement: &ContentStatement,
         _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
-        // Create statement about the content
-        let statement = ContentStatement {
-            memory_key: entry.key.clone(),
-            predicate,
-            timestamp: Utc::now(),
-        };
-
         // Generate witness based on actual content
-        let witness = self.generate_content_witness(entry, &statement).await?;
+        let witness = self.generate_content_witness(entry, statement).await?;
 
         // Generate the proof
         let proof = self
             .proof_system
-            .generate_proof(&statement, &witness)
+            .generate_proof(statement, &witness)
             .await?;
 
         // Update metrics
@@ -324,29 +385,23 @@ impl ZeroKnowledgeManager {
         Ok(is_valid)
     }
 
-    /// Generate a zero-knowledge proof for aggregate statistics
+    /// Generate a zero-knowledge proof for aggregate statistics.
+    /// The caller supplies the complete [`AggregateStatement`].
     pub async fn generate_aggregate_proof(
         &mut self,
         entries: &[MemoryEntry],
-        aggregate_type: AggregateType,
+        statement: &AggregateStatement,
         _context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
-        // Create statement about the aggregate
-        let statement = AggregateStatement {
-            entry_count: entries.len(),
-            aggregate_type,
-            timestamp: Utc::now(),
-        };
-
         // Generate witness from actual data
-        let witness = self.generate_aggregate_witness(entries, &statement).await?;
+        let witness = self.generate_aggregate_witness(entries, statement).await?;
 
         // Generate the proof
         let proof = self
             .proof_system
-            .generate_proof(&statement, &witness)
+            .generate_proof(statement, &witness)
             .await?;
 
         // Update metrics
@@ -875,53 +930,8 @@ impl ProofSystem {
         #[cfg(feature = "zero-knowledge-proofs")]
         {
             tracing::debug!("Verifying real zk-SNARK proof using Bellman");
-            let start_time = std::time::Instant::now();
-
-            // The proof envelope must be bound to the statement being
-            // verified: recompute the statement hash and compare.
             let statement_hash = self.hash_statement(statement)?;
-            if proof.statement_hash != statement_hash {
-                tracing::warn!("Statement hash mismatch in proof verification");
-                return Ok(false);
-            }
-
-            // Parse the public input (the Poseidon digest the prover
-            // committed to). Malformed or non-canonical bytes are a
-            // verification failure, not an error.
-            let digest_bytes: [u8; 32] = match proof.public_inputs.as_slice().try_into() {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    tracing::warn!("Malformed public input length in proof");
-                    return Ok(false);
-                }
-            };
-            let digest = match Option::<Scalar>::from(Scalar::from_bytes(&digest_bytes)) {
-                Some(digest) => digest,
-                None => {
-                    tracing::warn!("Non-canonical public input scalar in proof");
-                    return Ok(false);
-                }
-            };
-
-            // Deserialize the Groth16 proof; corrupted points fail closed.
-            let groth16_proof = match Self::deserialize_proof(&proof.proof_data) {
-                Ok(groth16_proof) => groth16_proof,
-                Err(_) => {
-                    tracing::warn!("Failed to deserialize Groth16 proof data");
-                    return Ok(false);
-                }
-            };
-
-            let is_valid = verify_proof(&self.prepared_vk, &groth16_proof, &[digest]).is_ok();
-
-            let duration = start_time.elapsed();
-            tracing::debug!(
-                is_valid,
-                "zk-SNARK Groth16 verification completed in {:?}",
-                duration
-            );
-
-            Ok(is_valid)
+            verify_with_prepared_key(&self.prepared_vk, proof, &statement_hash)
         }
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]

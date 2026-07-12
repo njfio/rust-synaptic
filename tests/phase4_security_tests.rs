@@ -167,30 +167,28 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
     // proof path (this test asserts the proof contract, not the MFA policy).
     context.mfa_verified = true;
 
-    // Generate access proof
+    // Caller-supplied statement (task 4.3): the same statement handed to
+    // generation verifies the proof.
+    let statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "test_memory_key".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
+
     let proof = security_manager
-        .generate_access_proof("test_memory_key", &context, AccessType::Read)
+        .generate_access_proof(&statement, &context)
         .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
     assert!(!proof.proof_data.is_empty());
 
-    // Create corresponding statement for verification
-    let statement = synaptic::security::zero_knowledge::AccessStatement {
-        memory_key: "test_memory_key".to_string(),
-        user_id: context.user_id.clone(),
-        access_type: AccessType::Read,
-        timestamp: proof.created_at,
-    };
-
-    // Verification fails closed until real Groth16 verification lands in
-    // Phase 4 (task 4.2): honest Err instead of a fake Ok(true).
-    let err = security_manager
+    // Real Groth16 verification (task 4.2): honest proof verifies true.
+    let is_valid = security_manager
         .verify_access_proof(&proof, &statement)
-        .await
-        .expect_err("verification must fail closed without real cryptographic verification");
-    assert!(err.to_string().contains("zero-knowledge"));
+        .await?;
+    assert!(is_valid);
 
     Ok(())
 }
@@ -225,21 +223,27 @@ async fn test_zero_knowledge_content_proofs() -> Result<(), Box<dyn Error>> {
         MemoryType::LongTerm,
     );
 
-    // Generate content proof for keyword presence
+    // Generate content proof for keyword presence (caller-supplied statement)
+    let keyword_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("secret".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     let proof = security_manager
-        .generate_content_proof(
-            &entry,
-            ContentPredicate::ContainsKeyword("secret".to_string()),
-            &context,
-        )
+        .generate_content_proof(&entry, &keyword_statement, &context)
         .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
 
     // Generate proof for length constraint
+    let length_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: entry.key.clone(),
+        predicate: ContentPredicate::LengthGreaterThan(30),
+        timestamp: chrono::Utc::now(),
+    };
     let length_proof = security_manager
-        .generate_content_proof(&entry, ContentPredicate::LengthGreaterThan(30), &context)
+        .generate_content_proof(&entry, &length_statement, &context)
         .await?;
 
     assert!(!length_proof.id.is_empty());
@@ -474,8 +478,14 @@ async fn test_security_metrics_collection() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Zero-knowledge operation
+    let metrics_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "metrics_test".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     let _proof = security_manager
-        .generate_access_proof("metrics_test", &context, AccessType::Read)
+        .generate_access_proof(&metrics_statement, &context)
         .await?;
 
     // Collect metrics
@@ -545,17 +555,24 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
     assert!(encrypted_entry.is_homomorphic);
 
     // 4. Generate zero-knowledge proof for access
+    let workflow_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "workflow_test".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     let access_proof = security_manager
-        .generate_access_proof("workflow_test", &context, AccessType::Read)
+        .generate_access_proof(&workflow_statement, &context)
         .await?;
 
     // 5. Generate content proof
+    let workflow_content_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: sensitive_entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("financial".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     let content_proof = security_manager
-        .generate_content_proof(
-            &sensitive_entry,
-            ContentPredicate::ContainsKeyword("financial".to_string()),
-            &context,
-        )
+        .generate_content_proof(&sensitive_entry, &workflow_content_statement, &context)
         .await?;
 
     // 6. Perform secure computation

@@ -41,6 +41,18 @@
 **Files:** Modify src/security/zero_knowledge.rs (statement construction per Decision Gate 1); tests updated; delete `align_statement_hash` test helper (crutch from Phase 0 review).
 **Acceptance:** an external verifier holding only (statement, proof, verifying key) verifies without reaching into generation internals.
 
+> **Execution notes (2026-07-12, tasks 4.1-4.3 done):** Decision Gate 2 is
+> satisfied with `neptune` 13.0.0 (Filecoin's Poseidon over BLS12-381; same
+> ff/group 0.13 line as bellman 0.14). neptune's circuit gadget targets
+> `bellpepper-core` 0.4, not bellman, so a record-and-replay constraint-system
+> adapter (`BellpepperRecorder` in zero_knowledge.rs) bridges the gadget into
+> bellman Groth16 — no dependency upgrades needed. The proof envelope now
+> carries its Groth16 public input (`ZKProof.public_inputs`, the Poseidon
+> digest). `SecurityManager::decrypt_memory` reads the caller statement from
+> the `zk_access_statement` context attribute and checks it matches the entry
+> and user. Four pre-existing security_suite failures (HE feature-off,
+> DP-MFA) remain for tasks 4.4/4.7.
+
 ### Task 4.4: TFHE-only homomorphic path
 
 **Files:** Modify src/security/encryption.rs; Test tests/homomorphic_encryption_tests.rs.

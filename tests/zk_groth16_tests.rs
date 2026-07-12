@@ -86,7 +86,7 @@ async fn groth16_key_store_path_persists_parameters() -> Result<(), Box<dyn Erro
 // Task 4.2: real Poseidon knowledge-of-preimage circuit + Groth16 verification
 // ---------------------------------------------------------------------------
 
-use synaptic::security::zero_knowledge::{AccessStatement, AccessType, ZKProof};
+use synaptic::security::zero_knowledge::{AccessStatement, AccessType};
 use synaptic::security::SecurityContext;
 
 fn mfa_context(user: &str) -> SecurityContext {
@@ -104,18 +104,6 @@ fn statement(user: &str, key: &str) -> AccessStatement {
     }
 }
 
-/// Until task 4.3 lands caller-supplied statements, proof generation stamps
-/// its own timestamp into the hashed statement; align the envelope hash so
-/// verification exercises the cryptographic step. Deleted in task 4.3.
-fn align_statement_hash(
-    proof: &mut ZKProof,
-    statement: &AccessStatement,
-) -> Result<(), Box<dyn Error>> {
-    let serialized = serde_json::to_string(statement)?;
-    proof.statement_hash = synaptic::security::zero_knowledge::hash_content_for_test(&serialized);
-    Ok(())
-}
-
 /// (a) An honestly generated proof verifies TRUE with real Groth16.
 #[tokio::test]
 async fn honest_proof_round_trip_verifies() -> Result<(), Box<dyn Error>> {
@@ -124,10 +112,7 @@ async fn honest_proof_round_trip_verifies() -> Result<(), Box<dyn Error>> {
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-1");
 
-    let mut proof = manager
-        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
-        .await?;
-    align_statement_hash(&mut proof, &stmt)?;
+    let proof = manager.generate_access_proof(&stmt, &context).await?;
 
     let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
     assert!(is_valid, "honest Groth16 proof must verify true");
@@ -142,10 +127,7 @@ async fn bit_flipped_proof_fails() -> Result<(), Box<dyn Error>> {
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-2");
 
-    let mut proof = manager
-        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
-        .await?;
-    align_statement_hash(&mut proof, &stmt)?;
+    let mut proof = manager.generate_access_proof(&stmt, &context).await?;
 
     let mid = proof.proof_data.len() / 2;
     proof.proof_data[mid] ^= 0x01;
@@ -163,10 +145,7 @@ async fn wrong_public_input_fails() -> Result<(), Box<dyn Error>> {
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-3");
 
-    let mut proof = manager
-        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
-        .await?;
-    align_statement_hash(&mut proof, &stmt)?;
+    let mut proof = manager.generate_access_proof(&stmt, &context).await?;
     assert!(
         !proof.public_inputs.is_empty(),
         "proof must carry its public input"
@@ -188,10 +167,7 @@ async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-4");
 
-    let mut proof = manager_a
-        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
-        .await?;
-    align_statement_hash(&mut proof, &stmt)?;
+    let proof = manager_a.generate_access_proof(&stmt, &context).await?;
 
     assert!(
         manager_a.verify_access_proof(&proof, &stmt).await?,
@@ -201,5 +177,37 @@ async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
         !manager_b.verify_access_proof(&proof, &stmt).await?,
         "proof must not verify under an unrelated key set"
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Task 4.3: caller-supplied statements; external verification
+// ---------------------------------------------------------------------------
+
+/// An external verifier holding only (statement, proof, verifying key) —
+/// with no access to the generating manager — verifies the proof.
+#[tokio::test]
+async fn external_verifier_round_trip() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut prover = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "external-memory");
+
+    let proof = prover.generate_access_proof(&stmt, &context).await?;
+    let vk_bytes = prover.verifying_key_bytes()?;
+    drop(prover);
+
+    let is_valid =
+        synaptic::security::zero_knowledge::verify_proof_external(&stmt, &proof, &vk_bytes)?;
+    assert!(is_valid, "external verifier must accept an honest proof");
+
+    let other = statement("prover", "different-memory");
+    let is_valid =
+        synaptic::security::zero_knowledge::verify_proof_external(&other, &proof, &vk_bytes)?;
+    assert!(
+        !is_valid,
+        "external verifier must reject a proof bound to another statement"
+    );
+
     Ok(())
 }

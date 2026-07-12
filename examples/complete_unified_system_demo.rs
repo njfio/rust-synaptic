@@ -132,20 +132,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Zero-Knowledge Proof Generation");
     println!("===================================");
 
+    let access_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "financial_q4".to_string(),
+        user_id: admin_context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     let access_proof = security_manager
-        .generate_access_proof("financial_q4", &admin_context, AccessType::Read)
+        .generate_access_proof(&access_statement, &admin_context)
         .await?;
 
     println!(" Zero-knowledge access proof generated");
     println!("   Proof ID: {}", access_proof.id);
     println!("   Statement Hash: {}", access_proof.statement_hash);
 
+    let content_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: sensitive_memory.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("Revenue".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     let content_proof = security_manager
-        .generate_content_proof(
-            &sensitive_memory,
-            ContentPredicate::ContainsKeyword("Revenue".to_string()),
-            &admin_context,
-        )
+        .generate_content_proof(&sensitive_memory, &content_statement, &admin_context)
         .await?;
 
     println!(" Zero-knowledge content proof generated");

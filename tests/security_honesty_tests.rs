@@ -181,7 +181,7 @@ mod zk_verify_fails_closed {
         };
 
         let proof = manager
-            .generate_access_proof("memory-1", &context, AccessType::Read)
+            .generate_access_proof(&statement, &context)
             .await
             .expect("fallback proof generation must still succeed");
 
