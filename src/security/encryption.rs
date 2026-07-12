@@ -17,7 +17,9 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 #[cfg(feature = "homomorphic-encryption")]
 use tfhe::{
@@ -44,13 +46,27 @@ use tfhe::{
 pub const FIXED_POINT_SCALE: f64 = 1_000_000.0;
 
 /// Encryption manager for advanced cryptographic operations
-#[derive(Debug)]
 pub struct EncryptionManager {
     config: SecurityConfig,
     key_cache: HashMap<String, EncryptionKey>,
     key_manager: KeyManager,
     homomorphic_context: Option<HomomorphicContext>,
     metrics: EncryptionMetrics,
+}
+
+impl fmt::Debug for EncryptionManager {
+    /// Manual `Debug` impl: `key_cache` holds `EncryptionKey`s with live key
+    /// material, so the derive is replaced to guarantee no key bytes reach
+    /// logs/error messages via `{:?}`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptionManager")
+            .field("config", &self.config)
+            .field("key_cache_size", &self.key_cache.len())
+            .field("key_manager", &self.key_manager)
+            .field("homomorphic_context", &self.homomorphic_context)
+            .field("metrics", &self.metrics)
+            .finish()
+    }
 }
 
 impl EncryptionManager {
@@ -402,7 +418,7 @@ impl EncryptionManager {
         let key_data = self.key_manager.get_data_key(&data_key_id, context).await?;
         let key = EncryptionKey {
             id: data_key_id.clone(),
-            data: key_data,
+            data: Zeroizing::new(key_data),
             algorithm: algorithm.to_string(),
             created_at: Utc::now(),
             expires_at: Utc::now() + chrono::Duration::hours(24),
@@ -423,7 +439,7 @@ impl EncryptionManager {
 
         let key = EncryptionKey {
             id: info.id,
-            data: key_bytes,
+            data: Zeroizing::new(key_bytes),
             algorithm: info.algorithm,
             created_at: info.created_at,
             expires_at: info.expires_at,
@@ -546,14 +562,30 @@ impl EncryptionManager {
     }
 }
 
-/// Encryption key structure
-#[derive(Debug, Clone)]
+/// Encryption key structure.
+///
+/// `data` is the live symmetric key material and is wrapped in `Zeroizing`
+/// so it is scrubbed from memory on drop (including cache eviction/replace).
+#[derive(Clone)]
 struct EncryptionKey {
     id: String,
-    data: Vec<u8>,
+    data: Zeroizing<Vec<u8>>,
     algorithm: String,
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for EncryptionKey {
+    /// Redacts `data`; never format key bytes into logs/errors.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptionKey")
+            .field("id", &self.id)
+            .field("data", &"<redacted>")
+            .field("algorithm", &self.algorithm)
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 /// Homomorphic encryption context with real TFHE implementation
@@ -981,5 +1013,45 @@ impl EncryptionMetrics {
         // Calculate success rates (would track failures in production)
         self.encryption_success_rate = 100.0;
         self.decryption_success_rate = 100.0;
+    }
+}
+
+#[cfg(test)]
+mod key_hygiene_tests {
+    use super::*;
+
+    const KNOWN_KEY_BYTES: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
+
+    fn known_key_hex() -> String {
+        KNOWN_KEY_BYTES
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
+    }
+
+    #[test]
+    fn encryption_key_debug_redacts_data() {
+        let key = EncryptionKey {
+            id: "test-key".to_string(),
+            data: Zeroizing::new(KNOWN_KEY_BYTES.to_vec()),
+            algorithm: "AES-256-GCM".to_string(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::hours(24),
+        };
+
+        let debug_output = format!("{:?}", key);
+
+        assert!(
+            !debug_output.contains(&known_key_hex()),
+            "EncryptionKey Debug output leaked key bytes: {debug_output}"
+        );
+        assert!(
+            !debug_output.contains(&format!("{:?}", KNOWN_KEY_BYTES)),
+            "EncryptionKey Debug output leaked raw key byte array: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("redacted"),
+            "EncryptionKey Debug output should mark data as redacted: {debug_output}"
+        );
     }
 }

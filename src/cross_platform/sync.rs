@@ -578,6 +578,11 @@ impl SyncManager {
     }
 
     /// Calculate checksum for data
+    ///
+    /// Non-cryptographic use: this is a fast integrity/change-detection
+    /// fingerprint for sync bookkeeping, not a security control. MD5 is
+    /// acceptable here because nothing authenticates or authorizes based on
+    /// this value; do not reuse it for security-sensitive comparisons.
     pub fn calculate_checksum(data: &[u8]) -> String {
         format!("{:x}", md5::compute(data))
     }

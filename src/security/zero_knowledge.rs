@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
 
 #[cfg(feature = "zero-knowledge-proofs")]
@@ -184,7 +185,18 @@ pub enum ProofSystemType {
 }
 
 /// Zero-knowledge manager for privacy-preserving operations
-#[derive(Debug)]
+///
+/// KNOWN LIMITATION (Task 4.6 key hygiene): `prover_secrets` holds
+/// `bls12_381::Scalar` values, a type owned by the `bls12_381` crate that
+/// does not implement `zeroize::Zeroize` and is `Copy` (so the compiler is
+/// free to leave stray copies on the stack across moves). Wrapping it would
+/// require either a fork/newtype layer over `bls12_381::Scalar` with manual
+/// zeroization of its internal limbs (fragile — depends on the crate's
+/// private representation) or an upstream contribution to `bls12_381`.
+/// Neither is in scope here; this is documented as a residual risk rather
+/// than force-fit. What IS done: `Debug` is manually implemented below so
+/// `prover_secrets` never gets printed via `{:?}` (the derive would have
+/// exposed the field's `Scalar::fmt`, which prints internal limbs).
 pub struct ZeroKnowledgeManager {
     config: SecurityConfig,
     proof_system: ProofSystem,
@@ -192,6 +204,7 @@ pub struct ZeroKnowledgeManager {
     metrics: ZeroKnowledgeMetrics,
     /// Prover-side secrets for locally registered identities. Known only to
     /// this manager; never serialized, never placed on proof envelopes.
+    /// See the struct-level KNOWN LIMITATION note: not zeroized on drop.
     #[cfg(feature = "zero-knowledge-proofs")]
     prover_secrets: HashMap<String, Scalar>,
     /// Verifier-side trusted registration store: identity -> Poseidon
@@ -199,6 +212,26 @@ pub struct ZeroKnowledgeManager {
     /// (and the statement being verified), never from the proof envelope.
     #[cfg(feature = "zero-knowledge-proofs")]
     prover_commitments: HashMap<String, Scalar>,
+}
+
+impl fmt::Debug for ZeroKnowledgeManager {
+    /// Manual `Debug` impl: `prover_secrets` holds raw prover secret
+    /// scalars and must never be formatted; `prover_commitments` are public
+    /// commitments (safe to show) but are counted rather than printed to
+    /// keep the output stable across feature flags.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = f.debug_struct("ZeroKnowledgeManager");
+        s.field("config", &self.config)
+            .field("proof_system", &self.proof_system)
+            .field("verification_key_count", &self.verification_keys.len())
+            .field("metrics", &self.metrics);
+        #[cfg(feature = "zero-knowledge-proofs")]
+        {
+            s.field("prover_secret_count", &self.prover_secrets.len())
+                .field("prover_commitment_count", &self.prover_commitments.len());
+        }
+        s.finish()
+    }
 }
 
 impl ZeroKnowledgeManager {
@@ -1410,5 +1443,41 @@ impl ZeroKnowledgeMetrics {
             self.verification_success_rate =
                 (self.successful_verifications as f64 / self.total_proofs_verified as f64) * 100.0;
         }
+    }
+}
+
+#[cfg(all(test, feature = "zero-knowledge-proofs"))]
+mod key_hygiene_tests {
+    use super::*;
+
+    /// `ZeroKnowledgeManager`'s manual `Debug` impl must never format
+    /// `prover_secrets` (raw prover secret scalars); only a redacted count
+    /// may appear. This guards against a future field addition or a
+    /// careless revert to `#[derive(Debug)]` silently leaking secret
+    /// scalars via `{:?}` (see the struct-level KNOWN LIMITATION doc
+    /// comment: `bls12_381::Scalar` cannot be wrapped in `Zeroizing`
+    /// without a fork of that crate, so redacting Debug is the mitigation
+    /// actually in place).
+    #[tokio::test]
+    async fn zero_knowledge_manager_debug_redacts_prover_secrets() {
+        let config = SecurityConfig::default();
+        let mut manager = ZeroKnowledgeManager::new(&config)
+            .await
+            .expect("ZeroKnowledgeManager::new should succeed");
+
+        manager
+            .register_prover("test-user")
+            .expect("register_prover should succeed");
+
+        let debug_output = format!("{:?}", manager);
+
+        assert!(
+            !debug_output.contains("prover_secrets"),
+            "ZeroKnowledgeManager Debug output should not expose the raw prover_secrets field: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("prover_secret_count"),
+            "ZeroKnowledgeManager Debug output should summarize prover secret count, not enumerate them: {debug_output}"
+        );
     }
 }
