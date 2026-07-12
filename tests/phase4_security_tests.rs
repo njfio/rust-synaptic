@@ -174,8 +174,11 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Authenticate user properly
-    let context =
+    let mut context =
         create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    // ZK proof generation always requires MFA; satisfy it so we reach the
+    // proof path (this test asserts the proof contract, not the MFA policy).
+    context.mfa_verified = true;
 
     // Generate access proof
     let proof = security_manager
@@ -194,11 +197,13 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
         timestamp: proof.created_at,
     };
 
-    // Verify the proof
-    let is_valid = security_manager
+    // Verification fails closed until real Groth16 verification lands in
+    // Phase 4 (task 4.2): honest Err instead of a fake Ok(true).
+    let err = security_manager
         .verify_access_proof(&proof, &statement)
-        .await?;
-    assert!(is_valid);
+        .await
+        .expect_err("verification must fail closed without real cryptographic verification");
+    assert!(err.to_string().contains("zero-knowledge"));
 
     Ok(())
 }
