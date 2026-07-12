@@ -186,17 +186,19 @@ pub enum ProofSystemType {
 
 /// Zero-knowledge manager for privacy-preserving operations
 ///
-/// KNOWN LIMITATION (Task 4.6 key hygiene): `prover_secrets` holds
-/// `bls12_381::Scalar` values, a type owned by the `bls12_381` crate that
-/// does not implement `zeroize::Zeroize` and is `Copy` (so the compiler is
-/// free to leave stray copies on the stack across moves). Wrapping it would
-/// require either a fork/newtype layer over `bls12_381::Scalar` with manual
-/// zeroization of its internal limbs (fragile — depends on the crate's
-/// private representation) or an upstream contribution to `bls12_381`.
-/// Neither is in scope here; this is documented as a residual risk rather
-/// than force-fit. What IS done: `Debug` is manually implemented below so
-/// `prover_secrets` never gets printed via `{:?}` (the derive would have
-/// exposed the field's `Scalar::fmt`, which prints internal limbs).
+/// Key hygiene (Task 4.6): `prover_secrets` holds `bls12_381::Scalar` prover
+/// secret witnesses. The `bls12_381` crate's `zeroize` feature (enabled in
+/// Cargo.toml) implements `zeroize::DefaultIsZeroes for Scalar`, so each
+/// scalar can be scrubbed. `HashMap` does not zeroize its values on drop, so
+/// the manual `impl Drop for ZeroKnowledgeManager` below iterates
+/// `prover_secrets` and calls `.zeroize()` on every value before the map is
+/// released. `Debug` is also manually implemented so `prover_secrets` is
+/// never printed via `{:?}` (the derive would have exposed `Scalar::fmt`,
+/// which prints internal limbs).
+///
+/// Residual risk: `Scalar` is `Copy`, so the compiler may leave transient
+/// stack copies from moves/reads that Drop cannot reach; this is inherent to
+/// `Copy` secret types and out of scope to eliminate here.
 pub struct ZeroKnowledgeManager {
     config: SecurityConfig,
     proof_system: ProofSystem,
@@ -204,7 +206,7 @@ pub struct ZeroKnowledgeManager {
     metrics: ZeroKnowledgeMetrics,
     /// Prover-side secrets for locally registered identities. Known only to
     /// this manager; never serialized, never placed on proof envelopes.
-    /// See the struct-level KNOWN LIMITATION note: not zeroized on drop.
+    /// Zeroized on drop via `impl Drop for ZeroKnowledgeManager`.
     #[cfg(feature = "zero-knowledge-proofs")]
     prover_secrets: HashMap<String, Scalar>,
     /// Verifier-side trusted registration store: identity -> Poseidon
@@ -231,6 +233,20 @@ impl fmt::Debug for ZeroKnowledgeManager {
                 .field("prover_commitment_count", &self.prover_commitments.len());
         }
         s.finish()
+    }
+}
+
+#[cfg(feature = "zero-knowledge-proofs")]
+impl Drop for ZeroKnowledgeManager {
+    /// Scrub prover secret scalars from memory on drop. `HashMap` does not
+    /// zeroize its values, so we iterate and zeroize each `Scalar`
+    /// explicitly (relies on `bls12_381`'s `zeroize` feature providing
+    /// `DefaultIsZeroes for Scalar`).
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        for secret in self.prover_secrets.values_mut() {
+            secret.zeroize();
+        }
     }
 }
 
