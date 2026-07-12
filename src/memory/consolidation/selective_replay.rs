@@ -260,18 +260,14 @@ impl SelectiveReplayManager {
         Ok(base_time + Duration::hours(delay_hours))
     }
 
-    /// Replay a specific memory entry
+    /// Replay a specific memory entry.
+    ///
+    /// "Replay" in this system is bookkeeping, not neural reinforcement:
+    /// it increments the entry's replay count, refreshes its last-replayed
+    /// timestamp, recomputes its replay priority from actual performance
+    /// history, and records the event in the bounded replay history used by
+    /// the scheduling algorithms.
     async fn replay_memory(&mut self, replay_entry: &ReplayEntry) -> Result<()> {
-        // Simulate memory replay process
-        // In a real implementation, this would involve:
-        // 1. Retrieving the memory from storage
-        // 2. Reinforcing neural pathways
-        // 3. Updating memory strength
-        // 4. Recording replay event
-
-        // Add small delay to simulate processing time
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-
         let mut updated_entry = replay_entry.clone();
         updated_entry.replay_count += 1;
         updated_entry.last_replayed = Utc::now();

@@ -707,14 +707,18 @@ impl ImportanceScorer {
         weighted_sum.min(1.0).max(0.0)
     }
 
-    /// Calculate Fisher information matrix for EWC
+    /// Calculate a Fisher-information proxy vector for EWC.
+    ///
+    /// Heuristic: this memory system has no differentiable model, so a true
+    /// Fisher Information Matrix diagonal (squared gradients of a
+    /// log-likelihood) cannot be computed. Instead, per-memory sensitivity is
+    /// approximated from real observable signals: content length, access
+    /// count, and metadata importance, each normalized to comparable scales.
     async fn calculate_fisher_information(&self, memory: &MemoryEntry) -> Result<Vec<f64>> {
-        // Simplified Fisher information calculation
-        // In a real implementation, this would compute the diagonal of the Fisher Information Matrix
         let content_length = memory.value.len() as f64;
         let access_count = memory.access_count() as f64;
 
-        // Create a simplified Fisher information vector
+        // Proxy Fisher information vector from observed memory signals
         let fisher_info = vec![
             content_length / 1000.0, // Normalized content importance
             access_count / 100.0,    // Normalized access importance
