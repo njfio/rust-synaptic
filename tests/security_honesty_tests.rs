@@ -145,3 +145,15 @@ mod he_search_similarity_fail_closed {
         assert!(err.to_string().contains("homomorphic_similarity"));
     }
 }
+
+#[cfg(feature = "security")]
+mod zk_content_hash_is_real {
+    #[test]
+    fn content_hash_is_sha256_not_length_arithmetic() {
+        // Two different strings with the same length must hash differently.
+        let a = synaptic::security::zero_knowledge::hash_content_for_test("aaaa");
+        let b = synaptic::security::zero_knowledge::hash_content_for_test("bbbb");
+        assert_ne!(a, b);
+        assert_eq!(a.len(), 64); // hex sha256
+    }
+}

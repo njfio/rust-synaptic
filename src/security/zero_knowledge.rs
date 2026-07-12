@@ -8,6 +8,7 @@ use crate::memory::types::MemoryEntry;
 use crate::security::{SecurityConfig, SecurityContext};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -25,6 +26,26 @@ use bls12_381::{Bls12, Scalar};
 
 #[cfg(feature = "zero-knowledge-proofs")]
 use rand::rngs::OsRng;
+
+/// Computes a real, hex-encoded SHA-256 digest of `content`.
+///
+/// This is the single implementation shared by all "content hash" and
+/// "statement hash" call sites in this module, replacing the previous
+/// fake length-arithmetic scheme (`content.len() * 17 + 42`) that
+/// collided for any two equal-length inputs.
+fn hash_content(content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Test-only accessor for [`hash_content`], exposed so integration tests
+/// can assert the real hashing behavior without depending on internal
+/// struct layout.
+#[doc(hidden)]
+pub fn hash_content_for_test(content: &str) -> String {
+    hash_content(content)
+}
 
 /// Configuration for zero-knowledge features
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,7 +292,7 @@ impl ZeroKnowledgeManager {
         statement: &ContentStatement,
     ) -> Result<Witness> {
         // Generate witness proving content satisfies predicate without revealing content
-        let content_hash = self.hash_content(&entry.value);
+        let content_hash = hash_content(&entry.value);
         let predicate_result = self.evaluate_predicate(&entry.value, &statement.predicate);
 
         let witness_data = WitnessData {
@@ -329,12 +350,7 @@ impl ZeroKnowledgeManager {
             statement.access_type.to_string(),
             context.session_id
         );
-        Ok(format!("sig_{}", self.hash_content(&signature_input)))
-    }
-
-    fn hash_content(&self, content: &str) -> String {
-        // Simplified hash function - use proper cryptographic hash in production
-        format!("hash_{}", content.len() * 17 + 42)
+        Ok(format!("sig_{}", hash_content(&signature_input)))
     }
 
     fn evaluate_predicate(&self, content: &str, predicate: &ContentPredicate) -> bool {
@@ -678,7 +694,7 @@ impl ProofSystem {
     {
         let serialized = serde_json::to_string(statement)
             .map_err(|_| MemoryError::access_denied("Statement serialization failed"))?;
-        Ok(format!("stmt_hash_{}", serialized.len() * 23 + 17))
+        Ok(hash_content(&serialized))
     }
 
     fn commit_witness(&self, witness: &Witness) -> Result<Vec<u8>> {

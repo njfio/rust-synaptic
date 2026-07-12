@@ -227,14 +227,16 @@ fn hash_content(content: &str) -> String {
 
 Add `hex = "0.4"` to `[dependencies]` if absent (check first: `grep '^hex' Cargo.toml`); otherwise format with `{:x}` via `format!("{:x}", hasher.finalize())`.
 
-- [ ] **Step 4: Run tests** — PASS, plus `cargo test --all-features` to catch signature-generation call sites.
+- [x] **Step 4: Run tests** — PASS, plus `cargo test --all-features` to catch signature-generation call sites.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/security/zero_knowledge.rs Cargo.toml tests/security_honesty_tests.rs
 git commit -m "fix(security): replace fake length-arithmetic hash with SHA-256"
 ```
+
+**Implementation note (deviation from brief):** `hex` was already present in `Cargo.toml` (`hex = "0.4"`), but the implementation used `format!("{:x}", hasher.finalize())` instead (the brief's stated fallback) since it needs no extra import and is equivalent; `Cargo.toml` was therefore left unmodified. Both fake-hash call sites were replaced with one shared private `fn hash_content(content: &str) -> String` in `src/security/zero_knowledge.rs`: the `ZeroKnowledgeManager::hash_content` method (used by `generate_content_witness` and `generate_access_signature`) and `ProofSystem::hash_statement` (used by proof generation/verification, 4 call sites), which shared the same fake `len() * N + K` scheme and was fixed in the same commit per the brief's guidance. A `#[doc(hidden)] pub fn hash_content_for_test` free function exposes the same implementation to `tests/security_honesty_tests.rs`. `--all-features` was not run directly (environmentally blocked per task constraints); `--features security` plus `cargo test --lib` were used instead, per the task's local-gate override. `cargo test --all-features` was not executed for this reason.
 
 ### Task 0.4: ZK verify fails closed; remove string-matching "verification"
 
