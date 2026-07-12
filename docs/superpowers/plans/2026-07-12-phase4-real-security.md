@@ -58,6 +58,17 @@
 **Files:** Modify src/security/encryption.rs; Test tests/homomorphic_encryption_tests.rs.
 **Scope:** Under `homomorphic-encryption`: ciphertext round-trip tests, additive-op test (encrypted sum equals plaintext sum within documented precision), precision contract per Decision Gate 4. Search/similarity/count per Decision Gate 3. Feature-off path keeps FeatureDisabled (already done in Phase 0).
 
+> **Execution note (2026-07-12, task 4.4 done):** Real-API divergence: tfhe
+> 0.7 panics at runtime without a seeder feature, so Cargo.toml's tfhe
+> dependency gained `seeder_unix`. FheInt64 fixed-point uses
+> `FIXED_POINT_SCALE = 1_000_000` (6 decimal digits, exact round-trip at
+> that granularity; sign-preserving). Homomorphic ops require
+> `tfhe::set_server_key` on the executing thread — installed inside
+> `homomorphic_sum`. Average uses TFHE encrypted signed division (truncated
+> at SCALE granularity when the sum does not divide evenly). Decision Gate 3
+> applied: search/similarity/count fail closed in all builds, documented as
+> unsupported by design.
+
 ### Task 4.5: Differential privacy correctness
 
 **Files:** Modify src/security/privacy.rs; Test tests/security_honesty_tests.rs + new proptest suite tests/dp_property_tests.rs; add proptest dev-dependency.
