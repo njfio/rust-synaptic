@@ -220,9 +220,21 @@ pub enum MemoryError {
     /// Circuit breaker is open and rejecting calls
     #[error("Circuit breaker open: {0}")]
     CircuitBreakerOpen(String),
+
+    /// Operation requires a compile-time feature that is not enabled
+    #[error("feature '{feature}' is not enabled; refusing to run '{operation}' without real implementation")]
+    FeatureDisabled { feature: String, operation: String },
 }
 
 impl MemoryError {
+    /// Error for operations that must not silently degrade when their feature is off
+    pub fn feature_disabled(feature: &str, operation: &str) -> Self {
+        Self::FeatureDisabled {
+            feature: feature.to_string(),
+            operation: operation.to_string(),
+        }
+    }
+
     /// Create a storage error
     pub fn storage<S: Into<String>>(message: S) -> Self {
         Self::Storage {
