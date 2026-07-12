@@ -7,6 +7,8 @@ use crate::error::{MemoryError, Result};
 use crate::memory::types::MemoryEntry;
 use crate::security::{SecurityConfig, SecurityContext};
 use chrono::{DateTime, Utc};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -114,6 +116,14 @@ impl PrivacyManager {
     /// Get remaining privacy budget for a user
     pub async fn get_remaining_budget(&self, user_id: &str) -> Result<f64> {
         Ok(self.privacy_budget_tracker.get_remaining_budget(user_id))
+    }
+
+    /// Sample a single value of Laplace-distributed differential-privacy
+    /// noise for the given scale. Exposed publicly so that callers (and
+    /// statistical tests) can verify the underlying noise mechanism is a
+    /// real, cryptographically-random distribution rather than a stub.
+    pub fn sample_laplace_noise(&self, scale: f64) -> f64 {
+        self.noise_generator.laplace_noise(scale)
     }
 
     // Private helper methods
@@ -388,31 +398,37 @@ impl PrivacyBudgetTracker {
 
 /// Noise generator for differential privacy
 #[derive(Debug)]
-struct NoiseGenerator {
-    // In production, use a cryptographically secure RNG
-}
+struct NoiseGenerator {}
 
 impl NoiseGenerator {
     fn new() -> Self {
         Self {}
     }
 
+    /// Draw a uniform random `f64` in `[0.0, 1.0)` using the OS-backed
+    /// cryptographically secure RNG.
+    fn next_unit_f64(&self) -> f64 {
+        // Use the top 53 bits of a random u64 to build a uniform double in [0, 1).
+        let bits = OsRng.next_u64() >> 11;
+        (bits as f64) * (1.0 / (1u64 << 53) as f64)
+    }
+
     fn laplace_noise(&self, scale: f64) -> f64 {
-        // Generate Laplace noise with given scale
-        // Simplified implementation - use proper crypto RNG in production
-        let u = 0.5 - 0.3; // Simulated uniform random in [-0.5, 0.5]
-        let noise = if u >= 0.0 {
+        // Generate Laplace-distributed noise with the given scale using a
+        // uniform sample in (-0.5, 0.5] drawn from a cryptographically
+        // secure RNG (OsRng).
+        let u = self.next_unit_f64() - 0.5;
+        if u >= 0.0 {
             -scale * (1.0f64 - 2.0 * u).ln()
         } else {
             scale * (1.0f64 + 2.0 * u).ln()
-        };
-        noise
+        }
     }
 
     fn should_add_noise(&self, epsilon: f64) -> bool {
         // Probability of adding noise based on epsilon
         let prob = 1.0 / (1.0 + epsilon.exp());
-        prob > 0.5 // Simplified decision
+        self.next_unit_f64() < prob
     }
 
     fn generate_similar_char(&self, original: char) -> char {
@@ -426,13 +442,14 @@ impl NoiseGenerator {
     }
 
     fn random_bool(&self, probability: f64) -> bool {
-        probability > 0.5 // Simplified
+        self.next_unit_f64() < probability
     }
 
     fn random_char(&self) -> char {
-        // Generate a random character
+        // Generate a random printable character using the secure RNG.
         let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
-        chars.chars().nth(42 % chars.len()).unwrap_or('x') // Deterministic for testing
+        let idx = (OsRng.next_u32() as usize) % chars.len();
+        chars.chars().nth(idx).unwrap_or('x')
     }
 }
 

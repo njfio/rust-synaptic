@@ -308,11 +308,13 @@ git commit -m "fix(security)!: ZK verification fails closed instead of string-ma
 - Modify: `src/security/privacy.rs` (`NoiseGenerator`, ~line 390; Laplace/exponential mechanisms ~line 294)
 - Test: `tests/security_honesty_tests.rs`
 
-- [ ] **Step 1: Failing test** — statistical smoke test: generate 1000 Laplace noise samples with scale 1.0 via the public noise API; assert nonzero variance and that mean is within ±0.5 (catches "returns 0" stubs).
-- [ ] **Step 2: Verify fail** (or verify current behavior — if it passes because noise already works, keep the test and continue; only the RNG swap below is required).
-- [ ] **Step 3: Implement** — replace `rand::thread_rng()`/`StdRng` in noise generation with `rand::rngs::OsRng`; delete the "In production, use a cryptographically secure RNG" comment.
-- [ ] **Step 4: Run** — `cargo test --features security`.
-- [ ] **Step 5: Commit** — `git commit -m "fix(security): differential-privacy noise from OsRng"`.
+- [x] **Step 1: Failing test** — statistical smoke test: generate 1000 Laplace noise samples with scale 1.0 via the public noise API; assert nonzero variance and that mean is within ±0.5 (catches "returns 0" stubs).
+- [x] **Step 2: Verify fail** — the pre-existing `laplace_noise` was a stub (`u = 0.5 - 0.3` constant), so all 1000 samples were bit-identical and variance was exactly 0; the smoke test failed as expected before the RNG swap.
+- [x] **Step 3: Implement** — replaced the constant-`u` stub and `should_add_noise`/`random_bool`/`random_char` stubs with draws from `rand::rngs::OsRng` (via `RngCore::next_u64`/`next_u32`, no `rand::thread_rng()`/`StdRng` was present to begin with); deleted the "In production, use a cryptographically secure RNG" comment.
+- [x] **Step 4: Run** — `cargo test --features security --test security_honesty_tests` (8 passed) and `cargo test --lib` (446 passed).
+- [x] **Step 5: Commit** — `git commit -m "fix(security): differential-privacy noise from OsRng"`.
+
+**Deviation from brief:** the struct is `PrivacyManager` (not `PrivacyEngine`), and its `NoiseGenerator`/`laplace_noise` were private with no existing public noise API. Added a new `pub fn sample_laplace_noise(&self, scale: f64) -> f64` on `PrivacyManager` (delegating to the private `NoiseGenerator::laplace_noise`) so the statistical test — and any future caller — can exercise the mechanism through a stable public surface without exposing `NoiseGenerator` itself.
 
 ---
 

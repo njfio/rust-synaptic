@@ -190,3 +190,46 @@ mod zk_verify_fails_closed {
         assert!(err.to_string().contains("zero-knowledge"));
     }
 }
+
+#[cfg(feature = "security")]
+mod dp_noise_is_real_randomness {
+    use synaptic::security::privacy::PrivacyManager;
+    use synaptic::security::SecurityConfig;
+
+    /// The differential-privacy noise generator must draw from a real
+    /// (cryptographically secure) random source rather than a stub that
+    /// always returns the same value. Sample many draws of Laplace noise at
+    /// scale 1.0 and assert the distribution has nonzero variance and a
+    /// mean roughly centered on zero. This catches "returns 0" (or any
+    /// constant-value) stubs.
+    #[tokio::test]
+    async fn laplace_noise_has_nonzero_variance_and_bounded_mean() {
+        let config = SecurityConfig::default();
+        let manager = PrivacyManager::new(&config)
+            .await
+            .expect("privacy manager must construct");
+
+        let scale = 1.0;
+        let n = 1000usize;
+        let samples: Vec<f64> = (0..n)
+            .map(|_| manager.sample_laplace_noise(scale))
+            .collect();
+
+        let mean = samples.iter().sum::<f64>() / n as f64;
+        let variance = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+
+        assert!(
+            variance > 0.0,
+            "Laplace noise samples must have nonzero variance (got {variance}); \
+             a constant-value stub would produce variance == 0"
+        );
+        assert!(
+            mean.abs() < 0.5,
+            "Laplace noise mean should be close to 0 for scale=1.0, got {mean}"
+        );
+
+        // Sanity: not all samples identical (would also indicate a stub).
+        let all_identical = samples.windows(2).all(|w| w[0] == w[1]);
+        assert!(!all_identical, "noise samples must not all be identical");
+    }
+}
