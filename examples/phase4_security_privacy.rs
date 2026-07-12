@@ -3,12 +3,11 @@
 // homomorphic encryption, differential privacy, and advanced access control
 
 use synaptic::security::{
-    access_control::{AuthenticationCredentials, AuthenticationType},
     privacy::{PrivacyQuery, PrivacyQueryType},
     zero_knowledge::{AccessType, ContentPredicate},
     Permission, SecureOperation, SecurityConfig, SecurityContext, SecurityManager,
 };
-use synaptic::{AgentMemory, MemoryConfig, MemoryEntry};
+use synaptic::MemoryEntry;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

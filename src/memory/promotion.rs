@@ -6,7 +6,7 @@
 
 use crate::error::Result;
 use crate::memory::types::{MemoryEntry, MemoryType};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for memory promotion behavior.
@@ -508,6 +508,7 @@ impl MemoryPromotionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::DateTime;
 
     fn create_test_memory(
         key: &str,

@@ -5,8 +5,6 @@
 
 use std::error::Error;
 #[cfg(feature = "security")]
-use synaptic::memory::types::{MemoryEntry, MemoryType};
-#[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityContext, SecurityManager};
 
 #[cfg(feature = "zero-knowledge-proofs")]

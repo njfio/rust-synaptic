@@ -4,10 +4,10 @@
 //! in a hybrid pipeline for optimal search quality.
 
 use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::storage::Storage;
-use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
+use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -345,6 +345,7 @@ impl RetrievalPipeline for GraphRetriever {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::types::{MemoryEntry, MemoryType};
 
     #[test]
     fn test_bm25_score_computation() {

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use synaptic::memory::storage::memory::{BackupOptions, MemoryStorage, RestoreOptions};
 use synaptic::memory::storage::Storage;
-use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
+use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tempfile::TempDir;
 
 /// Create test memory entries

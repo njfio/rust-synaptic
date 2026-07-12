@@ -4,7 +4,7 @@
 //! optimized for consumption by language models.
 
 use super::{AgentContext, ContextFormat, TokenCounter};
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::knowledge_graph::types::RelationshipType;
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::retrieval::{MemoryRetriever, SearchQuery};
@@ -12,7 +12,6 @@ use crate::memory::storage::Storage;
 use crate::memory::types::{MemoryEntry, MemoryType};
 use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// Builder for assembling agent context
 ///

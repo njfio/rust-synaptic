@@ -10,8 +10,7 @@ use synaptic::analytics::{
     intelligence::MemoryIntelligenceEngine,
     performance::{PerformanceAnalyzer, PerformanceSnapshot},
     predictive::PredictiveAnalytics,
-    AccessType, AnalyticsConfig, AnalyticsEngine, AnalyticsEvent, InsightPriority, InsightType,
-    ModificationType,
+    AccessType, AnalyticsConfig, AnalyticsEngine, AnalyticsEvent, ModificationType,
 };
 
 #[tokio::main]

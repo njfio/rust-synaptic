@@ -7,7 +7,7 @@ use super::super::provider::{
     compute_content_hash, normalize_vector, EmbedOptions, Embedding, EmbeddingProvider,
     ProviderCapabilities,
 };
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};

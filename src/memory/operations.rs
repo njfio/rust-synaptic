@@ -4,24 +4,9 @@
 //! This module provides `SynapticMemory`, a high-level, production-ready memory system
 //! that integrates storage, knowledge graphs, analytics, and temporal tracking.
 
-use crate::memory::{
-    checkpoint::CheckpointManager,
-    knowledge_graph::{GraphConfig, MemoryKnowledgeGraph},
-    state::AgentState,
-    storage::{create_storage, Storage},
-    temporal::TemporalMemoryManager,
-    CoreMemoryStats, MemoryEntry, MemoryFragment, MemoryOperations, MemoryType,
-};
+use crate::memory::{CoreMemoryStats, MemoryEntry, MemoryFragment, MemoryOperations};
 use crate::{AgentMemory, MemoryConfig, MemoryError, Result, StorageBackend};
-use chrono::Utc;
-use std::sync::Arc;
 use uuid::Uuid;
-
-#[cfg(feature = "analytics")]
-use crate::analytics::AnalyticsEngine;
-
-#[cfg(feature = "embeddings")]
-use crate::memory::embeddings::EmbeddingManager;
 
 /// High-level, batteries-included memory system implementing MemoryOperations.
 ///
@@ -405,6 +390,7 @@ impl Default for SynapticMemoryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::types::MemoryType;
 
     #[tokio::test]
     async fn test_synaptic_memory_creation() {

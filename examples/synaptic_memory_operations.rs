@@ -90,7 +90,7 @@ async fn basic_usage() -> Result<(), Box<dyn std::error::Error>> {
 async fn builder_pattern_usage() -> Result<(), Box<dyn std::error::Error>> {
     let custom_session_id = uuid::Uuid::new_v4();
 
-    let memory = SynapticMemoryBuilder::new()
+    let _memory = SynapticMemoryBuilder::new()
         .with_storage(StorageBackend::Memory)
         .with_knowledge_graph(true)
         .with_temporal_tracking(true)

@@ -3,10 +3,8 @@
 
 #[cfg(feature = "security")]
 use synaptic::security::{
-    access_control::{AuthenticationCredentials, AuthenticationType},
-    privacy::{PrivacyQuery, PrivacyQueryType},
     zero_knowledge::{AccessType, ContentPredicate},
-    Permission, SecureOperation, SecurityConfig, SecurityContext, SecurityManager,
+    Permission, SecurityConfig, SecurityContext, SecurityManager,
 };
 use synaptic::MemoryEntry;
 

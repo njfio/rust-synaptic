@@ -8,7 +8,7 @@
 #![cfg(feature = "security")]
 
 use std::error::Error;
-use synaptic::security::{SecurityConfig, SecurityContext, SecurityManager};
+use synaptic::security::{SecurityConfig, SecurityManager};
 use synaptic::{MemoryEntry, MemoryType};
 
 #[cfg(feature = "homomorphic-encryption")]

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use synaptic::{
     memory::{
         embeddings::{
-            compute_content_hash, normalize_vector, CacheStats, EmbedOptions, Embedding,
-            EmbeddingCache, EmbeddingProvider, TfIdfConfig, TfIdfProvider,
+            compute_content_hash, normalize_vector, EmbedOptions, EmbeddingCache,
+            EmbeddingProvider, TfIdfConfig, TfIdfProvider,
         },
         retrieval::{
             DenseVectorRetriever, FusionStrategy, HybridRetriever, KeywordRetriever,

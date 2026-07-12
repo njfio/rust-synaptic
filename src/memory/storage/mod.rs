@@ -487,7 +487,6 @@ impl Storage for StorageMiddleware {
 mod tests {
     use super::*;
     use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
-    use uuid::Uuid;
 
     #[test]
     fn test_storage_stats_new() {

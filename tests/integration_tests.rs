@@ -2,7 +2,6 @@
 
 use synaptic::{
     error::{MemoryError, Result},
-    memory::types::MemoryMetadata,
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
 };
 use tempfile::TempDir;

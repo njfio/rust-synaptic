@@ -606,7 +606,7 @@ impl std::fmt::Debug for HomomorphicContext {
 }
 
 impl HomomorphicContext {
-    async fn new(config: &SecurityConfig) -> Result<Self> {
+    async fn new(_config: &SecurityConfig) -> Result<Self> {
         let key_id = Uuid::new_v4().to_string();
 
         #[cfg(feature = "homomorphic-encryption")]

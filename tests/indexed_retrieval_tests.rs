@@ -1,7 +1,6 @@
 //! Tests for optimized indexed memory retrieval
 
 use chrono::{DateTime, Duration, Utc};
-use std::collections::HashSet;
 use std::sync::Arc;
 use synaptic::memory::{
     management::MemoryManager,

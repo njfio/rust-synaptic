@@ -5,7 +5,6 @@ use synaptic::{
     memory::retrieval::{SearchQuery, SortBy},
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
 };
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<()> {

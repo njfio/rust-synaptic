@@ -9,10 +9,9 @@ use std::time::Duration;
 use synaptic::performance::{
     metrics::PerformanceMetrics,
     optimizer::{
-        AdaptiveTuner, BayesianOptimizer, GeneticAlgorithm, HyperparameterResult,
-        HyperparameterTuner, Individual, MLPredictor, OnlineLearner, Optimization,
-        OptimizationPlan, OptimizationResult, OptimizationType, PerformanceAnalysis,
-        PerformanceOptimizer, SearchType,
+        AdaptiveTuner, BayesianOptimizer, GeneticAlgorithm, HyperparameterTuner, Individual,
+        MLPredictor, OnlineLearner, Optimization, OptimizationPlan, OptimizationResult,
+        OptimizationType, PerformanceAnalysis, PerformanceOptimizer, SearchType,
     },
     PerformanceConfig,
 };

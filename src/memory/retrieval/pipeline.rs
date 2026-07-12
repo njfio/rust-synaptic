@@ -4,8 +4,8 @@
 //! signals (embeddings, keywords, graph relationships, temporal relevance) to
 //! deliver high-quality search results.
 
-use crate::error::{MemoryError, Result};
-use crate::memory::types::{MemoryEntry, MemoryFragment};
+use crate::error::Result;
+use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -365,7 +365,7 @@ impl HybridRetriever {
         // Apply fusion strategy
         let mut fused: Vec<(MemoryFragment, f64)> = memory_scores
             .into_iter()
-            .map(|(key, (memory, signal_scores))| {
+            .map(|(_key, (memory, signal_scores))| {
                 let combined_score = self.combine_scores(&signal_scores);
                 (memory, combined_score)
             })

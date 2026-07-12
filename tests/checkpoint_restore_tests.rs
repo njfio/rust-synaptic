@@ -65,7 +65,7 @@ async fn restore_checkpoint_failure_mid_restore_preserves_original_data() {
     // `store` call before every subsequent write fails. The checkpoint
     // being restored has 3 entries, so this guarantees the restore's
     // upsert phase fails partway through.
-    let mut seeded = MemoryStorage::new();
+    let seeded = MemoryStorage::new();
     for key in ["k1", "k2", "k3", "k4", "k5"] {
         let entry = memory
             .retrieve(key)

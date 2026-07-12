@@ -2,10 +2,7 @@
 
 use std::collections::HashMap;
 use synaptic::error::Result;
-use synaptic::logging::{
-    AuditLogEntry, LogFormat, LogLevel, LoggingConfig, LoggingManager, PerformanceMetrics,
-    RiskLevel,
-};
+use synaptic::logging::{LogFormat, LogLevel, LoggingConfig, LoggingManager, RiskLevel};
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 

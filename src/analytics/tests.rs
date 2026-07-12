@@ -6,7 +6,6 @@ mod phase3_analytics_tests {
     use super::super::*;
     use crate::memory::types::MemoryEntry;
     use chrono::{Duration, Utc};
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_analytics_engine_comprehensive() {

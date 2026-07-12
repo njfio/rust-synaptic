@@ -8,11 +8,9 @@ use std::collections::HashMap;
 use synaptic::error::Result;
 use synaptic::memory::meta_learning::{
     task_distribution::{SamplingStrategy, TaskDistribution},
-    AdaptationResult, MetaAlgorithm, MetaLearningConfig, MetaLearningMetrics, MetaLearningSystem,
-    MetaTask, TaskType,
+    MetaAlgorithm, MetaLearningConfig, MetaLearningSystem, MetaTask, TaskType,
 };
 use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
-use uuid::Uuid;
 
 /// Create test memory entries for meta-learning tasks
 fn create_test_memories(count: usize, memory_type: MemoryType, domain: &str) -> Vec<MemoryEntry> {
