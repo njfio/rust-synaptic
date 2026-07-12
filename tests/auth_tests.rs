@@ -295,6 +295,27 @@ async fn test_random_six_digit_token_fails() -> Result<(), Box<dyn Error>> {
 }
 
 #[tokio::test]
+async fn test_enrolled_totp_user_denied_when_token_omitted() -> Result<(), Box<dyn Error>> {
+    // MFA-omission bypass guard: with require_mfa=true and an enrolled TOTP
+    // secret, presenting no token must be denied (not a silently unverified
+    // session), consistent with how an invalid token hard-fails.
+    let secret = AccessControlManager::generate_totp_secret();
+    let mut manager = mfa_manager(&secret).await?;
+
+    let result = manager
+        .authenticate(
+            "alice".to_string(),
+            password_credentials("correct horse battery staple", None),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "enrolled-TOTP user with require_mfa and no token must be denied"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_totp_without_enrolled_secret_fails() -> Result<(), Box<dyn Error>> {
     let mut manager = AccessControlManager::new(&manager_config(true)).await?;
     manager.set_password("alice", "correct horse battery staple")?;

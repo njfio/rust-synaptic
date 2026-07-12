@@ -173,8 +173,21 @@ impl AccessControlManager {
 
         // Handle MFA if required
         if self.policy.require_mfa && credentials.mfa_token.is_none() {
+            // If the user has an enrolled TOTP secret, omitting the token must
+            // NOT silently produce an unverified session — that would be an
+            // MFA bypass (the caller could then skip any MFA-gated path that
+            // only checks a boolean). Deny, consistent with an invalid token.
+            if self.user_has_totp_enrolled(&user_id) {
+                self.record_failed_attempt(&user_id);
+                self.metrics.total_failed_authentications += 1;
+                return Err(MemoryError::access_denied(
+                    "MFA required: TOTP token must be provided".to_string(),
+                ));
+            }
+            // No enrolled secret: we cannot challenge what isn't enrolled, so
+            // leave mfa_verified=false. Downstream checks (is_mfa_satisfied /
+            // validate_session) still treat this as unsatisfied.
             context.mfa_verified = false;
-            // In production, would initiate MFA challenge
         } else if let Some(ref mfa_token) = credentials.mfa_token {
             if !self.verify_mfa_token(&user_id, mfa_token).await? {
                 self.record_failed_attempt(&user_id);
@@ -392,6 +405,13 @@ impl AccessControlManager {
                 attributes: HashMap::new(),
             })
         }
+    }
+
+    /// Whether the user has an enrolled TOTP secret for MFA.
+    fn user_has_totp_enrolled(&self, user_id: &str) -> bool {
+        self.credentials
+            .get(user_id)
+            .is_some_and(|c| c.totp_secret.is_some())
     }
 
     /// Verify an RFC 6238 TOTP token against the user's enrolled shared
