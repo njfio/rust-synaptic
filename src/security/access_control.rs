@@ -55,7 +55,6 @@ impl std::fmt::Debug for StoredCredentials {
 /// Access control manager
 #[derive(Debug)]
 pub struct AccessControlManager {
-    config: SecurityConfig,
     policy: AccessControlPolicy,
     active_sessions: HashMap<String, SessionInfo>,
     failed_attempts: HashMap<String, FailedAttemptTracker>,
@@ -67,7 +66,6 @@ impl AccessControlManager {
     /// Create a new access control manager
     pub async fn new(config: &SecurityConfig) -> Result<Self> {
         Ok(Self {
-            config: config.clone(),
             policy: config.access_control_policy.clone(),
             active_sessions: HashMap::new(),
             failed_attempts: HashMap::new(),
@@ -561,12 +559,19 @@ struct AuthenticationResult {
 /// Session information
 #[derive(Debug, Clone)]
 struct SessionInfo {
+    // Session audit metadata: populated for forensic/debug inspection even
+    // though the manager only reads activity/expiry fields today.
+    #[allow(dead_code)]
     user_id: String,
+    #[allow(dead_code)]
     session_id: String,
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
     last_activity: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+    #[allow(dead_code)]
     ip_address: Option<String>,
+    #[allow(dead_code)]
     user_agent: Option<String>,
     mfa_verified: bool,
 }
@@ -575,6 +580,8 @@ struct SessionInfo {
 #[derive(Debug)]
 struct FailedAttemptTracker {
     count: u32,
+    // Retained for lockout auditing; only `count`/`locked_until` drive logic.
+    #[allow(dead_code)]
     first_attempt: DateTime<Utc>,
     locked_until: DateTime<Utc>,
 }

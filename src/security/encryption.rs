@@ -595,8 +595,6 @@ struct HomomorphicContext {
     client_key: ClientKey,
     #[cfg(feature = "homomorphic-encryption")]
     server_key: ServerKey,
-    #[cfg(not(feature = "homomorphic-encryption"))]
-    parameters: HomomorphicParameters,
 }
 
 impl std::fmt::Debug for HomomorphicContext {
@@ -636,10 +634,7 @@ impl HomomorphicContext {
             tracing::warn!(
                 "homomorphic-encryption feature not enabled; homomorphic operations will return FeatureDisabled errors"
             );
-            Ok(Self {
-                key_id,
-                parameters: HomomorphicParameters::new(config.encryption_key_size),
-            })
+            Ok(Self { key_id })
         }
     }
 
@@ -962,24 +957,6 @@ impl HomomorphicContext {
         }
 
         Ok(result)
-    }
-}
-
-/// Homomorphic encryption parameters
-#[derive(Debug)]
-struct HomomorphicParameters {
-    key_size: usize,
-    polynomial_degree: usize,
-    coefficient_modulus: Vec<u64>,
-}
-
-impl HomomorphicParameters {
-    fn new(key_size: usize) -> Self {
-        Self {
-            key_size,
-            polynomial_degree: 8192,
-            coefficient_modulus: vec![1099511627689, 1099511627691, 1099511627693],
-        }
     }
 }
 

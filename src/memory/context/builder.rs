@@ -31,7 +31,6 @@ pub struct ContextBuilder {
 
     // Temporal parameters
     time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
-    recency_bias: f64,
 
     // Memory type filters
     memory_types: Vec<MemoryType>,
@@ -60,7 +59,6 @@ impl ContextBuilder {
             include_graph_context: false,
             graph_depth: 2,
             time_range: None,
-            recency_bias: 0.0,
             memory_types: vec![],
             format: ContextFormat::Markdown,
             max_tokens: None,

@@ -739,7 +739,9 @@ struct ProofSystem {
     prepared_vk: PreparedVerifyingKey<Bls12>,
     #[cfg(not(feature = "zero-knowledge-proofs"))]
     proving_key: ProvingKey,
+    // Fallback placeholder mirroring the feature-gated prepared_vk slot.
     #[cfg(not(feature = "zero-knowledge-proofs"))]
+    #[allow(dead_code)]
     verification_key: VerificationKey,
 }
 
@@ -1399,8 +1401,11 @@ impl AggregateType {
     }
 }
 
+// Fallback (non-ZKP) data model: fields are populated to mirror the real
+// proof system's shape but only inspected via Debug; never read directly.
 #[cfg(not(feature = "zero-knowledge-proofs"))]
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Witness {
     id: String,
     data: WitnessData,
@@ -1409,6 +1414,7 @@ struct Witness {
 
 #[cfg(not(feature = "zero-knowledge-proofs"))]
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fallback data model, see Witness above
 struct WitnessData {
     user_attributes: HashMap<String, String>,
     session_proof: String,
@@ -1417,6 +1423,7 @@ struct WitnessData {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fallback key placeholder; real keys are feature-gated arkworks types
 struct ProvingKey {
     id: String,
     key_size: usize,

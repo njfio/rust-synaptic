@@ -28,7 +28,7 @@ missing_docs = "allow"
 unused_imports = "allow"
 unused_variables = "allow"
 unused_mut = "allow"
-dead_code = "allow"
+dead_code = "warn"
 # Several integration tests are gated behind opt-in cfg flags that are not
 # declared as Cargo features (they are enabled manually with RUSTFLAGS when
 # running those suites). Declare them as known cfgs so `unexpected_cfgs` does

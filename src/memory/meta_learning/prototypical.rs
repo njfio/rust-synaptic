@@ -44,19 +44,6 @@ pub enum DistanceMetric {
     Learned,
 }
 
-/// Prototype representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Prototype {
-    /// Class label
-    class_id: usize,
-    /// Prototype embedding
-    embedding: Vec<f64>,
-    /// Number of support examples
-    support_count: usize,
-    /// Confidence score
-    confidence: f64,
-}
-
 impl PrototypicalLearner {
     /// Create a new Prototypical Networks learner
     pub fn new(config: MetaLearningConfig) -> Result<Self> {
