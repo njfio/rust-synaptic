@@ -2507,14 +2507,19 @@ impl MetricsCollector {
         Ok(())
     }
 
-    /// Update system metrics (simplified implementation)
+    /// Update host-level metrics.
+    ///
+    /// CPU pressure is derived from the real 1-minute load average
+    /// (`/proc/loadavg` on Linux) normalized by the number of logical CPUs
+    /// and expressed as a percentage (capped at 100). On platforms without
+    /// `/proc`, and for metrics this process cannot observe without an
+    /// external monitoring agent (I/O wait, network latency, disk I/O
+    /// rate), the fields are left at 0.0 rather than fabricated.
     async fn update_system_metrics(&mut self) -> Result<()> {
-        // In a real implementation, these would use system APIs
-        // For now, provide reasonable defaults
-        self.current_metrics.cpu_usage_percent = 25.0; // Simulated CPU usage
-        self.current_metrics.io_wait_percent = 5.0; // Simulated I/O wait
-        self.current_metrics.network_latency_us = 100.0; // Simulated network latency
-        self.current_metrics.disk_io_rate = 1_000_000.0; // Simulated disk I/O rate
+        self.current_metrics.cpu_usage_percent = read_load_based_cpu_percent().unwrap_or(0.0);
+        self.current_metrics.io_wait_percent = 0.0;
+        self.current_metrics.network_latency_us = 0.0;
+        self.current_metrics.disk_io_rate = 0.0;
 
         Ok(())
     }
@@ -2543,11 +2548,9 @@ impl MetricsCollector {
             self.current_metrics.error_rate = failed_ops as f64 / total_ops as f64;
         }
 
-        // Calculate compression ratio (simplified)
-        self.current_metrics.compression_ratio = 0.8; // Simulated compression ratio
-
-        // Calculate index efficiency (simplified)
-        self.current_metrics.index_efficiency = 0.95; // Simulated index efficiency
+        // `compression_ratio` and `index_efficiency` are maintained by the
+        // actual compression and index-maintenance paths when they run; they
+        // are intentionally not overwritten with constants here.
 
         Ok(())
     }
@@ -4284,6 +4287,21 @@ impl RegressionDetector {
             RegressionSeverity::Minor
         }
     }
+}
+
+/// Approximate whole-system CPU pressure as a percentage from the 1-minute
+/// load average normalized by the number of logical CPUs, capped at 100.
+/// Returns `None` on platforms without `/proc/loadavg` (non-Linux) or when
+/// it cannot be read. This is a load-based approximation, not a sampled
+/// utilization figure: it is a real kernel-reported signal, but it counts
+/// runnable + uninterruptible tasks rather than time-sliced CPU busy-ness.
+fn read_load_based_cpu_percent() -> Option<f64> {
+    let loadavg = std::fs::read_to_string("/proc/loadavg").ok()?;
+    let one_minute: f64 = loadavg.split_whitespace().next()?.parse().ok()?;
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as f64;
+    Some((one_minute / cpus * 100.0).min(100.0))
 }
 
 #[cfg(test)]

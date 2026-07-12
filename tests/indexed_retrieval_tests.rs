@@ -453,7 +453,7 @@ async fn test_count_related_memories_uses_ann_index_and_matches_brute_force() {
     const NUM_CLUSTERS: usize = 20; // 10 entries per cluster
 
     let storage = Arc::new(MemoryStorage::new());
-    let manager = MemoryManager::new(storage, None, None, None)
+    let manager = MemoryManager::new(storage, None)
         .await
         .expect("manager should construct");
 
@@ -511,7 +511,7 @@ async fn test_count_related_memories_falls_back_to_brute_force_below_threshold()
     const NUM_CLUSTERS: usize = 5;
 
     let storage = Arc::new(MemoryStorage::new());
-    let manager = MemoryManager::new(storage, None, None, None)
+    let manager = MemoryManager::new(storage, None)
         .await
         .expect("manager should construct");
 
@@ -568,7 +568,7 @@ async fn perf_count_related_memories_ann_vs_brute_force_at_10k() {
     // ANN path: entries are stored via `MemoryManager::store_memory`, which
     // populates the HNSW index as it goes.
     let ann_storage = Arc::new(MemoryStorage::new());
-    let ann_manager = MemoryManager::new(ann_storage, None, None, None)
+    let ann_manager = MemoryManager::new(ann_storage, None)
         .await
         .expect("manager should construct");
     for entry in &entries {
@@ -596,7 +596,7 @@ async fn perf_count_related_memories_ann_vs_brute_force_at_10k() {
             .await
             .expect("direct storage write should succeed");
     }
-    let brute_manager = MemoryManager::new(brute_storage, None, None, None)
+    let brute_manager = MemoryManager::new(brute_storage, None)
         .await
         .expect("manager should construct");
 
@@ -640,7 +640,7 @@ async fn test_reindexing_a_key_supersedes_its_stale_ann_vector() {
     const NUM_CLUSTERS: usize = 20; // 10 entries per cluster; probe cluster = 0
 
     let storage = Arc::new(MemoryStorage::new());
-    let manager = MemoryManager::new(storage, None, None, None)
+    let manager = MemoryManager::new(storage, None)
         .await
         .expect("manager should construct");
 

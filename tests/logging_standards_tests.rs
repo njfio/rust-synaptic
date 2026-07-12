@@ -174,7 +174,7 @@ mod logging_standards_tests {
         let storage = Arc::new(MemoryStorage::new());
         // MemoryManager::new now takes a storage backend plus optional
         // knowledge-graph / temporal / advanced managers.
-        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+        let manager = MemoryManager::new(storage, None).await.unwrap();
 
         let memory = MemoryEntry::new(
             "test_key".to_string(),

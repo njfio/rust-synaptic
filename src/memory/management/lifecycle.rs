@@ -2675,13 +2675,16 @@ impl MemoryLifecycleManager {
         Ok(result)
     }
 
-    /// Update policy performance metrics
+    /// Emit policy performance data as structured tracing events.
+    ///
+    /// Observability hook: policy outcomes are surfaced through the tracing
+    /// subscriber; no in-process per-policy metric aggregation is maintained
+    /// beyond these log events.
     fn update_policy_performance_metrics(
         &mut self,
         memory_key: &str,
         action_analysis: &ActionAnalysisResult,
     ) {
-        // Update internal performance tracking
         tracing::debug!(
             "Policy performance for {}: {} actions, {} space saved, {} policies triggered",
             memory_key,
@@ -2689,9 +2692,6 @@ impl MemoryLifecycleManager {
             action_analysis.space_saved,
             action_analysis.policies_triggered
         );
-
-        // In a real implementation, this would update detailed performance metrics
-        // For now, we just log the information
     }
 
     /// Generate advanced archiving predictions using machine learning techniques

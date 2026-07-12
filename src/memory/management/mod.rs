@@ -70,10 +70,6 @@ pub struct MemoryManager {
     storage: Arc<dyn Storage + Send + Sync>,
     /// Knowledge graph for relationships
     knowledge_graph: Option<MemoryKnowledgeGraph>,
-    /// Temporal manager for tracking changes
-    _temporal_manager: Option<TemporalMemoryManager>,
-    /// Advanced manager for complex operations
-    _advanced_manager: Option<AdvancedMemoryManager>,
     /// ANN index used to accelerate `count_similarity_related_memories`
     similarity_index: std::sync::RwLock<SimilarityIndexState>,
     /// Test-only counter of how many times the ANN path (as opposed to the
@@ -87,14 +83,10 @@ impl MemoryManager {
     pub async fn new(
         storage: Arc<dyn Storage + Send + Sync>,
         knowledge_graph: Option<MemoryKnowledgeGraph>,
-        temporal_manager: Option<TemporalMemoryManager>,
-        advanced_manager: Option<AdvancedMemoryManager>,
     ) -> Result<Self> {
         Ok(Self {
             storage,
             knowledge_graph,
-            _temporal_manager: temporal_manager,
-            _advanced_manager: advanced_manager,
             similarity_index: std::sync::RwLock::new(SimilarityIndexState::default()),
             #[cfg(feature = "test-utils")]
             ann_query_hits: std::sync::atomic::AtomicUsize::new(0),
@@ -1211,7 +1203,7 @@ impl AdvancedMemoryManager {
         // Check if summarization is needed
         if self.config.enable_auto_summarization {
             let summarization_result = self
-                .evaluate_summarization_triggers(&memory, knowledge_graph.as_deref())
+                .evaluate_summarization_triggers(storage, &memory, knowledge_graph.as_deref())
                 .await?;
             if let Some(trigger_info) = summarization_result {
                 messages.push(format!("Summarization triggered: {}", trigger_info.reason));
@@ -1574,6 +1566,7 @@ impl AdvancedMemoryManager {
     /// Evaluate whether summarization should be triggered for a new memory
     async fn evaluate_summarization_triggers(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
         knowledge_graph: Option<&MemoryKnowledgeGraph>,
     ) -> Result<Option<SummarizationTrigger>> {
@@ -1597,7 +1590,7 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 3: Related memory count threshold
-        if let Some(trigger) = self.check_related_memory_threshold(memory).await? {
+        if let Some(trigger) = self.check_related_memory_threshold(storage, memory).await? {
             return Ok(Some(trigger));
         }
 
@@ -1607,7 +1600,10 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 5: Temporal clustering analysis
-        if let Some(trigger) = self.check_temporal_clustering_trigger(memory).await? {
+        if let Some(trigger) = self
+            .check_temporal_clustering_trigger(storage, memory)
+            .await?
+        {
             return Ok(Some(trigger));
         }
 
@@ -1620,15 +1616,52 @@ impl AdvancedMemoryManager {
         Ok(None)
     }
 
-    /// Check if related memory count exceeds threshold
+    /// Check if related memory count exceeds threshold.
+    ///
+    /// Relatedness is computed from actual stored entries: another entry is
+    /// counted as related when it shares at least one tag with the memory or
+    /// when at least two significant words (length > 3) overlap between the
+    /// contents. This is a lexical-overlap heuristic (no embeddings are
+    /// required at this call site), but it is computed from real storage
+    /// data rather than an assumed count.
     async fn check_related_memory_threshold(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<Option<SummarizationTrigger>> {
-        // For now, we'll use a simplified approach since we don't have direct storage access
-        // In a real implementation, this would query the storage system
-        let related_count = 5; // Placeholder - would be calculated from actual storage
+        let memory_words: std::collections::HashSet<String> = memory
+            .value
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 3)
+            .map(|w| w.to_string())
+            .collect();
+        let memory_tags: std::collections::HashSet<&String> = memory.metadata.tags.iter().collect();
 
+        let mut related_keys = Vec::new();
+        for entry in storage.get_all_entries().await? {
+            if entry.key == memory.key {
+                continue;
+            }
+            let shares_tag = entry
+                .metadata
+                .tags
+                .iter()
+                .any(|tag| memory_tags.contains(tag));
+            let word_overlap = entry
+                .value
+                .to_lowercase()
+                .split_whitespace()
+                .filter(|w| w.len() > 3)
+                .filter(|w| memory_words.contains(*w))
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            if shares_tag || word_overlap >= 2 {
+                related_keys.push(entry.key.clone());
+            }
+        }
+
+        let related_count = related_keys.len();
         if related_count >= self.config.summarization_threshold {
             let confidence = (related_count as f64
                 / (self.config.summarization_threshold as f64 * 2.0))
@@ -1641,12 +1674,15 @@ impl AdvancedMemoryManager {
                 self.config.summarization_threshold.to_string(),
             );
 
+            let mut related_memory_keys = vec![memory.key.clone()];
+            related_memory_keys.extend(related_keys);
+
             return Ok(Some(SummarizationTrigger {
                 reason: format!(
                     "Related memory count ({}) exceeds threshold ({})",
                     related_count, self.config.summarization_threshold
                 ),
-                related_memory_keys: vec![memory.key.clone()], // This would be expanded with actual related keys
+                related_memory_keys,
                 trigger_type: SummarizationTriggerType::RelatedMemoryThreshold,
                 confidence,
                 metadata,
@@ -1714,20 +1750,32 @@ impl AdvancedMemoryManager {
         Ok(None)
     }
 
-    /// Check if temporal clustering suggests summarization
+    /// Check if temporal clustering suggests summarization.
+    ///
+    /// The cluster is measured from real stored entries: every entry (this
+    /// memory included) whose creation time falls within a 2-hour window
+    /// around this memory's creation time counts toward the cluster.
     async fn check_temporal_clustering_trigger(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<Option<SummarizationTrigger>> {
-        let _memory_time = memory.created_at();
-        let _time_window = chrono::Duration::hours(2); // 2-hour clustering window
-
-        // This would normally query storage for memories in the time window
-        // For now, we'll use a simplified approach
+        let memory_time = memory.created_at();
+        let time_window = chrono::Duration::hours(2); // 2-hour clustering window
         let cluster_threshold = 5; // Minimum memories in cluster to trigger summarization
 
-        // Simulate cluster detection (in real implementation, this would query storage)
-        let cluster_size = 3; // Placeholder
+        // Count stored entries created within the window around this memory
+        // (the memory itself is part of its own cluster).
+        let mut cluster_size = 1;
+        for entry in storage.get_all_entries().await? {
+            if entry.key == memory.key {
+                continue;
+            }
+            let delta = entry.created_at() - memory_time;
+            if delta.abs() <= time_window {
+                cluster_size += 1;
+            }
+        }
 
         if cluster_size >= cluster_threshold {
             let confidence = (cluster_size as f64 / (cluster_threshold as f64 * 2.0)).min(1.0);
@@ -1772,9 +1820,18 @@ impl AdvancedMemoryManager {
             unique_words.len() as f64 / memory.value.split_whitespace().count().max(1) as f64;
         let tag_density = memory.metadata.tags.len() as f64 / 10.0; // Normalize to 10 tags max
 
-        // Factor in knowledge graph connectivity if available
-        let graph_connectivity = if let Some(_kg) = knowledge_graph {
-            0.3 // Placeholder for actual graph connectivity calculation
+        // Factor in knowledge graph connectivity if available: the memory's
+        // actual node degree (number of connected nodes), normalized against
+        // 10 connections (same normalization scale as tag_density) and capped
+        // at 1.0. A memory with no node in the graph contributes 0.
+        let graph_connectivity = if let Some(kg) = knowledge_graph {
+            match kg.get_node_for_memory(&memory.key).await? {
+                Some(node_id) => {
+                    let degree = kg.get_connected_nodes(node_id).await?.len();
+                    (degree as f64 / 10.0).min(1.0)
+                }
+                None => 0.0,
+            }
         } else {
             0.0
         };
@@ -2212,9 +2269,37 @@ impl AdvancedMemoryManager {
             *type_counts.entry(content_type).or_insert(0) += 1;
         }
 
-        // Calculate growth rates (simplified - would use historical data in real implementation)
-        for (content_type, _) in &type_counts {
-            type_growth_rates.insert(content_type.clone(), 0.1); // 10% growth rate placeholder
+        // Calculate per-type growth rates from the entries' actual creation
+        // history: compare how many entries of each type were created in the
+        // most recent 30 days against the preceding 30-day window.
+        // rate = (recent - previous) / previous; when the previous window is
+        // empty the rate is 1.0 if the recent window has entries (new type),
+        // otherwise 0.0 (no observable growth signal).
+        let now = Utc::now();
+        let recent_cutoff = now - Duration::days(30);
+        let previous_cutoff = now - Duration::days(60);
+        let mut recent_counts: HashMap<String, usize> = HashMap::new();
+        let mut previous_counts: HashMap<String, usize> = HashMap::new();
+        for memory in memories {
+            let content_type = self.classify_content_type(&memory.value);
+            let created = memory.created_at();
+            if created >= recent_cutoff {
+                *recent_counts.entry(content_type).or_insert(0) += 1;
+            } else if created >= previous_cutoff {
+                *previous_counts.entry(content_type).or_insert(0) += 1;
+            }
+        }
+        for content_type in type_counts.keys() {
+            let recent = *recent_counts.get(content_type).unwrap_or(&0) as f64;
+            let previous = *previous_counts.get(content_type).unwrap_or(&0) as f64;
+            let rate = if previous > 0.0 {
+                (recent - previous) / previous
+            } else if recent > 0.0 {
+                1.0
+            } else {
+                0.0
+            };
+            type_growth_rates.insert(content_type.clone(), rate);
         }
 
         // Find dominant type

@@ -2918,11 +2918,14 @@ impl AdvancedSearchEngine {
         }
     }
 
-    /// Calculate collaborative filtering score (simulated)
+    /// Calculate a content-derived engagement score.
+    ///
+    /// Heuristic: this system has no multi-user behavior data, so instead of
+    /// true collaborative filtering it combines four memory-local signals
+    /// (tag affinity, content similarity to frequently accessed patterns,
+    /// temporal patterns, and access patterns) into a weighted score. Each
+    /// factor is computed from the memory's own real metadata/content.
     async fn calculate_collaborative_filtering_score(&self, memory: &MemoryEntry) -> Result<f64> {
-        // Simulate collaborative filtering based on similar user patterns
-        // In a real implementation, this would use actual user behavior data
-
         let mut similarity_scores = Vec::new();
 
         // Factor 1: Tag-based similarity with other high-engagement memories
