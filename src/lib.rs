@@ -194,24 +194,15 @@ impl AgentMemory {
         // `find_similar_memories`); both read from the same underlying storage,
         // so results stay consistent without a large ownership refactor.
         //
-        // Deviation from the task brief: candidate generation for each signal
-        // retriever goes through `storage.search`, and the default
-        // `MemoryStorage::search` requires the *entire* query string to match
-        // verbatim, which starves ranking of candidates for any multi-word
-        // query without an exact-phrase hit. We wrap storage in
-        // `CandidateWideningStorage` (any-term match) for the pipeline only;
-        // the substring fallback path below still uses the unwrapped storage.
+        // Candidate generation for each signal retriever goes through
+        // `storage.search`, which performs tokenized OR-matching (any query
+        // term matches), so multi-word queries yield candidates directly and
+        // no widening wrapper is needed.
         let retrieval_pipeline = if config.enable_embeddings {
-            let candidate_storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync> =
-                Arc::new(memory::retrieval::CandidateWideningStorage::new(
-                    Arc::clone(&storage),
-                ));
             let provider = Arc::new(memory::embeddings::TfIdfProvider::default());
-            let dense_vector = memory::retrieval::DenseVectorRetriever::new(
-                Arc::clone(&candidate_storage),
-                provider,
-            );
-            let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&candidate_storage));
+            let dense_vector =
+                memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
+            let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
             let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::new(dense_vector))

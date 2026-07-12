@@ -140,50 +140,58 @@ impl MemoryStorage {
         };
     }
 
-    /// Perform simple text-based search
+    /// Perform tokenized OR-matching text search.
+    ///
+    /// The query is split into lowercased whitespace-delimited terms; an
+    /// entry is a candidate if its content contains ANY term. Candidates are
+    /// ranked by number of DISTINCT query terms matched (descending), then
+    /// total term frequency (descending), then stably by key for
+    /// deterministic ordering.
     fn search_entries(&self, query: &str, limit: usize) -> Vec<MemoryFragment> {
         let query_lower = query.to_lowercase();
-        let mut results = Vec::new();
+        let terms: Vec<&str> = query_lower.split_whitespace().collect();
+        if terms.is_empty() {
+            return Vec::new();
+        }
 
+        // (distinct terms matched, total term frequency, key, entry)
+        let mut matches: Vec<(usize, usize, String, MemoryEntry)> = Vec::new();
         for entry_ref in self.entries.iter() {
             let entry = entry_ref.value();
             let content_lower = entry.value.to_lowercase();
 
-            // Simple relevance scoring based on query term frequency
-            let relevance_score = if content_lower.contains(&query_lower) {
-                // Count occurrences of query terms
-                let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
-                let mut score = 0.0;
-
-                for term in query_terms {
-                    let occurrences = content_lower.matches(term).count();
-                    score += occurrences as f64;
+            let mut distinct = 0usize;
+            let mut total_freq = 0usize;
+            for term in &terms {
+                let occurrences = content_lower.matches(term).count();
+                if occurrences > 0 {
+                    distinct += 1;
+                    total_freq += occurrences;
                 }
-
-                // Normalize by content length
-                score / content_lower.len() as f64
-            } else {
-                0.0
-            };
-
-            if relevance_score > 0.0 {
-                let fragment = MemoryFragment::new(entry.clone(), relevance_score);
-                results.push(fragment);
             }
 
-            if results.len() >= limit {
-                break;
+            if distinct > 0 {
+                matches.push((distinct, total_freq, entry.key.clone(), entry.clone()));
             }
         }
 
-        // Sort by relevance score (highest first)
-        results.sort_by(|a, b| {
-            b.relevance_score
-                .partial_cmp(&a.relevance_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+        matches.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
         });
-        results.truncate(limit);
-        results
+        matches.truncate(limit);
+
+        matches
+            .into_iter()
+            .map(|(_, total_freq, _, entry)| {
+                // Relevance keeps the prior shape: term frequency normalized
+                // by content length.
+                let relevance_score =
+                    total_freq as f64 / entry.value.to_lowercase().len().max(1) as f64;
+                MemoryFragment::new(entry, relevance_score)
+            })
+            .collect()
     }
 }
 
@@ -796,5 +804,90 @@ impl TransactionalStorage for MemoryStorage {
         Ok(Box::new(MemoryTransactionHandle::new(Arc::clone(
             &self.entries,
         ))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::types::MemoryType;
+
+    async fn seeded(entries: &[(&str, &str)]) -> MemoryStorage {
+        let storage = MemoryStorage::new();
+        for (key, value) in entries {
+            let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::LongTerm);
+            storage
+                .store(&entry)
+                .await
+                .unwrap_or_else(|e| panic!("store {key}: {e}"));
+        }
+        storage
+    }
+
+    #[tokio::test]
+    async fn multi_word_query_matches_partial_term_overlap() {
+        // A doc containing only ONE of the query terms must still match:
+        // the verbatim whole-phrase requirement is gone.
+        let storage = seeded(&[("doc_cat", "the cat sat on the mat")]).await;
+        let results = storage
+            .search("cat animal pet", 10)
+            .await
+            .unwrap_or_else(|e| panic!("search: {e}"));
+        assert_eq!(results.len(), 1, "any-term match should find doc_cat");
+        assert_eq!(results[0].entry.key, "doc_cat");
+    }
+
+    #[tokio::test]
+    async fn ranks_more_distinct_terms_above_fewer() {
+        let storage = seeded(&[
+            ("doc_one_term", "cat cat cat cat cat everywhere"),
+            ("doc_two_terms", "a cat is a fine pet"),
+        ])
+        .await;
+        let results = storage
+            .search("cat animal pet", 10)
+            .await
+            .unwrap_or_else(|e| panic!("search: {e}"));
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results[0].entry.key, "doc_two_terms",
+            "doc matching 2 distinct terms must outrank doc matching 1: {results:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn distinct_tie_breaks_by_total_frequency_then_key() {
+        let storage = seeded(&[
+            ("doc_b", "cat and cat again"),
+            ("doc_a", "one cat only here"),
+            ("doc_c", "one cat only here"),
+        ])
+        .await;
+        let results = storage
+            .search("cat", 10)
+            .await
+            .unwrap_or_else(|e| panic!("search: {e}"));
+        let keys: Vec<&str> = results.iter().map(|f| f.entry.key.as_str()).collect();
+        assert_eq!(keys, vec!["doc_b", "doc_a", "doc_c"]);
+    }
+
+    #[tokio::test]
+    async fn no_match_returns_empty_and_limit_is_respected() {
+        let storage = seeded(&[
+            ("k1", "alpha beta"),
+            ("k2", "beta gamma"),
+            ("k3", "gamma delta"),
+        ])
+        .await;
+        let none = storage
+            .search("zebra", 10)
+            .await
+            .unwrap_or_else(|e| panic!("search: {e}"));
+        assert!(none.is_empty());
+        let limited = storage
+            .search("beta gamma", 1)
+            .await
+            .unwrap_or_else(|e| panic!("search: {e}"));
+        assert_eq!(limited.len(), 1);
     }
 }

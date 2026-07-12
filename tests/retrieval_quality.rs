@@ -475,12 +475,12 @@ async fn test_config_update() {
 }
 
 // Deviation from the task brief's literal test text: the default storage
-// backend's substring search requires the *entire* query phrase to appear
-// verbatim (see `CandidateWideningStorage` doc comment in
-// `src/memory/retrieval/candidate_storage.rs`), so a query like
-// "cat animal pet" against a doc containing only "felines...mammals" (zero
-// literal term overlap) can never be retrieved by any term-overlap-based
-// signal (TF-IDF included: it has no synonym/semantic knowledge). This
+// backend's search is tokenized term-overlap matching (see
+// `MemoryStorage::search_entries` in `src/memory/storage/memory.rs`), so a
+// query like "cat animal pet" against a doc containing only
+// "felines...mammals" (zero literal term overlap) can never be retrieved by
+// any term-overlap-based signal (TF-IDF included: it has no
+// synonym/semantic knowledge). This
 // rewritten scenario keeps the brief's intent — ranking must beat naive
 // keyword-count matching — using literal term overlap that TF-IDF's
 // distinct-term coverage can meaningfully rank: a document matching several
