@@ -566,7 +566,11 @@ impl ProofSystem {
             tracing::debug!("Generating real zk-SNARK proof using Bellman");
             let start_time = std::time::Instant::now();
 
-            // Extract values from witness for circuit
+            // NOTE: verification of proofs generated here is not yet implemented
+            // (see `verify_proof` below, which refuses with `FeatureDisabled` until
+            // Phase 4 lands real Groth16 verification). This circuit input is a
+            // placeholder pending derivation from the real witness; do not treat
+            // proofs produced by this path as cryptographically meaningful yet.
             let user_secret = Scalar::from(42u64); // In real implementation, derive from witness
             let expected_hash = user_secret * user_secret; // Hash of the secret
             let required_access_level = Scalar::from(1u64); // Minimum access level required
@@ -636,55 +640,34 @@ impl ProofSystem {
                 return Ok(false);
             }
 
-            // For demonstration, we'll verify the proof format instead of actual cryptographic verification
-            // In a real implementation, you would deserialize and verify the actual proof
-            let is_valid = proof.proof_data.len() > 10
-                && proof.proving_key_id == "bellman_groth16"
-                && String::from_utf8_lossy(&proof.proof_data).contains("bellman_proof");
-
+            // Real Groth16 verification lands in Phase 4 (task 4.2). Until then,
+            // refuse rather than approve on a proof-data format check.
             let duration = start_time.elapsed();
-            tracing::debug!(
-                "zk-SNARK proof verification completed in {:?}, result: {}",
-                duration,
-                is_valid
+            tracing::warn!(
+                "zk-SNARK proof verification refused after {:?}: real Groth16 verification not yet implemented",
+                duration
             );
 
-            Ok(is_valid)
+            Err(MemoryError::feature_disabled(
+                "zero-knowledge-proofs(real-verify)",
+                "verify_proof",
+            ))
         }
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]
         {
+            let _ = statement;
             tracing::warn!(
                 operation = "verify_proof",
                 proof_id = %proof.id,
                 feature_enabled = false,
-                "Using fallback proof verification - zero-knowledge-proofs feature not enabled"
-            );
-            let statement_hash = self.hash_statement(statement)?;
-
-            // Check if statement hash matches
-            if proof.statement_hash != statement_hash {
-                tracing::debug!(
-                    proof_id = %proof.id,
-                    expected_hash = %statement_hash,
-                    actual_hash = %proof.statement_hash,
-                    "Proof verification failed: statement hash mismatch"
-                );
-                return Ok(false);
-            }
-
-            // Verify proof data (simplified verification)
-            let is_valid =
-                proof.proof_data.len() > 0 && proof.proving_key_id == self.proving_key.id;
-
-            tracing::info!(
-                proof_id = %proof.id,
-                is_valid = is_valid,
-                proof_data_length = proof.proof_data.len(),
-                "Fallback proof verification completed"
+                "Refusing proof verification - zero-knowledge-proofs feature not enabled"
             );
 
-            Ok(is_valid)
+            Err(MemoryError::feature_disabled(
+                "zero-knowledge-proofs",
+                "verify_proof",
+            ))
         }
     }
 

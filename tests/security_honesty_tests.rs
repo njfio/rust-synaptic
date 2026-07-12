@@ -157,3 +157,36 @@ mod zk_content_hash_is_real {
         assert_eq!(a.len(), 64); // hex sha256
     }
 }
+
+#[cfg(all(feature = "security", not(feature = "zero-knowledge-proofs")))]
+mod zk_verify_fails_closed {
+    use synaptic::security::zero_knowledge::{AccessStatement, AccessType, ZeroKnowledgeManager};
+    use synaptic::security::{SecurityConfig, SecurityContext};
+
+    #[tokio::test]
+    async fn zk_verify_errors_when_feature_disabled() {
+        let config = SecurityConfig::default();
+        let mut manager = ZeroKnowledgeManager::new(&config)
+            .await
+            .expect("zero-knowledge manager must construct so callers can probe availability");
+
+        let mut context = SecurityContext::new("test-user".to_string(), vec!["user".to_string()]);
+        context.mfa_verified = true;
+
+        let statement = AccessStatement {
+            memory_key: "memory-1".to_string(),
+            user_id: context.user_id.clone(),
+            access_type: AccessType::Read,
+            timestamp: chrono::Utc::now(),
+        };
+
+        let proof = manager
+            .generate_access_proof("memory-1", &context, AccessType::Read)
+            .await
+            .expect("fallback proof generation must still succeed");
+
+        let result = manager.verify_access_proof(&proof, &statement).await;
+        let err = result.expect_err("must not fake zero-knowledge verification");
+        assert!(err.to_string().contains("zero-knowledge"));
+    }
+}
