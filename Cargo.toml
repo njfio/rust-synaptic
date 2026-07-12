@@ -149,6 +149,12 @@ tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optiona
 # Zero-Knowledge Proofs
 bellman = { version = "0.14", optional = true }
 bls12_381 = { version = "0.8", optional = true }
+# Poseidon hash over the BLS12-381 scalar field (native + circuit gadget);
+# pinned to the 13.x line, which shares ff 0.13 / group 0.13 with bellman 0.14.
+neptune = { version = "13.0", default-features = false, optional = true }
+bellpepper-core = { version = "0.4", optional = true }
+ff = { version = "0.13", optional = true }
+typenum = { version = "1", optional = true }
 
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
@@ -254,7 +260,14 @@ compression = ["lz4", "zstd", "brotli", "flate2"]
 # Advanced Features
 security = ["tfhe", "bellman", "bls12_381"]
 homomorphic-encryption = ["tfhe"]
-zero-knowledge-proofs = ["bellman", "bls12_381"]
+zero-knowledge-proofs = [
+    "bellman",
+    "bls12_381",
+    "neptune",
+    "bellpepper-core",
+    "ff",
+    "typenum",
+]
 distributed = ["rdkafka", "redis", "tonic", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
 observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]

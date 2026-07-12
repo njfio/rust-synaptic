@@ -101,7 +101,8 @@ pub struct ZeroKnowledgeManager {
 }
 
 impl ZeroKnowledgeManager {
-    /// Create a new zero-knowledge manager
+    /// Create a new zero-knowledge manager with freshly generated
+    /// (in-memory) Groth16 parameters.
     pub async fn new(config: &SecurityConfig) -> Result<Self> {
         let proof_system = ProofSystem::new(config).await?;
 
@@ -111,6 +112,87 @@ impl ZeroKnowledgeManager {
             verification_keys: HashMap::new(),
             metrics: ZeroKnowledgeMetrics::default(),
         })
+    }
+
+    /// Create a manager backed by a persistent key store.
+    ///
+    /// If `key_store_path` points at an existing file, the Groth16
+    /// parameters are loaded from it (with full curve-point validation);
+    /// otherwise fresh parameters are generated from `OsRng` and written to
+    /// the path so subsequent constructions reuse the same keys. With
+    /// `None`, behaves like [`ZeroKnowledgeManager::new`].
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub async fn new_with_key_store(
+        config: &SecurityConfig,
+        key_store_path: Option<&std::path::Path>,
+    ) -> Result<Self> {
+        let path = match key_store_path {
+            Some(path) => path,
+            None => return Self::new(config).await,
+        };
+
+        if path.exists() {
+            let bytes = std::fs::read(path).map_err(|e| {
+                MemoryError::encryption(format!(
+                    "Failed to read Groth16 key store {}: {e}",
+                    path.display()
+                ))
+            })?;
+            return Self::from_groth16_parameter_bytes(config, &bytes);
+        }
+
+        let manager = Self::new(config).await?;
+        let bytes = manager.groth16_parameter_bytes()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                MemoryError::encryption(format!(
+                    "Failed to create Groth16 key store directory {}: {e}",
+                    parent.display()
+                ))
+            })?;
+        }
+        std::fs::write(path, bytes).map_err(|e| {
+            MemoryError::encryption(format!(
+                "Failed to write Groth16 key store {}: {e}",
+                path.display()
+            ))
+        })?;
+        Ok(manager)
+    }
+
+    /// Reconstruct a manager from previously serialized Groth16 parameters
+    /// (as produced by [`ZeroKnowledgeManager::groth16_parameter_bytes`]).
+    ///
+    /// Curve points are validated during deserialization, so tampered or
+    /// truncated parameter blobs are rejected.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn from_groth16_parameter_bytes(config: &SecurityConfig, bytes: &[u8]) -> Result<Self> {
+        let proof_system = ProofSystem::from_parameter_bytes(bytes)?;
+        Ok(Self {
+            config: config.clone(),
+            proof_system,
+            verification_keys: HashMap::new(),
+            metrics: ZeroKnowledgeMetrics::default(),
+        })
+    }
+
+    /// Serialize the Groth16 proving+verifying parameters for persistence.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn groth16_parameter_bytes(&self) -> Result<Vec<u8>> {
+        self.proof_system.parameter_bytes()
+    }
+
+    /// Serialize only the (unprepared) verifying key, for distribution to
+    /// external verifiers that must not hold proving material.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn verifying_key_bytes(&self) -> Result<Vec<u8>> {
+        self.proof_system.verifying_key_bytes()
+    }
+
+    /// Access the prepared verifying key for in-process verification.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<Bls12> {
+        self.proof_system.prepared_verifying_key()
     }
 
     /// Generate a zero-knowledge proof for memory access
@@ -540,6 +622,50 @@ impl ProofSystem {
         }
     }
 
+    /// Reconstruct a proof system from serialized Groth16 parameters.
+    ///
+    /// Deserialization runs in checked mode: every curve point is validated
+    /// for being on-curve and in the correct subgroup, so corrupted key
+    /// stores are rejected instead of silently producing unsound keys.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn from_parameter_bytes(bytes: &[u8]) -> Result<Self> {
+        let parameters = Parameters::<Bls12>::read(bytes, true).map_err(|e| {
+            MemoryError::encryption(format!("Failed to deserialize Groth16 parameters: {e}"))
+        })?;
+        let prepared_vk = prepare_verifying_key(&parameters.vk);
+        Ok(Self {
+            parameters,
+            prepared_vk,
+        })
+    }
+
+    /// Serialize the full Groth16 parameters (proving + verifying key).
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn parameter_bytes(&self) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.parameters.write(&mut bytes).map_err(|e| {
+            MemoryError::encryption(format!("Failed to serialize Groth16 parameters: {e}"))
+        })?;
+        Ok(bytes)
+    }
+
+    /// Serialize only the verifying key.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn verifying_key_bytes(&self) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.parameters.vk.write(&mut bytes).map_err(|e| {
+            MemoryError::encryption(format!("Failed to serialize Groth16 verifying key: {e}"))
+        })?;
+        Ok(bytes)
+    }
+
+    /// The prepared verifying key used by in-process verification.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<Bls12> {
+        &self.prepared_vk
+    }
+
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_keys(config: &SecurityConfig) -> Result<(ProvingKey, VerificationKey)> {
         // Generate proving and verification keys
         let proving_key = ProvingKey {
