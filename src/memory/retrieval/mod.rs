@@ -6,10 +6,14 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod candidate_storage;
 pub mod dense_vector;
 pub mod indexed;
 pub mod pipeline;
 pub mod strategies;
+
+// Re-export candidate-widening storage wrapper
+pub use candidate_storage::CandidateWideningStorage;
 
 // Re-export pipeline types
 pub use pipeline::{

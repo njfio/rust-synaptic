@@ -110,6 +110,10 @@ pub struct AgentMemory {
     cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
     /// Memory promotion manager for hierarchical memory management
     promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
+    /// Hybrid retrieval pipeline used by `search` when embeddings are enabled;
+    /// combines dense-vector and keyword signals for ranked results instead of
+    /// naive substring matching. `None` falls back to `storage.search`.
+    retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
 }
 
 impl AgentMemory {
@@ -181,6 +185,52 @@ impl AgentMemory {
         } else {
             None
         };
+
+        // Initialize the hybrid retrieval pipeline if embeddings are enabled. This
+        // routes `search` through ranked dense-vector + keyword signals instead of
+        // naive substring matching. It intentionally builds its own lightweight
+        // TF-IDF embedding provider rather than sharing `embedding_manager`
+        // (which owns a different, stateful embedding representation used for
+        // `find_similar_memories`); both read from the same underlying storage,
+        // so results stay consistent without a large ownership refactor.
+        //
+        // Deviation from the task brief: candidate generation for each signal
+        // retriever goes through `storage.search`, and the default
+        // `MemoryStorage::search` requires the *entire* query string to match
+        // verbatim, which starves ranking of candidates for any multi-word
+        // query without an exact-phrase hit. We wrap storage in
+        // `CandidateWideningStorage` (any-term match) for the pipeline only;
+        // the substring fallback path below still uses the unwrapped storage.
+        // We also pin the fusion strategy to `WeightedAverage`: the default
+        // `ReciprocRankFusion` strategy in `pipeline.rs` produces scores on
+        // the order of `1/60` for any single-signal match, which sits below
+        // `PipelineConfig::min_score` (0.1) and silently drops all results —
+        // a pre-existing bug in `HybridRetriever::combine_scores` out of
+        // scope for this task.
+        let retrieval_pipeline = if config.enable_embeddings {
+            let candidate_storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync> =
+                Arc::new(memory::retrieval::CandidateWideningStorage::new(
+                    Arc::clone(&storage),
+                ));
+            let provider = Arc::new(memory::embeddings::TfIdfProvider::default());
+            let dense_vector = memory::retrieval::DenseVectorRetriever::new(
+                Arc::clone(&candidate_storage),
+                provider,
+            );
+            let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&candidate_storage));
+            let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus()
+                .with_fusion_strategy(memory::retrieval::FusionStrategy::WeightedAverage);
+            let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
+                .add_pipeline(Arc::new(dense_vector))
+                .add_pipeline(Arc::new(keyword));
+            Some(Arc::new(hybrid))
+        } else {
+            None
+        };
+        tracing::debug!(
+            enabled = retrieval_pipeline.is_some(),
+            "Retrieval pipeline initialized"
+        );
 
         // Initialize distributed coordinator if enabled
         #[cfg(feature = "distributed")]
@@ -270,6 +320,7 @@ impl AgentMemory {
             #[cfg(feature = "cross-platform")]
             cross_platform_manager,
             promotion_manager,
+            retrieval_pipeline,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -531,7 +582,11 @@ impl AgentMemory {
         validate_non_empty_string(query, "search query")?;
         validate_range(limit, 1, 10000, "search limit")?; // Max 10k results
 
-        let results = self.storage.search(query, limit).await?;
+        let results = if let Some(ref pipeline) = self.retrieval_pipeline {
+            pipeline.search(query, limit).await?
+        } else {
+            self.storage.search(query, limit).await?
+        };
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
     }
