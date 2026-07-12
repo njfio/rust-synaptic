@@ -32,8 +32,14 @@ use tfhe::{
 /// `round(value * FIXED_POINT_SCALE)`, giving 6 decimal digits of fractional
 /// precision. Signed values (including negatives and zero) round-trip
 /// EXACTLY at this granularity: any value that is an integer multiple of
-/// 1e-6 with magnitude below `i64::MAX / FIXED_POINT_SCALE` decrypts to the
-/// original bit-for-bit after the inverse scaling.
+/// 1e-6 decrypts to the original bit-for-bit after the inverse scaling,
+/// provided its scaled magnitude stays within f64's exactly-representable
+/// integer range, i.e. `|value| <= 2^53 / FIXED_POINT_SCALE` (~9.0e9). The
+/// range check permits larger magnitudes up to `i64::MAX / FIXED_POINT_SCALE`
+/// (~9.22e12), but between ~9.0e9 and ~9.22e12 the f64 encode/decode
+/// conversions may introduce up to one ULP of error, so exactness is only
+/// guaranteed below ~9.0e9. Homomorphic average truncates toward zero at
+/// this granularity when the fixed-point sum does not divide evenly.
 #[cfg(feature = "homomorphic-encryption")]
 pub const FIXED_POINT_SCALE: f64 = 1_000_000.0;
 
