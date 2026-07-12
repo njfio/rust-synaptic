@@ -47,7 +47,7 @@ Phases 0–3 are fully task-detailed below. Phases 4–8 are scoped with hard ac
 **Interfaces:**
 - Produces: `MemoryError::FeatureDisabled { feature: String, operation: String }` and constructor `MemoryError::feature_disabled(feature: &str, operation: &str) -> MemoryError`. All later tasks use this.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/security_honesty_tests.rs`:
 
@@ -65,12 +65,12 @@ fn feature_disabled_error_names_feature_and_operation() {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cargo test --test security_honesty_tests`
 Expected: FAIL — `no method named feature_disabled` / no variant `FeatureDisabled`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/error.rs`, add to the `MemoryError` enum:
 
@@ -92,12 +92,12 @@ And in the `impl MemoryError` block:
     }
 ```
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cargo test --test security_honesty_tests`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/error.rs tests/security_honesty_tests.rs
@@ -114,7 +114,7 @@ git commit -m "feat(error): add FeatureDisabled variant for honest feature gatin
 - Consumes: `MemoryError::feature_disabled` from Task 0.1.
 - Produces: with the feature off, `encrypt_vector`/`decrypt_vector` return `Err(MemoryError::FeatureDisabled { .. })`.
 
-- [ ] **Step 1: Write the failing test** (only compiled without the feature; the default build)
+- [x] **Step 1: Write the failing test** (only compiled without the feature; the default build)
 
 Append to `tests/security_honesty_tests.rs`:
 
@@ -153,12 +153,12 @@ mod he_disabled {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cargo test --features security --test security_honesty_tests`
 Expected: FAIL — fallback currently returns `Ok(fake_bytes)`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace the body of each `#[cfg(not(feature = "homomorphic-encryption"))]` block in `encrypt_vector` / `decrypt_vector` with:
 
@@ -174,12 +174,12 @@ Replace the body of each `#[cfg(not(feature = "homomorphic-encryption"))]` block
 
 Delete `extract_numeric_features`/`reconstruct_from_numeric_features` fake paths if they become unreachable; keep the constructor working (it may hold config) but have it log at `warn` that HE operations will error.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `cargo test --features security --test security_honesty_tests && cargo test`
 Expected: PASS; fix any call sites that relied on fake encryption (they must propagate the error).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/security/encryption.rs tests/security_honesty_tests.rs
@@ -195,7 +195,7 @@ git commit -m "fix(security)!: homomorphic encryption fails closed when feature 
 **Interfaces:**
 - Produces: `hash_content` returns hex-encoded SHA-256. `sha2 = "0.10"` is already a dependency.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```rust
 #[cfg(feature = "security")]
@@ -211,9 +211,9 @@ fn content_hash_is_sha256_not_length_arithmetic() {
 
 Expose the helper: add to `zero_knowledge.rs` a free function `pub fn hash_content_for_test(content: &str) -> String` (or make the method a free `fn hash_content`) so both the struct and tests use one implementation.
 
-- [ ] **Step 2: Run to verify fail** — `cargo test --features security --test security_honesty_tests` → FAIL (equal-length inputs collide under `len()*17+42`).
+- [x] **Step 2: Run to verify fail** — `cargo test --features security --test security_honesty_tests` → FAIL (equal-length inputs collide under `len()*17+42`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 use sha2::{Digest, Sha256};
@@ -247,7 +247,7 @@ git commit -m "fix(security): replace fake length-arithmetic hash with SHA-256"
 **Interfaces:**
 - Produces: with `zero-knowledge-proofs` **off**: `verify_proof` returns `Err(FeatureDisabled)`. With it **on**: the format-check placeholder (`len > 10 && contains("bellman_proof")`) is replaced by an explicit `Err(MemoryError::feature_disabled("zero-knowledge-proofs(real-verify)", "verify_proof"))` **until Phase 4 lands real Groth16 verification** — an honest error beats a fake `Ok(true)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```rust
 #[cfg(all(feature = "security", not(feature = "zero-knowledge-proofs")))]
@@ -262,9 +262,9 @@ async fn zk_verify_errors_when_feature_disabled() {
 
 Fill in with the module's actual public constructor (read the top of `zero_knowledge.rs` for the exported manager type before writing; the test body must construct, prove, verify, and `expect_err`).
 
-- [ ] **Step 2: Run to verify fail** — currently returns `Ok(bool)`.
+- [x] **Step 2: Run to verify fail** — currently returns `Ok(bool)`.
 
-- [ ] **Step 3: Implement** — replace both branch bodies:
+- [x] **Step 3: Implement** — replace both branch bodies:
 
 ```rust
         #[cfg(feature = "zero-knowledge-proofs")]
@@ -293,9 +293,9 @@ Fill in with the module's actual public constructor (read the top of `zero_knowl
 
 Also delete the hardcoded `Scalar::from(42u64)` secret path in proof generation if it is now unreachable; if generation stays, it must carry a doc comment stating verification is not yet implemented.
 
-- [ ] **Step 4: Run** — `cargo test --all-features`; fix any security-manager call sites that assumed `Ok(true)` (they must propagate).
+- [x] **Step 4: Run** — `cargo test --all-features`; fix any security-manager call sites that assumed `Ok(true)` (they must propagate).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/security/zero_knowledge.rs tests/security_honesty_tests.rs
@@ -326,20 +326,20 @@ git commit -m "fix(security)!: ZK verification fails closed instead of string-ma
 - Delete: `src/optimization/` (1,687 LOC), `src/scalability/` (1,780 LOC)
 - Verify-first: neither appears in `src/lib.rs` module declarations.
 
-- [ ] **Step 1: Confirm unreachable** — `grep -rn "crate::optimization\|crate::scalability\|mod optimization\|mod scalability" src/ tests/ benches/ examples/ | grep -v "^src/optimization\|^src/scalability"`. Expected: no hits. If hits appear, stop and report instead of deleting.
-- [ ] **Step 2: Delete** — `git rm -r src/optimization src/scalability`
-- [ ] **Step 3: Full gate** — `cargo build --all-features && cargo test && cargo clippy --all-targets --all-features -- -D warnings`. Expected: green.
-- [ ] **Step 4: Commit** — `git commit -m "chore: delete unreachable optimization/ and scalability/ modules (3.5k LOC dead code)"`
+- [x] **Step 1: Confirm unreachable** — `grep -rn "crate::optimization\|crate::scalability\|mod optimization\|mod scalability" src/ tests/ benches/ examples/ | grep -v "^src/optimization\|^src/scalability"`. Expected: no hits. If hits appear, stop and report instead of deleting.
+- [x] **Step 2: Delete** — `git rm -r src/optimization src/scalability`
+- [x] **Step 3: Full gate** — `cargo build --all-features && cargo test && cargo clippy --all-targets --all-features -- -D warnings`. Expected: green.
+- [x] **Step 4: Commit** — `git commit -m "chore: delete unreachable optimization/ and scalability/ modules (3.5k LOC dead code)"`
 
 ### Task 1.2: Delete orphaned `tests/integration/` placeholder suite
 
 **Files:**
 - Delete: `tests/integration/comprehensive_test_suite.rs`, `tests/integration/jupyter_integration_tests.rs`, `tests/integration/jupyter_kernel_tests.rs`, `tests/integration/magic_commands_tests.rs` (the `assert!(true)` placeholders, never wired into any `[[test]]` target)
 
-- [ ] **Step 1: Confirm orphaned** — `grep -rn "integration/" Cargo.toml; grep -rn "mod integration" tests/*.rs`. Expected: no `[[test]]` entry or mod include references these files. Keep any file that IS referenced.
-- [ ] **Step 2: Delete confirmed orphans** — `git rm` them.
-- [ ] **Step 3: Run** — `cargo test` still green.
-- [ ] **Step 4: Commit** — `git commit -m "chore(tests): remove orphaned placeholder integration tests (assert!(true) bodies)"`
+- [x] **Step 1: Confirm orphaned** — `grep -rn "integration/" Cargo.toml; grep -rn "mod integration" tests/*.rs`. Expected: no `[[test]]` entry or mod include references these files. Keep any file that IS referenced.
+- [x] **Step 2: Delete confirmed orphans** — `git rm` them.
+- [x] **Step 3: Run** — `cargo test` still green.
+- [x] **Step 4: Commit** — `git commit -m "chore(tests): remove orphaned placeholder integration tests (assert!(true) bodies)"`
 
 ### Task 1.3: Consolidate duplicate visualization modules
 
@@ -347,17 +347,17 @@ git commit -m "fix(security)!: ZK verification fails closed instead of string-ma
 - Keep: `src/integrations/visualization.rs` (feature-gated behind `visualization`, real plotters backend)
 - Delete or fold: `src/analytics/visualization.rs` (1,015 LOC overlap)
 
-- [ ] **Step 1: Map usage** — `grep -rn "analytics::visualization\|analytics::vis" src/ tests/ examples/`. List every consumer.
-- [ ] **Step 2: For each consumer, port it** to the integrations module's API (or, if consumers only use types not rendering, move those types into `src/analytics/mod.rs`). Show each edit as a normal Edit with imports updated.
-- [ ] **Step 3: Delete** `src/analytics/visualization.rs`; remove its `mod` declaration in `src/analytics/mod.rs`.
-- [ ] **Step 4: Gate** — `cargo build --all-features && cargo test --all-features` green.
-- [ ] **Step 5: Commit** — `git commit -m "refactor: consolidate visualization into integrations module"`
+- [x] **Step 1: Map usage** — `grep -rn "analytics::visualization\|analytics::vis" src/ tests/ examples/`. List every consumer.
+- [x] **Step 2: For each consumer, port it** to the integrations module's API (or, if consumers only use types not rendering, move those types into `src/analytics/mod.rs`). Show each edit as a normal Edit with imports updated.
+- [x] **Step 3: Delete** `src/analytics/visualization.rs`; remove its `mod` declaration in `src/analytics/mod.rs`.
+- [x] **Step 4: Gate** — `cargo build --all-features && cargo test --all-features` green.
+- [x] **Step 5: Commit** — `git commit -m "refactor: consolidate visualization into integrations module"`
 
 ### Task 1.4: Delete `tests/real_performance_measurement_tests.rs` sleep-benchmarks
 
-- [ ] **Step 1:** Confirm the suite measures `tokio::time::sleep` (lines 36, 78, 123, 374, 434): read the file; any test that measures real code paths gets moved to `tests/performance_tests.rs` instead of deleted.
-- [ ] **Step 2:** `git rm tests/real_performance_measurement_tests.rs`; remove its `[[test]]` entry (`performance_suite`) from Cargo.toml if present.
-- [ ] **Step 3:** `cargo test` green. Commit: `git commit -m "chore(tests): remove sleep-based fake performance suite"`
+- [x] **Step 1:** Confirm the suite measures `tokio::time::sleep` (lines 36, 78, 123, 374, 434): read the file; any test that measures real code paths gets moved to `tests/performance_tests.rs` instead of deleted.
+- [x] **Step 2:** `git rm tests/real_performance_measurement_tests.rs`; remove its `[[test]]` entry (`performance_suite`) from Cargo.toml if present.
+- [x] **Step 3:** `cargo test` green. Commit: `git commit -m "chore(tests): remove sleep-based fake performance suite"`
 
 ---
 
@@ -390,7 +390,7 @@ impl StoreDegradations {
 
 - New method `pub async fn store_with_report(&mut self, key: &str, value: &str) -> Result<StoreDegradations>`; existing `store()` becomes a thin wrapper that calls it, logs each degradation at `warn`, and returns `Ok(())` only if storage succeeded (behavior-compatible), so no caller breaks.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/store_degradation_tests.rs`:
 
@@ -413,8 +413,8 @@ async fn store_with_report_returns_clean_report_on_happy_path() {
 }
 ```
 
-- [ ] **Step 2: Verify fail** — `cargo test --test store_degradation_tests` → no method `store_with_report`.
-- [ ] **Step 3: Implement** — add `src/memory/store_result.rs` with the struct above (`is_clean` returns true iff every field is `None`); `pub mod store_result;` in `src/memory/mod.rs` and re-export from `lib.rs`. Rewrite `store` fan-out: each `let _ = subsystem_call` becomes
+- [x] **Step 2: Verify fail** — `cargo test --test store_degradation_tests` → no method `store_with_report`.
+- [x] **Step 3: Implement** — add `src/memory/store_result.rs` with the struct above (`is_clean` returns true iff every field is `None`); `pub mod store_result;` in `src/memory/mod.rs` and re-export from `lib.rs`. Rewrite `store` fan-out: each `let _ = subsystem_call` becomes
 
 ```rust
         if let Some(ref mut tm) = self.temporal_manager {
@@ -427,8 +427,8 @@ async fn store_with_report_returns_clean_report_on_happy_path() {
 
 (same pattern for analytics, knowledge_graph, advanced_manager, embeddings — five blocks, each setting its own field). `store()` calls `store_with_report` and discards the report after logging.
 
-- [ ] **Step 4: Run** — `cargo test` full suite green.
-- [ ] **Step 5: Commit** — `git commit -m "feat(core): surface subsystem degradations from store instead of swallowing"`
+- [x] **Step 4: Run** — `cargo test` full suite green.
+- [x] **Step 5: Commit** — `git commit -m "feat(core): surface subsystem degradations from store instead of swallowing"`
 
 ### Task 2.2: Make state a cache, storage the source of truth
 
@@ -438,17 +438,17 @@ async fn store_with_report_returns_clean_report_on_happy_path() {
 
 **Interfaces:** unchanged public API; internal ordering contract: **storage write first**, then state insert. On storage `Err`, state must not contain the entry.
 
-- [ ] **Step 1: Failing test** — use a failing-storage double. Check `src/memory/storage/` for an injectable backend; if none exists, add `#[cfg(feature = "test-utils")] pub struct FailingStorage;` in `src/memory/storage/mod.rs` implementing `Storage` with every write method returning `Err(MemoryError::storage("injected failure"))` and reads delegating to an inner `MemoryStorage`. Test: construct `AgentMemory` with it (via the existing storage-injection point in `AgentMemory::new`/config — read `src/lib.rs:84-150` for how `storage` is set and use that), call `store`, assert `Err`, then assert `memory.retrieve("k").await` (which reads state first) returns `Ok(None)` — i.e. state was not polluted.
-- [ ] **Step 2: Verify fail** — today `state.add_memory` happens before `storage.store`, so state holds the entry after a storage error.
-- [ ] **Step 3: Implement** — reorder in `store_with_report`:
+- [x] **Step 1: Failing test** — use a failing-storage double. Check `src/memory/storage/` for an injectable backend; if none exists, add `#[cfg(feature = "test-utils")] pub struct FailingStorage;` in `src/memory/storage/mod.rs` implementing `Storage` with every write method returning `Err(MemoryError::storage("injected failure"))` and reads delegating to an inner `MemoryStorage`. Test: construct `AgentMemory` with it (via the existing storage-injection point in `AgentMemory::new`/config — read `src/lib.rs:84-150` for how `storage` is set and use that), call `store`, assert `Err`, then assert `memory.retrieve("k").await` (which reads state first) returns `Ok(None)` — i.e. state was not polluted.
+- [x] **Step 2: Verify fail** — today `state.add_memory` happens before `storage.store`, so state holds the entry after a storage error.
+- [x] **Step 3: Implement** — reorder in `store_with_report`:
 
 ```rust
         self.storage.store(&entry).await?;   // source of truth first
         self.state.add_memory(entry.clone()); // cache second
 ```
 
-- [ ] **Step 4: Run suite** — green.
-- [ ] **Step 5: Commit** — `git commit -m "fix(core): write storage before state cache so failures cannot diverge them"`
+- [x] **Step 4: Run suite** — green.
+- [x] **Step 5: Commit** — `git commit -m "fix(core): write storage before state cache so failures cannot diverge them"`
 
 ### Task 2.3: Non-destructive checkpoint restore
 
@@ -456,11 +456,11 @@ async fn store_with_report_returns_clean_report_on_happy_path() {
 - Modify: `src/lib.rs:496-515` (`restore_checkpoint` — currently `clear()`s storage then repopulates)
 - Test: `tests/checkpoint_restore_tests.rs` (new)
 
-- [ ] **Step 1: Failing test** — store 3 entries; checkpoint; store 2 more; restore the checkpoint via a `FailingStorage` variant whose `store` fails **after** `clear` has been called (flag-triggered). Assert the error is returned AND a subsequent `retrieve` of the original 3 keys still succeeds (i.e. restore did not destroy data on failure).
-- [ ] **Step 2: Verify fail** — current impl clears then repopulates; injected failure mid-repopulate loses data.
-- [ ] **Step 3: Implement** — restore into a staging pass: (1) read checkpoint state, (2) write **all** checkpoint entries to storage first (upserts), (3) compute keys present in storage but absent from checkpoint via `storage.list_keys()` and delete only those, (4) replace `self.state` last. No `clear()`. Any step erroring leaves prior data intact (upserts are idempotent; deletes happen only after all writes succeed).
-- [ ] **Step 4: Run** — `cargo test --test checkpoint_restore_tests` and full suite green.
-- [ ] **Step 5: Commit** — `git commit -m "fix(core): checkpoint restore is upsert-then-prune, no destructive clear"`
+- [x] **Step 1: Failing test** — store 3 entries; checkpoint; store 2 more; restore the checkpoint via a `FailingStorage` variant whose `store` fails **after** `clear` has been called (flag-triggered). Assert the error is returned AND a subsequent `retrieve` of the original 3 keys still succeeds (i.e. restore did not destroy data on failure).
+- [x] **Step 2: Verify fail** — current impl clears then repopulates; injected failure mid-repopulate loses data.
+- [x] **Step 3: Implement** — restore into a staging pass: (1) read checkpoint state, (2) write **all** checkpoint entries to storage first (upserts), (3) compute keys present in storage but absent from checkpoint via `storage.list_keys()` and delete only those, (4) replace `self.state` last. No `clear()`. Any step erroring leaves prior data intact (upserts are idempotent; deletes happen only after all writes succeed).
+- [x] **Step 4: Run** — `cargo test --test checkpoint_restore_tests` and full suite green.
+- [x] **Step 5: Commit** — `git commit -m "fix(core): checkpoint restore is upsert-then-prune, no destructive clear"`
 
 ---
 
@@ -476,7 +476,7 @@ async fn store_with_report_returns_clean_report_on_happy_path() {
 **Interfaces:**
 - `AgentMemory::search` keeps its exact signature. Internally: pipeline when embeddings are enabled and populated, storage substring search as explicit fallback.
 
-- [ ] **Step 1: Failing test** — in `tests/retrieval_quality.rs` add:
+- [x] **Step 1: Failing test** — in `tests/retrieval_quality.rs` add:
 
 ```rust
 #[tokio::test]
@@ -498,10 +498,10 @@ async fn search_ranks_semantic_match_above_substring_noise() {
 
 (Adjust accessor names to `MemoryFragment`'s real API — check `src/memory/types.rs` before writing; use whatever getter exposes the key.)
 
-- [ ] **Step 2: Verify fail** — substring search has no ranking; likely returns noise first or misses "felines" entirely for query "cat".
-- [ ] **Step 3: Implement** — construct the retrieval pipeline in `AgentMemory::new` when `enable_embeddings` is set (wiring the `EmbeddingManager` the struct already owns — read `pipeline.rs:100-270` for the builder and its stage config, use `RetrievalConfig` semantic defaults from `mod.rs:132`); in `search`, call pipeline when present, else storage search. Keep the input validation exactly as-is.
-- [ ] **Step 4: Run** — `cargo test --test retrieval_quality` and full suite green.
-- [ ] **Step 5: Commit** — `git commit -m "feat(retrieval): route AgentMemory::search through hybrid retrieval pipeline"`
+- [x] **Step 2: Verify fail** — substring search has no ranking; likely returns noise first or misses "felines" entirely for query "cat".
+- [x] **Step 3: Implement** — construct the retrieval pipeline in `AgentMemory::new` when `enable_embeddings` is set (wiring the `EmbeddingManager` the struct already owns — read `pipeline.rs:100-270` for the builder and its stage config, use `RetrievalConfig` semantic defaults from `mod.rs:132`); in `search`, call pipeline when present, else storage search. Keep the input validation exactly as-is.
+- [x] **Step 4: Run** — `cargo test --test retrieval_quality` and full suite green.
+- [x] **Step 5: Commit** — `git commit -m "feat(retrieval): route AgentMemory::search through hybrid retrieval pipeline"`
 
 ### Task 3.2: Wire HNSW ANN into `count_related_memories` (kill the O(n) brute force)
 
@@ -510,10 +510,10 @@ async fn search_ranks_semantic_match_above_substring_noise() {
 - Consume: `src/memory/indexing/` HNSW index (already built, unwired)
 - Test: `tests/indexed_retrieval_tests.rs` (extend)
 
-- [ ] **Step 1: Failing test** — behavioral, not perf: insert 200 entries with deterministic embeddings (test-utils embedder); assert `count_related_memories` for a probe returns the same neighbor set as brute-force cosine over the 200 (compute expected in the test) — proving ANN path is wired AND correct. Mark a companion `#[ignore]`d perf test comparing timing at 10k entries.
-- [ ] **Step 2: Verify fail** (wire a temporary assertion that the ANN index was consulted — e.g. index hit-counter exposed under `test-utils`).
-- [ ] **Step 3: Implement** — replace the linear scan with an index query (`k` = config threshold), falling back to brute force only when index size < 100 (document the constant).
-- [ ] **Step 4: Run + commit** — `git commit -m "feat(indexing): use HNSW index for related-memory counting"`
+- [x] **Step 1: Failing test** — behavioral, not perf: insert 200 entries with deterministic embeddings (test-utils embedder); assert `count_related_memories` for a probe returns the same neighbor set as brute-force cosine over the 200 (compute expected in the test) — proving ANN path is wired AND correct. Mark a companion `#[ignore]`d perf test comparing timing at 10k entries.
+- [x] **Step 2: Verify fail** (wire a temporary assertion that the ANN index was consulted — e.g. index hit-counter exposed under `test-utils`).
+- [x] **Step 3: Implement** — replace the linear scan with an index query (`k` = config threshold), falling back to brute force only when index size < 100 (document the constant).
+- [x] **Step 4: Run + commit** — `git commit -m "feat(indexing): use HNSW index for related-memory counting"`
 
 ---
 
