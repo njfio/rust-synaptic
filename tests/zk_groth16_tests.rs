@@ -195,6 +195,121 @@ async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
 }
 
 // ---------------------------------------------------------------------------
+// Soundness fix: verifier-derived public inputs (registered commitments)
+// ---------------------------------------------------------------------------
+
+/// Statement rebinding attack: copy an honest proof for statement A,
+/// overwrite its statement_hash to match statement B, and verify against B.
+/// The statement-bound public input is derived by the VERIFIER from B, so
+/// the pairing check must fail even though the envelope hash matches.
+#[tokio::test]
+async fn statement_rebinding_rejected() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
+    let context = mfa_context("prover");
+    let stmt_a = statement("prover", "memory-a");
+    let stmt_b = statement("prover", "memory-b");
+
+    let mut proof = manager.generate_access_proof(&stmt_a, &context).await?;
+
+    // Attacker recomputes the (public) statement hash for B and rebinds the
+    // envelope.
+    let serialized_b = serde_json::to_string(&stmt_b)?;
+    proof.statement_hash = synaptic::security::zero_knowledge::hash_content_for_test(&serialized_b);
+
+    let is_valid = manager.verify_access_proof(&proof, &stmt_b).await?;
+    assert!(
+        !is_valid,
+        "rebinding an honest proof to another statement must fail cryptographically"
+    );
+    Ok(())
+}
+
+/// Replay attack: an honest proof for statement A must not verify against
+/// statement B (without any envelope tampering).
+#[tokio::test]
+async fn replayed_proof_for_other_statement_rejected() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
+    let context = mfa_context("prover");
+    let stmt_a = statement("prover", "memory-a");
+    let stmt_b = statement("prover", "memory-b");
+
+    let proof = manager.generate_access_proof(&stmt_a, &context).await?;
+    let is_valid = manager.verify_access_proof(&proof, &stmt_b).await?;
+    assert!(!is_valid, "proof for statement A must not verify for B");
+    Ok(())
+}
+
+/// From-scratch forgery: an attacker who shares the public CRS but has no
+/// registered secret picks their own secret, builds a structurally valid
+/// proof, and presents it under the victim's identity. The verifier derives
+/// the expected commitment from ITS registration store, so the forgery must
+/// fail.
+#[tokio::test]
+async fn forgery_without_registered_secret_rejected() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut verifier = ZeroKnowledgeManager::new(&config).await?;
+    verifier.register_prover("victim")?;
+
+    // Attacker clones the public parameters and registers their own secret
+    // for the same identity in their own manager.
+    let params = verifier.groth16_parameter_bytes()?;
+    let mut attacker = ZeroKnowledgeManager::from_groth16_parameter_bytes(&config, &params)?;
+    attacker.register_prover("victim")?;
+
+    let context = mfa_context("victim");
+    let stmt = statement("victim", "forged-memory");
+    let forged = attacker.generate_access_proof(&stmt, &context).await?;
+
+    // Sanity: the forgery is self-consistent for the attacker...
+    assert!(attacker.verify_access_proof(&forged, &stmt).await?);
+    // ...but the real verifier's registered commitment differs, so it fails.
+    let is_valid = verifier.verify_access_proof(&forged, &stmt).await?;
+    assert!(
+        !is_valid,
+        "a proof built without the registered secret must fail verification"
+    );
+    Ok(())
+}
+
+/// A proof claiming an identity with no registered commitment is rejected.
+#[tokio::test]
+async fn unregistered_prover_rejected() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "memory-5");
+
+    let mut proof = manager.generate_access_proof(&stmt, &context).await?;
+    proof.prover_id = "ghost".to_string();
+
+    let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
+    assert!(!is_valid, "unknown prover identity must be rejected");
+    Ok(())
+}
+
+/// Generation without a registered secret must refuse (the prover has no
+/// witness that satisfies the circuit against any registered commitment).
+#[tokio::test]
+async fn generation_requires_registration() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("nobody");
+    let stmt = statement("nobody", "memory-6");
+
+    let result = manager.generate_access_proof(&stmt, &context).await;
+    assert!(
+        result.is_err(),
+        "unregistered prover must not obtain proofs"
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Task 4.3: caller-supplied statements; external verification
 // ---------------------------------------------------------------------------
 
