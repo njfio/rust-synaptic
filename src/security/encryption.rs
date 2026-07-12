@@ -540,7 +540,9 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!("Homomorphic encryption feature not enabled, using fallback parameters");
+            tracing::warn!(
+                "homomorphic-encryption feature not enabled; homomorphic operations will return FeatureDisabled errors"
+            );
             Ok(Self {
                 key_id,
                 parameters: HomomorphicParameters::new(config.encryption_key_size),
@@ -579,15 +581,11 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!(
-                "Using fallback encryption - homomorphic-encryption feature not enabled"
-            );
-            let mut encrypted = Vec::new();
-            for &value in data {
-                let encrypted_value = (value * 1.5 + 42.0) as u64;
-                encrypted.extend_from_slice(&encrypted_value.to_le_bytes());
-            }
-            Ok(encrypted)
+            let _ = data;
+            Err(MemoryError::feature_disabled(
+                "homomorphic-encryption",
+                "encrypt_vector",
+            ))
         }
     }
 
@@ -644,21 +642,11 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!(
-                "Using fallback decryption - homomorphic-encryption feature not enabled"
-            );
-            let mut decrypted = Vec::new();
-            for chunk in encrypted_data.chunks(8) {
-                if chunk.len() == 8 {
-                    let encrypted_value = u64::from_le_bytes([
-                        chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
-                        chunk[7],
-                    ]);
-                    let value = (encrypted_value as f64 - 42.0) / 1.5;
-                    decrypted.push(value);
-                }
-            }
-            Ok(decrypted)
+            let _ = encrypted_data;
+            Err(MemoryError::feature_disabled(
+                "homomorphic-encryption",
+                "decrypt_vector",
+            ))
         }
     }
 
@@ -704,21 +692,11 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!(
-                operation = "homomorphic_sum",
-                entry_count = entries.len(),
-                feature_enabled = false,
-                "Using fallback sum - homomorphic-encryption feature not enabled"
-            );
-            let mut result = vec![0u8; 64];
-            for entry in entries {
-                for (i, &byte) in entry.encrypted_data.iter().enumerate() {
-                    if i < result.len() {
-                        result[i] = result[i].wrapping_add(byte);
-                    }
-                }
-            }
-            Ok(result)
+            let _ = entries;
+            Err(MemoryError::feature_disabled(
+                "homomorphic-encryption",
+                "homomorphic_sum",
+            ))
         }
     }
 
@@ -753,11 +731,11 @@ impl HomomorphicContext {
 
         #[cfg(not(feature = "homomorphic-encryption"))]
         {
-            tracing::warn!("Using fallback average - homomorphic-encryption feature not enabled");
-            let sum = self.homomorphic_sum(entries).await?;
-            let count = entries.len() as u8;
-            let average: Vec<u8> = sum.iter().map(|&x| x / count.max(1)).collect();
-            Ok(average)
+            let _ = entries;
+            Err(MemoryError::feature_disabled(
+                "homomorphic-encryption",
+                "homomorphic_average",
+            ))
         }
     }
 
