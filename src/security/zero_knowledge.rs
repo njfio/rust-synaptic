@@ -27,6 +27,22 @@ use bls12_381::{Bls12, Scalar};
 #[cfg(feature = "zero-knowledge-proofs")]
 use rand::rngs::OsRng;
 
+#[cfg(feature = "zero-knowledge-proofs")]
+use bellpepper_core::{
+    num::AllocatedNum, ConstraintSystem as BpConstraintSystem, Index as BpIndex,
+    LinearCombination as BpLinearCombination, SynthesisError as BpSynthesisError,
+    Variable as BpVariable,
+};
+
+#[cfg(feature = "zero-knowledge-proofs")]
+use neptune::poseidon::{Poseidon, PoseidonConstants};
+
+#[cfg(feature = "zero-knowledge-proofs")]
+use typenum::U2;
+
+#[cfg(feature = "zero-knowledge-proofs")]
+use ff::Field as _;
+
 /// Computes a real, hex-encoded SHA-256 digest of `content`.
 ///
 /// This is the single implementation shared by all "content hash" and
@@ -465,108 +481,218 @@ impl std::fmt::Debug for ProofSystem {
     }
 }
 
-/// Circuit for proving access rights without revealing sensitive information
+/// Records a circuit synthesized against `bellpepper-core`'s
+/// `ConstraintSystem` trait (used by neptune's Poseidon gadget) so it can be
+/// replayed into a bellman `ConstraintSystem` for Groth16 proving.
+///
+/// bellpepper's trait requires `Send`, which a `&mut`-borrowing adapter over
+/// an arbitrary bellman constraint system cannot promise; a recorder that
+/// owns its data can. Allocation order (and therefore variable indexing) is
+/// preserved exactly on replay, so the constraint system seen by bellman is
+/// identical to the one neptune synthesized.
 #[cfg(feature = "zero-knowledge-proofs")]
-struct AccessRightCircuit {
-    /// User's secret key (private input)
-    user_secret: Option<Scalar>,
-    /// Expected hash of the secret (public input)
-    expected_hash: Option<Scalar>,
-    /// Access level required (public input)
-    required_access_level: Option<Scalar>,
-    /// User's actual access level (private input)
-    user_access_level: Option<Scalar>,
+struct BellpepperRecorder {
+    /// Values of auxiliary (private) allocations, in allocation order.
+    aux: Vec<Option<Scalar>>,
+    /// Values of public-input allocations, in allocation order. Index 0 is
+    /// the constant `one` input, mirroring both frameworks' conventions.
+    inputs: Vec<Option<Scalar>>,
+    /// Recorded R1CS constraints as bellpepper linear combinations.
+    constraints: Vec<(
+        BpLinearCombination<Scalar>,
+        BpLinearCombination<Scalar>,
+        BpLinearCombination<Scalar>,
+    )>,
 }
 
 #[cfg(feature = "zero-knowledge-proofs")]
-impl Circuit<Scalar> for AccessRightCircuit {
+impl BellpepperRecorder {
+    fn new() -> Self {
+        Self {
+            aux: Vec::new(),
+            inputs: vec![Some(Scalar::ONE)],
+            constraints: Vec::new(),
+        }
+    }
+
+    /// Replay the recorded allocations and constraints into a bellman
+    /// constraint system, preserving variable indices.
+    fn replay<CS: ConstraintSystem<Scalar>>(
+        self,
+        cs: &mut CS,
+    ) -> std::result::Result<(), SynthesisError> {
+        let mut aux_vars = Vec::with_capacity(self.aux.len());
+        for value in &self.aux {
+            let value = *value;
+            aux_vars.push(cs.alloc(
+                || "recorded aux",
+                || value.ok_or(SynthesisError::AssignmentMissing),
+            )?);
+        }
+        let mut input_vars = vec![CS::one()];
+        for value in self.inputs.iter().skip(1) {
+            let value = *value;
+            input_vars.push(cs.alloc_input(
+                || "recorded input",
+                || value.ok_or(SynthesisError::AssignmentMissing),
+            )?);
+        }
+
+        let convert = |lc: &BpLinearCombination<Scalar>| -> bellman::LinearCombination<Scalar> {
+            let mut out = bellman::LinearCombination::<Scalar>::zero();
+            for (variable, coeff) in lc.iter() {
+                let bellman_var = match variable.get_unchecked() {
+                    BpIndex::Input(i) => input_vars[i],
+                    BpIndex::Aux(i) => aux_vars[i],
+                };
+                out = out + (*coeff, bellman_var);
+            }
+            out
+        };
+
+        for (a, b, c) in &self.constraints {
+            let (a, b, c) = (convert(a), convert(b), convert(c));
+            cs.enforce(|| "recorded constraint", |_| a, |_| b, |_| c);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "zero-knowledge-proofs")]
+impl BpConstraintSystem<Scalar> for BellpepperRecorder {
+    type Root = Self;
+
+    fn alloc<F, A, AR>(
+        &mut self,
+        _annotation: A,
+        f: F,
+    ) -> std::result::Result<BpVariable, BpSynthesisError>
+    where
+        F: FnOnce() -> std::result::Result<Scalar, BpSynthesisError>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        self.aux.push(f().ok());
+        Ok(BpVariable::new_unchecked(BpIndex::Aux(self.aux.len() - 1)))
+    }
+
+    fn alloc_input<F, A, AR>(
+        &mut self,
+        _annotation: A,
+        f: F,
+    ) -> std::result::Result<BpVariable, BpSynthesisError>
+    where
+        F: FnOnce() -> std::result::Result<Scalar, BpSynthesisError>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        self.inputs.push(f().ok());
+        Ok(BpVariable::new_unchecked(BpIndex::Input(
+            self.inputs.len() - 1,
+        )))
+    }
+
+    fn enforce<A, AR, LA, LB, LC>(&mut self, _annotation: A, a: LA, b: LB, c: LC)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+        LA: FnOnce(BpLinearCombination<Scalar>) -> BpLinearCombination<Scalar>,
+        LB: FnOnce(BpLinearCombination<Scalar>) -> BpLinearCombination<Scalar>,
+        LC: FnOnce(BpLinearCombination<Scalar>) -> BpLinearCombination<Scalar>,
+    {
+        self.constraints.push((
+            a(BpLinearCombination::zero()),
+            b(BpLinearCombination::zero()),
+            c(BpLinearCombination::zero()),
+        ));
+    }
+
+    fn push_namespace<NR, N>(&mut self, _name_fn: N)
+    where
+        NR: Into<String>,
+        N: FnOnce() -> NR,
+    {
+    }
+
+    fn pop_namespace(&mut self) {}
+
+    fn get_root(&mut self) -> &mut Self::Root {
+        self
+    }
+}
+
+/// Poseidon parameters shared by native hashing and the in-circuit gadget.
+///
+/// Arity 2 with the second lane fixed to zero gives a single-field-element
+/// knowledge-of-preimage hash; the constants are deterministic for the
+/// (field, arity) pair, so prover and verifier always agree.
+#[cfg(feature = "zero-knowledge-proofs")]
+fn poseidon_constants() -> PoseidonConstants<Scalar, U2> {
+    PoseidonConstants::new()
+}
+
+/// Native Poseidon digest of a single preimage element.
+#[cfg(feature = "zero-knowledge-proofs")]
+fn poseidon_digest(preimage: Scalar) -> Scalar {
+    let constants = poseidon_constants();
+    Poseidon::new_with_preimage(&[preimage, Scalar::zero()], &constants).hash()
+}
+
+/// Circuit proving knowledge of a preimage `x` with
+/// `Poseidon(x, 0) == digest`, where `digest` is the sole public input.
+#[cfg(feature = "zero-knowledge-proofs")]
+struct PoseidonPreimageCircuit {
+    /// The secret preimage (private witness).
+    preimage: Option<Scalar>,
+    /// The expected Poseidon digest (public input).
+    digest: Option<Scalar>,
+}
+
+#[cfg(feature = "zero-knowledge-proofs")]
+impl Circuit<Scalar> for PoseidonPreimageCircuit {
     fn synthesize<CS: ConstraintSystem<Scalar>>(
         self,
         cs: &mut CS,
     ) -> std::result::Result<(), SynthesisError> {
-        // Allocate private inputs
-        let user_secret = cs.alloc(
-            || "user_secret",
-            || self.user_secret.ok_or(SynthesisError::AssignmentMissing),
-        )?;
+        let constants = poseidon_constants();
+        let mut recorder = BellpepperRecorder::new();
 
-        let user_access_level = cs.alloc(
-            || "user_access_level",
-            || {
-                self.user_access_level
-                    .ok_or(SynthesisError::AssignmentMissing)
-            },
-        )?;
+        let preimage = AllocatedNum::alloc(recorder.namespace(|| "preimage"), || {
+            self.preimage.ok_or(BpSynthesisError::AssignmentMissing)
+        })
+        .map_err(|_| SynthesisError::AssignmentMissing)?;
 
-        // Allocate public inputs
-        let expected_hash = cs.alloc_input(
-            || "expected_hash",
-            || self.expected_hash.ok_or(SynthesisError::AssignmentMissing),
-        )?;
-
-        let required_access_level = cs.alloc_input(
-            || "required_access_level",
-            || {
-                self.required_access_level
-                    .ok_or(SynthesisError::AssignmentMissing)
-            },
-        )?;
-
-        // Constraint 1: Verify that the user knows the secret
-        // Hash(user_secret) == expected_hash
-        // For simplicity, we use user_secret^2 as a hash function
-        let secret_squared = cs.alloc(
-            || "secret_squared",
-            || {
-                let secret = self.user_secret.ok_or(SynthesisError::AssignmentMissing)?;
-                Ok(secret * secret)
-            },
-        )?;
-
-        // secret_squared = user_secret * user_secret
-        cs.enforce(
-            || "secret hash constraint",
-            |lc| lc + user_secret,
-            |lc| lc + user_secret,
-            |lc| lc + secret_squared,
+        // Second Poseidon lane is a constant zero pad; constrain it so the
+        // prover cannot smuggle a second free witness element.
+        let pad = AllocatedNum::alloc(recorder.namespace(|| "pad"), || Ok(Scalar::zero()))
+            .map_err(|_| SynthesisError::AssignmentMissing)?;
+        recorder.enforce(
+            || "pad is zero",
+            |lc| lc + pad.get_variable(),
+            |lc| lc + BellpepperRecorder::one(),
+            |lc| lc,
         );
 
-        // secret_squared == expected_hash
-        cs.enforce(
-            || "hash verification constraint",
-            |lc| lc + secret_squared,
-            |lc| lc + CS::one(),
-            |lc| lc + expected_hash,
+        let hashed = neptune::circuit2::poseidon_hash_allocated(
+            recorder.namespace(|| "poseidon"),
+            vec![preimage, pad],
+            &constants,
+        )
+        .map_err(|_| SynthesisError::Unsatisfiable)?;
+
+        let digest = AllocatedNum::alloc_input(recorder.namespace(|| "digest"), || {
+            self.digest.ok_or(BpSynthesisError::AssignmentMissing)
+        })
+        .map_err(|_| SynthesisError::AssignmentMissing)?;
+
+        recorder.enforce(
+            || "poseidon(preimage) == digest",
+            |lc| lc + hashed.get_variable(),
+            |lc| lc + BellpepperRecorder::one(),
+            |lc| lc + digest.get_variable(),
         );
 
-        // Constraint 2: Verify that user has sufficient access level
-        // user_access_level >= required_access_level
-        // We implement this as: user_access_level - required_access_level = non_negative_diff
-        let access_diff = cs.alloc(
-            || "access_diff",
-            || {
-                let user_level = self
-                    .user_access_level
-                    .ok_or(SynthesisError::AssignmentMissing)?;
-                let required_level = self
-                    .required_access_level
-                    .ok_or(SynthesisError::AssignmentMissing)?;
-                Ok(user_level - required_level)
-            },
-        )?;
-
-        // access_diff = user_access_level - required_access_level
-        cs.enforce(
-            || "access level constraint",
-            |lc| lc + user_access_level - required_access_level,
-            |lc| lc + CS::one(),
-            |lc| lc + access_diff,
-        );
-
-        // For simplicity, we assume access_diff is non-negative
-        // In a real implementation, you would add range proof constraints here
-
-        Ok(())
+        recorder.replay(cs)
     }
 }
 
@@ -579,12 +705,10 @@ impl ProofSystem {
                 config.encryption_key_size
             );
 
-            // Create a dummy circuit for parameter generation
-            let circuit = AccessRightCircuit {
-                user_secret: None,
-                expected_hash: None,
-                required_access_level: None,
-                user_access_level: None,
+            // Create an empty-witness circuit for parameter generation
+            let circuit = PoseidonPreimageCircuit {
+                preimage: None,
+                digest: None,
             };
 
             // Generate trusted setup parameters
@@ -692,22 +816,16 @@ impl ProofSystem {
             tracing::debug!("Generating real zk-SNARK proof using Bellman");
             let start_time = std::time::Instant::now();
 
-            // NOTE: verification of proofs generated here is not yet implemented
-            // (see `verify_proof` below, which refuses with `FeatureDisabled` until
-            // Phase 4 lands real Groth16 verification). This circuit input is a
-            // placeholder pending derivation from the real witness; do not treat
-            // proofs produced by this path as cryptographically meaningful yet.
-            let user_secret = Scalar::from(42u64); // In real implementation, derive from witness
-            let expected_hash = user_secret * user_secret; // Hash of the secret
-            let required_access_level = Scalar::from(1u64); // Minimum access level required
-            let user_access_level = Scalar::from(5u64); // User's actual access level
+            // Derive the secret preimage from the statement hash and the
+            // private witness material, then publish only its Poseidon
+            // digest as the proof's public input.
+            let statement_hash = self.hash_statement(statement)?;
+            let preimage = Self::derive_witness_scalar(&statement_hash, witness);
+            let digest = poseidon_digest(preimage);
 
-            // Create circuit with actual values
-            let circuit = AccessRightCircuit {
-                user_secret: Some(user_secret),
-                expected_hash: Some(expected_hash),
-                required_access_level: Some(required_access_level),
-                user_access_level: Some(user_access_level),
+            let circuit = PoseidonPreimageCircuit {
+                preimage: Some(preimage),
+                digest: Some(digest),
             };
 
             // Generate proof
@@ -716,10 +834,8 @@ impl ProofSystem {
                 MemoryError::encryption(format!("Failed to generate zk-SNARK proof: {:?}", e))
             })?;
 
-            // Serialize proof manually (Bellman proofs don't implement Serialize)
             let proof_data = Self::serialize_proof(&proof)?;
 
-            let statement_hash = self.hash_statement(statement)?;
             let duration = start_time.elapsed();
             tracing::debug!("zk-SNARK proof generation completed in {:?}", duration);
 
@@ -727,6 +843,7 @@ impl ProofSystem {
                 id: Uuid::new_v4().to_string(),
                 statement_hash,
                 proof_data,
+                public_inputs: digest.to_bytes().to_vec(),
                 proving_key_id: "bellman_groth16".to_string(),
                 created_at: Utc::now(),
             })
@@ -744,6 +861,7 @@ impl ProofSystem {
                 id: Uuid::new_v4().to_string(),
                 statement_hash,
                 proof_data: witness_commitment,
+                public_inputs: Vec::new(),
                 proving_key_id: self.proving_key.id.clone(),
                 created_at: Utc::now(),
             })
@@ -759,25 +877,51 @@ impl ProofSystem {
             tracing::debug!("Verifying real zk-SNARK proof using Bellman");
             let start_time = std::time::Instant::now();
 
-            // Check statement hash first
+            // The proof envelope must be bound to the statement being
+            // verified: recompute the statement hash and compare.
             let statement_hash = self.hash_statement(statement)?;
             if proof.statement_hash != statement_hash {
                 tracing::warn!("Statement hash mismatch in proof verification");
                 return Ok(false);
             }
 
-            // Real Groth16 verification lands in Phase 4 (task 4.2). Until then,
-            // refuse rather than approve on a proof-data format check.
+            // Parse the public input (the Poseidon digest the prover
+            // committed to). Malformed or non-canonical bytes are a
+            // verification failure, not an error.
+            let digest_bytes: [u8; 32] = match proof.public_inputs.as_slice().try_into() {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    tracing::warn!("Malformed public input length in proof");
+                    return Ok(false);
+                }
+            };
+            let digest = match Option::<Scalar>::from(Scalar::from_bytes(&digest_bytes)) {
+                Some(digest) => digest,
+                None => {
+                    tracing::warn!("Non-canonical public input scalar in proof");
+                    return Ok(false);
+                }
+            };
+
+            // Deserialize the Groth16 proof; corrupted points fail closed.
+            let groth16_proof = match Self::deserialize_proof(&proof.proof_data) {
+                Ok(groth16_proof) => groth16_proof,
+                Err(_) => {
+                    tracing::warn!("Failed to deserialize Groth16 proof data");
+                    return Ok(false);
+                }
+            };
+
+            let is_valid = verify_proof(&self.prepared_vk, &groth16_proof, &[digest]).is_ok();
+
             let duration = start_time.elapsed();
-            tracing::warn!(
-                "zk-SNARK proof verification refused after {:?}: real Groth16 verification not yet implemented",
+            tracing::debug!(
+                is_valid,
+                "zk-SNARK Groth16 verification completed in {:?}",
                 duration
             );
 
-            Err(MemoryError::feature_disabled(
-                "zero-knowledge-proofs(real-verify)",
-                "verify_proof",
-            ))
+            Ok(is_valid)
         }
 
         #[cfg(not(feature = "zero-knowledge-proofs"))]
@@ -812,23 +956,45 @@ impl ProofSystem {
         Ok(commitment.into_bytes())
     }
 
+    /// Derive the secret circuit preimage from the statement hash and the
+    /// private witness material.
+    ///
+    /// Two domain-separated SHA-256 digests are concatenated into 64 bytes
+    /// and reduced into the BLS12-381 scalar field with `from_bytes_wide`,
+    /// which keeps the mapping statistically uniform.
     #[cfg(feature = "zero-knowledge-proofs")]
-    fn serialize_proof(proof: &Proof<Bls12>) -> Result<Vec<u8>> {
-        // Manual serialization of Bellman proof
-        // In a real implementation, you would use proper serialization
-        // For now, we'll create a simple representation
-        let proof_bytes = format!("bellman_proof_{:?}", proof).into_bytes();
-        Ok(proof_bytes)
+    fn derive_witness_scalar(statement_hash: &str, witness: &Witness) -> Scalar {
+        let mut wide = [0u8; 64];
+        for (chunk, tag) in wide.chunks_exact_mut(32).zip(0u8..) {
+            let mut hasher = Sha256::new();
+            hasher.update([tag]);
+            hasher.update(b"synaptic-zk-preimage-v1");
+            hasher.update(statement_hash.as_bytes());
+            hasher.update(witness.data.session_proof.as_bytes());
+            hasher.update(witness.data.access_signature.as_bytes());
+            hasher.update(witness.data.timestamp_proof.to_le_bytes());
+            chunk.copy_from_slice(&hasher.finalize());
+        }
+        Scalar::from_bytes_wide(&wide)
     }
 
+    /// Serialize a Groth16 proof to its canonical 192-byte encoding.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn serialize_proof(proof: &Proof<Bls12>) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        proof.write(&mut bytes).map_err(|e| {
+            MemoryError::encryption(format!("Failed to serialize Groth16 proof: {e}"))
+        })?;
+        Ok(bytes)
+    }
+
+    /// Deserialize a Groth16 proof, validating that all points are on-curve
+    /// and in the correct subgroup.
     #[cfg(feature = "zero-knowledge-proofs")]
     fn deserialize_proof(data: &[u8]) -> Result<Proof<Bls12>> {
-        // Manual deserialization - this is a simplified approach
-        // In a real implementation, you would properly deserialize the proof
-        // For now, we'll return an error since we can't reconstruct the actual proof
-        Err(MemoryError::encryption(
-            "Proof deserialization not implemented for demo".to_string(),
-        ))
+        Proof::<Bls12>::read(data).map_err(|e| {
+            MemoryError::encryption(format!("Failed to deserialize Groth16 proof: {e}"))
+        })
     }
 }
 
@@ -843,6 +1009,10 @@ pub struct ZKProof {
     pub statement_hash: String,
     /// Cryptographic proof data
     pub proof_data: Vec<u8>,
+    /// Serialized public inputs (the Poseidon digest the proof commits to);
+    /// empty for fallback (feature-off) proofs, which never verify.
+    #[serde(default)]
+    pub public_inputs: Vec<u8>,
     /// ID of the proving key used
     pub proving_key_id: String,
     /// Timestamp when proof was created

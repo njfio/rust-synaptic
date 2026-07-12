@@ -81,3 +81,125 @@ async fn groth16_key_store_path_persists_parameters() -> Result<(), Box<dyn Erro
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Task 4.2: real Poseidon knowledge-of-preimage circuit + Groth16 verification
+// ---------------------------------------------------------------------------
+
+use synaptic::security::zero_knowledge::{AccessStatement, AccessType, ZKProof};
+use synaptic::security::SecurityContext;
+
+fn mfa_context(user: &str) -> SecurityContext {
+    let mut context = SecurityContext::new(user.to_string(), vec!["admin".to_string()]);
+    context.mfa_verified = true;
+    context
+}
+
+fn statement(user: &str, key: &str) -> AccessStatement {
+    AccessStatement {
+        memory_key: key.to_string(),
+        user_id: user.to_string(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    }
+}
+
+/// Until task 4.3 lands caller-supplied statements, proof generation stamps
+/// its own timestamp into the hashed statement; align the envelope hash so
+/// verification exercises the cryptographic step. Deleted in task 4.3.
+fn align_statement_hash(
+    proof: &mut ZKProof,
+    statement: &AccessStatement,
+) -> Result<(), Box<dyn Error>> {
+    let serialized = serde_json::to_string(statement)?;
+    proof.statement_hash = synaptic::security::zero_knowledge::hash_content_for_test(&serialized);
+    Ok(())
+}
+
+/// (a) An honestly generated proof verifies TRUE with real Groth16.
+#[tokio::test]
+async fn honest_proof_round_trip_verifies() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "memory-1");
+
+    let mut proof = manager
+        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
+        .await?;
+    align_statement_hash(&mut proof, &stmt)?;
+
+    let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
+    assert!(is_valid, "honest Groth16 proof must verify true");
+    Ok(())
+}
+
+/// (b) A bit-flipped proof fails verification.
+#[tokio::test]
+async fn bit_flipped_proof_fails() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "memory-2");
+
+    let mut proof = manager
+        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
+        .await?;
+    align_statement_hash(&mut proof, &stmt)?;
+
+    let mid = proof.proof_data.len() / 2;
+    proof.proof_data[mid] ^= 0x01;
+
+    let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
+    assert!(!is_valid, "bit-flipped proof must fail verification");
+    Ok(())
+}
+
+/// (c) A proof presented with the wrong public input fails verification.
+#[tokio::test]
+async fn wrong_public_input_fails() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "memory-3");
+
+    let mut proof = manager
+        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
+        .await?;
+    align_statement_hash(&mut proof, &stmt)?;
+    assert!(
+        !proof.public_inputs.is_empty(),
+        "proof must carry its public input"
+    );
+
+    proof.public_inputs[0] ^= 0x01;
+
+    let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
+    assert!(!is_valid, "tampered public input must fail verification");
+    Ok(())
+}
+
+/// (e) A proof generated under key-set A fails verification under key-set B.
+#[tokio::test]
+async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut manager_a = ZeroKnowledgeManager::new(&config).await?;
+    let mut manager_b = ZeroKnowledgeManager::new(&config).await?;
+    let context = mfa_context("prover");
+    let stmt = statement("prover", "memory-4");
+
+    let mut proof = manager_a
+        .generate_access_proof(&stmt.memory_key, &context, AccessType::Read)
+        .await?;
+    align_statement_hash(&mut proof, &stmt)?;
+
+    assert!(
+        manager_a.verify_access_proof(&proof, &stmt).await?,
+        "sanity: proof must verify under its own key set"
+    );
+    assert!(
+        !manager_b.verify_access_proof(&proof, &stmt).await?,
+        "proof must not verify under an unrelated key set"
+    );
+    Ok(())
+}

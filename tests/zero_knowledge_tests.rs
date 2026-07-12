@@ -107,19 +107,16 @@ mod bellman_tests {
             .await?;
         align_statement_hash(&mut proof, &access_statement)?;
 
-        // Verification fails closed until real Groth16 verification lands in
-        // Phase 4 (task 4.2); this reverts to `assert!(is_valid)` then.
-        let err = security_manager
+        // Real Groth16 verification (Phase 4, task 4.2): an honest proof
+        // verifies true.
+        let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
             .verify_access_proof(&proof, &access_statement)
-            .await
-            .expect_err("verification must fail closed until real Groth16 verify lands");
+            .await?;
 
-        assert!(err
-            .to_string()
-            .contains("zero-knowledge-proofs(real-verify)"));
+        assert!(is_valid);
 
         Ok(())
     }
@@ -157,19 +154,16 @@ mod bellman_tests {
             .await?;
         align_statement_hash(&mut proof, &content_statement)?;
 
-        // Verification fails closed until real Groth16 verification lands in
-        // Phase 4 (task 4.2); this reverts to `assert!(is_valid)` then.
-        let err = security_manager
+        // Real Groth16 verification (Phase 4, task 4.2): an honest content
+        // proof verifies true.
+        let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
             .verify_content_proof(&proof, &content_statement)
-            .await
-            .expect_err("verification must fail closed until real Groth16 verify lands");
+            .await?;
 
-        assert!(err
-            .to_string()
-            .contains("zero-knowledge-proofs(real-verify)"));
+        assert!(is_valid);
         assert!(!proof.proof_data.is_empty());
 
         Ok(())
@@ -266,23 +260,18 @@ mod bellman_tests {
             proof_times.push(proof_time);
             align_statement_hash(&mut proof, &access_statement)?;
 
-            // Measure verification time. Verification fails closed until real
-            // Groth16 verification lands in Phase 4 (task 4.2); this reverts
-            // to `assert!(is_valid)` then.
+            // Measure real Groth16 verification time.
             let start_time = std::time::Instant::now();
-            let err = security_manager
+            let is_valid = security_manager
                 .zero_knowledge_manager
                 .as_mut()
                 .unwrap()
                 .verify_access_proof(&proof, &access_statement)
-                .await
-                .expect_err("verification must fail closed until real Groth16 verify lands");
+                .await?;
             let verify_time = start_time.elapsed();
             verify_times.push(verify_time);
 
-            assert!(err
-                .to_string()
-                .contains("zero-knowledge-proofs(real-verify)"));
+            assert!(is_valid);
         }
 
         // Verify performance is reasonable (proofs should complete within 10 seconds each)
@@ -304,8 +293,7 @@ mod bellman_tests {
             .get_metrics()
             .await?;
         assert!(metrics.total_proofs_generated >= 5);
-        // Verified-proof metrics stay at zero while verification fails closed;
-        // restore `total_proofs_verified >= 5` once Phase 4 lands real verify.
+        assert!(metrics.total_proofs_verified >= 5);
 
         Ok(())
     }
@@ -433,18 +421,15 @@ mod bellman_tests {
         assert_eq!(proof.proof_data, deserialized.proof_data);
         assert_eq!(proof.proving_key_id, deserialized.proving_key_id);
 
-        // Verification fails closed until real Groth16 verification lands in
-        // Phase 4 (task 4.2); this reverts to `assert!(is_valid)` then.
-        let err = security_manager
+        // Real Groth16 verification (Phase 4, task 4.2): the proof still
+        // verifies after a serde round trip.
+        let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
             .verify_access_proof(&deserialized, &access_statement)
-            .await
-            .expect_err("verification must fail closed until real Groth16 verify lands");
-        assert!(err
-            .to_string()
-            .contains("zero-knowledge-proofs(real-verify)"));
+            .await?;
+        assert!(is_valid);
 
         Ok(())
     }
