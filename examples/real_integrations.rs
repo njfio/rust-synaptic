@@ -495,7 +495,7 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
                 synaptic::memory::types::MemoryType::ShortTerm,
             );
 
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             {
                 match client
                     .cache_memory("test_key", &memory_entry, Some(60))

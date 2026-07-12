@@ -276,7 +276,8 @@ zero-knowledge-proofs = [
     "ff",
     "typenum",
 ]
-distributed = ["rdkafka", "redis", "tonic", "lz4"]
+# EXPERIMENTAL: incomplete distributed subsystem (not production Raft; realtime sync not implemented)
+distributed-experimental = ["rdkafka", "redis", "tonic", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
 observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]
 
@@ -299,7 +300,8 @@ mobile = ["jni", "ndk", "swift-bridge"]
 cross-platform = ["wasm", "mobile", "md5", "bincode"]
 
 # Convenience Feature Groups
-full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal", "distributed"]
+full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal"]
+full-experimental = ["full", "distributed-experimental"]
 minimal = ["core", "storage"]
 base64 = ["dep:base64"]
 bincode = ["dep:bincode"]
@@ -323,7 +325,7 @@ path = "examples/real_integrations.rs"
 [[example]]
 name = "combined_full_system"
 path = "examples/combined_full_system.rs"
-required-features = ["distributed", "external-integrations", "embeddings"]
+required-features = ["distributed-experimental", "external-integrations", "embeddings"]
 
 [[example]]
 name = "phase4_security_privacy"

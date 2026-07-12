@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_advanced_management: true,
         #[cfg(feature = "analytics")]
         enable_analytics: true,
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         enable_distributed: true,
 
         ..Default::default()
@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Phase 8: Distributed Operations (if enabled)
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     {
         println!("\n Distributed System Status");
         println!("=============================");

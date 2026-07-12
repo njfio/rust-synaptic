@@ -3,7 +3,7 @@
 //! This test suite validates all distributed system components including
 //! consensus, sharding, events, and real-time synchronization.
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 mod distributed_tests {
     use chrono::Utc;
     use parking_lot::RwLock;

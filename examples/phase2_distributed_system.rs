@@ -3,7 +3,7 @@
 //! This example demonstrates the distributed capabilities of Synaptic,
 //! including consensus, sharding, real-time synchronization, and event-driven architecture.
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 use synaptic::{
     distributed::{
         consensus::{ConsensusCommand, SimpleConsensus},
@@ -20,10 +20,10 @@ use synaptic::{
     AgentMemory, MemoryConfig,
 };
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 use std::collections::HashMap;
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Synaptic Phase 2: Distributed Architecture Demo");
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_event_system() -> Result<(), Box<dyn std::error::Error>> {
     println!("📡 Example 1: Event-Driven Architecture");
     println!("----------------------------------------");
@@ -116,7 +116,7 @@ async fn demonstrate_event_system() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🗳️ Example 2: Consensus and Coordination");
     println!("----------------------------------------");
@@ -153,7 +153,7 @@ async fn demonstrate_consensus_system() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_distributed_sharding() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🗂️ Example 3: Distributed Graph Sharding");
     println!("------------------------------------------");
@@ -207,7 +207,7 @@ async fn demonstrate_distributed_sharding() -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Example 4: Real-time Synchronization");
     println!("--------------------------------------");
@@ -261,7 +261,7 @@ async fn demonstrate_realtime_sync() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Example 5: Full Distributed Coordinator");
     println!("-------------------------------------------");
@@ -324,7 +324,7 @@ async fn demonstrate_distributed_coordinator() -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Example 6: Multi-Node Simulation");
     println!("-----------------------------------");
@@ -387,7 +387,7 @@ async fn demonstrate_multi_node_simulation() -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Example 7: Performance and Scalability");
     println!("-----------------------------------------");
@@ -443,7 +443,7 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-#[cfg(not(all(feature = "distributed", feature = "embeddings")))]
+#[cfg(not(all(feature = "distributed-experimental", feature = "embeddings")))]
 fn main() {
     println!("This example requires both 'distributed' and 'embeddings' features to be enabled.");
     println!(

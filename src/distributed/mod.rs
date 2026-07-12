@@ -1,19 +1,31 @@
-//! Distributed architecture components for Synaptic
+//! EXPERIMENTAL distributed architecture components for Synaptic.
 //!
-//! This module provides the foundation for distributed memory systems,
-//! including event-driven architecture, consensus, and real-time synchronization.
+//! This subsystem is incomplete, opt-in, and unsupported. It is gated behind
+//! the `distributed-experimental` feature and is NOT part of the `full`
+//! production feature set. Know its limits before using it:
+//!
+//! - **Consensus is not a production Raft.** [`consensus::SimpleConsensus`]
+//!   only supports single-node operation: it performs no vote requests, no
+//!   log replication, and no append-entries RPCs. Any operation that would
+//!   require replication to peers returns an error instead of pretending to
+//!   replicate.
+//! - **Real-time synchronization is not implemented.** There is no WebSocket
+//!   sync layer; [`RealtimeConfig`] exists only as a configuration placeholder.
+//! - **Sharding is local-only.** [`sharding::DistributedGraph`] consults local
+//!   shards only; remote shard fetches are not implemented.
+//!
+//! Use this module for experimentation only. Do not rely on it for
+//! consistency, replication, or fault tolerance.
 
-use crate::error::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
 pub mod consensus;
+pub mod coordination;
 pub mod events;
 pub mod sharding;
-// pub mod realtime; // Temporarily disabled due to WebSocket dependencies
-pub mod coordination;
 
 /// Node identifier in the distributed system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -1,26 +1,27 @@
-//! Distributed coordination layer for Synaptic
+//! EXPERIMENTAL distributed coordination layer for Synaptic.
 //!
-//! This module provides the main coordination layer that integrates
-//! consensus, sharding, events, and real-time synchronization.
+//! Integrates the single-node consensus scaffolding, local sharding, and the
+//! in-memory event bus. Real-time synchronization is not implemented, and
+//! strong consistency (which would require consensus replication) returns an
+//! error rather than pretending to replicate. See the `distributed` module
+//! docs for the full list of limitations.
 
 use crate::distributed::consensus::{ConsensusCommand, Operation, SimpleConsensus};
 use crate::distributed::events::{EventBus, InMemoryEventStore, MemoryEvent};
 use crate::distributed::sharding::DistributedGraph;
+use crate::distributed::sharding::MemoryNode;
 use crate::distributed::{
     ConsistencyLevel, DistributedConfig, DistributedStats, HealthCheck, HealthStatus, NodeId,
     OperationMetadata,
 };
 use crate::error::{MemoryError, Result};
-use tokio::sync::oneshot;
-// use crate::distributed::realtime::RealtimeSync;
-use crate::distributed::sharding::MemoryNode;
 use crate::memory::types::MemoryEntry;
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 /// Distributed memory coordinator
@@ -35,8 +36,6 @@ pub struct DistributedCoordinator {
     consensus_commands: mpsc::UnboundedSender<ConsensusCommand>,
     /// Distributed graph storage
     distributed_graph: Arc<DistributedGraph>,
-    /// Real-time synchronization (disabled for now)
-    // realtime_sync: Arc<RealtimeSync>,
     /// System statistics
     stats: Arc<RwLock<DistributedStats>>,
     /// Health status
@@ -70,9 +69,6 @@ impl DistributedCoordinator {
             config.replication_factor,
         ));
 
-        // Create real-time sync (disabled for now)
-        // let realtime_sync = Arc::new(RealtimeSync::new(config.realtime.clone()));
-
         // Initialize statistics
         let stats = DistributedStats {
             current_node: config.node_id,
@@ -92,7 +88,6 @@ impl DistributedCoordinator {
             consensus,
             consensus_commands,
             distributed_graph,
-            // realtime_sync,
             stats: Arc::new(RwLock::new(stats)),
             health: Arc::new(RwLock::new(HealthStatus::Healthy)),
             start_time: Utc::now(),
@@ -116,18 +111,8 @@ impl DistributedCoordinator {
             self.distributed_graph.add_node(peer.node_id);
         }
 
-        // Start real-time sync server (disabled for now)
-        // let realtime_sync = Arc::clone(&self.realtime_sync);
-        // tokio::spawn(async move {
-        //     if let Err(e) = realtime_sync.start().await {
-        //         tracing::error!(
-        //             component = "distributed_coordinator",
-        //             operation = "realtime_sync_start",
-        //             error = %e,
-        //             "Real-time sync server error"
-        //         );
-        //     }
-        // });
+        // Note: real-time synchronization is not implemented in this
+        // experimental module; no sync server is started.
 
         // Start health monitoring
         self.start_health_monitoring();
@@ -166,17 +151,13 @@ impl DistributedCoordinator {
         // Store in distributed graph
         self.distributed_graph.add_memory_node(memory_node)?;
 
-        // Propose operation through consensus (for strong consistency)
+        // Strong consistency would require consensus replication, which is not
+        // implemented. Refuse honestly instead of silently degrading.
         if consistency == ConsistencyLevel::Strong {
-            // For now, we'll skip consensus for testing purposes
-            // In a full implementation, this would go through the consensus protocol
-            tracing::debug!(
-                component = "distributed_coordinator",
-                operation = "store_memory",
-                consistency_level = "strong",
-                memory_key = %memory.key,
-                "Strong consistency requested - would use consensus protocol"
-            );
+            return Err(MemoryError::feature_disabled(
+                "distributed-experimental",
+                "store_memory with strong consistency (consensus replication)",
+            ));
         }
 
         // Publish event
@@ -209,23 +190,26 @@ impl DistributedCoordinator {
     ) -> Result<()> {
         let metadata = OperationMetadata::new(self.config.node_id, consistency);
 
-        // Propose operation through consensus (for strong consistency)
+        // Strong consistency would require consensus replication, which is not
+        // implemented. Refuse honestly instead of silently degrading.
         if consistency == ConsistencyLevel::Strong {
-            // For now, we'll skip consensus for testing purposes
-            // In a full implementation, this would go through the consensus protocol
-            tracing::debug!(
-                component = "distributed_coordinator",
-                operation = "update_memory",
-                consistency_level = "strong",
-                memory_id = %memory_id,
-                "Strong consistency requested for update - would use consensus protocol"
-            );
+            return Err(MemoryError::feature_disabled(
+                "distributed-experimental",
+                "update_memory with strong consistency (consensus replication)",
+            ));
         }
+
+        // Resolve the memory key from the local shard, if present.
+        let key = self
+            .distributed_graph
+            .get_memory_node(memory_id)
+            .map(|node| node.memory_key)
+            .unwrap_or_default();
 
         // Publish event
         let event = MemoryEvent::MemoryUpdated {
             memory_id,
-            key: "unknown".to_string(), // In a real implementation, we'd track this
+            key,
             old_content,
             new_content,
             changes: Vec::new(),
@@ -241,10 +225,30 @@ impl DistributedCoordinator {
 
     /// Add a peer node to the cluster
     pub async fn add_peer(&self, node_id: NodeId, address: String) -> Result<()> {
+        // Parse the peer address ("host:port")
+        let (host, port) = address.rsplit_once(':').ok_or_else(|| {
+            MemoryError::configuration(format!(
+                "invalid peer address '{}': expected 'host:port'",
+                address
+            ))
+        })?;
+        let port: u16 = port.parse().map_err(|_| {
+            MemoryError::configuration(format!("invalid peer port in address '{}'", address))
+        })?;
+
         // Add to distributed graph
         self.distributed_graph.add_node(node_id);
 
-        // Add to consensus (simplified for testing)
+        // Register the peer with the consensus loop
+        self.consensus_commands
+            .send(ConsensusCommand::AddPeer {
+                node_id,
+                address: crate::distributed::NodeAddress::new(node_id, host.to_string(), port),
+            })
+            .map_err(|_| MemoryError::ConsensusError {
+                message: "consensus command channel closed".to_string(),
+            })?;
+
         tracing::info!(
             component = "distributed_coordinator",
             operation = "add_peer",
@@ -267,7 +271,13 @@ impl DistributedCoordinator {
         // Remove from distributed graph
         self.distributed_graph.remove_node(node_id);
 
-        // Remove from consensus (simplified for testing)
+        // Deregister the peer from the consensus loop
+        self.consensus_commands
+            .send(ConsensusCommand::RemovePeer { node_id })
+            .map_err(|_| MemoryError::ConsensusError {
+                message: "consensus command channel closed".to_string(),
+            })?;
+
         tracing::info!(
             component = "distributed_coordinator",
             operation = "remove_peer",
@@ -284,10 +294,20 @@ impl DistributedCoordinator {
         Ok(())
     }
 
-    /// Get current leader node
+    /// Get current leader node, as reported by the consensus loop.
+    ///
+    /// Returns `None` when this node is not the leader; leader tracking
+    /// across peers is not implemented in this experimental module.
     pub async fn get_leader(&self) -> Result<Option<NodeId>> {
-        // For testing purposes, return self as leader
-        Ok(Some(self.config.node_id))
+        let (response_tx, response_rx) = oneshot::channel();
+        self.consensus_commands
+            .send(ConsensusCommand::GetLeader { response_tx })
+            .map_err(|_| MemoryError::ConsensusError {
+                message: "consensus command channel closed".to_string(),
+            })?;
+        response_rx.await.map_err(|_| MemoryError::ConsensusError {
+            message: "consensus loop dropped leader query".to_string(),
+        })
     }
 
     /// Get distributed system statistics
@@ -297,7 +317,8 @@ impl DistributedCoordinator {
         // Update dynamic statistics
         stats.uptime_seconds = (Utc::now() - self.start_time).num_seconds() as u64;
         stats.events_processed = self.event_bus.get_stats().events_processed;
-        // stats.realtime_connections = self.realtime_sync.get_stats().active_connections;
+        // Real-time sync is not implemented; connection count is always 0.
+        stats.realtime_connections = 0;
         stats.leader_node = self.get_leader().await.unwrap_or(None);
 
         // Get owned shards
@@ -311,19 +332,32 @@ impl DistributedCoordinator {
     }
 
     /// Get system health status
+    ///
+    /// The status is a coarse heuristic maintained by the background monitor
+    /// (peer-count based); it does not probe peers or perform real checks.
     pub async fn get_health(&self) -> HealthCheck {
-        let status = self.health.read().clone();
+        let status = *self.health.read();
         let stats = self.get_stats().await;
 
-        HealthCheck::healthy(self.config.node_id)
-            .with_detail("consensus_state", &stats.consensus_state)
-            .with_detail("active_peers", &stats.active_peers.to_string())
-            .with_detail("uptime_seconds", &stats.uptime_seconds.to_string())
-            .with_metric("events_processed", stats.events_processed as f64)
-            .with_metric("realtime_connections", stats.realtime_connections as f64)
+        HealthCheck {
+            status,
+            node_id: self.config.node_id,
+            timestamp: Utc::now(),
+            details: HashMap::new(),
+            metrics: HashMap::new(),
+        }
+        .with_detail("consensus_state", &stats.consensus_state)
+        .with_detail("active_peers", &stats.active_peers.to_string())
+        .with_detail("uptime_seconds", &stats.uptime_seconds.to_string())
+        .with_metric("events_processed", stats.events_processed as f64)
+        .with_metric("realtime_connections", stats.realtime_connections as f64)
     }
 
-    /// Start health monitoring
+    /// Start health monitoring.
+    ///
+    /// This is a coarse heuristic only: a node with at least one peer is
+    /// reported `Healthy`, otherwise `Degraded`. It does not ping peers,
+    /// check consensus liveness, or detect partitions.
     fn start_health_monitoring(&self) {
         let health = Arc::clone(&self.health);
         let stats = Arc::clone(&self.stats);
@@ -334,7 +368,7 @@ impl DistributedCoordinator {
             loop {
                 interval.tick().await;
 
-                // Simple health check - in a real implementation, this would be more sophisticated
+                // Coarse peer-count heuristic (see start_health_monitoring docs)
                 let current_stats = stats.read();
                 let new_status = if current_stats.active_peers > 0 {
                     HealthStatus::Healthy

@@ -47,7 +47,7 @@ pub mod memory;
 #[cfg(feature = "observability")]
 pub mod observability;
 
-#[cfg(feature = "distributed")]
+#[cfg(feature = "distributed-experimental")]
 pub mod distributed;
 
 #[cfg(feature = "analytics")]
@@ -93,7 +93,7 @@ pub struct AgentMemory {
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
     #[cfg(feature = "analytics")]
@@ -217,7 +217,7 @@ impl AgentMemory {
         );
 
         // Initialize distributed coordinator if enabled
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         let distributed_coordinator = if config.enable_distributed {
             if let Some(dist_config) = config.distributed_config.clone() {
                 let coordinator =
@@ -293,7 +293,7 @@ impl AgentMemory {
             advanced_manager,
             #[cfg(feature = "embeddings")]
             embedding_manager,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
             analytics_engine,
@@ -855,9 +855,9 @@ pub struct MemoryConfig {
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
     pub enable_embeddings: bool,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub enable_distributed: bool,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub distributed_config: Option<distributed::DistributedConfig>,
     #[cfg(feature = "analytics")]
     pub enable_analytics: bool,
@@ -899,9 +899,9 @@ impl Default for MemoryConfig {
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
             enable_embeddings: true,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             enable_distributed: false,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             distributed_config: None,
             #[cfg(feature = "analytics")]
             enable_analytics: false,
@@ -1150,7 +1150,7 @@ mod tests {
         assert!(config.enable_embeddings);
     }
 
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     #[test]
     fn test_memory_config_distributed_feature() {
         let config = MemoryConfig::default();
