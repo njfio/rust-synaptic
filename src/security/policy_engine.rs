@@ -650,6 +650,16 @@ impl PolicyEngine {
     }
 }
 
+impl std::fmt::Debug for PolicyEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PolicyEngine")
+            .field("policies", &self.policies.len())
+            .field("roles", &self.roles.len())
+            .field("users", &self.users.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl ComplianceChecker {
     /// Create a new compliance checker
     pub fn new() -> Self {
@@ -705,18 +715,105 @@ impl ComplianceChecker {
         Self { frameworks }
     }
 
-    /// Check compliance for an access request
+    /// Check an access request against the configured compliance frameworks.
+    ///
+    /// Scope (honest): only rules that can be evaluated from the request are
+    /// checked, based on declared `additional_context` keys:
+    /// - `data_residency`: must be one of the framework's allowed regions.
+    /// - `data_classification` + `data_age_days`: data age must not exceed
+    ///   the framework's retention limit for that classification level.
+    ///
+    /// When a context key is absent the corresponding check is *skipped* and
+    /// reported in `notes` — a compliant result with skip notes is not a full
+    /// compliance validation. Declared-but-unparseable values fail closed
+    /// (non-compliant).
     pub fn check_compliance(
         &self,
-        _request: &AccessRequest,
+        request: &AccessRequest,
         _user: &User,
     ) -> Result<ComplianceResult> {
-        // Implementation would check various compliance requirements
+        let mut violations = Vec::new();
+        let mut notes = Vec::new();
+
+        for (framework, rules) in &self.frameworks {
+            // Data residency
+            if !rules.data_residency_requirements.is_empty() {
+                match request.additional_context.get("data_residency") {
+                    Some(region) => {
+                        if !rules
+                            .data_residency_requirements
+                            .iter()
+                            .any(|allowed| allowed.eq_ignore_ascii_case(region))
+                        {
+                            violations.push(format!(
+                                "{:?}: data residency '{}' violates allowed regions {:?}",
+                                framework, region, rules.data_residency_requirements
+                            ));
+                        }
+                    }
+                    None => notes.push(format!(
+                        "{:?}: residency check skipped (no data_residency declared in request context)",
+                        framework
+                    )),
+                }
+            }
+
+            // Data retention
+            match (
+                request.additional_context.get("data_classification"),
+                request.additional_context.get("data_age_days"),
+            ) {
+                (Some(classification), Some(age)) => {
+                    match (Self::parse_classification(classification), age.parse::<i64>()) {
+                        (Some(level), Ok(age_days)) => {
+                            if let Some(limit) = rules.data_retention_limits.get(&level) {
+                                if chrono::Duration::days(age_days) > *limit {
+                                    violations.push(format!(
+                                        "{:?}: data age {} days exceeds retention limit of {} days for {:?}",
+                                        framework,
+                                        age_days,
+                                        limit.num_days(),
+                                        level
+                                    ));
+                                }
+                            }
+                        }
+                        _ => violations.push(format!(
+                            "{:?}: declared data_classification/data_age_days are unparseable; failing closed",
+                            framework
+                        )),
+                    }
+                }
+                _ => notes.push(format!(
+                    "{:?}: retention check skipped (data_classification/data_age_days not declared in request context)",
+                    framework
+                )),
+            }
+        }
+
+        let compliant = violations.is_empty();
         Ok(ComplianceResult {
-            compliant: true,
-            reason: "Compliance check passed".to_string(),
-            notes: vec![],
+            compliant,
+            reason: if compliant {
+                "No violations of configured compliance rules detected (only declared request context was checked)"
+                    .to_string()
+            } else {
+                violations.join("; ")
+            },
+            notes,
         })
+    }
+
+    /// Parse a declared data classification level (case-insensitive).
+    fn parse_classification(value: &str) -> Option<DataClassificationLevel> {
+        match value.to_ascii_lowercase().as_str() {
+            "public" => Some(DataClassificationLevel::Public),
+            "internal" => Some(DataClassificationLevel::Internal),
+            "confidential" => Some(DataClassificationLevel::Confidential),
+            "restricted" => Some(DataClassificationLevel::Restricted),
+            "top_secret" | "topsecret" => Some(DataClassificationLevel::TopSecret),
+            _ => None,
+        }
     }
 }
 

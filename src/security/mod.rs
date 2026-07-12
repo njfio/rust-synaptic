@@ -329,6 +329,9 @@ pub struct SecurityManager {
     pub audit_logger: audit::AuditLogger,
     pub key_manager: key_management::KeyManager,
     pub zero_knowledge_manager: Option<zero_knowledge::ZeroKnowledgeManager>,
+    /// Optional policy layer consulted on every memory access decision, in
+    /// addition to (never instead of) authentication and RBAC/ABAC checks.
+    policy_engine: Option<policy_engine::PolicyEngine>,
 }
 
 impl SecurityManager {
@@ -355,7 +358,60 @@ impl SecurityManager {
             audit_logger,
             key_manager,
             zero_knowledge_manager,
+            policy_engine: None,
         })
+    }
+
+    /// Install a [`policy_engine::PolicyEngine`] as an additional access-policy
+    /// layer. Once set, every memory access decision consults
+    /// `PolicyEngine::evaluate_access` after authentication/permission checks;
+    /// a matching Deny rule (or a user unknown to the engine) blocks access.
+    pub fn set_policy_engine(&mut self, engine: policy_engine::PolicyEngine) {
+        self.policy_engine = Some(engine);
+    }
+
+    /// Evaluate the configured policy engine (if any) for this request.
+    /// No engine configured means no additional policy layer: Ok(()).
+    fn enforce_policies(
+        &self,
+        context: &SecurityContext,
+        resource_type: &str,
+        resource_id: &str,
+        action: &str,
+    ) -> Result<()> {
+        let Some(engine) = &self.policy_engine else {
+            return Ok(());
+        };
+
+        let request = policy_engine::AccessRequest {
+            user_id: context.user_id.clone(),
+            resource_type: resource_type.to_string(),
+            resource_id: resource_id.to_string(),
+            action: action.to_string(),
+            ip_address: context
+                .attributes
+                .get("ip_address")
+                .cloned()
+                .unwrap_or_default(),
+            user_agent: context
+                .attributes
+                .get("user_agent")
+                .cloned()
+                .unwrap_or_default(),
+            timestamp: Utc::now(),
+            session_id: context.session_id.clone(),
+            additional_context: context.attributes.clone(),
+        };
+
+        let decision = engine.evaluate_access(&request)?;
+        if decision.allowed {
+            Ok(())
+        } else {
+            Err(MemoryError::access_denied(format!(
+                "Denied by security policy: {}",
+                decision.reason
+            )))
+        }
     }
 
     /// Encrypt a memory entry with zero-knowledge architecture
@@ -368,6 +424,10 @@ impl SecurityManager {
         self.access_control
             .check_permission(context, Permission::WriteMemory)
             .await?;
+
+        // Consult the configured policy layer (deny rules block access even
+        // for authenticated, RBAC-permitted requests)
+        self.enforce_policies(context, "memory", &entry.key, "write")?;
 
         // Apply differential privacy if enabled
         let processed_entry = if self.config.enable_differential_privacy {
@@ -407,6 +467,9 @@ impl SecurityManager {
         self.access_control
             .check_permission(context, Permission::ReadMemory)
             .await?;
+
+        // Consult the configured policy layer
+        self.enforce_policies(context, "memory", &encrypted_entry.id, "read")?;
 
         // Verify zero-knowledge proof if enabled
         if self.config.enable_zero_knowledge {
@@ -492,6 +555,9 @@ impl SecurityManager {
         self.access_control
             .check_permission(context, Permission::ExecuteQueries)
             .await?;
+
+        // Consult the configured policy layer
+        self.enforce_policies(context, "memory", "secure_compute", "execute")?;
 
         // Perform homomorphic computation
         let result = self
