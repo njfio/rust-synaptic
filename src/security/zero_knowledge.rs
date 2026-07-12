@@ -331,9 +331,24 @@ impl ZeroKnowledgeManager {
     /// Register a verifier-side commitment for an identity whose secret is
     /// held elsewhere (e.g. distributed out of band from the prover's
     /// manager). Rejects non-canonical commitment encodings.
+    ///
+    /// Reject-if-present (unlike the idempotent [`register_prover`]): once a
+    /// commitment is bound to an identity, silently rebinding it to a
+    /// different value would let a misconfiguration or a hostile caller swap
+    /// in an attacker-controlled commitment. Callers that legitimately need
+    /// to rotate a commitment must do so explicitly (remove then re-add);
+    /// re-registering the identical commitment is a no-op success.
     #[cfg(feature = "zero-knowledge-proofs")]
     pub fn register_commitment(&mut self, user_id: &str, commitment_bytes: &[u8]) -> Result<()> {
         let commitment = parse_commitment(commitment_bytes)?;
+        if let Some(existing) = self.prover_commitments.get(user_id) {
+            if *existing == commitment {
+                return Ok(());
+            }
+            return Err(MemoryError::access_denied(format!(
+                "A different zero-knowledge commitment is already registered for '{user_id}'"
+            )));
+        }
         self.prover_commitments
             .insert(user_id.to_string(), commitment);
         Ok(())
@@ -965,6 +980,17 @@ impl Circuit<Scalar> for PoseidonPreimageCircuit {
 }
 
 impl ProofSystem {
+    /// Generate a fresh Groth16 CRS (proving + verifying parameters) for the
+    /// knowledge-of-registered-secret circuit.
+    ///
+    /// **Trust model / toxic waste:** the CRS is produced by this single
+    /// process from `OsRng` in a non-ceremony setup. The setup randomness
+    /// ("toxic waste") is discarded, but a party that observed it could forge
+    /// proofs. This is accepted by design for the single-verifier deployment
+    /// here (the same service generates the CRS and verifies against its own
+    /// trusted commitment store). It is NOT a multi-party-verifier trust
+    /// anchor: distributing the verifying key to mutually distrusting
+    /// verifiers would require a proper multi-party trusted-setup ceremony.
     async fn new(config: &SecurityConfig) -> Result<Self> {
         #[cfg(feature = "zero-knowledge-proofs")]
         {
@@ -1236,6 +1262,29 @@ pub struct AccessStatement {
     pub access_type: AccessType,
     /// When the access occurred
     pub timestamp: DateTime<Utc>,
+}
+
+/// Maximum age of an access statement accepted on the ZK-gated decrypt path.
+///
+/// A captured `(proof, statement)` pair otherwise replays indefinitely for
+/// the same entry and user, since the proof is bound to the statement (which
+/// includes this timestamp) but not to wall-clock freshness. 300s bounds the
+/// replay window while tolerating normal request latency.
+pub const MAX_STATEMENT_AGE: chrono::Duration = chrono::Duration::seconds(300);
+
+/// Small allowance for clock skew, so a statement stamped slightly in the
+/// future by a peer with a fast clock is not spuriously rejected.
+pub const MAX_STATEMENT_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+
+impl AccessStatement {
+    /// Whether this statement's timestamp falls inside the acceptable
+    /// freshness window relative to `now`: not older than
+    /// [`MAX_STATEMENT_AGE`] and not further in the future than
+    /// [`MAX_STATEMENT_CLOCK_SKEW`].
+    pub fn is_fresh(&self, now: DateTime<Utc>) -> bool {
+        let age = now.signed_duration_since(self.timestamp);
+        age <= MAX_STATEMENT_AGE && age >= -MAX_STATEMENT_CLOCK_SKEW
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

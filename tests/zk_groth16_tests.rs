@@ -310,6 +310,80 @@ async fn generation_requires_registration() -> Result<(), Box<dyn Error>> {
 }
 
 // ---------------------------------------------------------------------------
+// Hardening: idempotent/reject-if-present commitment registration + freshness
+// ---------------------------------------------------------------------------
+
+/// Re-registering the identical commitment for an identity is a no-op
+/// success, but registering a *different* commitment is rejected rather
+/// than silently overwriting the trusted store.
+#[tokio::test]
+async fn register_commitment_rejects_conflicting_rebind() -> Result<(), Box<dyn Error>> {
+    let config = SecurityConfig::default();
+    let mut source = ZeroKnowledgeManager::new(&config).await?;
+    source.register_prover("alice")?;
+    source.register_prover("mallory")?;
+    let alice = source
+        .registered_commitment_bytes("alice")
+        .ok_or("alice commitment must exist")?;
+    let mallory = source
+        .registered_commitment_bytes("mallory")
+        .ok_or("mallory commitment must exist")?;
+
+    let mut verifier = ZeroKnowledgeManager::new(&config).await?;
+    verifier.register_commitment("alice", &alice)?;
+    // Same value again: idempotent success.
+    verifier.register_commitment("alice", &alice)?;
+    // Different value for an already-registered identity: rejected.
+    let result = verifier.register_commitment("alice", &mallory);
+    assert!(
+        result.is_err(),
+        "rebinding a registered identity to a different commitment must be rejected"
+    );
+    // The original commitment is untouched.
+    assert_eq!(
+        verifier.registered_commitment_bytes("alice"),
+        Some(alice),
+        "a rejected rebind must not mutate the trusted store"
+    );
+    Ok(())
+}
+
+/// A stale statement is rejected by the freshness window even though the
+/// timestamp is what the proof is cryptographically bound to.
+#[tokio::test]
+async fn expired_statement_is_stale() {
+    use synaptic::security::zero_knowledge::{
+        AccessStatement, AccessType, MAX_STATEMENT_AGE, MAX_STATEMENT_CLOCK_SKEW,
+    };
+    let now = chrono::Utc::now();
+    let stale = AccessStatement {
+        memory_key: "k".to_string(),
+        user_id: "u".to_string(),
+        access_type: AccessType::Read,
+        timestamp: now - MAX_STATEMENT_AGE - chrono::Duration::seconds(1),
+    };
+    assert!(
+        !stale.is_fresh(now),
+        "a statement older than MAX_STATEMENT_AGE must be rejected"
+    );
+
+    let fresh = AccessStatement {
+        timestamp: now - chrono::Duration::seconds(1),
+        ..stale.clone()
+    };
+    assert!(fresh.is_fresh(now), "a recent statement must be accepted");
+
+    let future = AccessStatement {
+        timestamp: now + MAX_STATEMENT_CLOCK_SKEW + chrono::Duration::seconds(5),
+        ..stale
+    };
+    assert!(
+        !future.is_fresh(now),
+        "a statement implausibly far in the future must be rejected"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Task 4.3: caller-supplied statements; external verification
 // ---------------------------------------------------------------------------
 

@@ -438,6 +438,15 @@ impl SecurityManager {
                             "Access statement does not match this entry and user".to_string(),
                         ));
                     }
+                    // Freshness: reject stale (or implausibly future)
+                    // statements so a captured (proof, statement) pair cannot
+                    // replay indefinitely for the same entry and user.
+                    if !statement.is_fresh(Utc::now()) {
+                        return Err(MemoryError::access_denied(
+                            "Access statement timestamp is outside the freshness window"
+                                .to_string(),
+                        ));
+                    }
                     let valid = zkm.verify_access_proof(&proof, &statement).await?;
                     if !valid {
                         return Err(MemoryError::access_denied(
