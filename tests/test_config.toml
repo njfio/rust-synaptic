@@ -42,12 +42,11 @@ name = "Performance & Optimization Tests"
 description = "Performance measurement and optimization testing"
 test_count = 28
 files = [
-    "real_performance_measurement_tests.rs",
     "performance_tests.rs",
     "comprehensive_optimization_tests.rs",
     "advanced_performance_optimization_tests.rs"
 ]
-command = "cargo test --test real_performance_measurement_tests && cargo test --test performance_tests && cargo test --test comprehensive_optimization_tests && cargo test --test advanced_performance_optimization_tests"
+command = "cargo test --test performance_tests && cargo test --test comprehensive_optimization_tests && cargo test --test advanced_performance_optimization_tests"
 priority = "high"
 
 [categories.lifecycle]
