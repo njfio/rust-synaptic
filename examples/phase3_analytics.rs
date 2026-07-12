@@ -10,9 +10,6 @@ use synaptic::analytics::{
     intelligence::MemoryIntelligenceEngine,
     performance::{PerformanceAnalyzer, PerformanceSnapshot},
     predictive::PredictiveAnalytics,
-    visualization::{
-        TemporalDataPoint, TemporalDataType, TimelineVisualizationType, VisualizationEngine,
-    },
     AccessType, AnalyticsConfig, AnalyticsEngine, AnalyticsEvent, InsightPriority, InsightType,
     ModificationType,
 };
@@ -28,7 +25,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         analytics_overview_demo().await?;
         predictive_analytics_demo().await?;
         behavioral_analysis_demo().await?;
-        visualization_demo().await?;
         intelligence_analysis_demo().await?;
         performance_analytics_demo().await?;
         integrated_analytics_demo().await?;
@@ -205,63 +201,6 @@ async fn behavioral_analysis_demo() -> Result<(), Box<dyn Error>> {
             println!(" {} recommendations for {}", recommendations.len(), user);
         }
     }
-
-    Ok(())
-}
-
-#[cfg(feature = "analytics")]
-async fn visualization_demo() -> Result<(), Box<dyn Error>> {
-    println!("\n Visualization Engine");
-    println!("----------------------");
-
-    let config = AnalyticsConfig::default();
-    let mut engine = VisualizationEngine::new(&config)?;
-
-    // Create visual nodes
-    let memory_entry = synaptic::memory::types::MemoryEntry::new(
-        "viz_memory".to_string(),
-        "Visualization test content".to_string(),
-        synaptic::memory::types::MemoryType::ShortTerm,
-    );
-    let node_id = engine
-        .create_visual_node("viz_memory", &memory_entry)
-        .await?;
-    println!(" Created visual node: {}", node_id);
-
-    // Create temporal timeline
-    let data_points = vec![
-        TemporalDataPoint {
-            timestamp: chrono::Utc::now(),
-            value: 10.0,
-            memory_key: "viz_memory".to_string(),
-            data_type: TemporalDataType::AccessFrequency,
-            metadata: std::collections::HashMap::new(),
-        },
-        TemporalDataPoint {
-            timestamp: chrono::Utc::now() + chrono::Duration::hours(1),
-            value: 15.0,
-            memory_key: "viz_memory".to_string(),
-            data_type: TemporalDataType::AccessFrequency,
-            metadata: std::collections::HashMap::new(),
-        },
-    ];
-
-    let timeline_id = engine
-        .create_temporal_timeline(
-            "Access Frequency Timeline",
-            data_points,
-            TimelineVisualizationType::LineChart,
-        )
-        .await?;
-    println!(" Created timeline: {}", timeline_id);
-
-    // Export visualization data
-    let export = engine.export_visualization_data().await?;
-    println!(
-        "📤 Exported {} nodes, {} timelines",
-        export.nodes.len(),
-        export.timelines.len()
-    );
 
     Ok(())
 }

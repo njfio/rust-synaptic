@@ -114,57 +114,6 @@ mod phase3_analytics_tests {
     }
 
     #[tokio::test]
-    async fn test_visualization_engine_comprehensive() {
-        let config = AnalyticsConfig::default();
-        let mut engine =
-            visualization::VisualizationEngine::new(&config).expect("value should be available");
-
-        // Test visual node creation
-        let memory_entry = MemoryEntry::new(
-            "viz_memory".to_string(),
-            "Test visualization content".to_string(),
-            crate::memory::types::MemoryType::ShortTerm,
-        );
-        let node_id = engine
-            .create_visual_node("viz_memory", &memory_entry)
-            .await
-            .expect("await should be present");
-        assert!(!node_id.is_empty());
-
-        // Test temporal timeline creation
-        let data_points = vec![visualization::TemporalDataPoint {
-            timestamp: Utc::now(),
-            value: 1.0,
-            memory_key: "viz_memory".to_string(),
-            data_type: visualization::TemporalDataType::AccessFrequency,
-            metadata: HashMap::new(),
-        }];
-
-        let timeline_id = engine
-            .create_temporal_timeline(
-                "Test Timeline",
-                data_points,
-                visualization::TimelineVisualizationType::LineChart,
-            )
-            .await
-            .expect("await should be present");
-        assert!(!timeline_id.is_empty());
-
-        // Test visualization export
-        let export = engine
-            .export_visualization_data()
-            .await
-            .expect("await should be present");
-        assert!(export.nodes.len() > 0);
-        assert!(export.timelines.len() > 0);
-
-        // Test statistics
-        let stats = engine.get_visualization_stats();
-        assert!(stats.node_count > 0);
-        assert!(stats.timeline_count > 0);
-    }
-
-    #[tokio::test]
     async fn test_memory_intelligence_comprehensive() {
         let config = AnalyticsConfig::default();
         let mut engine = intelligence::MemoryIntelligenceEngine::new(&config)

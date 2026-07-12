@@ -9,9 +9,6 @@ pub mod intelligence;
 pub mod performance;
 /// Predictive analytics for memory patterns
 pub mod predictive;
-/// Visualization and graphical analytics
-pub mod visualization;
-
 #[cfg(test)]
 mod tests;
 
@@ -226,8 +223,6 @@ pub struct AnalyticsEngine {
     predictive: predictive::PredictiveAnalytics,
     /// Behavioral analysis module
     behavioral: behavioral::BehavioralAnalyzer,
-    /// Visualization module
-    _visualization: visualization::VisualizationEngine,
 }
 
 impl AnalyticsEngine {
@@ -235,7 +230,6 @@ impl AnalyticsEngine {
     pub fn new(config: AnalyticsConfig) -> Result<Self> {
         let predictive = predictive::PredictiveAnalytics::new(&config)?;
         let behavioral = behavioral::BehavioralAnalyzer::new(&config)?;
-        let visualization = visualization::VisualizationEngine::new(&config)?;
 
         Ok(Self {
             config,
@@ -244,7 +238,6 @@ impl AnalyticsEngine {
             metrics: AnalyticsMetrics::default(),
             predictive,
             behavioral,
-            _visualization: visualization,
         })
     }
 
