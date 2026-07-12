@@ -767,11 +767,11 @@ impl MemoryLifecycleManager {
 
         match action {
             LifecycleAction::Archive => {
-                self.archive_memory(memory_key).await?;
+                self.archive_memory(storage, memory_key).await?;
             }
 
             LifecycleAction::Delete => {
-                self.delete_memory(memory_key).await?;
+                self.delete_memory(storage, memory_key).await?;
             }
 
             LifecycleAction::Compress => {
@@ -796,7 +796,8 @@ impl MemoryLifecycleManager {
             }
 
             LifecycleAction::Custom { action } => {
-                self.execute_custom_action(memory_key, action).await?;
+                self.execute_custom_action(storage, memory_key, action)
+                    .await?;
             }
         }
 
@@ -814,8 +815,25 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Archive a memory (move to archived stage)
-    async fn archive_memory(&mut self, memory_key: &str) -> Result<()> {
+    /// Archive a memory: tag the stored entry as archived and move its
+    /// lifecycle state to the archived stage. The entry remains retrievable
+    /// from storage in its archived form.
+    async fn archive_memory(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        // Mark the stored entry itself as archived so it is retrievable in
+        // archived form independently of in-memory lifecycle state.
+        if let Some(mut memory) = storage.retrieve(memory_key).await? {
+            if !memory.metadata.tags.iter().any(|t| t == "archived") {
+                memory.metadata.tags.push("archived".to_string());
+            }
+            storage.store(&memory).await?;
+        } else {
+            tracing::warn!("Memory '{}' not found in storage for archival", memory_key);
+        }
+
         if let Some(state) = self.memory_states.get_mut(memory_key) {
             state.stage = MemoryStage::Archived;
             state.last_updated = Utc::now();
@@ -835,8 +853,18 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Delete a memory (move to deleted stage)
-    async fn delete_memory(&mut self, memory_key: &str) -> Result<()> {
+    /// Delete a memory: remove the entry from storage and move its lifecycle
+    /// state to the deleted stage.
+    async fn delete_memory(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        let removed = storage.delete(memory_key).await?;
+        if !removed {
+            tracing::warn!("Memory '{}' not found in storage for deletion", memory_key);
+        }
+
         if let Some(state) = self.memory_states.get_mut(memory_key) {
             state.stage = MemoryStage::Deleted;
             state.last_updated = Utc::now();
@@ -1094,8 +1122,13 @@ impl MemoryLifecycleManager {
         format!("{}...", truncated)
     }
 
-    /// Execute a custom action with real implementation
-    async fn execute_custom_action(&mut self, memory_key: &str, action: &str) -> Result<()> {
+    /// Execute a custom action against the given storage backend
+    async fn execute_custom_action(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+        action: &str,
+    ) -> Result<()> {
         tracing::info!(
             "Executing custom action '{}' on memory '{}'",
             action,
@@ -1103,35 +1136,23 @@ impl MemoryLifecycleManager {
         );
 
         match action {
-            "backup_to_external" => {
-                self.backup_memory_to_external(memory_key).await?;
-            }
-            "encrypt_sensitive_data" => {
-                self.encrypt_memory_data(memory_key).await?;
-            }
             "generate_analytics_report" => {
                 self.generate_memory_analytics_report(memory_key).await?;
             }
-            "sync_to_cloud" => {
-                self.sync_memory_to_cloud(memory_key).await?;
-            }
             "validate_integrity" => {
-                self.validate_memory_integrity(memory_key).await?;
+                self.validate_memory_integrity(storage, memory_key).await?;
             }
             "optimize_storage" => {
-                self.optimize_memory_storage(memory_key).await?;
+                self.optimize_memory_storage(storage, memory_key).await?;
             }
             "create_snapshot" => {
-                self.create_memory_snapshot(memory_key).await?;
+                self.create_memory_snapshot(storage, memory_key).await?;
             }
             "audit_access" => {
                 self.audit_memory_access(memory_key).await?;
             }
             "refresh_metadata" => {
-                self.refresh_memory_metadata(memory_key).await?;
-            }
-            "migrate_format" => {
-                self.migrate_memory_format(memory_key).await?;
+                self.refresh_memory_metadata(storage, memory_key).await?;
             }
             _ => {
                 // For unknown custom actions, log and continue
@@ -1155,106 +1176,11 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Backup memory to external storage system
-    async fn backup_memory_to_external(&mut self, memory_key: &str) -> Result<()> {
-        tracing::info!("Backing up memory '{}' to external storage", memory_key);
-
-        // In a real implementation, this would:
-        // 1. Connect to external backup service (AWS S3, Google Cloud, etc.)
-        // 2. Serialize memory data with metadata
-        // 3. Upload with versioning and encryption
-        // 4. Verify backup integrity
-        // 5. Update backup tracking records
-
-        // Simulate backup process
-        let backup_id = Uuid::new_v4().to_string();
-        let backup_timestamp = Utc::now();
-
-        // Record backup event
-        let event = LifecycleEvent {
-            id: Uuid::new_v4(),
-            timestamp: backup_timestamp,
-            memory_key: memory_key.to_string(),
-            event_type: LifecycleEventType::ActionExecuted,
-            description: format!(
-                "Memory backed up to external storage (backup_id: {})",
-                backup_id
-            ),
-            triggered_by_policy: None,
-        };
-        self.events.push(event);
-
-        // Update memory state with backup information
-        if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!(
-                "Backed up at {} (ID: {})",
-                backup_timestamp.format("%Y-%m-%d %H:%M:%S"),
-                backup_id
-            ));
-        }
-
-        tracing::info!(
-            "Memory '{}' successfully backed up with ID: {}",
-            memory_key,
-            backup_id
-        );
-        Ok(())
-    }
-
-    /// Encrypt sensitive memory data
-    async fn encrypt_memory_data(&mut self, memory_key: &str) -> Result<()> {
-        tracing::info!("Encrypting sensitive data for memory '{}'", memory_key);
-
-        // In a real implementation, this would:
-        // 1. Identify sensitive data patterns (PII, credentials, etc.)
-        // 2. Apply appropriate encryption algorithms (AES-256, etc.)
-        // 3. Store encryption keys securely
-        // 4. Update memory metadata with encryption status
-        // 5. Verify encryption integrity
-
-        // Simulate encryption process
-        let encryption_timestamp = Utc::now();
-        let encryption_algorithm = "AES-256-GCM";
-
-        // Record encryption event
-        let event = LifecycleEvent {
-            id: Uuid::new_v4(),
-            timestamp: encryption_timestamp,
-            memory_key: memory_key.to_string(),
-            event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Sensitive data encrypted using {}", encryption_algorithm),
-            triggered_by_policy: None,
-        };
-        self.events.push(event);
-
-        // Update memory state with encryption information
-        if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!(
-                "Encrypted at {} using {}",
-                encryption_timestamp.format("%Y-%m-%d %H:%M:%S"),
-                encryption_algorithm
-            ));
-        }
-
-        tracing::info!(
-            "Memory '{}' sensitive data successfully encrypted",
-            memory_key
-        );
-        Ok(())
-    }
-
-    /// Generate analytics report for memory
+    /// Generate an analytics summary for a memory from recorded lifecycle
+    /// events (access and update counts).
     async fn generate_memory_analytics_report(&mut self, memory_key: &str) -> Result<()> {
         tracing::info!("Generating analytics report for memory '{}'", memory_key);
 
-        // In a real implementation, this would:
-        // 1. Analyze memory access patterns
-        // 2. Calculate usage statistics
-        // 3. Identify optimization opportunities
-        // 4. Generate performance metrics
-        // 5. Create visualization data
-
-        // Simulate analytics generation
         let report_timestamp = Utc::now();
         let access_count = self
             .events
@@ -1291,67 +1217,28 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Sync memory to cloud storage
-    async fn sync_memory_to_cloud(&mut self, memory_key: &str) -> Result<()> {
-        tracing::info!("Syncing memory '{}' to cloud storage", memory_key);
+    /// Validate memory integrity by retrieving the stored entry and
+    /// computing a real SHA-256 checksum over its content.
+    async fn validate_memory_integrity(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
+        use sha2::{Digest, Sha256};
 
-        // In a real implementation, this would:
-        // 1. Connect to cloud storage service
-        // 2. Check for conflicts with existing versions
-        // 3. Upload memory data with metadata
-        // 4. Update synchronization status
-        // 5. Handle sync conflicts and merging
-
-        // Simulate cloud sync
-        let sync_timestamp = Utc::now();
-        let sync_id = Uuid::new_v4().to_string();
-
-        // Record sync event
-        let event = LifecycleEvent {
-            id: Uuid::new_v4(),
-            timestamp: sync_timestamp,
-            memory_key: memory_key.to_string(),
-            event_type: LifecycleEventType::ActionExecuted,
-            description: format!("Memory synced to cloud (sync_id: {})", sync_id),
-            triggered_by_policy: None,
-        };
-        self.events.push(event);
-
-        // Update memory state with sync information
-        if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!(
-                "Cloud synced at {} (ID: {})",
-                sync_timestamp.format("%Y-%m-%d %H:%M:%S"),
-                sync_id
-            ));
-        }
-
-        tracing::info!(
-            "Memory '{}' successfully synced to cloud with ID: {}",
-            memory_key,
-            sync_id
-        );
-        Ok(())
-    }
-
-    /// Validate memory integrity
-    async fn validate_memory_integrity(&mut self, memory_key: &str) -> Result<()> {
         tracing::info!("Validating integrity for memory '{}'", memory_key);
 
-        // In a real implementation, this would:
-        // 1. Calculate checksums for memory data
-        // 2. Verify data consistency
-        // 3. Check for corruption or tampering
-        // 4. Validate metadata integrity
-        // 5. Report any integrity issues
-
-        // Simulate integrity validation
         let validation_timestamp = Utc::now();
-        let checksum = format!(
-            "sha256:{}",
-            Uuid::new_v4().to_string().replace("-", "")[..16].to_string()
-        );
-        let integrity_status = "VALID"; // In real implementation, this would be calculated
+        let (integrity_status, checksum) = match storage.retrieve(memory_key).await? {
+            Some(memory) => {
+                let mut hasher = Sha256::new();
+                hasher.update(memory.key.as_bytes());
+                hasher.update(memory.value.as_bytes());
+                let digest = hasher.finalize();
+                ("VALID", format!("sha256:{}", hex::encode(digest)))
+            }
+            None => ("MISSING", "sha256:<no entry>".to_string()),
+        };
 
         // Record validation event
         let event = LifecycleEvent {
@@ -1376,59 +1263,41 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Optimize memory storage
-    async fn optimize_memory_storage(&mut self, memory_key: &str) -> Result<()> {
+    /// Optimize memory storage by compressing the stored entry. Delegates to
+    /// the real LZ4 compression path and records the resulting size change.
+    async fn optimize_memory_storage(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
         tracing::info!("Optimizing storage for memory '{}'", memory_key);
-
-        // In a real implementation, this would:
-        // 1. Analyze storage patterns and fragmentation
-        // 2. Defragment memory data
-        // 3. Optimize data layout for access patterns
-        // 4. Compress redundant data
-        // 5. Update storage indexes
-
-        // Simulate storage optimization
-        let optimization_timestamp = Utc::now();
-        let space_saved = 1024 * (1 + (memory_key.len() % 10)); // Simulated space savings
-        let optimization_type = "defragmentation_and_compression";
-
-        // Record optimization event
-        let event = LifecycleEvent {
-            id: Uuid::new_v4(),
-            timestamp: optimization_timestamp,
-            memory_key: memory_key.to_string(),
-            event_type: LifecycleEventType::ActionExecuted,
-            description: format!(
-                "Storage optimized: {} bytes saved via {}",
-                space_saved, optimization_type
-            ),
-            triggered_by_policy: None,
-        };
-        self.events.push(event);
-
-        tracing::info!(
-            "Memory '{}' storage optimized: {} bytes saved",
-            memory_key,
-            space_saved
-        );
-        Ok(())
+        self.compress_memory(storage, memory_key).await
     }
 
-    /// Create memory snapshot
-    async fn create_memory_snapshot(&mut self, memory_key: &str) -> Result<()> {
+    /// Create a point-in-time snapshot of a memory by storing a copy of the
+    /// entry under a dedicated snapshot key.
+    async fn create_memory_snapshot(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
         tracing::info!("Creating snapshot for memory '{}'", memory_key);
 
-        // In a real implementation, this would:
-        // 1. Create point-in-time snapshot of memory state
-        // 2. Store snapshot with versioning information
-        // 3. Maintain snapshot history and retention policies
-        // 4. Enable rollback capabilities
-        // 5. Optimize snapshot storage
-
-        // Simulate snapshot creation
         let snapshot_timestamp = Utc::now();
-        let snapshot_id = format!("snap_{}", Uuid::new_v4().to_string()[..8].to_string());
-        let snapshot_version = format!("v{}", snapshot_timestamp.timestamp());
+        let Some(memory) = storage.retrieve(memory_key).await? else {
+            tracing::warn!("Memory '{}' not found for snapshot", memory_key);
+            return Ok(());
+        };
+
+        let snapshot_key = format!(
+            "snapshot:{}:{}",
+            memory_key,
+            snapshot_timestamp.timestamp_millis()
+        );
+        let mut snapshot = memory.clone();
+        snapshot.key = snapshot_key.clone();
+        snapshot.metadata.tags.push("snapshot".to_string());
+        storage.store(&snapshot).await?;
 
         // Record snapshot event
         let event = LifecycleEvent {
@@ -1436,10 +1305,7 @@ impl MemoryLifecycleManager {
             timestamp: snapshot_timestamp,
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
-            description: format!(
-                "Snapshot created: {} (version: {})",
-                snapshot_id, snapshot_version
-            ),
+            description: format!("Snapshot created: {}", snapshot_key),
             triggered_by_policy: None,
         };
         self.events.push(event);
@@ -1448,32 +1314,20 @@ impl MemoryLifecycleManager {
         if let Some(state) = self.memory_states.get_mut(memory_key) {
             state.warnings.push(format!(
                 "Snapshot {} created at {}",
-                snapshot_id,
+                snapshot_key,
                 snapshot_timestamp.format("%Y-%m-%d %H:%M:%S")
             ));
         }
 
-        tracing::info!(
-            "Memory '{}' snapshot created: {} (version: {})",
-            memory_key,
-            snapshot_id,
-            snapshot_version
-        );
+        tracing::info!("Memory '{}' snapshot created: {}", memory_key, snapshot_key);
         Ok(())
     }
 
-    /// Audit memory access
+    /// Audit memory access based on recorded lifecycle events (access counts
+    /// and last access time).
     async fn audit_memory_access(&mut self, memory_key: &str) -> Result<()> {
         tracing::info!("Auditing access for memory '{}'", memory_key);
 
-        // In a real implementation, this would:
-        // 1. Analyze access patterns and permissions
-        // 2. Check for unauthorized access attempts
-        // 3. Verify compliance with security policies
-        // 4. Generate audit trail reports
-        // 5. Flag suspicious activities
-
-        // Simulate access audit
         let audit_timestamp = Utc::now();
         let access_events = self
             .events
@@ -1522,21 +1376,30 @@ impl MemoryLifecycleManager {
         Ok(())
     }
 
-    /// Refresh memory metadata
-    async fn refresh_memory_metadata(&mut self, memory_key: &str) -> Result<()> {
+    /// Refresh lifecycle metadata for a memory from its stored entry:
+    /// re-reads importance, size, and last-access time from storage and
+    /// synchronizes the in-memory lifecycle state with them.
+    async fn refresh_memory_metadata(
+        &mut self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<()> {
         tracing::info!("Refreshing metadata for memory '{}'", memory_key);
 
-        // In a real implementation, this would:
-        // 1. Recalculate memory importance scores
-        // 2. Update tags based on content analysis
-        // 3. Refresh temporal metadata
-        // 4. Update relationship mappings
-        // 5. Synchronize with external metadata sources
-
-        // Simulate metadata refresh
         let refresh_timestamp = Utc::now();
-        let metadata_fields_updated = ["importance", "tags", "relationships", "temporal_data"];
-        let new_importance = 0.5 + (memory_key.len() % 5) as f64 * 0.1; // Simulated new importance
+        let Some(memory) = storage.retrieve(memory_key).await? else {
+            tracing::warn!("Memory '{}' not found for metadata refresh", memory_key);
+            return Ok(());
+        };
+
+        let importance = memory.metadata.importance;
+        let estimated_size = memory.value.len() + memory.key.len();
+        if let Some(state) = self.memory_states.get_mut(memory_key) {
+            state.importance = importance;
+            state.estimated_size = estimated_size;
+            state.last_accessed = memory.metadata.last_accessed;
+            state.last_updated = refresh_timestamp;
+        }
 
         // Record metadata refresh event
         let event = LifecycleEvent {
@@ -1545,68 +1408,18 @@ impl MemoryLifecycleManager {
             memory_key: memory_key.to_string(),
             event_type: LifecycleEventType::ActionExecuted,
             description: format!(
-                "Metadata refreshed: {} fields updated, new importance: {:.2}",
-                metadata_fields_updated.len(),
-                new_importance
+                "Metadata refreshed from storage: importance {:.2}, size {} bytes",
+                importance, estimated_size
             ),
             triggered_by_policy: None,
         };
         self.events.push(event);
 
         tracing::info!(
-            "Memory '{}' metadata refreshed: {} fields updated, new importance: {:.2}",
+            "Memory '{}' metadata refreshed: importance {:.2}, size {} bytes",
             memory_key,
-            metadata_fields_updated.len(),
-            new_importance
-        );
-        Ok(())
-    }
-
-    /// Migrate memory format
-    async fn migrate_memory_format(&mut self, memory_key: &str) -> Result<()> {
-        tracing::info!("Migrating format for memory '{}'", memory_key);
-
-        // In a real implementation, this would:
-        // 1. Detect current memory format version
-        // 2. Apply format migration transformations
-        // 3. Validate migrated data integrity
-        // 4. Update format version metadata
-        // 5. Maintain backward compatibility
-
-        // Simulate format migration
-        let migration_timestamp = Utc::now();
-        let old_format = "v1.0";
-        let new_format = "v2.1";
-        let migration_type = "schema_upgrade_with_compression";
-
-        // Record migration event
-        let event = LifecycleEvent {
-            id: Uuid::new_v4(),
-            timestamp: migration_timestamp,
-            memory_key: memory_key.to_string(),
-            event_type: LifecycleEventType::ActionExecuted,
-            description: format!(
-                "Format migrated from {} to {} using {}",
-                old_format, new_format, migration_type
-            ),
-            triggered_by_policy: None,
-        };
-        self.events.push(event);
-
-        // Update memory state with migration information
-        if let Some(state) = self.memory_states.get_mut(memory_key) {
-            state.warnings.push(format!(
-                "Format migrated to {} at {}",
-                new_format,
-                migration_timestamp.format("%Y-%m-%d %H:%M:%S")
-            ));
-        }
-
-        tracing::info!(
-            "Memory '{}' format migrated from {} to {}",
-            memory_key,
-            old_format,
-            new_format
+            importance,
+            estimated_size
         );
         Ok(())
     }
@@ -2781,14 +2594,14 @@ impl MemoryLifecycleManager {
                 })
             }
             OptimizationActionType::Archive => {
-                self.archive_memory(&action.memory_key).await?;
+                self.archive_memory(storage, &action.memory_key).await?;
                 Ok(OptimizationActionResult {
                     space_saved: 1024,      // Simulated archival savings
                     performance_gain: 0.02, // 2% performance improvement
                 })
             }
             OptimizationActionType::Defragment => {
-                self.execute_custom_action(&action.memory_key, "optimize_storage")
+                self.execute_custom_action(storage, &action.memory_key, "optimize_storage")
                     .await?;
                 Ok(OptimizationActionResult {
                     space_saved: 256,       // Simulated defragmentation savings
@@ -2796,7 +2609,7 @@ impl MemoryLifecycleManager {
                 })
             }
             OptimizationActionType::Reindex => {
-                self.execute_custom_action(&action.memory_key, "refresh_metadata")
+                self.execute_custom_action(storage, &action.memory_key, "refresh_metadata")
                     .await?;
                 Ok(OptimizationActionResult {
                     space_saved: 0,        // No space savings for reindexing
