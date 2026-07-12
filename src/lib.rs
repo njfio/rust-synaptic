@@ -296,6 +296,18 @@ impl AgentMemory {
         Ok(agent)
     }
 
+    /// Test-only hook to swap the storage backend after construction, used to
+    /// inject failing/faulty storage doubles for testing storage-failure
+    /// behavior (e.g. that a storage write failure cannot leave the state
+    /// cache polluted with an entry that was never durably persisted).
+    #[cfg(feature = "test-utils")]
+    pub fn set_storage_for_test(
+        &mut self,
+        storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
+    ) {
+        self.storage = storage;
+    }
+
     /// Store a memory entry with intelligent updating
     #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
@@ -340,8 +352,8 @@ impl AgentMemory {
 
         tracing::debug!("Memory operation type: {:?}", change_type);
 
-        self.state.add_memory(entry.clone());
         self.storage.store(&entry).await?;
+        self.state.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
 
         let mut degradations = StoreDegradations::default();
