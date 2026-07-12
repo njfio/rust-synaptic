@@ -112,6 +112,14 @@ impl MemoryManager {
     /// Insert (or refresh) a memory's embedding in the ANN similarity index,
     /// lazily creating the index (sized to this embedding's dimension) on
     /// first use. A memory without an embedding is a no-op.
+    ///
+    /// KNOWN LIMITATION: re-storing an existing key inserts a *new* vector
+    /// without removing the stale one — each `MemoryEntry` carries a fresh
+    /// `metadata.id` UUID, so the overwritten entry's old vector stays in
+    /// the HNSW index (and in `uuid_to_key`, still mapping to the same key).
+    /// ANN-based related counts can therefore drift/double-count after key
+    /// overwrites. There is no delete/invalidation path for indexed vectors
+    /// yet; the fix is scheduled with the Phase 5 management de-stubbing.
     fn index_embedding(&self, memory: &MemoryEntry) -> Result<()> {
         let Some(embedding) = &memory.embedding else {
             return Ok(());
@@ -268,6 +276,12 @@ impl MemoryManager {
     /// cosine scan over every stored memory. Below that size (or if no
     /// index has been built yet, e.g. nothing indexed via `store_memory`)
     /// falls back to the brute-force scan.
+    ///
+    /// Note: on the ANN path the count saturates at [`ANN_SEARCH_K`] (200).
+    /// If more than `ANN_SEARCH_K` stored memories exceed the similarity
+    /// threshold, only the top `ANN_SEARCH_K` nearest neighbors are examined,
+    /// so the returned count is capped there; the brute-force fallback has
+    /// no such cap.
     async fn count_similarity_related_memories(
         &self,
         memory: &MemoryEntry,
