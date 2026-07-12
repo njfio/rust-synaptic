@@ -210,7 +210,7 @@ mod dp_noise_is_real_randomness {
             .expect("privacy manager must construct");
 
         let scale = 1.0;
-        let n = 1000usize;
+        let n = 5000usize;
         let samples: Vec<f64> = (0..n)
             .map(|_| manager.sample_laplace_noise(scale))
             .collect();
@@ -226,6 +226,19 @@ mod dp_noise_is_real_randomness {
         assert!(
             mean.abs() < 0.5,
             "Laplace noise mean should be close to 0 for scale=1.0, got {mean}"
+        );
+
+        // The Laplace distribution with the given `scale` (i.e. `b`) has
+        // variance 2*b^2. Assert the empirical variance matches within a
+        // generous statistical tolerance (+/-25%) to catch a wrong-formula
+        // implementation (e.g. exponential instead of Laplace, or a scale
+        // that isn't actually sensitivity/epsilon).
+        let expected_variance = 2.0 * scale * scale;
+        let tolerance = 0.25 * expected_variance;
+        assert!(
+            (variance - expected_variance).abs() < tolerance,
+            "Laplace noise variance {variance} should be close to the theoretical \
+             2*scale^2 = {expected_variance} (tolerance +/-25%)"
         );
 
         // Sanity: not all samples identical (would also indicate a stub).
