@@ -231,9 +231,7 @@ impl FlakyStorage {
 #[async_trait]
 impl Storage for FlakyStorage {
     async fn store(&self, entry: &MemoryEntry) -> Result<()> {
-        let call = self
-            .calls
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if call >= self.fail_after {
             return Err(crate::error::MemoryError::storage("injected failure"));
         }

@@ -551,6 +551,16 @@ impl AgentMemory {
     /// error is returned and both storage and `self.state` are left exactly
     /// as they were before the call — no `clear()` is ever used, so data
     /// already durably persisted before a failure is never lost.
+    ///
+    /// # Recovery contract on prune failure
+    ///
+    /// If a delete during the prune phase fails (after all upserts have
+    /// succeeded), no data is lost, but storage may be left holding the
+    /// checkpoint's entries *plus* post-checkpoint keys that were not yet
+    /// deleted, while `self.state` remains the pre-restore state — storage
+    /// and the in-process state cache temporarily diverge. This is safe and
+    /// non-destructive; the caller may simply retry `restore_checkpoint`
+    /// (every phase is idempotent) to converge.
     pub async fn restore_checkpoint(&mut self, checkpoint_id: Uuid) -> Result<()> {
         let restored_state = self
             .checkpoint_manager
