@@ -204,14 +204,19 @@ impl ParameterOptimizer {
         Ok(gradients)
     }
 
-    /// Evaluate parameters and return performance score
+    /// Evaluate parameters and return a performance score.
+    ///
+    /// Heuristic model, not a benchmark run: the score measures how close
+    /// each parameter sits to a context-derived target (cache size vs.
+    /// memory pressure, threads vs. CPU cores, batch size vs. average
+    /// workload), weighted and summed. It gives the gradient-based search a
+    /// smooth, deterministic objective computed from the caller-supplied
+    /// context rather than executing live performance tests.
     async fn evaluate_parameters(
         &self,
         parameters: &HashMap<String, f64>,
         context: &HashMap<String, f64>,
     ) -> Result<f64> {
-        // Simplified performance evaluation - in a real implementation,
-        // this would run actual performance tests
         let mut score = 0.0;
 
         // Cache size optimization

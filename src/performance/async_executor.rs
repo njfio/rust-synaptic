@@ -178,9 +178,11 @@ impl AsyncExecutor {
                     operation = "apply_optimization",
                     parameter = "worker_threads",
                     value = %threads,
-                    "Optimizing worker threads"
+                    "Recorded worker-thread recommendation"
                 );
-                // In a real implementation, this would resize the thread pool
+                // Tokio does not support resizing a running runtime's worker
+                // pool; the recommendation is surfaced via the log event above
+                // and can only take effect when a new runtime is built.
             }
         }
 
@@ -192,9 +194,10 @@ impl AsyncExecutor {
                     operation = "apply_optimization",
                     parameter = "max_blocking_threads",
                     value = %blocking,
-                    "Optimizing max blocking threads"
+                    "Recorded blocking-thread recommendation"
                 );
-                // In a real implementation, this would resize the blocking thread pool
+                // As with worker threads, Tokio's blocking pool size is fixed
+                // at runtime construction; the recommendation is logged only.
             }
         }
 

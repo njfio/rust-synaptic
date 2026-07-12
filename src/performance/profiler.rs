@@ -462,14 +462,39 @@ impl CpuProfiler {
         Ok(())
     }
 
-    /// Get current CPU profiling data
+    /// Get current CPU profiling data.
+    ///
+    /// On Linux this reads real kernel counters: the 1-minute load average
+    /// from `/proc/loadavg` and cumulative context switches from
+    /// `/proc/stat`. `usage_percent` is a load-based approximation (load
+    /// average normalized by logical CPU count, capped at 100), not a
+    /// time-sliced utilization sample. On platforms without `/proc`, all
+    /// values are 0.
     pub async fn get_current_data(&self) -> Result<CpuSample> {
-        // In a real implementation, this would collect actual CPU metrics
+        let load_average = std::fs::read_to_string("/proc/loadavg")
+            .ok()
+            .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1) as f64;
+        let context_switches = std::fs::read_to_string("/proc/stat")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find(|line| line.starts_with("ctxt"))?
+                    .split_whitespace()
+                    .nth(1)?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .unwrap_or(0);
+
         Ok(CpuSample {
             timestamp: Utc::now(),
-            usage_percent: 45.0, // Mock data
-            load_average: 1.2,
-            context_switches: 1000,
+            usage_percent: (load_average / cpus * 100.0).min(100.0),
+            load_average,
+            context_switches,
         })
     }
 }
@@ -498,15 +523,33 @@ impl MemoryProfiler {
         Ok(())
     }
 
-    /// Get current memory profiling data
+    /// Get current memory profiling data.
+    ///
+    /// On Linux this reads real system memory figures from `/proc/meminfo`
+    /// (MemTotal/MemAvailable/Cached/Swap*). On platforms without `/proc`,
+    /// all values are 0.
     pub async fn get_current_data(&self) -> Result<MemorySample> {
-        // In a real implementation, this would collect actual memory metrics
+        let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+        let read_kb = |field: &str| -> u64 {
+            meminfo
+                .lines()
+                .find(|line| line.starts_with(field))
+                .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+
+        let total = read_kb("MemTotal:");
+        let available = read_kb("MemAvailable:");
+        let cached = read_kb("Cached:");
+        let swap_total = read_kb("SwapTotal:");
+        let swap_free = read_kb("SwapFree:");
+
         Ok(MemorySample {
             timestamp: Utc::now(),
-            used_bytes: 512 * 1024 * 1024,       // 512MB mock data
-            available_bytes: 1024 * 1024 * 1024, // 1GB
-            cached_bytes: 256 * 1024 * 1024,     // 256MB
-            swap_used_bytes: 0,
+            used_bytes: total.saturating_sub(available) * 1024,
+            available_bytes: available * 1024,
+            cached_bytes: cached * 1024,
+            swap_used_bytes: swap_total.saturating_sub(swap_free) * 1024,
         })
     }
 }
@@ -535,15 +578,26 @@ impl IoProfiler {
         Ok(())
     }
 
-    /// Get current I/O profiling data
+    /// Get current I/O profiling data.
+    ///
+    /// On Linux this reads this process's real cumulative I/O counters from
+    /// `/proc/self/io` (syscr/syscw/read_bytes/write_bytes). On platforms
+    /// without `/proc`, all values are 0.
     pub async fn get_current_data(&self) -> Result<IoSample> {
-        // In a real implementation, this would collect actual I/O metrics
+        let io = std::fs::read_to_string("/proc/self/io").unwrap_or_default();
+        let read_field = |field: &str| -> u64 {
+            io.lines()
+                .find(|line| line.starts_with(field))
+                .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+
         Ok(IoSample {
             timestamp: Utc::now(),
-            read_operations: 100,
-            write_operations: 50,
-            read_bytes: 1024 * 1024, // 1MB
-            write_bytes: 512 * 1024, // 512KB
+            read_operations: read_field("syscr:"),
+            write_operations: read_field("syscw:"),
+            read_bytes: read_field("read_bytes:"),
+            write_bytes: read_field("write_bytes:"),
         })
     }
 }
