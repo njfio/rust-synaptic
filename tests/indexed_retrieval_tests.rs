@@ -492,6 +492,7 @@ async fn test_count_related_memories_uses_ann_index_and_matches_brute_force() {
 
     // Proves the ANN (HNSW) path, not the brute-force fallback, was consulted:
     // 200 indexed vectors exceeds MIN_INDEX_SIZE_FOR_ANN (100).
+    #[cfg(feature = "test-utils")]
     assert!(
         manager.ann_query_hit_count() > 0,
         "expected the ANN index to have been consulted at least once"
@@ -529,6 +530,7 @@ async fn test_count_related_memories_falls_back_to_brute_force_below_threshold()
         .expect("count_related_memories should succeed");
 
     assert_eq!(actual, expected);
+    #[cfg(feature = "test-utils")]
     assert_eq!(
         manager.ann_query_hit_count(),
         0,
@@ -542,6 +544,7 @@ async fn test_count_related_memories_falls_back_to_brute_force_below_threshold()
 /// explicitly with `cargo test --test indexed_retrieval_tests -- --ignored`.
 #[tokio::test]
 #[ignore]
+#[cfg(feature = "test-utils")]
 async fn perf_count_related_memories_ann_vs_brute_force_at_10k() {
     use std::time::Instant;
 
