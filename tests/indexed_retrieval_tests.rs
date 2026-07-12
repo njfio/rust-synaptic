@@ -630,3 +630,86 @@ async fn perf_count_related_memories_ann_vs_brute_force_at_10k() {
         "expected ANN-backed counting ({ann_elapsed:?}) to beat brute force ({brute_elapsed:?}) at 10k entries"
     );
 }
+
+/// Re-storing an existing key must supersede its previous ANN vector: the
+/// related count for a probe must reflect only the key's *latest* embedding,
+/// never a stale one, and the key must never be counted twice.
+#[tokio::test]
+async fn test_reindexing_a_key_supersedes_its_stale_ann_vector() {
+    const NUM_ENTRIES: usize = 200;
+    const NUM_CLUSTERS: usize = 20; // 10 entries per cluster; probe cluster = 0
+
+    let storage = Arc::new(MemoryStorage::new());
+    let manager = MemoryManager::new(storage, None, None, None)
+        .await
+        .expect("manager should construct");
+
+    let base_time = Utc::now() - Duration::days(365);
+    let entries: Vec<MemoryEntry> = (0..NUM_ENTRIES)
+        .map(|i| cluster_probe_entry(i, NUM_CLUSTERS, base_time))
+        .collect();
+
+    for entry in &entries {
+        manager
+            .store_memory(entry)
+            .await
+            .expect("store_memory should succeed");
+    }
+
+    let probe = &entries[0]; // cluster 0
+    let baseline = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        baseline,
+        NUM_ENTRIES / NUM_CLUSTERS - 1,
+        "unexpected baseline related count"
+    );
+
+    // Case 1: move a probe-cluster member (entry 20, cluster 0) OUT of the
+    // probe's cluster by re-storing it with embedding B from cluster 1
+    // (index 21's embedding shape). Its stale cluster-0 vector A must no
+    // longer be counted: similarity for this key is now measured against B.
+    let mut moved_out = entries[20].clone();
+    moved_out.embedding = Some(deterministic_cluster_embedding(21, NUM_CLUSTERS));
+    manager
+        .store_memory(&moved_out)
+        .await
+        .expect("re-store should succeed");
+
+    let after_move_out = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        after_move_out,
+        baseline - 1,
+        "stale vector for a re-stored key must not be counted (key moved out of the cluster)"
+    );
+
+    // Case 2: re-store the same key again with ANOTHER cluster-0 embedding.
+    // The key is back in the probe's cluster, but it now has had three
+    // vectors inserted for it; it must be counted exactly once.
+    let mut moved_back = entries[20].clone();
+    moved_back.embedding = Some(deterministic_cluster_embedding(40, NUM_CLUSTERS));
+    manager
+        .store_memory(&moved_back)
+        .await
+        .expect("re-store should succeed");
+
+    let after_move_back = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        after_move_back, baseline,
+        "a re-stored key must be counted at most once (no double-count of superseded vectors)"
+    );
+
+    #[cfg(feature = "test-utils")]
+    assert!(
+        manager.ann_query_hit_count() > 0,
+        "expected the ANN index to have been consulted"
+    );
+}

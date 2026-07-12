@@ -55,6 +55,13 @@ const ANN_SEARCH_K: usize = 200;
 struct SimilarityIndexState {
     index: Option<HnswIndex>,
     uuid_to_key: HashMap<Uuid, String>,
+    /// Latest (live) vector UUID for each memory key. Re-storing a key
+    /// replaces this entry; the previous UUID is tombstoned.
+    key_to_current_uuid: HashMap<String, Uuid>,
+    /// UUIDs of vectors superseded by a later re-store of the same key.
+    /// `hnsw_rs` has no deletion API, so stale vectors physically remain in
+    /// the HNSW graph; query paths skip any hit whose UUID is tombstoned.
+    tombstoned: std::collections::HashSet<Uuid>,
 }
 
 /// Simple memory manager for basic operations and testing
@@ -113,13 +120,14 @@ impl MemoryManager {
     /// lazily creating the index (sized to this embedding's dimension) on
     /// first use. A memory without an embedding is a no-op.
     ///
-    /// KNOWN LIMITATION: re-storing an existing key inserts a *new* vector
-    /// without removing the stale one — each `MemoryEntry` carries a fresh
-    /// `metadata.id` UUID, so the overwritten entry's old vector stays in
-    /// the HNSW index (and in `uuid_to_key`, still mapping to the same key).
-    /// ANN-based related counts can therefore drift/double-count after key
-    /// overwrites. There is no delete/invalidation path for indexed vectors
-    /// yet; the fix is scheduled with the Phase 5 management de-stubbing.
+    /// Re-storing an existing key supersedes its previous vector: `hnsw_rs`
+    /// offers no deletion, so the stale vector physically remains in the
+    /// HNSW graph, but its UUID is tombstoned (and dropped from
+    /// `uuid_to_key`) so ANN query paths skip it. Only the key's latest
+    /// embedding contributes to similarity counts. Note that tombstoned
+    /// vectors still occupy index slots, so `VectorIndex::len` (used for the
+    /// ANN-vs-brute-force cutover and the search `k`) counts them too; this
+    /// only affects heuristics, never correctness of the counts.
     fn index_embedding(&self, memory: &MemoryEntry) -> Result<()> {
         let Some(embedding) = &memory.embedding else {
             return Ok(());
@@ -145,12 +153,28 @@ impl MemoryManager {
             state.index = Some(HnswIndex::new(config, HnswParams::high_accuracy())?);
         }
 
+        // Each insertion gets a fresh internal vector id, deliberately
+        // decoupled from `memory.id()`: a re-stored entry may carry either a
+        // fresh or an identical metadata UUID, and superseding must work in
+        // both cases.
+        let vector_id = Uuid::new_v4();
+
         // A dimension mismatch (e.g. an embedder swap mid-run) is surfaced by
         // `HnswIndex::add` as an error rather than silently corrupting the index.
         if let Some(index) = state.index.as_mut() {
-            index.add(memory.id(), embedding)?;
+            index.add(vector_id, embedding)?;
         }
-        state.uuid_to_key.insert(memory.id(), memory.key.clone());
+
+        // Supersede any previous vector indexed for this key: tombstone the
+        // old vector id and drop its reverse mapping so query paths ignore it.
+        if let Some(old_uuid) = state
+            .key_to_current_uuid
+            .insert(memory.key.clone(), vector_id)
+        {
+            state.tombstoned.insert(old_uuid);
+            state.uuid_to_key.remove(&old_uuid);
+        }
+        state.uuid_to_key.insert(vector_id, memory.key.clone());
 
         Ok(())
     }
@@ -357,11 +381,23 @@ impl MemoryManager {
         let neighbors = index.search(target_embedding, k)?;
 
         let mut count = 0;
+        let mut counted_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for (uuid, l2_distance) in neighbors {
+            // Skip vectors superseded by a later re-store of the same key;
+            // only the key's current vector may contribute to the count.
+            if state.tombstoned.contains(&uuid) {
+                continue;
+            }
             let Some(key) = state.uuid_to_key.get(&uuid) else {
                 continue;
             };
-            if key == &memory.key || processed_keys.contains(key) {
+            if state.key_to_current_uuid.get(key) != Some(&uuid) {
+                continue;
+            }
+            if key == &memory.key
+                || processed_keys.contains(key)
+                || counted_keys.contains(key.as_str())
+            {
                 continue;
             }
 
@@ -372,6 +408,7 @@ impl MemoryManager {
 
             if cosine_similarity >= similarity_threshold {
                 count += 1;
+                counted_keys.insert(key.as_str());
             }
         }
 
