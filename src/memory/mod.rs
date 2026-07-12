@@ -19,6 +19,7 @@ pub mod promotion;
 pub mod retrieval;
 pub mod state;
 pub mod storage;
+pub mod store_result;
 pub mod temporal;
 pub mod types;
 

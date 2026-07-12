@@ -73,7 +73,9 @@ pub mod phase5b_basic;
 
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
-pub use memory::{CheckpointManager, MemoryEntry, MemoryFragment, MemoryType};
+pub use memory::{
+    store_result::StoreDegradations, CheckpointManager, MemoryEntry, MemoryFragment, MemoryType,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -297,7 +299,26 @@ impl AgentMemory {
     /// Store a memory entry with intelligent updating
     #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
+        // `store_with_report` already logs each degradation at `warn` as it
+        // occurs; this wrapper preserves the original `store()` contract by
+        // discarding the report and always returning `Ok(())` once the core
+        // storage write succeeds.
+        let _degradations = self.store_with_report(key, value).await?;
+
+        Ok(())
+    }
+
+    /// Store a memory entry with intelligent updating, reporting any subsystem
+    /// degradations instead of silently swallowing them. Returns an error only
+    /// if the core storage write itself fails.
+    #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
+    pub async fn store_with_report(
+        &mut self,
+        key: &str,
+        value: &str,
+    ) -> Result<memory::store_result::StoreDegradations> {
         use crate::error_handling::utils::{validate_non_empty_string, validate_range};
+        use memory::store_result::StoreDegradations;
 
         tracing::debug!("Storing memory entry");
 
@@ -323,9 +344,14 @@ impl AgentMemory {
         self.storage.store(&entry).await?;
         tracing::debug!("Memory stored in state and storage");
 
+        let mut degradations = StoreDegradations::default();
+
         // Track temporal changes if enabled
         if let Some(ref mut tm) = self.temporal_manager {
-            let _ = tm.track_memory_change(&entry, change_type).await;
+            if let Err(e) = tm.track_memory_change(&entry, change_type).await {
+                tracing::warn!(error = %e, "temporal tracking degraded during store");
+                degradations.temporal = Some(e.to_string());
+            }
         }
 
         #[cfg(feature = "analytics")]
@@ -337,27 +363,38 @@ impl AgentMemory {
                 timestamp: Utc::now(),
                 change_magnitude: 1.0,
             };
-            let _ = analytics.record_event(event).await;
+            if let Err(e) = analytics.record_event(event).await {
+                tracing::warn!(error = %e, "analytics recording degraded during store");
+                degradations.analytics = Some(e.to_string());
+            }
         }
 
         // Add or update in knowledge graph if enabled (intelligent merging)
         if let Some(ref mut kg) = self.knowledge_graph {
-            let _ = kg.add_or_update_memory_node(&entry).await;
+            if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                tracing::warn!(error = %e, "knowledge graph update degraded during store");
+                degradations.knowledge_graph = Some(e.to_string());
+            }
         }
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am
+            if let Err(e) = am
                 .add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut())
-                .await;
+                .await
+            {
+                tracing::warn!(error = %e, "advanced management update degraded during store");
+                degradations.advanced_management = Some(e.to_string());
+            }
         }
 
         // Generate embeddings if enabled
         #[cfg(feature = "embeddings")]
         if let Some(ref mut em) = self.embedding_manager {
-            let _ = em.add_memory(entry.clone()).map_err(|e| {
-                tracing::warn!("Failed to generate embedding: {}", e);
-            });
+            if let Err(e) = em.add_memory(entry.clone()) {
+                tracing::warn!(error = %e, "embedding generation degraded during store");
+                degradations.embeddings = Some(e.to_string());
+            }
         }
 
         // Check if we need to create a checkpoint
@@ -367,7 +404,7 @@ impl AgentMemory {
                 .await?;
         }
 
-        Ok(())
+        Ok(degradations)
     }
 
     /// Retrieve a memory by key
