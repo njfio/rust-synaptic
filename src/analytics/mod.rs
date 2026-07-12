@@ -26,8 +26,6 @@ pub struct AnalyticsConfig {
     pub enable_predictive: bool,
     /// Enable behavioral analysis
     pub enable_behavioral: bool,
-    /// Enable visualization features
-    pub enable_visualization: bool,
     /// Analytics data retention period in days
     pub retention_days: u32,
     /// Prediction confidence threshold
@@ -43,7 +41,6 @@ impl Default for AnalyticsConfig {
         Self {
             enable_predictive: true,
             enable_behavioral: true,
-            enable_visualization: true,
             retention_days: 90,
             prediction_threshold: 0.7,
             pattern_sensitivity: 0.8,

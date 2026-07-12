@@ -47,7 +47,6 @@ async fn analytics_overview_demo() -> Result<(), Box<dyn Error>> {
     let config = AnalyticsConfig {
         enable_predictive: true,
         enable_behavioral: true,
-        enable_visualization: true,
         retention_days: 30,
         prediction_threshold: 0.7,
         pattern_sensitivity: 0.8,

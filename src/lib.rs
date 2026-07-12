@@ -493,7 +493,9 @@ impl AgentMemory {
                     timestamp: Utc::now(),
                     user_context: None,
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, memory_key = %key, "failed to record analytics event for short-term retrieve");
+                }
             }
             return Ok(Some(entry.clone()));
         }
@@ -533,7 +535,9 @@ impl AgentMemory {
             // Refresh knowledge graph if enabled
             if let Some(ref mut kg) = self.knowledge_graph {
                 tracing::debug!("Refreshing knowledge graph node for cache miss");
-                let _ = kg.add_or_update_memory_node(&entry).await;
+                if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                    tracing::warn!(error = %e, memory_key = %entry.key, "failed to refresh knowledge graph node for cache miss");
+                }
             }
 
             #[cfg(feature = "analytics")]
@@ -545,7 +549,9 @@ impl AgentMemory {
                     timestamp: Utc::now(),
                     user_context: None,
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, memory_key = %key, "failed to record analytics event for storage retrieve");
+                }
             }
 
             Ok(Some(entry))
@@ -698,7 +704,9 @@ impl AgentMemory {
                     relationship_strength: 1.0,
                     timestamp: Utc::now(),
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, from_memory = %from_memory, to_memory = %to_memory, "failed to record analytics event for relationship discovery");
+                }
             }
 
             Ok(Some(relationship_id))
