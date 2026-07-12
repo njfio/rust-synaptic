@@ -1,7 +1,8 @@
 //! Comprehensive tests for Phase 2 distributed architecture
 //!
-//! This test suite validates all distributed system components including
-//! consensus, sharding, events, and real-time synchronization.
+//! This test suite validates the experimental distributed system components
+//! including consensus, sharding, and events. Real-time synchronization is
+//! not implemented and is not covered here.
 
 #[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 mod distributed_tests {

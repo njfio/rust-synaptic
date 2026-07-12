@@ -285,7 +285,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )))]
     {
         println!(" Combined demo requires all features enabled");
-        println!(" Run with: cargo run --example combined_full_system --features \"distributed,external-integrations,embeddings\"");
+        println!(" Run with: cargo run --example combined_full_system --features \"distributed-experimental,external-integrations,embeddings\"");
     }
 
     Ok(())

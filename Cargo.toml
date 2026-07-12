@@ -277,7 +277,7 @@ zero-knowledge-proofs = [
     "typenum",
 ]
 # EXPERIMENTAL: incomplete distributed subsystem (not production Raft; realtime sync not implemented)
-distributed-experimental = ["rdkafka", "redis", "tonic", "lz4"]
+distributed-experimental = ["redis", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
 observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]
 

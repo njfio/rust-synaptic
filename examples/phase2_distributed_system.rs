@@ -447,6 +447,6 @@ async fn demonstrate_performance_benchmarks() -> Result<(), Box<dyn std::error::
 fn main() {
     println!("This example requires both 'distributed' and 'embeddings' features to be enabled.");
     println!(
-        "Run with: cargo run --features distributed,embeddings --example phase2_distributed_system"
+        "Run with: cargo run --features distributed-experimental,embeddings --example phase2_distributed_system"
     );
 }
