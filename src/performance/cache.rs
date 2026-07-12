@@ -15,7 +15,7 @@ use crate::error::Result;
 /// High-performance cache with intelligent optimization
 #[derive(Debug)]
 pub struct PerformanceCache {
-    config: PerformanceConfig,
+    config: Arc<RwLock<PerformanceConfig>>,
     cache_data: Arc<RwLock<HashMap<String, CacheEntry>>>,
     access_patterns: Arc<RwLock<HashMap<String, AccessPattern>>>,
     cache_stats: Arc<RwLock<CacheStatistics>>,
@@ -26,7 +26,7 @@ impl PerformanceCache {
     /// Create a new performance cache
     pub async fn new(config: PerformanceConfig) -> Result<Self> {
         Ok(Self {
-            config,
+            config: Arc::new(RwLock::new(config)),
             cache_data: Arc::new(RwLock::new(HashMap::new())),
             access_patterns: Arc::new(RwLock::new(HashMap::new())),
             cache_stats: Arc::new(RwLock::new(CacheStatistics::new())),
@@ -68,7 +68,10 @@ impl PerformanceCache {
 
         // Check cache size limit
         let current_size = self.calculate_cache_size(&cache).await;
-        let max_size = self.config.cache_size_mb * 1024 * 1024;
+        let (max_size, ttl_seconds) = {
+            let config = self.config.read().await;
+            (config.cache_size_mb * 1024 * 1024, config.cache_ttl_seconds)
+        };
 
         if current_size + value.len() > max_size {
             self.evict_entries(&mut cache, value.len()).await?;
@@ -79,7 +82,7 @@ impl PerformanceCache {
             created_at: Instant::now(),
             last_accessed: Instant::now(),
             access_count: 0,
-            ttl: Duration::from_secs(self.config.cache_ttl_seconds),
+            ttl: Duration::from_secs(ttl_seconds),
         };
 
         cache.insert(key.clone(), entry);
@@ -114,10 +117,11 @@ impl PerformanceCache {
 
     /// Apply optimization parameters
     pub async fn apply_optimization(&self, parameters: &HashMap<String, String>) -> Result<()> {
-        // Apply cache size optimization
+        // Apply cache size optimization: update the live config so subsequent
+        // puts enforce the new size limit.
         if let Some(size_str) = parameters.get("cache_size_mb") {
             if let Ok(size) = size_str.parse::<usize>() {
-                // Update cache size (would require config update in real implementation)
+                self.config.write().await.cache_size_mb = size;
                 tracing::info!(
                     component = "performance_cache",
                     operation = "apply_optimization",
@@ -128,9 +132,11 @@ impl PerformanceCache {
             }
         }
 
-        // Apply TTL optimization
+        // Apply TTL optimization: update the live config so subsequent puts
+        // use the new TTL for their entries.
         if let Some(ttl_str) = parameters.get("ttl_seconds") {
             if let Ok(ttl) = ttl_str.parse::<u64>() {
+                self.config.write().await.cache_ttl_seconds = ttl;
                 tracing::info!(
                     component = "performance_cache",
                     operation = "apply_optimization",

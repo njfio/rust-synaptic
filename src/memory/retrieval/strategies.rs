@@ -82,7 +82,8 @@ impl RetrievalPipeline for KeywordRetriever {
             "KeywordRetriever: starting search"
         );
 
-        // Get all memories from storage (in real implementation, this would use an index)
+        // Fetch candidate memories via the storage backend's search, over-fetching
+        // 2x so BM25 re-ranking below has a wider pool to choose from.
         let fragments = self.storage.search(query, limit * 2).await?;
 
         // Score each result with BM25

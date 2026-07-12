@@ -352,7 +352,8 @@ impl DocumentMemoryProcessor {
     /// Extract text from HTML
     async fn extract_html_text(&self, content: &[u8]) -> MultiModalResult<String> {
         let html_text = String::from_utf8_lossy(content);
-        // Basic HTML tag removal (in real implementation, use html5ever or similar)
+        // Lightweight HTML tag stripper; deliberately avoids pulling in a full
+        // HTML parser dependency, so malformed markup is handled best-effort.
         let text = html_text
             .replace("<br>", "\n")
             .replace("<p>", "\n")
@@ -562,7 +563,8 @@ impl DocumentMemoryProcessor {
             .filter(|word| word.len() > 3) // Filter short words
             .collect();
 
-        // Simple keyword extraction (in real implementation, use TF-IDF or NLP)
+        // Frequency-based keyword extraction: count stop-word-filtered tokens
+        // and take the most frequent ones as keywords.
         let mut word_counts = HashMap::new();
         for word in words {
             let clean_word = word
@@ -744,7 +746,8 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         let format = self.detect_document_format(content)?;
         let text = self.extract_text(content, &format).await?;
 
-        // Simple feature extraction (in real implementation, use embeddings)
+        // Lightweight statistical text features (word/char/line counts and
+        // average word length); no embedding model dependency.
         let word_count = text.split_whitespace().count() as f32;
         let char_count = text.chars().count() as f32;
         let line_count = text.lines().count() as f32;

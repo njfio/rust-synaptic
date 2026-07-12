@@ -2031,7 +2031,9 @@ impl MemoryLifecycleManager {
         let now = Utc::now();
 
         for memory_key in memory_keys {
-            // Estimate memory size (in real implementation, would get actual size)
+            // Heuristic size estimate: only keys are available here (entry values
+            // are not loaded), so approximate size as key overhead plus a fixed
+            // base record size.
             let estimated_size = memory_key.len() * 10 + 512; // Base size + key overhead
             total_size += estimated_size;
 

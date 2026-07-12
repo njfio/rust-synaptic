@@ -255,7 +255,7 @@ impl AsyncExecutor {
         let active_task = ActiveTask {
             task,
             started_at: start_time,
-            handle: None, // Would contain actual JoinHandle in real implementation
+            handle: None, // Compute tasks run inline on this worker, so no JoinHandle is stored
         };
 
         self.active_tasks

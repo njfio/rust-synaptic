@@ -172,8 +172,8 @@ mod logging_standards_tests {
     #[tokio::test]
     async fn test_memory_manager_logging() {
         let storage = Arc::new(MemoryStorage::new());
-        // MemoryManager::new now takes a storage backend plus optional
-        // knowledge-graph / temporal / advanced managers.
+        // MemoryManager::new takes a storage backend plus an optional
+        // knowledge-graph manager.
         let manager = MemoryManager::new(storage, None).await.unwrap();
 
         let memory = MemoryEntry::new(
