@@ -744,38 +744,32 @@ impl HomomorphicContext {
         Ok(count.to_le_bytes().to_vec())
     }
 
+    /// No real homomorphic search exists yet in any build (a real
+    /// implementation lands in Phase 4); fail closed instead of faking
+    /// results from loop indices.
     async fn homomorphic_search(
         &self,
-        entries: &[EncryptedMemoryEntry],
+        _entries: &[EncryptedMemoryEntry],
         _query: &str,
     ) -> Result<Vec<u8>> {
-        // Simulated homomorphic search - returns indices of matching entries
-        let mut results = Vec::new();
-        for (i, _entry) in entries.iter().enumerate() {
-            if i % 2 == 0 {
-                // Simplified matching logic
-                results.extend_from_slice(&(i as u32).to_le_bytes());
-            }
-        }
-        Ok(results)
+        Err(MemoryError::feature_disabled(
+            "homomorphic-encryption(real-search)",
+            "homomorphic_search",
+        ))
     }
 
+    /// No real homomorphic similarity exists yet in any build (a real
+    /// implementation lands in Phase 4); fail closed instead of faking
+    /// similarity scores.
     async fn homomorphic_similarity(
         &self,
-        entries: &[EncryptedMemoryEntry],
-        threshold: f64,
+        _entries: &[EncryptedMemoryEntry],
+        _threshold: f64,
     ) -> Result<Vec<u8>> {
-        // Simulated homomorphic similarity computation
-        let threshold_bytes = (threshold * 1000.0) as u32;
-        let mut results = Vec::new();
-        for (i, _entry) in entries.iter().enumerate() {
-            let similarity = (i * 100) as u32; // Simplified similarity
-            if similarity > threshold_bytes {
-                results.extend_from_slice(&(i as u32).to_le_bytes());
-                results.extend_from_slice(&similarity.to_le_bytes());
-            }
-        }
-        Ok(results)
+        Err(MemoryError::feature_disabled(
+            "homomorphic-encryption(real-similarity)",
+            "homomorphic_similarity",
+        ))
     }
 
     async fn homomorphic_aggregate(

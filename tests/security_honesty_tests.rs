@@ -91,3 +91,57 @@ mod he_disabled {
         assert!(err.to_string().contains("homomorphic-encryption"));
     }
 }
+
+// Search/similarity have no real homomorphic implementation in ANY build
+// (real ones land in Phase 4), so they must fail closed regardless of the
+// homomorphic-encryption feature.
+#[cfg(feature = "security")]
+mod he_search_similarity_fail_closed {
+    use synaptic::security::encryption::EncryptionManager;
+    use synaptic::security::key_management::KeyManager;
+    use synaptic::security::{SecureOperation, SecurityConfig, SecurityContext};
+
+    async fn manager_and_context() -> (EncryptionManager, SecurityContext) {
+        let config = SecurityConfig::default();
+        let key_manager = KeyManager::new(&config)
+            .await
+            .expect("key manager must construct");
+        let manager = EncryptionManager::new(&config, key_manager)
+            .await
+            .expect("encryption manager must still construct so callers can probe availability");
+        let mut context = SecurityContext::new("test-user".to_string(), vec!["user".to_string()]);
+        // Default policy requires MFA; satisfy it so we reach the crypto path.
+        context.mfa_verified = true;
+        (manager, context)
+    }
+
+    #[tokio::test]
+    async fn homomorphic_search_fails_closed() {
+        let (mut manager, context) = manager_and_context().await;
+        let result = manager
+            .homomorphic_compute(
+                &[],
+                SecureOperation::Search {
+                    query: "q".to_string(),
+                },
+                &context,
+            )
+            .await;
+        let err = result.expect_err("must not fake homomorphic search");
+        assert!(err.to_string().contains("homomorphic_search"));
+    }
+
+    #[tokio::test]
+    async fn homomorphic_similarity_fails_closed() {
+        let (mut manager, context) = manager_and_context().await;
+        let result = manager
+            .homomorphic_compute(
+                &[],
+                SecureOperation::Similarity { threshold: 0.5 },
+                &context,
+            )
+            .await;
+        let err = result.expect_err("must not fake homomorphic similarity");
+        assert!(err.to_string().contains("homomorphic_similarity"));
+    }
+}
