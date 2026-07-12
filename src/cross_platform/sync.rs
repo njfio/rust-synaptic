@@ -563,11 +563,18 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Check endpoint health
+    /// Refresh cached endpoint health.
+    ///
+    /// This crate ships no network transport, so there is no live connection to
+    /// probe. Rather than fabricate a healthy status, health is treated as
+    /// unknown-and-therefore-unhealthy until an endpoint is exercised by a real
+    /// sync: an endpoint is considered healthy only if it carries an
+    /// authentication token (i.e. it has been configured for use). A deployment
+    /// that wires an actual transport should replace this body with a real
+    /// reachability probe (ping/handshake).
     pub async fn check_endpoint_health(&mut self) -> Result<(), SynapticError> {
         for endpoint in &mut self.remote_endpoints {
-            // Simulate health check
-            endpoint.is_healthy = true; // In real implementation, ping the endpoint
+            endpoint.is_healthy = endpoint.auth_token.is_some();
         }
         Ok(())
     }
