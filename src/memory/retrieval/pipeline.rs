@@ -342,6 +342,12 @@ impl HybridRetriever {
             return Ok(Vec::new());
         }
 
+        // Rank-based Reciprocal Rank Fusion needs each retriever's ordered
+        // result list (not just per-item scores), so it is handled separately.
+        if self.config.fusion_strategy == FusionStrategy::ReciprocRankFusion {
+            return self.fuse_reciprocal_rank(all_results, limit);
+        }
+
         // Collect all unique memories
         let mut memory_scores: HashMap<String, (MemoryFragment, Vec<(RetrievalSignal, f64)>)> =
             HashMap::new();
@@ -377,6 +383,66 @@ impl HybridRetriever {
             .collect())
     }
 
+    /// Fuse results with rank-based Reciprocal Rank Fusion.
+    ///
+    /// For each retriever's result list (ordered by that retriever's score,
+    /// descending), an item at 0-based rank `r` contributes `1 / (k + r + 1)`
+    /// with the standard `k = 60`; contributions are summed per item across
+    /// retrievers. RRF scores are inherently small (at most `n / (k + 1)` for
+    /// `n` retrievers), so `min_score` is applied to each retriever's raw
+    /// signal scores before ranking rather than to the fused score.
+    fn fuse_reciprocal_rank(
+        &self,
+        all_results: Vec<Vec<ScoredMemory>>,
+        limit: usize,
+    ) -> Result<Vec<MemoryFragment>> {
+        const RRF_K: f64 = 60.0;
+
+        // Value: (memory, rrf_score, weighted_raw_score_sum). The weighted raw
+        // score sum breaks RRF ties deterministically (e.g. two items that
+        // swap ranks #1/#2 across two retrievers have identical RRF scores).
+        let mut fused_scores: HashMap<String, (MemoryFragment, f64, f64)> = HashMap::new();
+
+        for mut results in all_results {
+            // Filter low-quality candidates on their raw signal scores, then
+            // derive each item's rank by ordering the retriever's output.
+            results.retain(|scored| scored.score >= self.config.min_score);
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            for (rank, scored) in results.into_iter().enumerate() {
+                let contribution = 1.0 / (RRF_K + rank as f64 + 1.0);
+                let weight = self
+                    .config
+                    .signal_weights
+                    .get(&scored.signal)
+                    .copied()
+                    .unwrap_or(1.0);
+                let entry = fused_scores
+                    .entry(scored.memory.entry.key.clone())
+                    .or_insert_with(|| (scored.memory.clone(), 0.0, 0.0));
+                entry.1 += contribution;
+                entry.2 += scored.score * weight;
+            }
+        }
+
+        let mut fused: Vec<(MemoryFragment, f64, f64)> = fused_scores.into_values().collect();
+        fused.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        Ok(fused
+            .into_iter()
+            .take(limit)
+            .map(|(memory, _rrf, _raw)| memory)
+            .collect())
+    }
+
     /// Combine scores from multiple signals using the configured strategy
     fn combine_scores(&self, signal_scores: &[(RetrievalSignal, f64)]) -> f64 {
         match self.config.fusion_strategy {
@@ -406,22 +472,13 @@ impl HybridRetriever {
                 .map(|(_, score)| score)
                 .fold(0.0, |max, &score| max.max(score)),
             FusionStrategy::ReciprocRankFusion => {
-                // FIXME(BUG): RRF is computed from `score.recip()` instead of the
-                // result's rank position, so for any per-signal score in [0, 1] the
-                // combined score is on the order of 1/60 (~0.016), which falls below
-                // the default `PipelineConfig::min_score` (0.1) and filters out ALL
-                // results in `fuse_results`. Production wiring in `src/lib.rs`
-                // (`AgentMemory::new`) works around this by overriding the fusion
-                // strategy to `WeightedAverage`. Three retrieval_quality tests fail
-                // because of this bug: `test_hybrid_search_with_results`,
-                // `test_multiple_signals_fusion`, `test_temporal_retriever_recency_bias`.
-                // Fix in Phase 5 de-stub work: rank results per signal and compute
-                // score = sum(1 / (rank + k)).
+                // Rank-based RRF requires each retriever's ordered result list,
+                // which is not visible here; `fuse_results` routes this strategy
+                // through `fuse_reciprocal_rank` instead. As a per-item fallback
+                // (e.g. direct calls), treat each contributing signal as a
+                // rank-1 hit: `1 / (k + 1)` per signal, k = 60.
                 let k = 60.0;
-                signal_scores
-                    .iter()
-                    .map(|(_, score)| 1.0 / (score.recip() + k))
-                    .sum()
+                signal_scores.iter().map(|_| 1.0 / (k + 1.0)).sum()
             }
             FusionStrategy::BordaCount => {
                 // Borda count: assign points based on ranking
@@ -587,6 +644,58 @@ mod tests {
         let hybrid = HybridRetriever::new(config);
         let score = hybrid.combine_scores(&signal_scores);
         assert_eq!(score, 0.8);
+    }
+
+    #[test]
+    fn test_rrf_rank_based_fusion_prefers_multi_retriever_consensus() {
+        fn fragment(key: &str) -> MemoryFragment {
+            MemoryFragment::new(
+                crate::memory::types::MemoryEntry::new(
+                    key.to_string(),
+                    format!("{key} content"),
+                    crate::memory::types::MemoryType::ShortTerm,
+                ),
+                0.8,
+            )
+        }
+
+        let hybrid = HybridRetriever::new(PipelineConfig::default());
+
+        // Item "a" is ranked #1 by two retrievers; item "b" is ranked #1 by
+        // only one retriever. Rank-based RRF must place "a" above "b".
+        let all_results = vec![
+            vec![
+                ScoredMemory::new(fragment("a"), 0.9, RetrievalSignal::DenseVector),
+                ScoredMemory::new(fragment("c"), 0.5, RetrievalSignal::DenseVector),
+            ],
+            vec![
+                ScoredMemory::new(fragment("a"), 0.7, RetrievalSignal::SparseKeyword),
+                ScoredMemory::new(fragment("c"), 0.4, RetrievalSignal::SparseKeyword),
+            ],
+            vec![ScoredMemory::new(
+                fragment("b"),
+                0.95,
+                RetrievalSignal::TemporalRelevance,
+            )],
+        ];
+
+        let fused = hybrid
+            .fuse_results(all_results, 10)
+            .expect("fusion should succeed");
+
+        assert!(
+            !fused.is_empty(),
+            "RRF fusion must not filter out all results"
+        );
+        assert_eq!(
+            fused[0].entry.key, "a",
+            "item ranked #1 by two retrievers must outrank item ranked #1 by one"
+        );
+        let pos_b = fused
+            .iter()
+            .position(|m| m.entry.key == "b")
+            .expect("item b should be present");
+        assert!(pos_b >= 1);
     }
 
     #[tokio::test]

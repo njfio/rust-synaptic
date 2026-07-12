@@ -201,12 +201,6 @@ impl AgentMemory {
         // query without an exact-phrase hit. We wrap storage in
         // `CandidateWideningStorage` (any-term match) for the pipeline only;
         // the substring fallback path below still uses the unwrapped storage.
-        // We also pin the fusion strategy to `WeightedAverage`: the default
-        // `ReciprocRankFusion` strategy in `pipeline.rs` produces scores on
-        // the order of `1/60` for any single-signal match, which sits below
-        // `PipelineConfig::min_score` (0.1) and silently drops all results —
-        // a pre-existing bug in `HybridRetriever::combine_scores` out of
-        // scope for this task.
         let retrieval_pipeline = if config.enable_embeddings {
             let candidate_storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync> =
                 Arc::new(memory::retrieval::CandidateWideningStorage::new(
@@ -218,8 +212,7 @@ impl AgentMemory {
                 provider,
             );
             let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&candidate_storage));
-            let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus()
-                .with_fusion_strategy(memory::retrieval::FusionStrategy::WeightedAverage);
+            let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::new(dense_vector))
                 .add_pipeline(Arc::new(keyword));
