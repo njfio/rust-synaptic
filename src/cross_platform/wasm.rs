@@ -337,21 +337,59 @@ impl WasmAdapter {
         }
     }
 
-    /// Compress data if enabled
+    /// Magic prefix marking a value as deflate-compressed by this adapter.
+    const COMPRESSION_MAGIC: &'static [u8; 4] = b"SYNZ";
+
+    /// Compress data with deflate (flate2) when compression is enabled and
+    /// the payload is large enough to benefit (> 1 KiB). Compressed values
+    /// are tagged with a magic prefix so `decompress_data` can distinguish
+    /// them from raw values; if compression does not shrink the payload the
+    /// raw bytes are stored instead.
     fn compress_data(&self, data: &[u8]) -> Result<Vec<u8>, SynapticError> {
         if self.config.enable_compression && data.len() > 1024 {
-            // Simple compression using deflate (in a real implementation, use a proper compression library)
-            // For now, just return the original data
-            Ok(data.to_vec())
+            use flate2::write::DeflateEncoder;
+            use flate2::Compression;
+            use std::io::Write;
+
+            let mut encoder = DeflateEncoder::new(
+                Vec::with_capacity(Self::COMPRESSION_MAGIC.len() + data.len() / 2),
+                Compression::default(),
+            );
+            encoder.write_all(data).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to compress data: {}", e))
+            })?;
+            let compressed = encoder.finish().map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to finish compression: {}", e))
+            })?;
+
+            if compressed.len() + Self::COMPRESSION_MAGIC.len() < data.len() {
+                let mut tagged =
+                    Vec::with_capacity(Self::COMPRESSION_MAGIC.len() + compressed.len());
+                tagged.extend_from_slice(Self::COMPRESSION_MAGIC);
+                tagged.extend_from_slice(&compressed);
+                return Ok(tagged);
+            }
+        }
+        Ok(data.to_vec())
+    }
+
+    /// Decompress data previously produced by `compress_data`: values
+    /// carrying the compression magic prefix are inflated, anything else is
+    /// returned unchanged.
+    fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>, SynapticError> {
+        if let Some(compressed) = data.strip_prefix(Self::COMPRESSION_MAGIC.as_slice()) {
+            use flate2::read::DeflateDecoder;
+            use std::io::Read;
+
+            let mut decoder = DeflateDecoder::new(compressed);
+            let mut decompressed = Vec::new();
+            decoder.read_to_end(&mut decompressed).map_err(|e| {
+                SynapticError::ProcessingError(format!("Failed to decompress data: {}", e))
+            })?;
+            Ok(decompressed)
         } else {
             Ok(data.to_vec())
         }
-    }
-
-    /// Decompress data if needed
-    fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>, SynapticError> {
-        // In a real implementation, detect if data is compressed and decompress
-        Ok(data.to_vec())
     }
 
     /// Update memory cache
@@ -428,11 +466,10 @@ impl CrossPlatformAdapter for WasmAdapter {
         // Initialize storage backends
         #[cfg(feature = "wasm")]
         {
-            // Initialize IndexedDB
-            if config.storage_backends.contains(&StorageBackend::IndexedDB) {
-                // Note: In a real implementation, this would be async
-                // For now, we'll defer initialization to first use
-            }
+            // IndexedDB: opening a database is inherently async, but this
+            // trait method is sync, so IndexedDB initialization is deferred
+            // to the async paths on first use.
+            let _ = config.storage_backends.contains(&StorageBackend::IndexedDB);
 
             // Initialize local storage fallback
             self.initialize_local_storage()?;
@@ -448,14 +485,9 @@ impl CrossPlatformAdapter for WasmAdapter {
         // Compress data if enabled
         let compressed_data = self.compress_data(data)?;
 
-        // Try IndexedDB first
-        #[cfg(feature = "wasm")]
-        if self.db.is_some() {
-            // Note: This should be async in a real implementation
-            // For now, we'll use local storage as fallback
-        }
-
-        // Fallback to local storage
+        // IndexedDB writes are async-only in browsers; this sync trait
+        // method persists via localStorage, and IndexedDB is used by the
+        // async web-worker paths.
         #[cfg(feature = "wasm")]
         if self.local_storage.is_some() {
             self.store_local_storage(key, &compressed_data)?;
@@ -476,13 +508,9 @@ impl CrossPlatformAdapter for WasmAdapter {
             }
         }
 
-        // Try IndexedDB
-        #[cfg(feature = "wasm")]
-        if self.db.is_some() {
-            // Note: This should be async in a real implementation
-        }
-
-        // Fallback to local storage
+        // IndexedDB reads are async-only in browsers; this sync trait
+        // method reads from localStorage (IndexedDB is used by the async
+        // web-worker paths).
         #[cfg(feature = "wasm")]
         if let Some(data) = self.retrieve_local_storage(key)? {
             let decompressed = self.decompress_data(&data)?;

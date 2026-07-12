@@ -783,16 +783,40 @@ impl MemoryHealthChecker {
         }
     }
 
+    /// Read real system memory usage from `/proc/meminfo` on Linux
+    /// (used = MemTotal - MemAvailable). Returns `(used_bytes, total_bytes,
+    /// usage_percent)`. On platforms without `/proc/meminfo` this errors so
+    /// the health check reports the data as unavailable rather than
+    /// fabricating figures.
     fn get_memory_usage(&self) -> Result<(u64, u64, f64)> {
-        // This is a simplified implementation
-        // In a real implementation, you would use system APIs to get actual memory usage
-        use std::alloc::{GlobalAlloc, Layout, System};
+        let meminfo = std::fs::read_to_string("/proc/meminfo").map_err(|e| {
+            crate::error::MemoryError::Internal(format!(
+                "system memory statistics unavailable (no /proc/meminfo): {}",
+                e
+            ))
+        })?;
+        let read_kb = |field: &str| -> Option<u64> {
+            meminfo
+                .lines()
+                .find(|line| line.starts_with(field))
+                .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
+        };
+        let total_kb = read_kb("MemTotal:").ok_or_else(|| {
+            crate::error::MemoryError::Internal("MemTotal missing from /proc/meminfo".to_string())
+        })?;
+        let available_kb = read_kb("MemAvailable:").ok_or_else(|| {
+            crate::error::MemoryError::Internal(
+                "MemAvailable missing from /proc/meminfo".to_string(),
+            )
+        })?;
 
-        // For demonstration, we'll return mock values
-        // In production, use libraries like `sysinfo` or platform-specific APIs
-        let used_memory = 1024 * 1024 * 100; // 100MB
-        let total_memory = 1024 * 1024 * 1024; // 1GB
-        let usage_percent = (used_memory as f64 / total_memory as f64) * 100.0;
+        let total_memory = total_kb * 1024;
+        let used_memory = total_kb.saturating_sub(available_kb) * 1024;
+        let usage_percent = if total_memory > 0 {
+            (used_memory as f64 / total_memory as f64) * 100.0
+        } else {
+            0.0
+        };
 
         Ok((used_memory, total_memory, usage_percent))
     }

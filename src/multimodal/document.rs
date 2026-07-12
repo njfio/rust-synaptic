@@ -266,9 +266,13 @@ impl DocumentMemoryProcessor {
         indicator_count >= 2 // At least 2 markdown indicators
     }
 
-    /// Detect text encoding
+    /// Detect text encoding.
+    ///
+    /// Heuristic byte-pattern classification (BOM sniffing plus an ASCII
+    /// range check, defaulting to UTF-8); no statistical charset-detection
+    /// library is used, so legacy encodings (e.g. Latin-1, Shift-JIS) are
+    /// reported as UTF-8.
     fn detect_encoding(&self, content: &[u8]) -> String {
-        // Simple encoding detection - in a real implementation, use encoding_rs
         if content.starts_with(&[0xEF, 0xBB, 0xBF]) {
             "UTF-8 BOM".to_string()
         } else if content.iter().all(|&b| b < 128) {
@@ -335,11 +339,14 @@ impl DocumentMemoryProcessor {
         Ok(text)
     }
 
-    /// Extract text from Markdown
+    /// Extract text from Markdown.
+    ///
+    /// Returns the raw Markdown source unchanged: Markdown is already
+    /// human-readable plain text, so formatting markers (`#`, `*`, links)
+    /// are intentionally preserved rather than stripped through a CommonMark
+    /// parser. Downstream indexing tokenizes the markers away.
     async fn extract_markdown_text(&self, content: &[u8]) -> MultiModalResult<String> {
-        let markdown_text = String::from_utf8_lossy(content);
-        // In a real implementation, use pulldown-cmark to parse and extract plain text
-        Ok(markdown_text.to_string())
+        Ok(String::from_utf8_lossy(content).to_string())
     }
 
     /// Extract text from HTML

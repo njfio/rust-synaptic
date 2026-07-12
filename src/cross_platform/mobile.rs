@@ -478,22 +478,18 @@ impl iOSAdapter {
     }
 
     fn setup_core_data_integration(&self) -> Result<(), SynapticError> {
-        // In a real implementation, this would use Swift bridge to integrate with Core Data
-        // For now, we simulate Core Data behavior with file-based persistence
-
-        #[cfg(feature = "mobile")]
-        {
-            // This would call Swift code via swift-bridge
-            // swift_bridge::setup_core_data_stack();
-        }
-
-        tracing::info!("iOS Core Data integration initialized with file-based persistence");
+        // No Swift bridge is linked into this crate, so there is no Core
+        // Data integration; persistence on iOS uses the same file-based
+        // storage as every other platform. This hook exists so a host app
+        // embedding a native bridge has a single place to wire it up.
+        tracing::info!("iOS persistence configured (file-based; no Core Data bridge linked)");
         Ok(())
     }
 
     fn setup_background_refresh(&self) -> Result<(), SynapticError> {
-        // Setup background app refresh handling
-        // In a real implementation, this would register for background refresh notifications
+        // No native bridge is linked, so background app refresh
+        // notifications cannot be registered; the configured sync interval
+        // is recorded for a host app to act on.
 
         if self.mobile_config.enable_background_sync {
             tracing::info!(
@@ -506,8 +502,10 @@ impl iOSAdapter {
     }
 
     fn setup_memory_pressure_handling(&self) -> Result<(), SynapticError> {
-        // Setup iOS memory pressure notifications
-        // In a real implementation, this would register for memory pressure notifications
+        // No native bridge is linked, so iOS memory-pressure notifications
+        // cannot be registered here; the configured threshold is recorded
+        // for a host app to act on (see handle_memory_pressure for the
+        // actual cache-clearing logic once invoked).
 
         tracing::info!(
             "iOS memory pressure handling configured with threshold: {}",
@@ -599,22 +597,18 @@ impl AndroidAdapter {
     }
 
     fn setup_sqlite_integration(&self) -> Result<(), SynapticError> {
-        // In a real implementation, this would use JNI to integrate with Android SQLite/Room
-
-        #[cfg(feature = "mobile")]
-        if let Some(ref jvm) = self.jvm {
-            // This would call Java/Kotlin code via JNI
-            // let env = jvm.get_env()?;
-            // Call Android Room database setup
-        }
-
-        tracing::info!("Android SQLite/Room integration initialized with file-based persistence");
+        // No JNI bindings to Android Room are linked into this crate;
+        // persistence on Android uses the same file-based storage as every
+        // other platform. This hook is the single place for a host app to
+        // wire a native database bridge.
+        tracing::info!("Android persistence configured (file-based; no Room/JNI bridge linked)");
         Ok(())
     }
 
     fn setup_doze_mode_handling(&self) -> Result<(), SynapticError> {
-        // Setup Android doze mode handling
-        // In a real implementation, this would register for doze mode changes
+        // No JNI bridge is linked, so doze-mode broadcast receivers cannot
+        // be registered here; background-sync intent is recorded for a host
+        // app to act on.
 
         if self.mobile_config.enable_background_sync {
             tracing::info!("Android doze mode handling configured for background sync");
@@ -624,8 +618,9 @@ impl AndroidAdapter {
     }
 
     fn setup_android_memory_management(&self) -> Result<(), SynapticError> {
-        // Setup Android-specific memory management
-        // In a real implementation, this would register for memory trim callbacks
+        // No JNI bridge is linked, so onTrimMemory callbacks cannot be
+        // registered here; the configured cache limit is recorded for a
+        // host app to act on.
 
         tracing::info!(
             "Android memory management configured with cache limit: {} MB",
@@ -655,10 +650,8 @@ impl AndroidAdapter {
         let mut info = HashMap::new();
 
         if let Some(ref jvm) = self.jvm {
-            // In a real implementation, this would call Android APIs via JNI
-            // let env = jvm.get_env()?;
-            // Get system information like available memory, storage, etc.
-
+            // Only JVM availability is reported: no Android system-info
+            // APIs are called through JNI by this crate.
             info.insert("platform".to_string(), "Android".to_string());
             info.insert("jni_available".to_string(), "true".to_string());
         } else {
@@ -728,7 +721,6 @@ impl MobileOptimizations for GenericMobileAdapter {
             SynapticError::ProcessingError(format!("Failed to acquire storage lock: {}", e))
         })?;
 
-        // In a real implementation, this would clear caches and temporary data
         let initial_size = storage.len();
         storage.retain(|key, _| !key.starts_with("cache_"));
         let cleared = initial_size - storage.len();
