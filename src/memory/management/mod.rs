@@ -124,10 +124,17 @@ impl MemoryManager {
     /// offers no deletion, so the stale vector physically remains in the
     /// HNSW graph, but its UUID is tombstoned (and dropped from
     /// `uuid_to_key`) so ANN query paths skip it. Only the key's latest
-    /// embedding contributes to similarity counts. Note that tombstoned
-    /// vectors still occupy index slots, so `VectorIndex::len` (used for the
-    /// ANN-vs-brute-force cutover and the search `k`) counts them too; this
-    /// only affects heuristics, never correctness of the counts.
+    /// embedding contributes to similarity counts, so no double-counting or
+    /// drift is possible. Note that tombstoned vectors still occupy index
+    /// slots, so `VectorIndex::len` (used for the ANN-vs-brute-force cutover
+    /// and the search `k`) counts them too. Because `k = index_len.min(
+    /// ANN_SEARCH_K)` and dead hits are filtered only *after* the top-`k`
+    /// search, under heavy-churn/adversarial tombstone accumulation many dead
+    /// near-duplicates can occupy top-`k` slots and push a genuinely-live
+    /// qualifying neighbor outside the `k`-window — an undercount that
+    /// post-filtering cannot recover. This is the same class of bounded
+    /// undercount as the pre-existing `ANN_SEARCH_K` saturation cap; it never
+    /// causes over-counting.
     fn index_embedding(&self, memory: &MemoryEntry) -> Result<()> {
         let Some(embedding) = &memory.embedding else {
             return Ok(());
