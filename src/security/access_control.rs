@@ -5,9 +5,52 @@
 
 use crate::error::{MemoryError, Result};
 use crate::security::{AbacRule, AccessControlPolicy, Permission, SecurityConfig, SecurityContext};
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
 use chrono::{DateTime, Utc};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use subtle::ConstantTimeEq;
+use totp_rs::{Algorithm as TotpAlgorithm, TOTP};
+
+/// TOTP parameters (RFC 6238): 6 digits, 30-second step, ±1 step of skew.
+const TOTP_DIGITS: usize = 6;
+const TOTP_SKEW: u8 = 1;
+const TOTP_STEP_SECONDS: u64 = 30;
+/// Minimum TOTP shared-secret length (RFC 4226 §4 requires >= 128 bits).
+const TOTP_MIN_SECRET_BYTES: usize = 16;
+
+/// Stored credential material for a provisioned user.
+///
+/// Passwords are stored as argon2id PHC strings, API keys as SHA-256 digests
+/// (compared in constant time), and MFA as a raw TOTP shared secret.
+#[derive(Clone, Default)]
+pub struct StoredCredentials {
+    password_hash: Option<String>,
+    api_key_sha256: Option<[u8; 32]>,
+    totp_secret: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for StoredCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredCredentials")
+            .field(
+                "password_hash",
+                &self.password_hash.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "api_key_sha256",
+                &self.api_key_sha256.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "totp_secret",
+                &self.totp_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
 
 /// Access control manager
 #[derive(Debug)]
@@ -16,6 +59,7 @@ pub struct AccessControlManager {
     policy: AccessControlPolicy,
     active_sessions: HashMap<String, SessionInfo>,
     failed_attempts: HashMap<String, FailedAttemptTracker>,
+    credentials: HashMap<String, StoredCredentials>,
     metrics: AccessMetrics,
 }
 
@@ -27,8 +71,73 @@ impl AccessControlManager {
             policy: config.access_control_policy.clone(),
             active_sessions: HashMap::new(),
             failed_attempts: HashMap::new(),
+            credentials: HashMap::new(),
             metrics: AccessMetrics::default(),
         })
+    }
+
+    /// Hash a password into an argon2id PHC string for provisioning/storage.
+    pub fn hash_password(password: &str) -> Result<String> {
+        let salt = SaltString::generate(&mut rand::rngs::OsRng);
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|hash| hash.to_string())
+            .map_err(|e| MemoryError::access_denied(format!("Password hashing failed: {e}")))
+    }
+
+    /// Provision (or rotate) a user's password. The password is stored only
+    /// as an argon2id PHC string.
+    pub fn set_password(&mut self, user_id: &str, password: &str) -> Result<()> {
+        let hash = Self::hash_password(password)?;
+        self.set_password_hash(user_id, hash)
+    }
+
+    /// Provision a user from an already-computed argon2 PHC string (e.g. one
+    /// loaded from a credential store).
+    pub fn set_password_hash(&mut self, user_id: &str, phc_hash: String) -> Result<()> {
+        if !phc_hash.starts_with('$') {
+            return Err(MemoryError::access_denied(
+                "Stored password hash must be a PHC-format string".to_string(),
+            ));
+        }
+        self.credentials
+            .entry(user_id.to_string())
+            .or_default()
+            .password_hash = Some(phc_hash);
+        Ok(())
+    }
+
+    /// Provision (or rotate) a user's API key. Only the SHA-256 digest of the
+    /// key is retained; verification is a constant-time digest comparison.
+    pub fn set_api_key(&mut self, user_id: &str, api_key: &str) {
+        let digest: [u8; 32] = Sha256::digest(api_key.as_bytes()).into();
+        self.credentials
+            .entry(user_id.to_string())
+            .or_default()
+            .api_key_sha256 = Some(digest);
+    }
+
+    /// Generate a fresh 160-bit TOTP shared secret (RFC 6238 recommends the
+    /// HMAC-SHA-1 output size) from the OS CSPRNG.
+    pub fn generate_totp_secret() -> Vec<u8> {
+        let mut secret = vec![0u8; 20];
+        rand::rngs::OsRng.fill_bytes(&mut secret);
+        secret
+    }
+
+    /// Enroll a user's TOTP shared secret for MFA. The secret must be at
+    /// least 128 bits (RFC 4226 §4).
+    pub fn set_totp_secret(&mut self, user_id: &str, secret: Vec<u8>) -> Result<()> {
+        if secret.len() < TOTP_MIN_SECRET_BYTES {
+            return Err(MemoryError::access_denied(format!(
+                "TOTP secret must be at least {TOTP_MIN_SECRET_BYTES} bytes"
+            )));
+        }
+        self.credentials
+            .entry(user_id.to_string())
+            .or_default()
+            .totp_secret = Some(secret);
+        Ok(())
     }
 
     /// Authenticate a user and create a security context
@@ -63,11 +172,16 @@ impl AccessControlManager {
         context.attributes = auth_result.attributes;
 
         // Handle MFA if required
-        if self.policy.require_mfa && !credentials.mfa_token.is_some() {
+        if self.policy.require_mfa && credentials.mfa_token.is_none() {
             context.mfa_verified = false;
             // In production, would initiate MFA challenge
-        } else if let Some(mfa_token) = credentials.mfa_token {
-            context.mfa_verified = self.verify_mfa_token(&user_id, &mfa_token).await?;
+        } else if let Some(ref mfa_token) = credentials.mfa_token {
+            if !self.verify_mfa_token(&user_id, mfa_token).await? {
+                self.record_failed_attempt(&user_id);
+                self.metrics.total_failed_authentications += 1;
+                return Err(MemoryError::access_denied("Invalid MFA token".to_string()));
+            }
+            context.mfa_verified = true;
         }
 
         // Create session
@@ -211,27 +325,44 @@ impl AccessControlManager {
         user_id: &str,
         credentials: &AuthenticationCredentials,
     ) -> Result<AuthenticationResult> {
-        // In production, this would verify against a secure user database
-        // For demo purposes, we'll use simple logic
+        // Verify against provisioned credential material. Users without a
+        // stored credential of the requested type are always denied.
+        let stored = self.credentials.get(user_id);
 
         let is_valid = match credentials.auth_type {
             AuthenticationType::Password => {
-                // Simulate password verification
-                credentials
-                    .password
-                    .as_ref()
-                    .map_or(false, |p| p.len() >= 8)
+                // argon2 PHC-string verification against the stored hash.
+                match (
+                    stored.and_then(|s| s.password_hash.as_deref()),
+                    credentials.password.as_deref(),
+                ) {
+                    (Some(stored_hash), Some(password)) => PasswordHash::new(stored_hash)
+                        .map(|parsed| {
+                            Argon2::default()
+                                .verify_password(password.as_bytes(), &parsed)
+                                .is_ok()
+                        })
+                        .unwrap_or(false),
+                    _ => false,
+                }
             }
             AuthenticationType::ApiKey => {
-                // Simulate API key verification
-                credentials
-                    .api_key
-                    .as_ref()
-                    .map_or(false, |k| k.starts_with("sk-"))
+                // Constant-time comparison of SHA-256 digests.
+                match (
+                    stored.and_then(|s| s.api_key_sha256.as_ref()),
+                    credentials.api_key.as_deref(),
+                ) {
+                    (Some(stored_digest), Some(api_key)) => {
+                        let presented: [u8; 32] = Sha256::digest(api_key.as_bytes()).into();
+                        bool::from(presented.ct_eq(stored_digest))
+                    }
+                    _ => false,
+                }
             }
             AuthenticationType::Certificate => {
-                // Simulate certificate verification
-                credentials.certificate.is_some()
+                // Fail closed: certificate verification is not implemented
+                // (previously any non-empty certificate was accepted).
+                false
             }
         };
 
@@ -263,10 +394,30 @@ impl AccessControlManager {
         }
     }
 
-    async fn verify_mfa_token(&self, _user_id: &str, token: &str) -> Result<bool> {
-        // In production, verify TOTP, SMS, or hardware token
-        // For demo, accept tokens that are 6 digits
-        Ok(token.len() == 6 && token.chars().all(|c| c.is_ascii_digit()))
+    /// Verify an RFC 6238 TOTP token against the user's enrolled shared
+    /// secret, accepting a ±1 time-step window. Users without an enrolled
+    /// secret are denied.
+    async fn verify_mfa_token(&self, user_id: &str, token: &str) -> Result<bool> {
+        let secret = match self
+            .credentials
+            .get(user_id)
+            .and_then(|s| s.totp_secret.clone())
+        {
+            Some(secret) => secret,
+            None => return Ok(false),
+        };
+
+        let totp = TOTP::new(
+            TotpAlgorithm::SHA1,
+            TOTP_DIGITS,
+            TOTP_SKEW,
+            TOTP_STEP_SECONDS,
+            secret,
+        )
+        .map_err(|e| MemoryError::access_denied(format!("Invalid TOTP configuration: {e}")))?;
+
+        totp.check_current(token)
+            .map_err(|e| MemoryError::access_denied(format!("System time error: {e}")))
     }
 
     async fn check_rbac_permission(

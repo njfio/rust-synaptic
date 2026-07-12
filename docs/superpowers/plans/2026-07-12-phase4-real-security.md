@@ -90,6 +90,26 @@
 - Acceptance tests: correct password/token/key pass; wrong ones fail; unknown policy condition denies; the previously-failing MFA tests in phase4_security_tests.rs (documented in task-hygiene-report.md) turn green. TDD throughout.
 - Commit: "feat(security)!: real argon2/TOTP authentication and deny-by-default policy".
 
+> **Execution notes (2026-07-12, task 4.7 done):** argon2 0.5.3 (argon2id PHC)
+> + totp-rs 5.7.2 (RFC 6238, skew=1 ⇒ ±1 step) + subtle 2.6.1 (ConstantTimeEq
+> over SHA-256 API-key digests). Credentials now live in a per-user
+> `StoredCredentials` store on `AccessControlManager` (provisioning API:
+> `hash_password`/`set_password`/`set_password_hash`/`set_api_key`/
+> `set_totp_secret`/`generate_totp_secret`); unprovisioned users are denied,
+> and Certificate auth — previously "any bytes accepted" — now fails closed
+> (real certificate verification descoped to a later phase). Divergence from
+> plan: `policy_engine.rs` was dead code (never declared in `security/mod.rs`),
+> so a minimal `pub mod policy_engine;` line was added and the module's
+> pre-existing compile errors fixed (nonexistent `SynapticError::SecurityError`
+> / `ValidationError` variants → `access_denied`/`validation` constructors;
+> serde derives removed from structs holding non-serde `chrono::Duration`).
+> The catch-all `_ => Ok(true)` became explicit fail-closed errors for
+> `TimeWindow`/`GeographicLocation`; `IpAddress` prefix matching was tightened
+> to octet-boundary semantics. `ComplianceChecker::check_compliance` remains a
+> permissive stub (documented, out of Gate-5 scope). The pre-existing
+> security_suite MFA failures are green via the honest fix: tests provision
+> the user and present a real current-step TOTP token.
+
 ---
 
 ## Execution order & sizing

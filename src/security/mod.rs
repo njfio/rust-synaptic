@@ -16,6 +16,7 @@ pub mod access_control;
 pub mod audit;
 pub mod encryption;
 pub mod key_management;
+pub mod policy_engine;
 pub mod privacy;
 pub mod zero_knowledge;
 

@@ -130,6 +130,11 @@ fn bench_access_control(c: &mut Criterion) {
 
                         for i in 0..count {
                             let user_id = format!("user_{}", i);
+                            // Authentication is real (argon2) as of Task 4.7:
+                            // provision the user before authenticating.
+                            access_control
+                                .set_password(&user_id, "password123")
+                                .unwrap();
                             let creds = AuthenticationCredentials {
                                 auth_type: AuthenticationType::Password,
                                 password: Some("password123".to_string()),

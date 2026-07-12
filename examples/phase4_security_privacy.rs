@@ -253,12 +253,25 @@ async fn demonstrate_authentication(
     println!("--------------------------------------");
 
     // Create authentication credentials
+    // Authentication is real (Task 4.7): provision an argon2 password hash
+    // and a TOTP secret, then present a valid RFC 6238 token.
+    let totp_secret =
+        synaptic::security::access_control::AccessControlManager::generate_totp_secret();
+    security_manager
+        .access_control
+        .set_password("alice_engineer", "secure_password_123")?;
+    security_manager
+        .access_control
+        .set_totp_secret("alice_engineer", totp_secret.clone())?;
+    let mfa_token =
+        totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, totp_secret)?.generate_current()?;
+
     let credentials = AuthenticationCredentials {
         auth_type: AuthenticationType::Password,
         password: Some("secure_password_123".to_string()),
         api_key: None,
         certificate: None,
-        mfa_token: Some("123456".to_string()),
+        mfa_token: Some(mfa_token),
         ip_address: Some("192.168.1.100".to_string()),
         user_agent: Some("Synaptic-Client/1.0".to_string()),
     };

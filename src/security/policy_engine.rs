@@ -20,7 +20,7 @@ pub struct PolicyEngine {
 }
 
 /// Security policy definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SecurityPolicy {
     pub id: String,
     pub name: String,
@@ -86,7 +86,7 @@ pub enum DataClassificationLevel {
 }
 
 /// Data classification configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DataClassification {
     pub level: DataClassificationLevel,
     pub retention_period: chrono::Duration,
@@ -117,7 +117,7 @@ pub struct TimeWindow {
 }
 
 /// Audit requirements
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct AuditRequirements {
     pub log_access: bool,
     pub log_modifications: bool,
@@ -129,7 +129,8 @@ pub struct AuditRequirements {
 }
 
 /// Compliance framework requirements
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(non_camel_case_types)]
 pub enum ComplianceFramework {
     GDPR,
     HIPAA,
@@ -265,7 +266,9 @@ impl PolicyEngine {
             policies: HashMap::new(),
             roles: HashMap::new(),
             users: HashMap::new(),
-            audit_logger: AuditLogger { log_storage: audit_storage },
+            audit_logger: AuditLogger {
+                log_storage: audit_storage,
+            },
             compliance_checker: ComplianceChecker::new(),
         }
     }
@@ -316,8 +319,10 @@ impl PolicyEngine {
         let decision_id = Uuid::new_v4().to_string();
 
         // Get user
-        let user = self.users.get(&request.user_id)
-            .ok_or_else(|| SynapticError::SecurityError("User not found".to_string()))?;
+        let user = self
+            .users
+            .get(&request.user_id)
+            .ok_or_else(|| SynapticError::access_denied("User not found".to_string()))?;
 
         if !user.active {
             return Ok(AccessDecision {
@@ -393,11 +398,15 @@ impl PolicyEngine {
     /// Validate security policy
     fn validate_policy(&self, policy: &SecurityPolicy) -> Result<()> {
         if policy.name.is_empty() {
-            return Err(SynapticError::ValidationError("Policy name cannot be empty".to_string()));
+            return Err(SynapticError::validation(
+                "Policy name cannot be empty".to_string(),
+            ));
         }
 
         if policy.rules.is_empty() {
-            return Err(SynapticError::ValidationError("Policy must have at least one rule".to_string()));
+            return Err(SynapticError::validation(
+                "Policy must have at least one rule".to_string(),
+            ));
         }
 
         // Validate each rule
@@ -411,7 +420,9 @@ impl PolicyEngine {
     /// Validate policy rule
     fn validate_policy_rule(&self, rule: &PolicyRule) -> Result<()> {
         if rule.name.is_empty() {
-            return Err(SynapticError::ValidationError("Rule name cannot be empty".to_string()));
+            return Err(SynapticError::validation(
+                "Rule name cannot be empty".to_string(),
+            ));
         }
 
         // Additional rule validation logic would go here
@@ -421,7 +432,9 @@ impl PolicyEngine {
     /// Validate role
     fn validate_role(&self, role: &Role) -> Result<()> {
         if role.name.is_empty() {
-            return Err(SynapticError::ValidationError("Role name cannot be empty".to_string()));
+            return Err(SynapticError::validation(
+                "Role name cannot be empty".to_string(),
+            ));
         }
 
         // Check for circular inheritance
@@ -437,7 +450,9 @@ impl PolicyEngine {
 
         while let Some(current_role_id) = stack.pop() {
             if visited.contains(&current_role_id) {
-                return Err(SynapticError::ValidationError("Circular role inheritance detected".to_string()));
+                return Err(SynapticError::validation(
+                    "Circular role inheritance detected".to_string(),
+                ));
             }
 
             visited.insert(current_role_id.clone());
@@ -453,17 +468,24 @@ impl PolicyEngine {
     /// Validate user
     fn validate_user(&self, user: &User) -> Result<()> {
         if user.username.is_empty() {
-            return Err(SynapticError::ValidationError("Username cannot be empty".to_string()));
+            return Err(SynapticError::validation(
+                "Username cannot be empty".to_string(),
+            ));
         }
 
         if user.email.is_empty() {
-            return Err(SynapticError::ValidationError("Email cannot be empty".to_string()));
+            return Err(SynapticError::validation(
+                "Email cannot be empty".to_string(),
+            ));
         }
 
         // Validate user roles exist
         for role_id in &user.roles {
             if !self.roles.contains_key(role_id) {
-                return Err(SynapticError::ValidationError(format!("Role {} does not exist", role_id)));
+                return Err(SynapticError::validation(format!(
+                    "Role {} does not exist",
+                    role_id
+                )));
             }
         }
 
@@ -471,7 +493,12 @@ impl PolicyEngine {
     }
 
     /// Evaluate a single policy against the request
-    fn evaluate_policy(&self, policy: &SecurityPolicy, request: &AccessRequest, user: &User) -> Result<AccessDecision> {
+    fn evaluate_policy(
+        &self,
+        policy: &SecurityPolicy,
+        request: &AccessRequest,
+        user: &User,
+    ) -> Result<AccessDecision> {
         let mut allowed = true;
         let mut required_actions = Vec::new();
         let mut reasons = Vec::new();
@@ -486,7 +513,7 @@ impl PolicyEngine {
             }
 
             if self.evaluate_condition(&rule.condition, request, user)? {
-                match rule.action {
+                match &rule.action {
                     PolicyAction::Allow => {
                         // Continue evaluation
                     }
@@ -495,7 +522,7 @@ impl PolicyEngine {
                         reasons.push(format!("Denied by rule: {}", rule.name));
                     }
                     action => {
-                        required_actions.push(action);
+                        required_actions.push(action.clone());
                     }
                 }
             }
@@ -516,7 +543,12 @@ impl PolicyEngine {
     }
 
     /// Evaluate a policy condition
-    fn evaluate_condition(&self, condition: &PolicyCondition, request: &AccessRequest, user: &User) -> Result<bool> {
+    fn evaluate_condition(
+        &self,
+        condition: &PolicyCondition,
+        request: &AccessRequest,
+        user: &User,
+    ) -> Result<bool> {
         match condition {
             PolicyCondition::UserRole(role_name) => {
                 Ok(user.roles.iter().any(|role_id| {
@@ -532,8 +564,20 @@ impl PolicyEngine {
                 Ok(request.resource_type == *resource_type)
             }
             PolicyCondition::IpAddress(ip_pattern) => {
-                // Simple IP matching - in production, use proper CIDR matching
-                Ok(request.ip_address.starts_with(ip_pattern))
+                // Exact match, or prefix match only when the pattern ends at
+                // an octet boundary ("10.0." matches "10.0.1.2" but "10.0"
+                // does not match "10.01.1.2"). A raw starts_with here was a
+                // permissive default that over-matched sibling subnets.
+                if let Some(prefix) = ip_pattern.strip_suffix('.') {
+                    Ok(request.ip_address == *ip_pattern
+                        || request
+                            .ip_address
+                            .strip_prefix(prefix)
+                            .map(|rest| rest.starts_with('.'))
+                            .unwrap_or(false))
+                } else {
+                    Ok(request.ip_address == *ip_pattern)
+                }
             }
             PolicyCondition::And(conditions) => {
                 for cond in conditions {
@@ -554,15 +598,24 @@ impl PolicyEngine {
             PolicyCondition::Not(condition) => {
                 Ok(!self.evaluate_condition(condition, request, user)?)
             }
-            _ => {
-                // Other conditions would be implemented here
-                Ok(true)
-            }
+            // Deny by default: conditions without a real evaluator must fail
+            // closed with an explicit error instead of silently matching
+            // (the old catch-all returned Ok(true)).
+            PolicyCondition::TimeWindow(_) => Err(SynapticError::access_denied(
+                "Unsupported policy condition: TimeWindow evaluation is not implemented; failing closed".to_string(),
+            )),
+            PolicyCondition::GeographicLocation(_) => Err(SynapticError::access_denied(
+                "Unsupported policy condition: GeographicLocation evaluation is not implemented; failing closed".to_string(),
+            )),
         }
     }
 
     /// Log access decision for audit purposes
-    fn log_access_decision(&self, request: &AccessRequest, decision: &AccessDecision) -> Result<()> {
+    fn log_access_decision(
+        &self,
+        request: &AccessRequest,
+        decision: &AccessDecision,
+    ) -> Result<()> {
         let audit_event = AuditEvent {
             id: Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
@@ -570,14 +623,24 @@ impl PolicyEngine {
             action: request.action.clone(),
             resource_type: request.resource_type.clone(),
             resource_id: request.resource_id.clone(),
-            result: if decision.allowed { "ALLOWED".to_string() } else { "DENIED".to_string() },
+            result: if decision.allowed {
+                "ALLOWED".to_string()
+            } else {
+                "DENIED".to_string()
+            },
             ip_address: request.ip_address.clone(),
             user_agent: request.user_agent.clone(),
             session_id: request.session_id.clone(),
             additional_data: {
                 let mut data = HashMap::new();
-                data.insert("decision_id".to_string(), serde_json::Value::String(decision.decision_id.clone()));
-                data.insert("reason".to_string(), serde_json::Value::String(decision.reason.clone()));
+                data.insert(
+                    "decision_id".to_string(),
+                    serde_json::Value::String(decision.decision_id.clone()),
+                );
+                data.insert(
+                    "reason".to_string(),
+                    serde_json::Value::String(decision.reason.clone()),
+                );
                 data
             },
         };
@@ -593,36 +656,61 @@ impl ComplianceChecker {
         let mut frameworks = HashMap::new();
 
         // Initialize GDPR compliance rules
-        frameworks.insert(ComplianceFramework::GDPR, ComplianceRules {
-            data_retention_limits: {
-                let mut limits = HashMap::new();
-                limits.insert(DataClassificationLevel::Public, chrono::Duration::days(365 * 7)); // 7 years
-                limits.insert(DataClassificationLevel::Internal, chrono::Duration::days(365 * 5)); // 5 years
-                limits.insert(DataClassificationLevel::Confidential, chrono::Duration::days(365 * 3)); // 3 years
-                limits.insert(DataClassificationLevel::Restricted, chrono::Duration::days(365 * 2)); // 2 years
-                limits
+        frameworks.insert(
+            ComplianceFramework::GDPR,
+            ComplianceRules {
+                data_retention_limits: {
+                    let mut limits = HashMap::new();
+                    limits.insert(
+                        DataClassificationLevel::Public,
+                        chrono::Duration::days(365 * 7),
+                    ); // 7 years
+                    limits.insert(
+                        DataClassificationLevel::Internal,
+                        chrono::Duration::days(365 * 5),
+                    ); // 5 years
+                    limits.insert(
+                        DataClassificationLevel::Confidential,
+                        chrono::Duration::days(365 * 3),
+                    ); // 3 years
+                    limits.insert(
+                        DataClassificationLevel::Restricted,
+                        chrono::Duration::days(365 * 2),
+                    ); // 2 years
+                    limits
+                },
+                encryption_requirements: {
+                    let mut reqs = HashMap::new();
+                    reqs.insert(
+                        DataClassificationLevel::Confidential,
+                        EncryptionRequirement {
+                            algorithm: "AES-256-GCM".to_string(),
+                            key_length: 256,
+                            key_rotation_period: chrono::Duration::days(90),
+                            at_rest: true,
+                            in_transit: true,
+                        },
+                    );
+                    reqs
+                },
+                access_logging_requirements: vec![
+                    "all_access".to_string(),
+                    "data_export".to_string(),
+                ],
+                data_residency_requirements: vec!["EU".to_string()],
+                breach_notification_timeframes: chrono::Duration::hours(72),
             },
-            encryption_requirements: {
-                let mut reqs = HashMap::new();
-                reqs.insert(DataClassificationLevel::Confidential, EncryptionRequirement {
-                    algorithm: "AES-256-GCM".to_string(),
-                    key_length: 256,
-                    key_rotation_period: chrono::Duration::days(90),
-                    at_rest: true,
-                    in_transit: true,
-                });
-                reqs
-            },
-            access_logging_requirements: vec!["all_access".to_string(), "data_export".to_string()],
-            data_residency_requirements: vec!["EU".to_string()],
-            breach_notification_timeframes: chrono::Duration::hours(72),
-        });
+        );
 
         Self { frameworks }
     }
 
     /// Check compliance for an access request
-    pub fn check_compliance(&self, request: &AccessRequest, user: &User) -> Result<ComplianceResult> {
+    pub fn check_compliance(
+        &self,
+        _request: &AccessRequest,
+        _user: &User,
+    ) -> Result<ComplianceResult> {
         // Implementation would check various compliance requirements
         Ok(ComplianceResult {
             compliant: true,

@@ -12,18 +12,35 @@ use synaptic::security::{
 };
 use synaptic::{MemoryEntry, MemoryType};
 
-// Helper function to create authenticated security context
+// Helper function to create authenticated security context.
+//
+// Authentication is real now (Task 4.7): the user's password is provisioned
+// as an argon2 hash, a TOTP secret is enrolled, and a valid RFC 6238 token
+// for the current time step is presented so `mfa_verified` is genuinely true.
 async fn create_authenticated_context(
     security_manager: &mut SecurityManager,
     user_id: &str,
     password: &str,
 ) -> Result<SecurityContext, Box<dyn Error>> {
+    use synaptic::security::access_control::AccessControlManager;
+
+    let totp_secret = AccessControlManager::generate_totp_secret();
+    security_manager
+        .access_control
+        .set_password(user_id, password)?;
+    security_manager
+        .access_control
+        .set_totp_secret(user_id, totp_secret.clone())?;
+
+    let totp = totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, totp_secret)?;
+    let mfa_token = totp.generate_current()?;
+
     let credentials = AuthenticationCredentials {
         auth_type: AuthenticationType::Password,
         password: Some(password.to_string()),
         api_key: None,
         certificate: None,
-        mfa_token: None,
+        mfa_token: Some(mfa_token),
         ip_address: Some("127.0.0.1".to_string()),
         user_agent: Some("test-agent".to_string()),
     };

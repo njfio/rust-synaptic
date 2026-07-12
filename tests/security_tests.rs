@@ -10,6 +10,31 @@ use synaptic::{
     security::{Permission, SecurityConfig, SecurityManager},
 };
 
+/// Provision real credentials (argon2 password + TOTP secret) for `user_id`
+/// and return credentials carrying a valid current TOTP token (Task 4.7:
+/// authentication is real now, so users must be provisioned first).
+fn provision_and_credentials(
+    access_control: &mut AccessControlManager,
+    user_id: &str,
+    password: &str,
+) -> Result<AuthenticationCredentials> {
+    let secret = AccessControlManager::generate_totp_secret();
+    access_control.set_password(user_id, password)?;
+    access_control.set_totp_secret(user_id, secret.clone())?;
+    let totp = totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, secret)
+        .expect("generated TOTP secret is valid");
+    let token = totp.generate_current().expect("system clock is available");
+    Ok(AuthenticationCredentials {
+        auth_type: AuthenticationType::Password,
+        password: Some(password.to_string()),
+        api_key: None,
+        certificate: None,
+        mfa_token: Some(token),
+        ip_address: Some("127.0.0.1".to_string()),
+        user_agent: Some("test".to_string()),
+    })
+}
+
 #[tokio::test]
 async fn test_security_manager_creation() -> Result<()> {
     let config = SecurityConfig::default();
@@ -31,15 +56,7 @@ async fn test_access_control_authentication() -> Result<()> {
         .await?;
 
     // Test authentication with valid credentials
-    let creds = AuthenticationCredentials {
-        auth_type: AuthenticationType::Password,
-        password: Some("password123".to_string()),
-        api_key: None,
-        certificate: None,
-        mfa_token: None,
-        ip_address: Some("127.0.0.1".to_string()),
-        user_agent: Some("test".to_string()),
-    };
+    let creds = provision_and_credentials(&mut access_control, "user", "password123")?;
 
     let context = access_control
         .authenticate("user".to_string(), creds)
@@ -75,15 +92,7 @@ async fn test_permission_checking() -> Result<()> {
         .await?;
 
     // Test admin authentication
-    let admin_creds = AuthenticationCredentials {
-        auth_type: AuthenticationType::Password,
-        password: Some("admin_password".to_string()),
-        api_key: None,
-        certificate: None,
-        mfa_token: None,
-        ip_address: Some("127.0.0.1".to_string()),
-        user_agent: Some("test".to_string()),
-    };
+    let admin_creds = provision_and_credentials(&mut access_control, "admin", "admin_password")?;
 
     let admin_ctx = access_control
         .authenticate("admin".to_string(), admin_creds)
@@ -96,15 +105,7 @@ async fn test_permission_checking() -> Result<()> {
         .is_ok());
 
     // Test user authentication
-    let user_creds = AuthenticationCredentials {
-        auth_type: AuthenticationType::Password,
-        password: Some("user_password".to_string()),
-        api_key: None,
-        certificate: None,
-        mfa_token: None,
-        ip_address: Some("127.0.0.1".to_string()),
-        user_agent: Some("test".to_string()),
-    };
+    let user_creds = provision_and_credentials(&mut access_control, "user", "user_password")?;
 
     let user_ctx = access_control
         .authenticate("user".to_string(), user_creds)
@@ -136,15 +137,7 @@ async fn test_session_management() -> Result<()> {
         .await?;
 
     // Authenticate and create session
-    let creds = AuthenticationCredentials {
-        auth_type: AuthenticationType::Password,
-        password: Some("password123".to_string()),
-        api_key: None,
-        certificate: None,
-        mfa_token: None,
-        ip_address: Some("127.0.0.1".to_string()),
-        user_agent: Some("test".to_string()),
-    };
+    let creds = provision_and_credentials(&mut access_control, "user", "password123")?;
 
     let context = access_control
         .authenticate("user".to_string(), creds)
@@ -173,15 +166,7 @@ async fn test_access_control_metrics() -> Result<()> {
         .await?;
 
     // Perform some operations
-    let creds = AuthenticationCredentials {
-        auth_type: AuthenticationType::Password,
-        password: Some("password123".to_string()),
-        api_key: None,
-        certificate: None,
-        mfa_token: None,
-        ip_address: Some("127.0.0.1".to_string()),
-        user_agent: Some("test".to_string()),
-    };
+    let creds = provision_and_credentials(&mut access_control, "user", "password123")?;
 
     let context = access_control
         .authenticate("user".to_string(), creds)

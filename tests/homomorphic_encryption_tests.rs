@@ -209,7 +209,11 @@ mod fallback_tests {
             )
             .await?;
 
-        // Properly authenticate to create a valid session
+        // Provision the user (authentication is real as of Task 4.7) and
+        // properly authenticate to create a valid session
+        security_manager
+            .access_control
+            .set_password("test_user", "test_password123")?;
         let credentials = AuthenticationCredentials {
             auth_type: AuthenticationType::Password,
             password: Some("test_password123".to_string()),
