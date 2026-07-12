@@ -406,8 +406,17 @@ impl HybridRetriever {
                 .map(|(_, score)| score)
                 .fold(0.0, |max, &score| max.max(score)),
             FusionStrategy::ReciprocRankFusion => {
-                // RRF: score = sum(1 / (rank + k)) where k=60
-                // For simplicity, we'll use normalized scores as approximation
+                // FIXME(BUG): RRF is computed from `score.recip()` instead of the
+                // result's rank position, so for any per-signal score in [0, 1] the
+                // combined score is on the order of 1/60 (~0.016), which falls below
+                // the default `PipelineConfig::min_score` (0.1) and filters out ALL
+                // results in `fuse_results`. Production wiring in `src/lib.rs`
+                // (`AgentMemory::new`) works around this by overriding the fusion
+                // strategy to `WeightedAverage`. Three retrieval_quality tests fail
+                // because of this bug: `test_hybrid_search_with_results`,
+                // `test_multiple_signals_fusion`, `test_temporal_retriever_recency_bias`.
+                // Fix in Phase 5 de-stub work: rank results per signal and compute
+                // score = sum(1 / (rank + k)).
                 let k = 60.0;
                 signal_scores
                     .iter()
