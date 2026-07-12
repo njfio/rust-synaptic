@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate zero-knowledge proof for memory access
     println!(" Generating zero-knowledge proof for memory access...");
+    security_manager.register_zk_prover(&admin_context.user_id)?;
     let access_statement = synaptic::security::zero_knowledge::AccessStatement {
         memory_key: "sensitive_data".to_string(),
         user_id: admin_context.user_id.clone(),

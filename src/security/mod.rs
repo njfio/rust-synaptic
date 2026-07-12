@@ -497,6 +497,19 @@ impl SecurityManager {
         Ok(result)
     }
 
+    /// Register a zero-knowledge prover identity: creates the prover-side
+    /// secret and stores its commitment in the verifier's trusted store.
+    /// Proof generation for an identity requires prior registration.
+    pub fn register_zk_prover(&mut self, user_id: &str) -> Result<()> {
+        if let Some(ref mut zkm) = self.zero_knowledge_manager {
+            zkm.register_prover(user_id)
+        } else {
+            Err(MemoryError::access_denied(
+                "Zero-knowledge features not enabled",
+            ))
+        }
+    }
+
     /// Generate zero-knowledge proof for memory access.
     ///
     /// The caller supplies the complete statement (including timestamp), so

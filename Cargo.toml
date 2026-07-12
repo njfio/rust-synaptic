@@ -144,7 +144,7 @@ rand_distr = "0.4"
 aes-gcm = "0.10"
 
 # Homomorphic Encryption
-tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
+tfhe = { version = "0.7", features = ["boolean", "shortint", "integer", "seeder_unix"], optional = true }
 
 # Zero-Knowledge Proofs
 bellman = { version = "0.14", optional = true }

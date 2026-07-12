@@ -23,8 +23,19 @@ use uuid::Uuid;
 use tfhe::{
     generate_keys,
     prelude::{FheDecrypt, FheEncrypt},
-    ClientKey, ConfigBuilder, FheUint32, ServerKey,
+    set_server_key, ClientKey, ConfigBuilder, FheInt64, ServerKey,
 };
+
+/// Fixed-point scale for homomorphic encryption of `f64` values.
+///
+/// Plaintext values are encoded as `FheInt64` via
+/// `round(value * FIXED_POINT_SCALE)`, giving 6 decimal digits of fractional
+/// precision. Signed values (including negatives and zero) round-trip
+/// EXACTLY at this granularity: any value that is an integer multiple of
+/// 1e-6 with magnitude below `i64::MAX / FIXED_POINT_SCALE` decrypts to the
+/// original bit-for-bit after the inverse scaling.
+#[cfg(feature = "homomorphic-encryption")]
+pub const FIXED_POINT_SCALE: f64 = 1_000_000.0;
 
 /// Encryption manager for advanced cryptographic operations
 #[derive(Debug)]
@@ -188,7 +199,7 @@ impl EncryptionManager {
         let encrypted_entry = EncryptedMemoryEntry {
             id: Uuid::new_v4().to_string(),
             encrypted_data,
-            encryption_algorithm: "Homomorphic-CKKS".to_string(),
+            encryption_algorithm: "Homomorphic-TFHE".to_string(),
             key_id: homomorphic_context.key_id.clone(),
             is_homomorphic: true,
             privacy_level: PrivacyLevel::Secret,
@@ -199,7 +210,7 @@ impl EncryptionManager {
                 salt: Vec::new(),
                 iv: Vec::new(),
                 auth_tag: None,
-                compression: Some("CKKS".to_string()),
+                compression: Some("TFHE".to_string()),
             },
         };
 
@@ -313,6 +324,50 @@ impl EncryptionManager {
         self.metrics.total_computation_time_ms += start_time.elapsed().as_millis() as u64;
 
         Ok(result)
+    }
+
+    /// Homomorphically encrypt a raw numeric vector (FheInt64 fixed-point,
+    /// see [`FIXED_POINT_SCALE`](crate::security::encryption) for the
+    /// precision contract when the `homomorphic-encryption` feature is on).
+    /// Fails closed with `MemoryError::FeatureDisabled` when the feature is off.
+    pub async fn homomorphic_encrypt_vector(
+        &self,
+        data: &[f64],
+        context: &SecurityContext,
+    ) -> Result<Vec<u8>> {
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
+        }
+        let homomorphic_context = self.homomorphic_context.as_ref().ok_or_else(|| {
+            MemoryError::encryption("Homomorphic encryption not enabled".to_string())
+        })?;
+        homomorphic_context.encrypt_vector(data).await
+    }
+
+    /// Homomorphically decrypt a vector previously produced by
+    /// [`homomorphic_encrypt_vector`](Self::homomorphic_encrypt_vector) or by
+    /// a homomorphic computation (sum/average). Fails closed with
+    /// `MemoryError::FeatureDisabled` when the feature is off.
+    pub async fn homomorphic_decrypt_vector(
+        &self,
+        encrypted: &[u8],
+        context: &SecurityContext,
+    ) -> Result<Vec<f64>> {
+        if !context.is_session_valid()
+            || !context.is_mfa_satisfied(self.config.access_control_policy.require_mfa)
+        {
+            return Err(MemoryError::access_denied(
+                "Invalid security context".to_string(),
+            ));
+        }
+        let homomorphic_context = self.homomorphic_context.as_ref().ok_or_else(|| {
+            MemoryError::encryption("Homomorphic encryption not enabled".to_string())
+        })?;
+        homomorphic_context.decrypt_vector(encrypted).await
     }
 
     /// Get encryption metrics
@@ -558,10 +613,23 @@ impl HomomorphicContext {
 
             let mut encrypted_data = Vec::new();
 
-            // Convert f64 values to u32 for TFHE encryption (scale by 1000 for precision)
+            // Encode each signed f64 as an FheInt64 fixed-point value at
+            // FIXED_POINT_SCALE granularity (sign-preserving; see the
+            // constant's docs for the exact-round-trip contract).
             for &value in data {
-                let scaled_value = (value * 1000.0).abs() as u32;
-                let encrypted_value = FheUint32::encrypt(scaled_value, &self.client_key);
+                if !value.is_finite() {
+                    return Err(MemoryError::encryption(
+                        "Cannot homomorphically encrypt non-finite value".to_string(),
+                    ));
+                }
+                let scaled = (value * FIXED_POINT_SCALE).round();
+                if scaled >= i64::MAX as f64 || scaled <= i64::MIN as f64 {
+                    return Err(MemoryError::encryption(format!(
+                        "Value {} out of range for FheInt64 fixed-point encoding",
+                        value
+                    )));
+                }
+                let encrypted_value = FheInt64::encrypt(scaled as i64, &self.client_key);
 
                 // Serialize the encrypted value
                 let serialized = bincode::serialize(&encrypted_value).map_err(|e| {
@@ -619,16 +687,16 @@ impl HomomorphicContext {
                 }
 
                 // Deserialize encrypted value
-                let encrypted_value: FheUint32 = bincode::deserialize(
+                let encrypted_value: FheInt64 = bincode::deserialize(
                     &encrypted_data[offset..offset + length],
                 )
                 .map_err(|e| {
                     MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e))
                 })?;
 
-                // Decrypt the value
-                let decrypted_value: u32 = encrypted_value.decrypt(&self.client_key);
-                let original_value = decrypted_value as f64 / 1000.0; // Unscale
+                // Decrypt and undo the fixed-point scaling (sign-preserving)
+                let decrypted_value: i64 = encrypted_value.decrypt(&self.client_key);
+                let original_value = decrypted_value as f64 / FIXED_POINT_SCALE;
 
                 decrypted.push(original_value);
                 offset += length;
@@ -659,6 +727,9 @@ impl HomomorphicContext {
             if entries.is_empty() {
                 return Ok(Vec::new());
             }
+
+            // TFHE homomorphic ops require the server key on this thread
+            set_server_key(self.server_key.clone());
 
             // Parse first entry to get the structure
             let first_entry = &entries[0];
@@ -712,15 +783,17 @@ impl HomomorphicContext {
                 return Ok(Vec::new());
             }
 
-            // Get the sum first
+            // Get the sum first (also installs the server key on this thread)
             let sum_data = self.homomorphic_sum(entries).await?;
             let mut sum_values = self.parse_encrypted_vector(&sum_data)?;
 
             // Create encrypted count
-            let count = entries.len() as u32;
-            let encrypted_count = FheUint32::encrypt(count, &self.client_key);
+            let count = entries.len() as i64;
+            let encrypted_count = FheInt64::encrypt(count, &self.client_key);
 
-            // Divide each sum value by count (homomorphic division)
+            // Divide each sum value by count (homomorphic signed integer
+            // division; exact when the fixed-point sum divides evenly,
+            // otherwise truncated at FIXED_POINT_SCALE granularity)
             for sum_val in &mut sum_values {
                 *sum_val = &*sum_val / &encrypted_count;
             }
@@ -739,35 +812,45 @@ impl HomomorphicContext {
         }
     }
 
-    async fn homomorphic_count(&self, entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
-        let count = entries.len() as u64;
-        Ok(count.to_le_bytes().to_vec())
+    /// Encrypted count is UNSUPPORTED BY DESIGN (Phase 4 Decision Gate 3):
+    /// a ciphertext count would either leak the entry count in plaintext or
+    /// require an encrypted-cardinality protocol this crate does not
+    /// implement. Fails closed in ALL builds; this is a permanent descope,
+    /// not a TODO.
+    async fn homomorphic_count(&self, _entries: &[EncryptedMemoryEntry]) -> Result<Vec<u8>> {
+        Err(MemoryError::feature_disabled(
+            "homomorphic-encryption(unsupported-count)",
+            "homomorphic_count",
+        ))
     }
 
-    /// No real homomorphic search exists yet in any build (a real
-    /// implementation lands in Phase 4); fail closed instead of faking
-    /// results from loop indices.
+    /// Encrypted search is UNSUPPORTED BY DESIGN (Phase 4 Decision Gate 3):
+    /// TFHE integer ciphertexts do not support the comparison-and-match
+    /// protocol needed for private search. Fails closed in ALL builds; this
+    /// is a permanent descope, not a TODO.
     async fn homomorphic_search(
         &self,
         _entries: &[EncryptedMemoryEntry],
         _query: &str,
     ) -> Result<Vec<u8>> {
         Err(MemoryError::feature_disabled(
-            "homomorphic-encryption(real-search)",
+            "homomorphic-encryption(unsupported-search)",
             "homomorphic_search",
         ))
     }
 
-    /// No real homomorphic similarity exists yet in any build (a real
-    /// implementation lands in Phase 4); fail closed instead of faking
-    /// similarity scores.
+    /// Encrypted similarity is UNSUPPORTED BY DESIGN (Phase 4 Decision Gate
+    /// 3): fixed-point TFHE integers cannot express the normalized dot
+    /// products required without a dedicated protocol this crate does not
+    /// implement. Fails closed in ALL builds; this is a permanent descope,
+    /// not a TODO.
     async fn homomorphic_similarity(
         &self,
         _entries: &[EncryptedMemoryEntry],
         _threshold: f64,
     ) -> Result<Vec<u8>> {
         Err(MemoryError::feature_disabled(
-            "homomorphic-encryption(real-similarity)",
+            "homomorphic-encryption(unsupported-similarity)",
             "homomorphic_similarity",
         ))
     }
@@ -789,7 +872,7 @@ impl HomomorphicContext {
     }
 
     #[cfg(feature = "homomorphic-encryption")]
-    fn parse_encrypted_vector(&self, encrypted_data: &[u8]) -> Result<Vec<FheUint32>> {
+    fn parse_encrypted_vector(&self, encrypted_data: &[u8]) -> Result<Vec<FheInt64>> {
         let mut encrypted_values = Vec::new();
         let mut offset = 0;
 
@@ -814,7 +897,7 @@ impl HomomorphicContext {
             }
 
             // Deserialize encrypted value
-            let encrypted_value: FheUint32 =
+            let encrypted_value: FheInt64 =
                 bincode::deserialize(&encrypted_data[offset..offset + length]).map_err(|e| {
                     MemoryError::encryption(format!("Failed to deserialize encrypted value: {}", e))
                 })?;
@@ -827,7 +910,7 @@ impl HomomorphicContext {
     }
 
     #[cfg(feature = "homomorphic-encryption")]
-    fn serialize_encrypted_vector(&self, encrypted_values: &[FheUint32]) -> Result<Vec<u8>> {
+    fn serialize_encrypted_vector(&self, encrypted_values: &[FheInt64]) -> Result<Vec<u8>> {
         let mut result = Vec::new();
 
         for encrypted_value in encrypted_values {

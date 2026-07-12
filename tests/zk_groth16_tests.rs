@@ -1,7 +1,9 @@
 //! Groth16 key lifecycle and Poseidon knowledge-of-preimage proof tests.
 //!
 //! Phase 4 (tasks 4.1-4.3): real zk-SNARK parameter persistence, proving,
-//! and verification over the BLS12-381 scalar field.
+//! and verification over the BLS12-381 scalar field. Verification is bound
+//! to registered prover commitments: the verifier derives every Groth16
+//! public input from its own trusted state, never from the proof envelope.
 
 #![cfg(feature = "zero-knowledge-proofs")]
 
@@ -83,7 +85,7 @@ async fn groth16_key_store_path_persists_parameters() -> Result<(), Box<dyn Erro
 }
 
 // ---------------------------------------------------------------------------
-// Task 4.2: real Poseidon knowledge-of-preimage circuit + Groth16 verification
+// Task 4.2/soundness fix: Poseidon knowledge-of-registered-secret circuit
 // ---------------------------------------------------------------------------
 
 use synaptic::security::zero_knowledge::{AccessStatement, AccessType};
@@ -104,11 +106,12 @@ fn statement(user: &str, key: &str) -> AccessStatement {
     }
 }
 
-/// (a) An honestly generated proof verifies TRUE with real Groth16.
+/// (a) An honestly generated proof from a registered prover verifies TRUE.
 #[tokio::test]
 async fn honest_proof_round_trip_verifies() -> Result<(), Box<dyn Error>> {
     let config = SecurityConfig::default();
     let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-1");
 
@@ -124,6 +127,7 @@ async fn honest_proof_round_trip_verifies() -> Result<(), Box<dyn Error>> {
 async fn bit_flipped_proof_fails() -> Result<(), Box<dyn Error>> {
     let config = SecurityConfig::default();
     let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-2");
 
@@ -137,24 +141,26 @@ async fn bit_flipped_proof_fails() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// (c) A proof presented with the wrong public input fails verification.
+/// (c) A proof claiming a different registered identity fails: the verifier
+/// looks up that identity's commitment (a different public input) and the
+/// pairing check fails.
 #[tokio::test]
 async fn wrong_public_input_fails() -> Result<(), Box<dyn Error>> {
     let config = SecurityConfig::default();
     let mut manager = ZeroKnowledgeManager::new(&config).await?;
+    manager.register_prover("prover")?;
+    manager.register_prover("other-prover")?;
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-3");
 
     let mut proof = manager.generate_access_proof(&stmt, &context).await?;
-    assert!(
-        !proof.public_inputs.is_empty(),
-        "proof must carry its public input"
-    );
-
-    proof.public_inputs[0] ^= 0x01;
+    proof.prover_id = "other-prover".to_string();
 
     let is_valid = manager.verify_access_proof(&proof, &stmt).await?;
-    assert!(!is_valid, "tampered public input must fail verification");
+    assert!(
+        !is_valid,
+        "proof verified against another identity's commitment must fail"
+    );
     Ok(())
 }
 
@@ -164,6 +170,14 @@ async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
     let config = SecurityConfig::default();
     let mut manager_a = ZeroKnowledgeManager::new(&config).await?;
     let mut manager_b = ZeroKnowledgeManager::new(&config).await?;
+    manager_a.register_prover("prover")?;
+    // Give B the same commitment A registered, so the only difference left
+    // is the Groth16 key set itself.
+    let commitment = manager_a
+        .registered_commitment_bytes("prover")
+        .ok_or("commitment must exist after registration")?;
+    manager_b.register_commitment("prover", &commitment)?;
+
     let context = mfa_context("prover");
     let stmt = statement("prover", "memory-4");
 
@@ -184,26 +198,39 @@ async fn proof_from_other_keyset_fails() -> Result<(), Box<dyn Error>> {
 // Task 4.3: caller-supplied statements; external verification
 // ---------------------------------------------------------------------------
 
-/// An external verifier holding only (statement, proof, verifying key) —
-/// with no access to the generating manager — verifies the proof.
+/// An external verifier holding only (statement, proof, verifying key,
+/// registered commitment) — with no access to the generating manager —
+/// verifies the proof.
 #[tokio::test]
 async fn external_verifier_round_trip() -> Result<(), Box<dyn Error>> {
     let config = SecurityConfig::default();
     let mut prover = ZeroKnowledgeManager::new(&config).await?;
+    prover.register_prover("prover")?;
     let context = mfa_context("prover");
     let stmt = statement("prover", "external-memory");
 
     let proof = prover.generate_access_proof(&stmt, &context).await?;
     let vk_bytes = prover.verifying_key_bytes()?;
+    let commitment = prover
+        .registered_commitment_bytes("prover")
+        .ok_or("commitment must exist after registration")?;
     drop(prover);
 
-    let is_valid =
-        synaptic::security::zero_knowledge::verify_proof_external(&stmt, &proof, &vk_bytes)?;
+    let is_valid = synaptic::security::zero_knowledge::verify_proof_external(
+        &stmt,
+        &proof,
+        &vk_bytes,
+        &commitment,
+    )?;
     assert!(is_valid, "external verifier must accept an honest proof");
 
     let other = statement("prover", "different-memory");
-    let is_valid =
-        synaptic::security::zero_knowledge::verify_proof_external(&other, &proof, &vk_bytes)?;
+    let is_valid = synaptic::security::zero_knowledge::verify_proof_external(
+        &other,
+        &proof,
+        &vk_bytes,
+        &commitment,
+    )?;
     assert!(
         !is_valid,
         "external verifier must reject a proof bound to another statement"

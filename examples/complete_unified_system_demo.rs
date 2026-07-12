@@ -132,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n Zero-Knowledge Proof Generation");
     println!("===================================");
 
+    security_manager.register_zk_prover(&admin_context.user_id)?;
     let access_statement = synaptic::security::zero_knowledge::AccessStatement {
         memory_key: "financial_q4".to_string(),
         user_id: admin_context.user_id.clone(),

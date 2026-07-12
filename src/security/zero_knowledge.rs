@@ -63,39 +63,33 @@ pub fn hash_content_for_test(content: &str) -> String {
     hash_content(content)
 }
 
-/// Verify a zero-knowledge proof against a prepared Groth16 verifying key
-/// and the expected statement hash. Any malformed envelope content (wrong
-/// public-input length, non-canonical scalar, corrupted proof points)
-/// verifies `false` rather than erroring, so tampering can never escalate.
+/// Verify a zero-knowledge proof against a prepared Groth16 verifying key.
+///
+/// Every Groth16 public input is VERIFIER-DERIVED: the registered
+/// commitment comes from the verifier's trusted store and the statement
+/// binding is recomputed from the statement the verifier holds. Nothing
+/// from the (attacker-controlled) proof envelope influences the public
+/// inputs; only the proof points themselves are read from it. The
+/// statement-hash comparison below is a cheap pre-filter, not a security
+/// check — soundness rests on the pairing equation. Corrupted proof points
+/// verify `false` rather than erroring, so tampering can never escalate.
 #[cfg(feature = "zero-knowledge-proofs")]
 fn verify_with_prepared_key(
     prepared_vk: &PreparedVerifyingKey<Bls12>,
     proof: &ZKProof,
     expected_statement_hash: &str,
+    registered_commitment: &Scalar,
 ) -> Result<bool> {
     let start_time = std::time::Instant::now();
 
-    // The proof envelope must be bound to the statement being verified.
+    // Cheap pre-filter only (attacker-recomputable): the cryptographic
+    // statement binding is enforced via the public input below.
     if proof.statement_hash != expected_statement_hash {
         tracing::warn!("Statement hash mismatch in proof verification");
         return Ok(false);
     }
 
-    // Parse the public input (the Poseidon digest the prover committed to).
-    let digest_bytes: [u8; 32] = match proof.public_inputs.as_slice().try_into() {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            tracing::warn!("Malformed public input length in proof");
-            return Ok(false);
-        }
-    };
-    let digest = match Option::<Scalar>::from(Scalar::from_bytes(&digest_bytes)) {
-        Some(digest) => digest,
-        None => {
-            tracing::warn!("Non-canonical public input scalar in proof");
-            return Ok(false);
-        }
-    };
+    let statement_binding = statement_binding_scalar(expected_statement_hash);
 
     // Deserialize the Groth16 proof; corrupted points fail verification.
     let groth16_proof = match ProofSystem::deserialize_proof(&proof.proof_data) {
@@ -106,7 +100,12 @@ fn verify_with_prepared_key(
         }
     };
 
-    let is_valid = verify_proof(prepared_vk, &groth16_proof, &[digest]).is_ok();
+    let is_valid = verify_proof(
+        prepared_vk,
+        &groth16_proof,
+        &[*registered_commitment, statement_binding],
+    )
+    .is_ok();
 
     tracing::debug!(
         is_valid,
@@ -117,22 +116,27 @@ fn verify_with_prepared_key(
 }
 
 /// Verify a proof as an external verifier, holding only the statement, the
-/// proof, and the serialized verifying key (see
-/// [`ZeroKnowledgeManager::verifying_key_bytes`]). No access to the
-/// generating manager or its proving material is required.
+/// proof, the serialized verifying key (see
+/// [`ZeroKnowledgeManager::verifying_key_bytes`]) and the prover's
+/// registered commitment obtained over a trusted channel (see
+/// [`ZeroKnowledgeManager::registered_commitment_bytes`]). No access to the
+/// generating manager or its proving material is required, and no public
+/// input is read from the proof envelope.
 #[cfg(feature = "zero-knowledge-proofs")]
 pub fn verify_proof_external<T: Serialize>(
     statement: &T,
     proof: &ZKProof,
     verifying_key_bytes: &[u8],
+    registered_commitment_bytes: &[u8],
 ) -> Result<bool> {
     let vk = bellman::groth16::VerifyingKey::<Bls12>::read(verifying_key_bytes).map_err(|e| {
         MemoryError::encryption(format!("Failed to deserialize Groth16 verifying key: {e}"))
     })?;
     let prepared_vk = prepare_verifying_key(&vk);
+    let commitment = parse_commitment(registered_commitment_bytes)?;
     let serialized = serde_json::to_string(statement)
         .map_err(|_| MemoryError::access_denied("Statement serialization failed"))?;
-    verify_with_prepared_key(&prepared_vk, proof, &hash_content(&serialized))
+    verify_with_prepared_key(&prepared_vk, proof, &hash_content(&serialized), &commitment)
 }
 
 /// Configuration for zero-knowledge features
@@ -186,6 +190,15 @@ pub struct ZeroKnowledgeManager {
     proof_system: ProofSystem,
     verification_keys: HashMap<String, VerificationKey>,
     metrics: ZeroKnowledgeMetrics,
+    /// Prover-side secrets for locally registered identities. Known only to
+    /// this manager; never serialized, never placed on proof envelopes.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    prover_secrets: HashMap<String, Scalar>,
+    /// Verifier-side trusted registration store: identity -> Poseidon
+    /// commitment. Every Groth16 public input is derived from this store
+    /// (and the statement being verified), never from the proof envelope.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    prover_commitments: HashMap<String, Scalar>,
 }
 
 impl ZeroKnowledgeManager {
@@ -199,6 +212,10 @@ impl ZeroKnowledgeManager {
             proof_system,
             verification_keys: HashMap::new(),
             metrics: ZeroKnowledgeMetrics::default(),
+            #[cfg(feature = "zero-knowledge-proofs")]
+            prover_secrets: HashMap::new(),
+            #[cfg(feature = "zero-knowledge-proofs")]
+            prover_commitments: HashMap::new(),
         })
     }
 
@@ -261,6 +278,8 @@ impl ZeroKnowledgeManager {
             proof_system,
             verification_keys: HashMap::new(),
             metrics: ZeroKnowledgeMetrics::default(),
+            prover_secrets: HashMap::new(),
+            prover_commitments: HashMap::new(),
         })
     }
 
@@ -283,6 +302,52 @@ impl ZeroKnowledgeManager {
         self.proof_system.prepared_verifying_key()
     }
 
+    /// Register a prover identity: generates a fresh random secret witness
+    /// (held prover-side by this manager) and stores its Poseidon commitment
+    /// in the verifier's trusted registration store.
+    ///
+    /// Idempotent: re-registering an existing identity keeps the original
+    /// secret and commitment.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn register_prover(&mut self, user_id: &str) -> Result<()> {
+        if self.prover_secrets.contains_key(user_id) {
+            return Ok(());
+        }
+        let secret = Scalar::random(OsRng);
+        let commitment = poseidon_digest(secret);
+        self.prover_secrets.insert(user_id.to_string(), secret);
+        self.prover_commitments
+            .insert(user_id.to_string(), commitment);
+        Ok(())
+    }
+
+    /// Fallback registration when the zero-knowledge-proofs feature is off:
+    /// a no-op, since fallback verification always fails closed.
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
+    pub fn register_prover(&mut self, _user_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    /// Register a verifier-side commitment for an identity whose secret is
+    /// held elsewhere (e.g. distributed out of band from the prover's
+    /// manager). Rejects non-canonical commitment encodings.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn register_commitment(&mut self, user_id: &str, commitment_bytes: &[u8]) -> Result<()> {
+        let commitment = parse_commitment(commitment_bytes)?;
+        self.prover_commitments
+            .insert(user_id.to_string(), commitment);
+        Ok(())
+    }
+
+    /// The registered Poseidon commitment for an identity, serialized for
+    /// distribution to external verifiers. `None` if unregistered.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    pub fn registered_commitment_bytes(&self, user_id: &str) -> Option<Vec<u8>> {
+        self.prover_commitments
+            .get(user_id)
+            .map(|commitment| commitment.to_bytes().to_vec())
+    }
+
     /// Generate a zero-knowledge proof for memory access.
     ///
     /// The caller supplies the complete [`AccessStatement`] (including its
@@ -298,16 +363,30 @@ impl ZeroKnowledgeManager {
         // Validate security context comprehensively
         user_context.validate_comprehensive(true)?; // ZK proofs always require MFA
 
-        // Generate witness (private information)
-        let witness = self
-            .generate_access_witness(statement, user_context)
-            .await?;
+        // The statement's subject must be the authenticated caller.
+        if statement.user_id != user_context.user_id {
+            return Err(MemoryError::access_denied(
+                "Access statement subject does not match the authenticated user",
+            ));
+        }
 
-        // Generate the proof
-        let proof = self
-            .proof_system
-            .generate_proof(statement, &witness)
-            .await?;
+        #[cfg(feature = "zero-knowledge-proofs")]
+        let proof = {
+            let (prover_id, secret) = self.registered_secret(&user_context.user_id)?;
+            self.proof_system
+                .generate_registered_proof(statement, &prover_id, secret)
+                .await?
+        };
+
+        #[cfg(not(feature = "zero-knowledge-proofs"))]
+        let proof = {
+            let witness = self
+                .generate_access_witness(statement, user_context)
+                .await?;
+            self.proof_system
+                .generate_proof(statement, &witness)
+                .await?
+        };
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -324,7 +403,10 @@ impl ZeroKnowledgeManager {
     ) -> Result<bool> {
         let start_time = std::time::Instant::now();
 
-        // Verify the proof
+        // Verify the proof against verifier-derived public inputs.
+        #[cfg(feature = "zero-knowledge-proofs")]
+        let is_valid = self.verify_against_registration(proof, statement)?;
+        #[cfg(not(feature = "zero-knowledge-proofs"))]
         let is_valid = self.proof_system.verify_proof(proof, statement).await?;
 
         // Update metrics
@@ -344,18 +426,27 @@ impl ZeroKnowledgeManager {
         &mut self,
         entry: &MemoryEntry,
         statement: &ContentStatement,
-        _context: &SecurityContext,
+        context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
-        // Generate witness based on actual content
-        let witness = self.generate_content_witness(entry, statement).await?;
+        #[cfg(feature = "zero-knowledge-proofs")]
+        let proof = {
+            let _ = entry; // content witnessing is bound via the statement
+            let (prover_id, secret) = self.registered_secret(&context.user_id)?;
+            self.proof_system
+                .generate_registered_proof(statement, &prover_id, secret)
+                .await?
+        };
 
-        // Generate the proof
-        let proof = self
-            .proof_system
-            .generate_proof(statement, &witness)
-            .await?;
+        #[cfg(not(feature = "zero-knowledge-proofs"))]
+        let proof = {
+            let _ = context;
+            let witness = self.generate_content_witness(entry, statement).await?;
+            self.proof_system
+                .generate_proof(statement, &witness)
+                .await?
+        };
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -373,6 +464,9 @@ impl ZeroKnowledgeManager {
     ) -> Result<bool> {
         let start_time = std::time::Instant::now();
 
+        #[cfg(feature = "zero-knowledge-proofs")]
+        let is_valid = self.verify_against_registration(proof, statement)?;
+        #[cfg(not(feature = "zero-knowledge-proofs"))]
         let is_valid = self.proof_system.verify_proof(proof, statement).await?;
 
         self.metrics.total_proofs_verified += 1;
@@ -391,18 +485,27 @@ impl ZeroKnowledgeManager {
         &mut self,
         entries: &[MemoryEntry],
         statement: &AggregateStatement,
-        _context: &SecurityContext,
+        context: &SecurityContext,
     ) -> Result<ZKProof> {
         let start_time = std::time::Instant::now();
 
-        // Generate witness from actual data
-        let witness = self.generate_aggregate_witness(entries, statement).await?;
+        #[cfg(feature = "zero-knowledge-proofs")]
+        let proof = {
+            let _ = entries; // aggregate inputs are bound via the statement
+            let (prover_id, secret) = self.registered_secret(&context.user_id)?;
+            self.proof_system
+                .generate_registered_proof(statement, &prover_id, secret)
+                .await?
+        };
 
-        // Generate the proof
-        let proof = self
-            .proof_system
-            .generate_proof(statement, &witness)
-            .await?;
+        #[cfg(not(feature = "zero-knowledge-proofs"))]
+        let proof = {
+            let _ = context;
+            let witness = self.generate_aggregate_witness(entries, statement).await?;
+            self.proof_system
+                .generate_proof(statement, &witness)
+                .await?
+        };
 
         // Update metrics
         self.metrics.total_proofs_generated += 1;
@@ -419,6 +522,50 @@ impl ZeroKnowledgeManager {
 
     // Private helper methods
 
+    /// Look up the local prover secret for an identity; refuse proof
+    /// generation for unregistered identities.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn registered_secret(&self, user_id: &str) -> Result<(String, Scalar)> {
+        match self.prover_secrets.get(user_id) {
+            Some(secret) => Ok((user_id.to_string(), *secret)),
+            None => Err(MemoryError::access_denied(format!(
+                "No registered zero-knowledge prover secret for '{user_id}'; call register_prover first"
+            ))),
+        }
+    }
+
+    /// Verify a proof using ONLY verifier-derived public inputs: the
+    /// registered commitment looked up from this manager's trusted store by
+    /// the claimed prover identity, and the statement binding recomputed
+    /// from the caller-supplied statement. Nothing cryptographically
+    /// relevant is read from the proof envelope besides the proof points.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    fn verify_against_registration<T: Serialize>(
+        &self,
+        proof: &ZKProof,
+        statement: &T,
+    ) -> Result<bool> {
+        let commitment = match self.prover_commitments.get(&proof.prover_id) {
+            Some(commitment) => *commitment,
+            None => {
+                tracing::warn!(
+                    prover_id = %proof.prover_id,
+                    "Proof claims an unregistered prover identity"
+                );
+                return Ok(false);
+            }
+        };
+        let serialized = serde_json::to_string(statement)
+            .map_err(|_| MemoryError::access_denied("Statement serialization failed"))?;
+        verify_with_prepared_key(
+            self.proof_system.prepared_verifying_key(),
+            proof,
+            &hash_content(&serialized),
+            &commitment,
+        )
+    }
+
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_access_witness(
         &self,
         statement: &AccessStatement,
@@ -439,6 +586,7 @@ impl ZeroKnowledgeManager {
         })
     }
 
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_content_witness(
         &self,
         entry: &MemoryEntry,
@@ -462,6 +610,7 @@ impl ZeroKnowledgeManager {
         })
     }
 
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_aggregate_witness(
         &self,
         entries: &[MemoryEntry],
@@ -490,6 +639,7 @@ impl ZeroKnowledgeManager {
         })
     }
 
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_access_signature(
         &self,
         statement: &AccessStatement,
@@ -506,6 +656,7 @@ impl ZeroKnowledgeManager {
         Ok(format!("sig_{}", hash_content(&signature_input)))
     }
 
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     fn evaluate_predicate(&self, content: &str, predicate: &ContentPredicate) -> bool {
         match predicate {
             ContentPredicate::ContainsKeyword(keyword) => content.contains(keyword),
@@ -693,14 +844,54 @@ fn poseidon_digest(preimage: Scalar) -> Scalar {
     Poseidon::new_with_preimage(&[preimage, Scalar::zero()], &constants).hash()
 }
 
-/// Circuit proving knowledge of a preimage `x` with
-/// `Poseidon(x, 0) == digest`, where `digest` is the sole public input.
+/// Derive the statement-binding public input from the statement hash.
+///
+/// Two domain-separated SHA-256 digests are concatenated into 64 bytes and
+/// reduced into the scalar field with `from_bytes_wide` (statistically
+/// uniform). Both prover and verifier derive this independently from the
+/// statement they hold; it is never read from the proof envelope.
+#[cfg(feature = "zero-knowledge-proofs")]
+fn statement_binding_scalar(statement_hash: &str) -> Scalar {
+    let mut wide = [0u8; 64];
+    for (chunk, tag) in wide.chunks_exact_mut(32).zip(0u8..) {
+        let mut hasher = Sha256::new();
+        hasher.update([tag]);
+        hasher.update(b"synaptic-zk-statement-binding-v1");
+        hasher.update(statement_hash.as_bytes());
+        chunk.copy_from_slice(&hasher.finalize());
+    }
+    Scalar::from_bytes_wide(&wide)
+}
+
+/// Parse a serialized registered commitment, rejecting non-canonical
+/// encodings. Commitments come from the verifier's trusted store, so a
+/// malformed one is a configuration error rather than a failed proof.
+#[cfg(feature = "zero-knowledge-proofs")]
+fn parse_commitment(bytes: &[u8]) -> Result<Scalar> {
+    let bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| MemoryError::encryption("Registered commitment must be 32 bytes"))?;
+    Option::<Scalar>::from(Scalar::from_bytes(&bytes)).ok_or_else(|| {
+        MemoryError::encryption("Registered commitment is not a canonical field element")
+    })
+}
+
+/// Circuit proving knowledge of a registered secret `s` with
+/// `Poseidon(s, 0) == commitment`, where `commitment` (the registered
+/// identity commitment) and `statement_binding` (a field element derived
+/// from the statement being proven) are the public inputs.
+///
+/// The statement binding is constrained into the proof so a proof produced
+/// for statement A cannot be replayed for statement B: the verifier derives
+/// the binding from B and the Groth16 verification equation fails.
 #[cfg(feature = "zero-knowledge-proofs")]
 struct PoseidonPreimageCircuit {
-    /// The secret preimage (private witness).
-    preimage: Option<Scalar>,
-    /// The expected Poseidon digest (public input).
-    digest: Option<Scalar>,
+    /// The registered secret (private witness).
+    secret: Option<Scalar>,
+    /// The registered Poseidon commitment (public input).
+    commitment: Option<Scalar>,
+    /// Field element binding the proof to one statement (public input).
+    statement_binding: Option<Scalar>,
 }
 
 #[cfg(feature = "zero-knowledge-proofs")]
@@ -712,8 +903,8 @@ impl Circuit<Scalar> for PoseidonPreimageCircuit {
         let constants = poseidon_constants();
         let mut recorder = BellpepperRecorder::new();
 
-        let preimage = AllocatedNum::alloc(recorder.namespace(|| "preimage"), || {
-            self.preimage.ok_or(BpSynthesisError::AssignmentMissing)
+        let secret = AllocatedNum::alloc(recorder.namespace(|| "secret"), || {
+            self.secret.ok_or(BpSynthesisError::AssignmentMissing)
         })
         .map_err(|_| SynthesisError::AssignmentMissing)?;
 
@@ -730,21 +921,43 @@ impl Circuit<Scalar> for PoseidonPreimageCircuit {
 
         let hashed = neptune::circuit2::poseidon_hash_allocated(
             recorder.namespace(|| "poseidon"),
-            vec![preimage, pad],
+            vec![secret, pad],
             &constants,
         )
         .map_err(|_| SynthesisError::Unsatisfiable)?;
 
-        let digest = AllocatedNum::alloc_input(recorder.namespace(|| "digest"), || {
-            self.digest.ok_or(BpSynthesisError::AssignmentMissing)
+        let commitment = AllocatedNum::alloc_input(recorder.namespace(|| "commitment"), || {
+            self.commitment.ok_or(BpSynthesisError::AssignmentMissing)
         })
         .map_err(|_| SynthesisError::AssignmentMissing)?;
 
         recorder.enforce(
-            || "poseidon(preimage) == digest",
+            || "poseidon(secret) == registered commitment",
             |lc| lc + hashed.get_variable(),
             |lc| lc + BellpepperRecorder::one(),
-            |lc| lc + digest.get_variable(),
+            |lc| lc + commitment.get_variable(),
+        );
+
+        // Bind the statement into the proof: allocate the binding as a
+        // public input and tie it to an auxiliary copy so it participates
+        // in the constraint system (Groth16 then fixes it in the pairing
+        // equation; verifying with a different binding fails).
+        let statement_binding =
+            AllocatedNum::alloc_input(recorder.namespace(|| "statement binding"), || {
+                self.statement_binding
+                    .ok_or(BpSynthesisError::AssignmentMissing)
+            })
+            .map_err(|_| SynthesisError::AssignmentMissing)?;
+        let binding_copy = AllocatedNum::alloc(recorder.namespace(|| "binding copy"), || {
+            self.statement_binding
+                .ok_or(BpSynthesisError::AssignmentMissing)
+        })
+        .map_err(|_| SynthesisError::AssignmentMissing)?;
+        recorder.enforce(
+            || "statement binding is constrained",
+            |lc| lc + statement_binding.get_variable(),
+            |lc| lc + BellpepperRecorder::one(),
+            |lc| lc + binding_copy.get_variable(),
         );
 
         recorder.replay(cs)
@@ -762,8 +975,9 @@ impl ProofSystem {
 
             // Create an empty-witness circuit for parameter generation
             let circuit = PoseidonPreimageCircuit {
-                preimage: None,
-                digest: None,
+                secret: None,
+                commitment: None,
+                statement_binding: None,
             };
 
             // Generate trusted setup parameters
@@ -862,79 +1076,81 @@ impl ProofSystem {
         Ok((proving_key, verification_key))
     }
 
+    /// Generate a Groth16 proof that the registered `secret` opens the
+    /// prover's commitment, bound to the caller-supplied statement.
+    #[cfg(feature = "zero-knowledge-proofs")]
+    async fn generate_registered_proof<T>(
+        &self,
+        statement: &T,
+        prover_id: &str,
+        secret: Scalar,
+    ) -> Result<ZKProof>
+    where
+        T: Serialize,
+    {
+        tracing::debug!("Generating real zk-SNARK proof using Bellman");
+        let start_time = std::time::Instant::now();
+
+        let statement_hash = self.hash_statement(statement)?;
+        let commitment = poseidon_digest(secret);
+        let statement_binding = statement_binding_scalar(&statement_hash);
+
+        let circuit = PoseidonPreimageCircuit {
+            secret: Some(secret),
+            commitment: Some(commitment),
+            statement_binding: Some(statement_binding),
+        };
+
+        // Generate proof
+        let mut rng = OsRng;
+        let proof = create_random_proof(circuit, &self.parameters, &mut rng).map_err(|e| {
+            MemoryError::encryption(format!("Failed to generate zk-SNARK proof: {:?}", e))
+        })?;
+
+        let proof_data = Self::serialize_proof(&proof)?;
+
+        let duration = start_time.elapsed();
+        tracing::debug!("zk-SNARK proof generation completed in {:?}", duration);
+
+        Ok(ZKProof {
+            id: Uuid::new_v4().to_string(),
+            statement_hash,
+            proof_data,
+            prover_id: prover_id.to_string(),
+            proving_key_id: "bellman_groth16".to_string(),
+            created_at: Utc::now(),
+        })
+    }
+
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn generate_proof<T>(&self, statement: &T, witness: &Witness) -> Result<ZKProof>
     where
         T: Serialize,
     {
-        #[cfg(feature = "zero-knowledge-proofs")]
-        {
-            tracing::debug!("Generating real zk-SNARK proof using Bellman");
-            let start_time = std::time::Instant::now();
+        tracing::warn!(
+            "Using fallback proof generation - zero-knowledge-proofs feature not enabled"
+        );
+        let statement_hash = self.hash_statement(statement)?;
+        let witness_commitment = self.commit_witness(witness)?;
 
-            // Derive the secret preimage from the statement hash and the
-            // private witness material, then publish only its Poseidon
-            // digest as the proof's public input.
-            let statement_hash = self.hash_statement(statement)?;
-            let preimage = Self::derive_witness_scalar(&statement_hash, witness);
-            let digest = poseidon_digest(preimage);
-
-            let circuit = PoseidonPreimageCircuit {
-                preimage: Some(preimage),
-                digest: Some(digest),
-            };
-
-            // Generate proof
-            let mut rng = OsRng;
-            let proof = create_random_proof(circuit, &self.parameters, &mut rng).map_err(|e| {
-                MemoryError::encryption(format!("Failed to generate zk-SNARK proof: {:?}", e))
-            })?;
-
-            let proof_data = Self::serialize_proof(&proof)?;
-
-            let duration = start_time.elapsed();
-            tracing::debug!("zk-SNARK proof generation completed in {:?}", duration);
-
-            Ok(ZKProof {
-                id: Uuid::new_v4().to_string(),
-                statement_hash,
-                proof_data,
-                public_inputs: digest.to_bytes().to_vec(),
-                proving_key_id: "bellman_groth16".to_string(),
-                created_at: Utc::now(),
-            })
-        }
-
-        #[cfg(not(feature = "zero-knowledge-proofs"))]
-        {
-            tracing::warn!(
-                "Using fallback proof generation - zero-knowledge-proofs feature not enabled"
-            );
-            let statement_hash = self.hash_statement(statement)?;
-            let witness_commitment = self.commit_witness(witness)?;
-
-            Ok(ZKProof {
-                id: Uuid::new_v4().to_string(),
-                statement_hash,
-                proof_data: witness_commitment,
-                public_inputs: Vec::new(),
-                proving_key_id: self.proving_key.id.clone(),
-                created_at: Utc::now(),
-            })
-        }
+        Ok(ZKProof {
+            id: Uuid::new_v4().to_string(),
+            statement_hash,
+            proof_data: witness_commitment,
+            prover_id: String::new(),
+            proving_key_id: self.proving_key.id.clone(),
+            created_at: Utc::now(),
+        })
     }
 
+    /// Fallback verification: fails closed. Real verification lives in
+    /// [`ZeroKnowledgeManager::verify_against_registration`], which owns the
+    /// trusted commitment store the public inputs are derived from.
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     async fn verify_proof<T>(&self, proof: &ZKProof, statement: &T) -> Result<bool>
     where
         T: Serialize,
     {
-        #[cfg(feature = "zero-knowledge-proofs")]
-        {
-            tracing::debug!("Verifying real zk-SNARK proof using Bellman");
-            let statement_hash = self.hash_statement(statement)?;
-            verify_with_prepared_key(&self.prepared_vk, proof, &statement_hash)
-        }
-
-        #[cfg(not(feature = "zero-knowledge-proofs"))]
         {
             let _ = statement;
             tracing::warn!(
@@ -960,32 +1176,11 @@ impl ProofSystem {
         Ok(hash_content(&serialized))
     }
 
+    #[cfg(not(feature = "zero-knowledge-proofs"))]
     fn commit_witness(&self, witness: &Witness) -> Result<Vec<u8>> {
         // Create commitment to witness
         let commitment = format!("commit_{}_{}", witness.id, witness.created_at.timestamp());
         Ok(commitment.into_bytes())
-    }
-
-    /// Derive the secret circuit preimage from the statement hash and the
-    /// private witness material.
-    ///
-    /// Two domain-separated SHA-256 digests are concatenated into 64 bytes
-    /// and reduced into the BLS12-381 scalar field with `from_bytes_wide`,
-    /// which keeps the mapping statistically uniform.
-    #[cfg(feature = "zero-knowledge-proofs")]
-    fn derive_witness_scalar(statement_hash: &str, witness: &Witness) -> Scalar {
-        let mut wide = [0u8; 64];
-        for (chunk, tag) in wide.chunks_exact_mut(32).zip(0u8..) {
-            let mut hasher = Sha256::new();
-            hasher.update([tag]);
-            hasher.update(b"synaptic-zk-preimage-v1");
-            hasher.update(statement_hash.as_bytes());
-            hasher.update(witness.data.session_proof.as_bytes());
-            hasher.update(witness.data.access_signature.as_bytes());
-            hasher.update(witness.data.timestamp_proof.to_le_bytes());
-            chunk.copy_from_slice(&hasher.finalize());
-        }
-        Scalar::from_bytes_wide(&wide)
     }
 
     /// Serialize a Groth16 proof to its canonical 192-byte encoding.
@@ -1019,10 +1214,11 @@ pub struct ZKProof {
     pub statement_hash: String,
     /// Cryptographic proof data
     pub proof_data: Vec<u8>,
-    /// Serialized public inputs (the Poseidon digest the proof commits to);
-    /// empty for fallback (feature-off) proofs, which never verify.
+    /// Claimed prover identity. Untrusted on its own: verification looks up
+    /// this identity's registered commitment in the verifier's trusted
+    /// store, so a wrong or forged claim simply fails the pairing check.
     #[serde(default)]
-    pub public_inputs: Vec<u8>,
+    pub prover_id: String,
     /// ID of the proving key used
     pub proving_key_id: String,
     /// Timestamp when proof was created
@@ -1105,6 +1301,7 @@ impl AggregateType {
     }
 }
 
+#[cfg(not(feature = "zero-knowledge-proofs"))]
 #[derive(Debug, Clone)]
 struct Witness {
     id: String,
@@ -1112,6 +1309,7 @@ struct Witness {
     created_at: DateTime<Utc>,
 }
 
+#[cfg(not(feature = "zero-knowledge-proofs"))]
 #[derive(Debug, Clone)]
 struct WitnessData {
     user_attributes: HashMap<String, String>,

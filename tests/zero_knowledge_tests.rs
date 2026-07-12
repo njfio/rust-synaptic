@@ -29,6 +29,11 @@ mod bellman_tests {
         config.encryption_key_size = 2048;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
 
         // Create security context
         let context = mfa_context("test_user");
@@ -70,6 +75,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
         let context = mfa_context("test_user");
 
         // Create access statement
@@ -108,6 +118,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
         let context = mfa_context("test_user");
 
         // Create content statement
@@ -155,6 +170,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
         let context = mfa_context("test_user");
 
         // Create aggregate statement
@@ -206,6 +226,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("perf_test_user")?;
         let context = mfa_context("perf_test_user");
 
         // Test performance with multiple proofs
@@ -275,6 +300,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
         let context = mfa_context("test_user");
 
         // Create access statement
@@ -351,6 +381,11 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
         let context = mfa_context("test_user");
 
         let access_statement = synaptic::security::zero_knowledge::AccessStatement {

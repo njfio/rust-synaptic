@@ -166,6 +166,9 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
     // ZK proof generation always requires MFA; satisfy it so we reach the
     // proof path (this test asserts the proof contract, not the MFA policy).
     context.mfa_verified = true;
+    // Register the prover identity (its commitment seeds the verifier's
+    // trusted store; proofs from unregistered identities are refused).
+    security_manager.register_zk_prover(&context.user_id)?;
 
     // Caller-supplied statement (task 4.3): the same statement handed to
     // generation verifies the proof.
@@ -222,6 +225,8 @@ async fn test_zero_knowledge_content_proofs() -> Result<(), Box<dyn Error>> {
         "This content contains the keyword secret and is quite long".to_string(),
         MemoryType::LongTerm,
     );
+
+    security_manager.register_zk_prover(&context.user_id)?;
 
     // Generate content proof for keyword presence (caller-supplied statement)
     let keyword_statement = synaptic::security::zero_knowledge::ContentStatement {
@@ -478,6 +483,7 @@ async fn test_security_metrics_collection() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Zero-knowledge operation
+    security_manager.register_zk_prover(&context.user_id)?;
     let metrics_statement = synaptic::security::zero_knowledge::AccessStatement {
         memory_key: "metrics_test".to_string(),
         user_id: context.user_id.clone(),
@@ -555,6 +561,7 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
     assert!(encrypted_entry.is_homomorphic);
 
     // 4. Generate zero-knowledge proof for access
+    security_manager.register_zk_prover(&context.user_id)?;
     let workflow_statement = synaptic::security::zero_knowledge::AccessStatement {
         memory_key: "workflow_test".to_string(),
         user_id: context.user_id.clone(),
