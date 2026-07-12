@@ -344,13 +344,17 @@ mod fallback_tests {
             MemoryType::ShortTerm,
         );
 
-        // Should use fallback implementation when feature is not enabled
-        let encrypted_entry = security_manager
+        // The old fallback silently produced fake "encrypted" data via
+        // linear arithmetic on the plaintext when the `homomorphic-encryption`
+        // cargo feature was off. That fallback has been removed: the call
+        // must now fail closed instead of fabricating ciphertext. Revert this
+        // assertion to a real encrypt/verify flow in Phase 4, once a real HE
+        // backend lands.
+        let result = security_manager
             .encrypt_memory(&memory_entry, &context)
-            .await?;
-
-        assert!(encrypted_entry.is_homomorphic);
-        assert!(!encrypted_entry.encrypted_data.is_empty());
+            .await;
+        let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
+        assert!(err.to_string().contains("homomorphic-encryption"));
 
         Ok(())
     }

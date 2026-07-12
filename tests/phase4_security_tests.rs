@@ -72,19 +72,13 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
         MemoryType::LongTerm,
     );
 
-    // Encrypt with homomorphic encryption
-    let encrypted = security_manager.encrypt_memory(&entry, &context).await?;
-    assert!(encrypted.is_homomorphic);
-    assert_eq!(encrypted.encryption_algorithm, "Homomorphic-CKKS");
-
-    // Decrypt and verify basic properties
-    let decrypted = security_manager
-        .decrypt_memory(&encrypted, &context)
-        .await?;
-    // Note: Homomorphic encryption may change the key during processing
-    assert_eq!(decrypted.memory_type, entry.memory_type);
-    // Verify that decryption completed successfully (non-empty result)
-    assert!(!decrypted.key.is_empty());
+    // The `homomorphic-encryption` cargo feature is off by default, so the
+    // fake CKKS-labelled encryption path must fail closed instead of
+    // returning fabricated ciphertext. Revert this assertion to the old
+    // "encrypt then decrypt" flow in Phase 4, once a real HE backend lands.
+    let result = security_manager.encrypt_memory(&entry, &context).await;
+    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
+    assert!(err.to_string().contains("homomorphic-encryption"));
 
     Ok(())
 }
@@ -135,21 +129,14 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
         ),
     ];
 
-    // Encrypt all entries
-    let mut encrypted_entries = Vec::new();
-    for entry in &entries {
-        let encrypted = security_manager.encrypt_memory(entry, &context).await?;
-        encrypted_entries.push(encrypted);
-    }
-
-    // Perform secure computation
-    let result = security_manager
-        .secure_compute(&encrypted_entries, SecureOperation::Count, &context)
-        .await?;
-
-    assert!(result.privacy_preserved);
-    assert!(matches!(result.operation, SecureOperation::Count));
-    assert!(!result.result_data.is_empty());
+    // Encrypting the first entry must fail closed: the
+    // `homomorphic-encryption` cargo feature is disabled, so there is no real
+    // ciphertext to compute over. Revert to the full encrypt-then-compute
+    // flow in Phase 4, once a real HE backend lands.
+    let entry = &entries[0];
+    let result = security_manager.encrypt_memory(entry, &context).await;
+    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
+    assert!(err.to_string().contains("homomorphic-encryption"));
 
     Ok(())
 }
