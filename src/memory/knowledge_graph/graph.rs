@@ -88,6 +88,28 @@ impl GraphStats {
     }
 }
 
+/// Recency key used for deterministic candidate ordering: `last_modified`,
+/// falling back to `created_at`, then `ingested_at` (newest first).
+pub(crate) fn node_recency(node: &Node) -> DateTime<Utc> {
+    node.last_modified
+        .or(node.created_at)
+        .unwrap_or(node.ingested_at)
+}
+
+/// Lowercased alphanumeric token set used for content-relevance scoring.
+pub(crate) fn scan_tokens(text: &str) -> HashSet<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The text a node is indexed/scored by: description, falling back to label.
+fn node_scan_text(node: &Node) -> &str {
+    node.description.as_deref().unwrap_or(&node.label)
+}
+
 /// Core knowledge graph structure
 pub struct KnowledgeGraph {
     /// All nodes in the graph
@@ -104,6 +126,15 @@ pub struct KnowledgeGraph {
     config: GraphConfig,
     /// Cached statistics
     stats_cache: RwLock<Option<(GraphStats, DateTime<Utc>)>>,
+    /// Inverted token index over each node's scan text (description, falling
+    /// back to label): token -> node ids. Maintained on every node mutation
+    /// (add/update/remove) so candidate selection touches only posting lists
+    /// for the query's tokens instead of scoring all nodes.
+    token_index: RwLock<HashMap<String, HashSet<Uuid>>>,
+    /// Nodes ordered newest-first with id-ascending tie-break:
+    /// (Reverse(recency), id). Forward iteration yields the deterministic
+    /// recency ordering used for candidate windows without sorting all nodes.
+    recency_index: RwLock<std::collections::BTreeSet<(std::cmp::Reverse<DateTime<Utc>>, Uuid)>>,
 }
 
 impl KnowledgeGraph {
@@ -117,7 +148,87 @@ impl KnowledgeGraph {
             metadata: RwLock::new(KnowledgeGraphMetadata::new()),
             config,
             stats_cache: RwLock::new(None),
+            token_index: RwLock::new(HashMap::new()),
+            recency_index: RwLock::new(std::collections::BTreeSet::new()),
         }
+    }
+
+    /// Add `node` to the token and recency indexes.
+    fn index_node(&self, node: &Node) {
+        let mut tokens = self.token_index.write();
+        for token in scan_tokens(node_scan_text(node)) {
+            tokens.entry(token).or_default().insert(node.id);
+        }
+        drop(tokens);
+        self.recency_index
+            .write()
+            .insert((std::cmp::Reverse(node_recency(node)), node.id));
+    }
+
+    /// Remove `node` (with its CURRENT indexed text/recency) from the indexes.
+    fn unindex_node(&self, node: &Node) {
+        let mut tokens = self.token_index.write();
+        for token in scan_tokens(node_scan_text(node)) {
+            if let Some(ids) = tokens.get_mut(&token) {
+                ids.remove(&node.id);
+                if ids.is_empty() {
+                    tokens.remove(&token);
+                }
+            }
+        }
+        drop(tokens);
+        self.recency_index
+            .write()
+            .remove(&(std::cmp::Reverse(node_recency(node)), node.id));
+    }
+
+    /// Insert or replace a node while keeping the token/recency indexes
+    /// coherent. All in-place node content mutations must go through this
+    /// (instead of writing `self.nodes` directly).
+    pub(crate) fn put_node(&self, node: Node) {
+        if let Some(old) = self.nodes.get(&node.id).map(|n| n.clone()) {
+            self.unindex_node(&old);
+        }
+        self.index_node(&node);
+        self.nodes.insert(node.id, node);
+        self.invalidate_stats_cache();
+        self.mark_modified();
+    }
+
+    /// For each node whose indexed text shares >= 1 token with
+    /// `query_tokens`, the number of shared tokens. Cost is proportional to
+    /// the total size of the touched posting lists, not the node count.
+    pub(crate) fn token_overlap_counts(
+        &self,
+        query_tokens: &HashSet<String>,
+    ) -> HashMap<Uuid, usize> {
+        let index = self.token_index.read();
+        let mut counts: HashMap<Uuid, usize> = HashMap::new();
+        for token in query_tokens {
+            if let Some(ids) = index.get(token) {
+                for id in ids {
+                    *counts.entry(*id).or_insert(0) += 1;
+                }
+            }
+        }
+        counts
+    }
+
+    /// Up to `limit` node ids in deterministic recency order (newest first,
+    /// id-ascending tie-break) for which `keep` returns true. Early-stops at
+    /// `limit`, so cost is O(limit + skipped), not O(total nodes) when the
+    /// filter accepts most candidates.
+    pub(crate) fn recency_ordered_ids<F>(&self, limit: usize, mut keep: F) -> Vec<Uuid>
+    where
+        F: FnMut(Uuid) -> bool,
+    {
+        self.recency_index
+            .read()
+            .iter()
+            .map(|(_, id)| *id)
+            .filter(|id| keep(*id))
+            .take(limit)
+            .collect()
     }
 
     /// Add a node to the graph
@@ -129,6 +240,12 @@ impl KnowledgeGraph {
         }
 
         let node_id = node.id;
+        // Unindex a same-id node BEFORE indexing the new one so shared
+        // tokens/recency keys survive the replacement.
+        if let Some(old) = self.nodes.get(&node_id).map(|n| n.clone()) {
+            self.unindex_node(&old);
+        }
+        self.index_node(&node);
         self.nodes.insert(node_id, node);
         self.adjacency.insert(node_id, HashSet::new());
         self.reverse_adjacency.insert(node_id, HashSet::new());
@@ -193,6 +310,7 @@ impl KnowledgeGraph {
     /// Remove a node and all its edges
     pub async fn remove_node(&self, node_id: Uuid) -> Result<bool> {
         if let Some((_, _node)) = self.nodes.remove(&node_id) {
+            self.unindex_node(&_node);
             // Remove all edges connected to this node
             let mut edges_to_remove = Vec::new();
 

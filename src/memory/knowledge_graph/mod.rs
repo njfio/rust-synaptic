@@ -213,9 +213,11 @@ impl MemoryKnowledgeGraph {
         let Some(node_id) = self.memory_to_node.get(memory_key) else {
             return Ok(false);
         };
-        if let Some(mut node) = self.graph.nodes.get_mut(node_id) {
+        if let Some(mut node) = self.graph.nodes.get(node_id).map(|n| n.clone()) {
             node.description = Some(content.to_string());
             node.last_modified = Some(chrono::Utc::now());
+            // Route through put_node so token/recency indexes stay coherent.
+            self.graph.put_node(node);
             Ok(true)
         } else {
             Ok(false)
@@ -238,9 +240,11 @@ impl MemoryKnowledgeGraph {
         let merged = self
             .merge_content(&existing.description.unwrap_or_default(), new_content)
             .await?;
-        if let Some(mut node) = self.graph.nodes.get_mut(&node_id) {
+        if let Some(mut node) = self.graph.nodes.get(&node_id).map(|n| n.clone()) {
             node.description = Some(merged);
             node.last_modified = Some(chrono::Utc::now());
+            // Route through put_node so token/recency indexes stay coherent.
+            self.graph.put_node(node);
         }
         Ok(true)
     }
@@ -556,18 +560,12 @@ impl MemoryKnowledgeGraph {
     /// Recency key for deterministic ordering: newest first. Uses
     /// `last_modified`, falling back to `created_at`.
     fn node_recency(node: &Node) -> chrono::DateTime<chrono::Utc> {
-        node.last_modified
-            .or(node.created_at)
-            .unwrap_or(node.ingested_at)
+        graph::node_recency(node)
     }
 
     /// Lowercased alphanumeric token set used for content-relevance scoring.
     fn scan_tokens(text: &str) -> std::collections::HashSet<String> {
-        text.to_lowercase()
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|w| !w.is_empty())
-            .map(str::to_string)
-            .collect()
+        graph::scan_tokens(text)
     }
 
     /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
@@ -582,12 +580,23 @@ impl MemoryKnowledgeGraph {
         query_text: &str,
     ) -> Result<Vec<(Uuid, Node)>> {
         let query_tokens = Self::scan_tokens(query_text);
+        // Candidate ids sharing >= 1 indexed token with the query; cost is
+        // bounded by the touched posting-list sizes, not the node count.
+        let overlap_candidates = self.graph.token_overlap_counts(&query_tokens);
         let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> = Vec::new();
-        for (mem_key, node_id) in &self.memory_to_node {
+        for node_id in overlap_candidates.keys() {
+            let Some(mem_key) = self.node_to_memory.get(node_id) else {
+                continue; // entity node: not a memory-backed candidate
+            };
             if mem_key == exclude_key {
                 continue;
             }
             if let Some(node) = self.graph.get_node(*node_id).await? {
+                // Recompute overlap against the DESCRIPTION ONLY (the index
+                // covers description-or-label, so index candidacy is a
+                // superset; a label-only match scores 0 here and is picked
+                // up by the recency fill below, matching the historical
+                // full-scan scoring exactly).
                 let overlap = node
                     .description
                     .as_deref()
@@ -596,6 +605,9 @@ impl MemoryKnowledgeGraph {
                         query_tokens.intersection(&toks).count()
                     })
                     .unwrap_or(0);
+                if overlap == 0 {
+                    continue;
+                }
                 let recency = Self::node_recency(&node);
                 scored.push((overlap, recency, *node_id, node));
             }
@@ -607,6 +619,30 @@ impl MemoryKnowledgeGraph {
                 .then_with(|| a.2.cmp(&b.2))
         });
         scored.truncate(Self::KG_SCAN_LIMIT);
+        // Zero-overlap nodes sort strictly after all positive-overlap nodes
+        // under the historical comparator, among themselves by recency desc
+        // then id asc — exactly the recency index order. Fill any remaining
+        // window slots from it (early-stopping; residual bound is
+        // O(limit + non-memory/skipped nodes interleaved), not a full sort).
+        if scored.len() < Self::KG_SCAN_LIMIT {
+            let taken: std::collections::HashSet<Uuid> =
+                scored.iter().map(|(_, _, id, _)| *id).collect();
+            let fill_ids =
+                self.graph
+                    .recency_ordered_ids(Self::KG_SCAN_LIMIT - scored.len(), |id| {
+                        !taken.contains(&id)
+                            && self
+                                .node_to_memory
+                                .get(&id)
+                                .is_some_and(|mem_key| mem_key != exclude_key)
+                    });
+            for id in fill_ids {
+                if let Some(node) = self.graph.get_node(id).await? {
+                    let recency = Self::node_recency(&node);
+                    scored.push((0, recency, id, node));
+                }
+            }
+        }
         Ok(scored
             .into_iter()
             .map(|(_, _, id, node)| (id, node))
@@ -619,19 +655,22 @@ impl MemoryKnowledgeGraph {
     /// for temporal detection, which is about creation time rather than
     /// content.
     async fn recency_ordered_candidates(&self, exclude_key: &str) -> Result<Vec<(Uuid, Node)>> {
-        let mut nodes: Vec<(chrono::DateTime<chrono::Utc>, Uuid, Node)> = Vec::new();
-        for (mem_key, node_id) in &self.memory_to_node {
-            if mem_key == exclude_key {
-                continue;
-            }
-            if let Some(node) = self.graph.get_node(*node_id).await? {
-                let recency = Self::node_recency(&node);
-                nodes.push((recency, *node_id, node));
+        // The recency index already yields (recency desc, id asc) order:
+        // early-stop after KG_SCAN_LIMIT memory-backed nodes instead of
+        // sorting all of them. Residual bound: O(limit + non-memory nodes
+        // interleaved among the newest), not O(n log n).
+        let ids = self.graph.recency_ordered_ids(Self::KG_SCAN_LIMIT, |id| {
+            self.node_to_memory
+                .get(&id)
+                .is_some_and(|mem_key| mem_key != exclude_key)
+        });
+        let mut nodes = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(node) = self.graph.get_node(id).await? {
+                nodes.push((id, node));
             }
         }
-        nodes.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        nodes.truncate(Self::KG_SCAN_LIMIT);
-        Ok(nodes.into_iter().map(|(_, id, node)| (id, node)).collect())
+        Ok(nodes)
     }
 
     /// Auto-detect relationships based on content similarity and metadata
@@ -773,7 +812,7 @@ impl MemoryKnowledgeGraph {
             }
 
             // Store the updated node back
-            self.graph.nodes.insert(node_id, node);
+            self.graph.put_node(node);
 
             // Update relationships based on content changes
             self.update_relationships_for_changed_node(node_id, &old_content, &new_content)
@@ -828,24 +867,43 @@ impl MemoryKnowledgeGraph {
     /// subset instead of an arbitrary map-iteration-order prefix.
     fn relevance_ordered_graph_nodes(&self, query_text: &str) -> Vec<(Uuid, Node)> {
         let query_tokens = Self::scan_tokens(query_text);
-        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> = self
-            .graph
-            .nodes
-            .iter()
-            .map(|node_ref| {
-                let node = node_ref.value().clone();
-                let text = node.description.as_deref().unwrap_or(&node.label);
-                let overlap = query_tokens.intersection(&Self::scan_tokens(text)).count();
+        // Positive-overlap candidates via the token index (posting-list
+        // union), NOT a score of every node. The index is built over the same
+        // description-or-label text this method historically scored, so the
+        // accumulated posting counts equal the historical intersection
+        // counts exactly.
+        let overlap_candidates = self.graph.token_overlap_counts(&query_tokens);
+        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> =
+            Vec::with_capacity(overlap_candidates.len().min(Self::KG_SCAN_LIMIT));
+        for (node_id, overlap) in &overlap_candidates {
+            if let Some(node) = self.graph.nodes.get(node_id).map(|n| n.clone()) {
                 let recency = Self::node_recency(&node);
-                (overlap, recency, node.id, node)
-            })
-            .collect();
+                scored.push((*overlap, recency, *node_id, node));
+            }
+        }
         scored.sort_by(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| b.1.cmp(&a.1))
                 .then_with(|| a.2.cmp(&b.2))
         });
         scored.truncate(Self::KG_SCAN_LIMIT);
+        // Zero-overlap nodes order strictly after all positive-overlap ones
+        // under the historical comparator and among themselves by recency
+        // desc then id asc — exactly the recency index order. Fill remaining
+        // window slots from it with early stop.
+        if scored.len() < Self::KG_SCAN_LIMIT {
+            let fill_ids = self
+                .graph
+                .recency_ordered_ids(Self::KG_SCAN_LIMIT - scored.len(), |id| {
+                    !overlap_candidates.contains_key(&id)
+                });
+            for id in fill_ids {
+                if let Some(node) = self.graph.nodes.get(&id).map(|n| n.clone()) {
+                    let recency = Self::node_recency(&node);
+                    scored.push((0, recency, id, node));
+                }
+            }
+        }
         scored
             .into_iter()
             .map(|(_, _, id, node)| (id, node))
@@ -912,7 +970,7 @@ impl MemoryKnowledgeGraph {
             }
 
             // Store updated node
-            self.graph.nodes.insert(node_id, node);
+            self.graph.put_node(node);
 
             // Update mappings
             self.memory_to_node.insert(memory.key.clone(), node_id);
