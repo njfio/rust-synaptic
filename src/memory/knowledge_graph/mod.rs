@@ -549,9 +549,90 @@ impl MemoryKnowledgeGraph {
     }
 
     /// Cap on the nodes examined by per-store similarity/relationship
-    /// scans. Bounds the write-path cost per store: instead of scanning every
-    /// node in the graph, at most this many candidates are examined.
+    /// scans. Bounds the write-path cost per store: at most this many
+    /// deterministically-ordered candidates are examined.
     const KG_SCAN_LIMIT: usize = 256;
+
+    /// Recency key for deterministic ordering: newest first. Uses
+    /// `last_modified`, falling back to `created_at`.
+    fn node_recency(node: &Node) -> chrono::DateTime<chrono::Utc> {
+        node.last_modified
+            .or(node.created_at)
+            .unwrap_or(node.ingested_at)
+    }
+
+    /// Lowercased alphanumeric token set used for content-relevance scoring.
+    fn scan_tokens(text: &str) -> std::collections::HashSet<String> {
+        text.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
+    /// DETERMINISTICALLY by content relevance to `query_text` (token-overlap
+    /// desc), then recency (newest first), then node id, and capped at
+    /// [`Self::KG_SCAN_LIMIT`]. Unlike iterating an unordered `HashMap`/
+    /// `DashMap`, this keeps the examined candidate set reproducible run-to-run
+    /// AND biased toward the memories most likely to match.
+    async fn relevance_ordered_candidates(
+        &self,
+        exclude_key: &str,
+        query_text: &str,
+    ) -> Result<Vec<(Uuid, Node)>> {
+        let query_tokens = Self::scan_tokens(query_text);
+        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> = Vec::new();
+        for (mem_key, node_id) in &self.memory_to_node {
+            if mem_key == exclude_key {
+                continue;
+            }
+            if let Some(node) = self.graph.get_node(*node_id).await? {
+                let overlap = node
+                    .description
+                    .as_deref()
+                    .map(|d| {
+                        let toks = Self::scan_tokens(d);
+                        query_tokens.intersection(&toks).count()
+                    })
+                    .unwrap_or(0);
+                let recency = Self::node_recency(&node);
+                scored.push((overlap, recency, *node_id, node));
+            }
+        }
+        // Overlap desc, then recency desc, then id asc (fully deterministic).
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        scored.truncate(Self::KG_SCAN_LIMIT);
+        Ok(scored
+            .into_iter()
+            .map(|(_, _, id, node)| (id, node))
+            .collect())
+    }
+
+    /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
+    /// DETERMINISTICALLY by recency (newest first) then node id — an explicit
+    /// "most-recent-N nodes" window — capped at [`Self::KG_SCAN_LIMIT`]. Used
+    /// for temporal detection, which is about creation time rather than
+    /// content.
+    async fn recency_ordered_candidates(&self, exclude_key: &str) -> Result<Vec<(Uuid, Node)>> {
+        let mut nodes: Vec<(chrono::DateTime<chrono::Utc>, Uuid, Node)> = Vec::new();
+        for (mem_key, node_id) in &self.memory_to_node {
+            if mem_key == exclude_key {
+                continue;
+            }
+            if let Some(node) = self.graph.get_node(*node_id).await? {
+                let recency = Self::node_recency(&node);
+                nodes.push((recency, *node_id, node));
+            }
+        }
+        nodes.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        nodes.truncate(Self::KG_SCAN_LIMIT);
+        Ok(nodes.into_iter().map(|(_, id, node)| (id, node)).collect())
+    }
 
     /// Auto-detect relationships based on content similarity and metadata
     async fn auto_detect_relationships(
@@ -597,55 +678,48 @@ impl MemoryKnowledgeGraph {
             }
         }
 
-        // Detect temporal relationships (bounded candidate scan)
+        // Detect temporal relationships over a deterministic most-recent-N
+        // candidate window (creation-time based, so recency ordering is the
+        // relevant one).
         let time_window = chrono::Duration::hours(1);
         let memory_time = memory.created_at();
-        for (other_memory_key, other_node_id) in
-            self.memory_to_node.iter().take(Self::KG_SCAN_LIMIT)
-        {
-            if other_memory_key != &memory.key {
-                if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
-                    if let Some(other_time) = other_node.created_at {
-                        let time_diff = (memory_time - other_time).abs();
-                        if time_diff <= time_window {
-                            edges.push(Edge::new(
-                                node_id,
-                                *other_node_id,
-                                RelationshipType::TemporallyRelated,
-                                Some(HashMap::from([(
-                                    "time_diff_minutes".to_string(),
-                                    time_diff.num_minutes().to_string(),
-                                )])),
-                            ));
-                        }
-                    }
+        for (other_node_id, other_node) in self.recency_ordered_candidates(&memory.key).await? {
+            if let Some(other_time) = other_node.created_at {
+                let time_diff = (memory_time - other_time).abs();
+                if time_diff <= time_window {
+                    edges.push(Edge::new(
+                        node_id,
+                        other_node_id,
+                        RelationshipType::TemporallyRelated,
+                        Some(HashMap::from([(
+                            "time_diff_minutes".to_string(),
+                            time_diff.num_minutes().to_string(),
+                        )])),
+                    ));
                 }
             }
         }
 
-        // Detect semantic relationships (if embeddings are available;
-        // bounded candidate scan)
+        // Detect semantic relationships (if embeddings are available) over a
+        // deterministic content-relevance-ordered candidate window.
         if let Some(embedding) = &memory.embedding {
             let similarity_threshold = self.config.semantic_similarity_threshold;
-            for (other_memory_key, other_node_id) in
-                self.memory_to_node.iter().take(Self::KG_SCAN_LIMIT)
+            for (other_node_id, other_node) in self
+                .relevance_ordered_candidates(&memory.key, &memory.value)
+                .await?
             {
-                if other_memory_key != &memory.key {
-                    if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
-                        if let Some(other_embedding) = &other_node.embedding {
-                            let similarity = cosine_similarity(embedding, other_embedding);
-                            if similarity >= similarity_threshold {
-                                edges.push(Edge::new(
-                                    node_id,
-                                    *other_node_id,
-                                    RelationshipType::SemanticallyRelated,
-                                    Some(HashMap::from([(
-                                        "similarity_score".to_string(),
-                                        similarity.to_string(),
-                                    )])),
-                                ));
-                            }
-                        }
+                if let Some(other_embedding) = &other_node.embedding {
+                    let similarity = cosine_similarity(embedding, other_embedding);
+                    if similarity >= similarity_threshold {
+                        edges.push(Edge::new(
+                            node_id,
+                            other_node_id,
+                            RelationshipType::SemanticallyRelated,
+                            Some(HashMap::from([(
+                                "similarity_score".to_string(),
+                                similarity.to_string(),
+                            )])),
+                        ));
                     }
                 }
             }
@@ -721,31 +795,73 @@ impl MemoryKnowledgeGraph {
         let similarity_threshold = self.config.semantic_similarity_threshold;
         let mut best_match: Option<(Uuid, f64)> = None;
 
-        for node_ref in self.graph.nodes.iter().take(Self::KG_SCAN_LIMIT) {
-            let node = node_ref.value();
-
+        for (node_id, node) in self.relevance_ordered_graph_nodes(&memory.value) {
             // Skip if this is already mapped to a different memory
-            if let Some(existing_memory_key) = self.node_to_memory.get(&node.id) {
+            if let Some(existing_memory_key) = self.node_to_memory.get(&node_id) {
                 if existing_memory_key != &memory.key {
                     continue;
                 }
             }
 
             // Calculate similarity
-            let similarity = self.calculate_node_memory_similarity(node, memory).await?;
+            let similarity = self.calculate_node_memory_similarity(&node, memory).await?;
 
             if similarity >= similarity_threshold {
                 if let Some((_, best_similarity)) = best_match {
                     if similarity > best_similarity {
-                        best_match = Some((node.id, similarity));
+                        best_match = Some((node_id, similarity));
                     }
                 } else {
-                    best_match = Some((node.id, similarity));
+                    best_match = Some((node_id, similarity));
                 }
             }
         }
 
         Ok(best_match.map(|(node_id, _)| node_id))
+    }
+
+    /// All graph nodes ordered DETERMINISTICALLY by content relevance to
+    /// `query_text` (token-overlap of the node's description/label desc), then
+    /// recency (newest first), then id, capped at [`Self::KG_SCAN_LIMIT`].
+    /// Includes non-memory (entity) nodes, so `find_similar_node` keeps its
+    /// original candidate universe but examines a reproducible, relevant
+    /// subset instead of an arbitrary map-iteration-order prefix.
+    fn relevance_ordered_graph_nodes(&self, query_text: &str) -> Vec<(Uuid, Node)> {
+        let query_tokens = Self::scan_tokens(query_text);
+        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> = self
+            .graph
+            .nodes
+            .iter()
+            .map(|node_ref| {
+                let node = node_ref.value().clone();
+                let text = node.description.as_deref().unwrap_or(&node.label);
+                let overlap = query_tokens.intersection(&Self::scan_tokens(text)).count();
+                let recency = Self::node_recency(&node);
+                (overlap, recency, node.id, node)
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        scored.truncate(Self::KG_SCAN_LIMIT);
+        scored
+            .into_iter()
+            .map(|(_, _, id, node)| (id, node))
+            .collect()
+    }
+
+    /// Test-only: the deterministic candidate node ordering
+    /// `find_similar_node` will scan for `memory`, as (node_id) in order.
+    /// Exposed so tests can prove the candidate set is reproducible and
+    /// relevance-ordered past [`Self::KG_SCAN_LIMIT`].
+    #[cfg(feature = "test-utils")]
+    pub fn debug_similar_candidate_ids(&self, memory: &MemoryEntry) -> Vec<Uuid> {
+        self.relevance_ordered_graph_nodes(&memory.value)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
     }
 
     /// Merge memory with an existing similar node
