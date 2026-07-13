@@ -20,20 +20,20 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = MemoryConfig {
-//!         enable_knowledge_graph: true,
-//!         enable_temporal_tracking: true,
-//!         enable_advanced_management: true,
-//!         ..Default::default()
-//!     };
-//!     let mut memory = AgentMemory::new(config).await?;
+//!     // Default config: in-memory storage, knowledge graph enabled
+//!     let mut memory = AgentMemory::new(MemoryConfig::default()).await?;
 //!
-//!     // Store memories - similar content will be intelligently merged
-//!     memory.store("project_alpha", "A web application using React").await?;
-//!     memory.store("project_alpha", "A web application using React and Node.js").await?;
+//!     // Store memories by key
+//!     memory.store("user_name", "Alice").await?;
+//!     memory.store("user_preference", "prefers dark mode").await?;
 //!
-//!     // Find related memories
-//!     let related = memory.find_related_memories("project_alpha", 5).await?;
+//!     // Retrieve by key
+//!     let entry = memory.retrieve("user_name").await?;
+//!     assert_eq!(entry.map(|e| e.value), Some("Alice".to_string()));
+//!
+//!     // Search (tokenized keyword + semantic hybrid retrieval)
+//!     let results = memory.search("dark mode", 10).await?;
+//!     assert!(!results.is_empty());
 //!
 //!     Ok(())
 //! }
@@ -47,7 +47,7 @@ pub mod memory;
 #[cfg(feature = "observability")]
 pub mod observability;
 
-#[cfg(feature = "distributed")]
+#[cfg(feature = "distributed-experimental")]
 pub mod distributed;
 
 #[cfg(feature = "analytics")]
@@ -73,7 +73,9 @@ pub mod phase5b_basic;
 
 // Re-export main types for convenience
 pub use error::{MemoryError, Result};
-pub use memory::{CheckpointManager, MemoryEntry, MemoryFragment, MemoryType};
+pub use memory::{
+    store_result::StoreDegradations, CheckpointManager, MemoryEntry, MemoryFragment, MemoryType,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -91,7 +93,7 @@ pub struct AgentMemory {
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
     #[cfg(feature = "analytics")]
@@ -108,6 +110,10 @@ pub struct AgentMemory {
     cross_platform_manager: Option<cross_platform::CrossPlatformMemoryManager>,
     /// Memory promotion manager for hierarchical memory management
     promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
+    /// Hybrid retrieval pipeline used by `search` when embeddings are enabled;
+    /// combines dense-vector and keyword signals for ranked results instead of
+    /// naive substring matching. `None` falls back to `storage.search`.
+    retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
 }
 
 impl AgentMemory {
@@ -180,8 +186,38 @@ impl AgentMemory {
             None
         };
 
+        // Initialize the hybrid retrieval pipeline if embeddings are enabled. This
+        // routes `search` through ranked dense-vector + keyword signals instead of
+        // naive substring matching. It intentionally builds its own lightweight
+        // TF-IDF embedding provider rather than sharing `embedding_manager`
+        // (which owns a different, stateful embedding representation used for
+        // `find_similar_memories`); both read from the same underlying storage,
+        // so results stay consistent without a large ownership refactor.
+        //
+        // Candidate generation for each signal retriever goes through
+        // `storage.search`, which performs tokenized OR-matching (any query
+        // term matches), so multi-word queries yield candidates directly and
+        // no widening wrapper is needed.
+        let retrieval_pipeline = if config.enable_embeddings {
+            let provider = Arc::new(memory::embeddings::TfIdfProvider::default());
+            let dense_vector =
+                memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
+            let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
+            let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
+            let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
+                .add_pipeline(Arc::new(dense_vector))
+                .add_pipeline(Arc::new(keyword));
+            Some(Arc::new(hybrid))
+        } else {
+            None
+        };
+        tracing::debug!(
+            enabled = retrieval_pipeline.is_some(),
+            "Retrieval pipeline initialized"
+        );
+
         // Initialize distributed coordinator if enabled
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         let distributed_coordinator = if config.enable_distributed {
             if let Some(dist_config) = config.distributed_config.clone() {
                 let coordinator =
@@ -257,7 +293,7 @@ impl AgentMemory {
             advanced_manager,
             #[cfg(feature = "embeddings")]
             embedding_manager,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
             analytics_engine,
@@ -268,6 +304,7 @@ impl AgentMemory {
             #[cfg(feature = "cross-platform")]
             cross_platform_manager,
             promotion_manager,
+            retrieval_pipeline,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -294,10 +331,41 @@ impl AgentMemory {
         Ok(agent)
     }
 
+    /// Test-only hook to swap the storage backend after construction, used to
+    /// inject failing/faulty storage doubles for testing storage-failure
+    /// behavior (e.g. that a storage write failure cannot leave the state
+    /// cache polluted with an entry that was never durably persisted).
+    #[cfg(feature = "test-utils")]
+    pub fn set_storage_for_test(
+        &mut self,
+        storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
+    ) {
+        self.storage = storage;
+    }
+
     /// Store a memory entry with intelligent updating
     #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
+        // `store_with_report` already logs each degradation at `warn` as it
+        // occurs; this wrapper preserves the original `store()` contract by
+        // discarding the report and always returning `Ok(())` once the core
+        // storage write succeeds.
+        let _degradations = self.store_with_report(key, value).await?;
+
+        Ok(())
+    }
+
+    /// Store a memory entry with intelligent updating, reporting any subsystem
+    /// degradations instead of silently swallowing them. Returns an error only
+    /// if the core storage write itself fails.
+    #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
+    pub async fn store_with_report(
+        &mut self,
+        key: &str,
+        value: &str,
+    ) -> Result<memory::store_result::StoreDegradations> {
         use crate::error_handling::utils::{validate_non_empty_string, validate_range};
+        use memory::store_result::StoreDegradations;
 
         tracing::debug!("Storing memory entry");
 
@@ -319,13 +387,18 @@ impl AgentMemory {
 
         tracing::debug!("Memory operation type: {:?}", change_type);
 
-        self.state.add_memory(entry.clone());
         self.storage.store(&entry).await?;
+        self.state.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
+
+        let mut degradations = StoreDegradations::default();
 
         // Track temporal changes if enabled
         if let Some(ref mut tm) = self.temporal_manager {
-            let _ = tm.track_memory_change(&entry, change_type).await;
+            if let Err(e) = tm.track_memory_change(&entry, change_type).await {
+                tracing::warn!(error = %e, "temporal tracking degraded during store");
+                degradations.temporal = Some(e.to_string());
+            }
         }
 
         #[cfg(feature = "analytics")]
@@ -337,27 +410,38 @@ impl AgentMemory {
                 timestamp: Utc::now(),
                 change_magnitude: 1.0,
             };
-            let _ = analytics.record_event(event).await;
+            if let Err(e) = analytics.record_event(event).await {
+                tracing::warn!(error = %e, "analytics recording degraded during store");
+                degradations.analytics = Some(e.to_string());
+            }
         }
 
         // Add or update in knowledge graph if enabled (intelligent merging)
         if let Some(ref mut kg) = self.knowledge_graph {
-            let _ = kg.add_or_update_memory_node(&entry).await;
+            if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                tracing::warn!(error = %e, "knowledge graph update degraded during store");
+                degradations.knowledge_graph = Some(e.to_string());
+            }
         }
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
-            let _ = am
+            if let Err(e) = am
                 .add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut())
-                .await;
+                .await
+            {
+                tracing::warn!(error = %e, "advanced management update degraded during store");
+                degradations.advanced_management = Some(e.to_string());
+            }
         }
 
         // Generate embeddings if enabled
         #[cfg(feature = "embeddings")]
         if let Some(ref mut em) = self.embedding_manager {
-            let _ = em.add_memory(entry.clone()).map_err(|e| {
-                tracing::warn!("Failed to generate embedding: {}", e);
-            });
+            if let Err(e) = em.add_memory(entry.clone()) {
+                tracing::warn!(error = %e, "embedding generation degraded during store");
+                degradations.embeddings = Some(e.to_string());
+            }
         }
 
         // Check if we need to create a checkpoint
@@ -367,7 +451,7 @@ impl AgentMemory {
                 .await?;
         }
 
-        Ok(())
+        Ok(degradations)
     }
 
     /// Retrieve a memory by key
@@ -409,7 +493,9 @@ impl AgentMemory {
                     timestamp: Utc::now(),
                     user_context: None,
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, memory_key = %key, "failed to record analytics event for short-term retrieve");
+                }
             }
             return Ok(Some(entry.clone()));
         }
@@ -449,7 +535,9 @@ impl AgentMemory {
             // Refresh knowledge graph if enabled
             if let Some(ref mut kg) = self.knowledge_graph {
                 tracing::debug!("Refreshing knowledge graph node for cache miss");
-                let _ = kg.add_or_update_memory_node(&entry).await;
+                if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                    tracing::warn!(error = %e, memory_key = %entry.key, "failed to refresh knowledge graph node for cache miss");
+                }
             }
 
             #[cfg(feature = "analytics")]
@@ -461,7 +549,9 @@ impl AgentMemory {
                     timestamp: Utc::now(),
                     user_context: None,
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, memory_key = %key, "failed to record analytics event for storage retrieve");
+                }
             }
 
             Ok(Some(entry))
@@ -482,7 +572,11 @@ impl AgentMemory {
         validate_non_empty_string(query, "search query")?;
         validate_range(limit, 1, 10000, "search limit")?; // Max 10k results
 
-        let results = self.storage.search(query, limit).await?;
+        let results = if let Some(ref pipeline) = self.retrieval_pipeline {
+            pipeline.search(query, limit).await?
+        } else {
+            self.storage.search(query, limit).await?
+        };
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
     }
@@ -493,24 +587,61 @@ impl AgentMemory {
     }
 
     /// Restore from a checkpoint
+    ///
+    /// This is a non-destructive, upsert-then-prune restore: the checkpoint's
+    /// entries are written to storage first (idempotent upserts), and only
+    /// once every write has succeeded are the storage keys that are absent
+    /// from the checkpoint deleted. `self.state` is swapped last, after
+    /// storage reconciliation has fully succeeded. If any step fails, the
+    /// error is returned and both storage and `self.state` are left exactly
+    /// as they were before the call — no `clear()` is ever used, so data
+    /// already durably persisted before a failure is never lost.
+    ///
+    /// # Recovery contract on prune failure
+    ///
+    /// If a delete during the prune phase fails (after all upserts have
+    /// succeeded), no data is lost, but storage may be left holding the
+    /// checkpoint's entries *plus* post-checkpoint keys that were not yet
+    /// deleted, while `self.state` remains the pre-restore state — storage
+    /// and the in-process state cache temporarily diverge. This is safe and
+    /// non-destructive; the caller may simply retry `restore_checkpoint`
+    /// (every phase is idempotent) to converge.
     pub async fn restore_checkpoint(&mut self, checkpoint_id: Uuid) -> Result<()> {
-        let state = self
+        let restored_state = self
             .checkpoint_manager
             .restore_checkpoint(checkpoint_id)
             .await?;
-        self.state = state;
 
-        // Also need to sync the storage with the restored state
-        // For now, we'll clear storage and re-populate it from the state
-        self.storage.clear().await?;
-
-        // Re-populate storage with memories from restored state
-        for entry in self.state.get_short_term_memories().values() {
+        // Step 1: upsert every checkpoint entry into storage first. These
+        // writes are idempotent, so a failure partway through leaves
+        // storage with a superset of the checkpoint's data plus whatever
+        // was already there beforehand — nothing is lost.
+        for entry in restored_state.get_short_term_memories().values() {
             self.storage.store(entry).await?;
         }
-        for entry in self.state.get_long_term_memories().values() {
+        for entry in restored_state.get_long_term_memories().values() {
             self.storage.store(entry).await?;
         }
+
+        // Step 2: only after all upserts succeeded, compute keys present in
+        // storage but absent from the checkpoint, and delete only those.
+        let checkpoint_keys: std::collections::HashSet<&str> = restored_state
+            .get_short_term_memories()
+            .keys()
+            .chain(restored_state.get_long_term_memories().keys())
+            .map(|k| k.as_str())
+            .collect();
+
+        let storage_keys = self.storage.list_keys().await?;
+        for key in storage_keys {
+            if !checkpoint_keys.contains(key.as_str()) {
+                self.storage.delete(&key).await?;
+            }
+        }
+
+        // Step 3: only now that storage matches the checkpoint exactly,
+        // swap the in-process state cache.
+        self.state = restored_state;
 
         Ok(())
     }
@@ -573,7 +704,9 @@ impl AgentMemory {
                     relationship_strength: 1.0,
                     timestamp: Utc::now(),
                 };
-                let _ = analytics.record_event(event).await;
+                if let Err(e) = analytics.record_event(event).await {
+                    tracing::warn!(error = %e, from_memory = %from_memory, to_memory = %to_memory, "failed to record analytics event for relationship discovery");
+                }
             }
 
             Ok(Some(relationship_id))
@@ -722,9 +855,9 @@ pub struct MemoryConfig {
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
     pub enable_embeddings: bool,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub enable_distributed: bool,
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub distributed_config: Option<distributed::DistributedConfig>,
     #[cfg(feature = "analytics")]
     pub enable_analytics: bool,
@@ -766,9 +899,9 @@ impl Default for MemoryConfig {
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
             enable_embeddings: true,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             enable_distributed: false,
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             distributed_config: None,
             #[cfg(feature = "analytics")]
             enable_analytics: false,
@@ -809,6 +942,8 @@ pub enum StorageBackend {
 }
 
 #[cfg(test)]
+// Test code: panic on unexpected variants is the intended behaviour.
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -1017,7 +1152,7 @@ mod tests {
         assert!(config.enable_embeddings);
     }
 
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     #[test]
     fn test_memory_config_distributed_feature() {
         let config = MemoryConfig::default();

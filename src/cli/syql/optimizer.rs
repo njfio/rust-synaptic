@@ -20,17 +20,16 @@ pub struct QueryOptimizer {
 impl QueryOptimizer {
     /// Create a new query optimizer
     pub fn new() -> Result<Self> {
-        let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
-
-        // Add optimization rules
-        rules.push(Box::new(PredicatePushdownRule));
-        rules.push(Box::new(ProjectionPushdownRule));
-        rules.push(Box::new(JoinReorderingRule));
-        rules.push(Box::new(IndexSelectionRule));
-        rules.push(Box::new(ConstantFoldingRule));
-        rules.push(Box::new(RedundantExpressionRule));
-        rules.push(Box::new(SubqueryOptimizationRule));
-        rules.push(Box::new(PathOptimizationRule));
+        let rules: Vec<Box<dyn OptimizationRule>> = vec![
+            Box::new(PredicatePushdownRule),
+            Box::new(ProjectionPushdownRule),
+            Box::new(JoinReorderingRule),
+            Box::new(IndexSelectionRule),
+            Box::new(ConstantFoldingRule),
+            Box::new(RedundantExpressionRule),
+            Box::new(SubqueryOptimizationRule),
+            Box::new(PathOptimizationRule),
+        ];
 
         Ok(Self {
             rules,
@@ -292,6 +291,12 @@ pub struct CostModel {
     operation_costs: HashMap<String, f64>,
 }
 
+impl Default for CostModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CostModel {
     /// Create a new cost model
     pub fn new() -> Self {
@@ -404,6 +409,12 @@ pub struct QueryStatistics {
     pub estimated_rows: usize,
     /// Available indexes
     pub available_indexes: Vec<IndexInfo>,
+}
+
+impl Default for QueryStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QueryStatistics {

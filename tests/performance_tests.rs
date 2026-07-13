@@ -3,6 +3,10 @@
 //! Tests system performance under load, memory efficiency,
 //! and optimization validation.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use synaptic::{AgentMemory, MemoryConfig};
 
 use std::error::Error;

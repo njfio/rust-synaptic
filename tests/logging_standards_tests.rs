@@ -1,5 +1,7 @@
 //! Tests for logging standards compliance and configuration
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 use tracing_test::traced_test;
@@ -172,9 +174,9 @@ mod logging_standards_tests {
     #[tokio::test]
     async fn test_memory_manager_logging() {
         let storage = Arc::new(MemoryStorage::new());
-        // MemoryManager::new now takes a storage backend plus optional
-        // knowledge-graph / temporal / advanced managers.
-        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+        // MemoryManager::new takes a storage backend plus an optional
+        // knowledge-graph manager.
+        let manager = MemoryManager::new(storage, None).await.unwrap();
 
         let memory = MemoryEntry::new(
             "test_key".to_string(),

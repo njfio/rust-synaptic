@@ -220,9 +220,21 @@ pub enum MemoryError {
     /// Circuit breaker is open and rejecting calls
     #[error("Circuit breaker open: {0}")]
     CircuitBreakerOpen(String),
+
+    /// Operation requires a compile-time feature that is not enabled
+    #[error("feature '{feature}' is not enabled; refusing to run '{operation}' without real implementation")]
+    FeatureDisabled { feature: String, operation: String },
 }
 
 impl MemoryError {
+    /// Error for operations that must not silently degrade when their feature is off
+    pub fn feature_disabled(feature: &str, operation: &str) -> Self {
+        Self::FeatureDisabled {
+            feature: feature.to_string(),
+            operation: operation.to_string(),
+        }
+    }
+
     /// Create a storage error
     pub fn storage<S: Into<String>>(message: S) -> Self {
         Self::Storage {
@@ -872,7 +884,7 @@ mod tests {
     fn test_result_type_alias() {
         // Test that Result<T> is properly aliased
         let ok_result: Result<i32> = Ok(42);
-        assert_eq!(ok_result.expect("ok_result should be valid"), 42);
+        assert!(matches!(ok_result, Ok(42)));
 
         let err_result: Result<i32> = Err(MemoryError::storage("test"));
         assert!(err_result.is_err());

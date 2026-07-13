@@ -269,7 +269,10 @@ impl LocalStorage {
             })?
             .as_secs();
 
-        // Calculate checksum
+        // Calculate checksum. Non-cryptographic use: local storage
+        // corruption detection only, not a security control (see
+        // `retrieve` below for the matching verification). MD5 is
+        // acceptable here since nothing authenticates against this value.
         let checksum = format!("{:x}", md5::compute(data));
 
         let item = StoredItem {
@@ -317,7 +320,8 @@ impl LocalStorage {
                     SynapticError::ProcessingError(format!("Failed to deserialize item: {}", e))
                 })?;
 
-                // Verify checksum
+                // Verify checksum (non-cryptographic corruption check; see
+                // the `store` method for why MD5 is acceptable here).
                 let checksum = format!("{:x}", md5::compute(&item.data));
                 if checksum != item.checksum {
                     return Err(SynapticError::ProcessingError(

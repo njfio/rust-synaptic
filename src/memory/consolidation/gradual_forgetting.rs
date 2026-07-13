@@ -189,7 +189,7 @@ impl GradualForgettingAlgorithm {
             // Store decision in history
             self.decision_history
                 .entry(memory.key.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(decision.clone());
 
             decisions.push(decision);
@@ -342,7 +342,7 @@ impl GradualForgettingAlgorithm {
         let forgetting_probability =
             base_forgetting * (1.0 - protection_factor) * self.config.base_forgetting_rate;
 
-        Ok(forgetting_probability.min(1.0).max(0.0))
+        Ok(forgetting_probability.clamp(0.0, 1.0))
     }
 
     /// Check if memory meets minimum retention time
@@ -429,9 +429,7 @@ impl GradualForgettingAlgorithm {
         let balance_score = 1.0 - (retention_rate - 0.7).abs(); // Target 70% retention
         let strength_score = self.metrics.avg_retention_strength;
 
-        (balance_score * 0.6 + strength_score * 0.4)
-            .min(1.0)
-            .max(0.0)
+        (balance_score * 0.6 + strength_score * 0.4).clamp(0.0, 1.0)
     }
 
     /// Get forgetting decisions for a specific memory
@@ -461,6 +459,8 @@ impl GradualForgettingAlgorithm {
 }
 
 #[cfg(test)]
+// Test code: panic on unexpected variants is the intended behaviour.
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::memory::types::MemoryType;
@@ -900,7 +900,10 @@ mod tests {
 
         // First evaluation
         algorithm
-            .evaluate_memories(&[memory.clone()], &[importance.clone()])
+            .evaluate_memories(
+                std::slice::from_ref(&memory),
+                std::slice::from_ref(&importance),
+            )
             .await
             .expect("await should be present");
 

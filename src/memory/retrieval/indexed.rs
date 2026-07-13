@@ -146,7 +146,7 @@ impl AccessFrequencyIndex {
         let old_count = self.key_to_count.insert(key.clone(), count);
 
         // Mark as dirty if this is a significant change
-        if old_count.map_or(true, |old| old != count) {
+        if old_count != Some(count) {
             self.dirty = true;
             self.updates_since_rebuild += 1;
         }
@@ -369,11 +369,14 @@ impl HotDataCache {
 /// Cache for query results with TTL
 #[derive(Debug)]
 pub struct QueryResultCache {
-    recent_results: RwLock<HashMap<usize, (Vec<MemoryEntry>, Instant)>>,
-    frequent_results: RwLock<HashMap<usize, (Vec<MemoryEntry>, Instant)>>,
-    tag_results: RwLock<HashMap<Vec<String>, (Vec<MemoryEntry>, Instant)>>,
+    recent_results: RwLock<HashMap<usize, CachedEntries>>,
+    frequent_results: RwLock<HashMap<usize, CachedEntries>>,
+    tag_results: RwLock<HashMap<Vec<String>, CachedEntries>>,
     ttl: Duration,
 }
+
+/// Cached query results paired with the instant they were cached.
+type CachedEntries = (Vec<MemoryEntry>, Instant);
 
 impl QueryResultCache {
     pub fn new(ttl_seconds: u64) -> Self {
@@ -466,7 +469,7 @@ impl IndexedMemoryRetriever {
         config: RetrievalConfig,
         indexing_config: IndexingConfig,
     ) -> Self {
-        let retriever = Self {
+        Self {
             storage,
             _config: config,
             indexing_config: indexing_config.clone(),
@@ -478,9 +481,7 @@ impl IndexedMemoryRetriever {
             hot_cache: HotDataCache::new(indexing_config.hot_cache_size),
             query_cache: QueryResultCache::new(indexing_config.query_cache_ttl_seconds),
             maintenance_handle: RwLock::new(None),
-        };
-
-        retriever
+        }
     }
 
     /// Start background maintenance tasks
@@ -555,7 +556,7 @@ impl IndexedMemoryRetriever {
         }
 
         // Sort by access time to maintain order
-        entries.sort_by(|a, b| b.last_accessed().cmp(&a.last_accessed()));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.last_accessed()));
         entries.truncate(limit);
 
         // 4. Cache results
@@ -596,7 +597,7 @@ impl IndexedMemoryRetriever {
         }
 
         // Sort by access count to maintain order
-        entries.sort_by(|a, b| b.access_count().cmp(&a.access_count()));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.access_count()));
         entries.truncate(limit);
 
         // 4. Cache results
@@ -703,7 +704,7 @@ impl IndexedMemoryRetriever {
             }
         }
 
-        entries.sort_by(|a, b| b.last_accessed().cmp(&a.last_accessed()));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.last_accessed()));
         entries.truncate(limit);
 
         Ok(entries.into_iter().map(|e| e.key).collect())
@@ -720,7 +721,7 @@ impl IndexedMemoryRetriever {
             }
         }
 
-        entries.sort_by(|a, b| b.access_count().cmp(&a.access_count()));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.access_count()));
         entries.truncate(limit);
 
         Ok(entries.into_iter().map(|e| e.key).collect())

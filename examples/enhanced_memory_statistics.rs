@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use chrono::Utc;
 use std::error::Error;
 use synaptic::memory::management::{AdvancedMemoryManager, MemoryManagementConfig};
@@ -87,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Simulate some access patterns
     println!("🔄 Simulating access patterns...");
-    for i in 0..5 {
+    for _i in 0..5 {
         if let Some(memory) = storage.retrieve("project_alpha").await? {
             let mut updated_memory = memory.clone();
             updated_memory.metadata.access_count += 1;

@@ -190,7 +190,7 @@ pub struct EventBus {
     /// Broadcast channel for local event distribution
     local_sender: broadcast::Sender<EventEnvelope>,
     /// Event handlers registered with the bus
-    handlers: Arc<RwLock<HashMap<String, Box<dyn EventHandler>>>>,
+    handlers: Arc<RwLock<HashMap<String, Arc<dyn EventHandler>>>>,
     /// Event store for persistence
     event_store: Arc<dyn EventStore>,
     /// Statistics
@@ -242,7 +242,7 @@ impl EventBus {
         // Register handler
         {
             let mut handlers = self.handlers.write();
-            handlers.insert(handler_name.clone(), Box::new(handler));
+            handlers.insert(handler_name.clone(), Arc::new(handler));
         }
 
         // Start processing events for this handler
@@ -252,24 +252,28 @@ impl EventBus {
 
         tokio::spawn(async move {
             while let Ok(envelope) = receiver.recv().await {
-                // Clone the handler to avoid holding the lock across await
+                // Clone the handler Arc so the lock is not held across await
                 let handler = {
                     let handlers_guard = handlers.read();
-                    handlers_guard.get(&handler_name).map(|h| h.name())
+                    handlers_guard.get(&handler_name).map(Arc::clone)
                 };
 
-                if handler.is_some() {
-                    // For now, just log the event - in a real implementation,
-                    // we'd need to restructure to avoid the Send issue
-                    tracing::debug!(
-                        component = "event_bus",
-                        operation = "process_event",
-                        event_id = ?envelope.event_id,
-                        event_type = ?envelope.event_type,
-                        "Processing event"
-                    );
-                    let mut stats_guard = stats.write();
-                    stats_guard.events_processed += 1;
+                if let Some(handler) = handler {
+                    if let Err(e) = handler.handle_event(&envelope).await {
+                        tracing::error!(
+                            component = "event_bus",
+                            operation = "process_event",
+                            event_id = %envelope.event_id,
+                            handler = %handler.name(),
+                            error = %e,
+                            "Event handler failed"
+                        );
+                        let mut stats_guard = stats.write();
+                        stats_guard.events_failed += 1;
+                    } else {
+                        let mut stats_guard = stats.write();
+                        stats_guard.events_processed += 1;
+                    }
                 }
             }
         });

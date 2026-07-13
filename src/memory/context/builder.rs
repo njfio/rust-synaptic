@@ -4,7 +4,7 @@
 //! optimized for consumption by language models.
 
 use super::{AgentContext, ContextFormat, TokenCounter};
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::knowledge_graph::types::RelationshipType;
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::retrieval::{MemoryRetriever, SearchQuery};
@@ -12,7 +12,6 @@ use crate::memory::storage::Storage;
 use crate::memory::types::{MemoryEntry, MemoryType};
 use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// Builder for assembling agent context
 ///
@@ -31,7 +30,6 @@ pub struct ContextBuilder {
 
     // Temporal parameters
     time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
-    recency_bias: f64,
 
     // Memory type filters
     memory_types: Vec<MemoryType>,
@@ -60,7 +58,6 @@ impl ContextBuilder {
             include_graph_context: false,
             graph_depth: 2,
             time_range: None,
-            recency_bias: 0.0,
             memory_types: vec![],
             format: ContextFormat::Markdown,
             max_tokens: None,

@@ -3,6 +3,8 @@
 //! Demonstrates the basic Phase 5 capabilities without heavy external dependencies.
 //! Shows multi-modal content handling, cross-platform adaptation, and relationship detection.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use synaptic::phase5_basic::{
     BasicContentDetector, BasicCrossPlatformAdapter, BasicMemoryAdapter, BasicMetadata,
     BasicMultiModalManager,
@@ -256,9 +258,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("==========================");
 
     // Compare feature vectors between different content types
-    let image_features = vec![1920.0, 1080.0, 8.0]; // width, height, size
-    let code_features = vec![15.0, 500.0, 3.0]; // lines, size, complexity
-    let text_features = vec![200.0, 30.0, 25.0, 5.0]; // length, words, alpha, numeric
+    let image_features = [1920.0, 1080.0, 8.0]; // width, height, size
+    let code_features = [15.0, 500.0, 3.0]; // lines, size, complexity
+    let text_features = [200.0, 30.0, 25.0, 5.0]; // length, words, alpha, numeric
 
     println!(" Feature Vector Dimensions:");
     println!("   - Image features: {} dimensions", image_features.len());

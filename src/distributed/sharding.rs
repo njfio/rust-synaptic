@@ -366,7 +366,8 @@ impl DistributedGraph {
             return shard.get_node(memory_id);
         }
 
-        // In a real implementation, we would make a remote call here
+        // Remote shard fetches are not implemented in this experimental
+        // module; only local shards are consulted.
         None
     }
 

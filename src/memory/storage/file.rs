@@ -10,13 +10,16 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// File-based storage implementation using Sled embedded database
+/// Cached storage stats with the time they were computed.
+type StatsCache = Arc<RwLock<Option<(StorageStats, DateTime<Utc>)>>>;
+
 pub struct FileStorage {
     /// Sled database instance
     db: sled::Db,
     /// Storage path
     path: PathBuf,
     /// Statistics cache
-    stats_cache: Arc<RwLock<Option<(StorageStats, DateTime<Utc>)>>>,
+    stats_cache: StatsCache,
     /// Cache TTL in seconds
     stats_cache_ttl: u64,
 }

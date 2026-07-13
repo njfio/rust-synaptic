@@ -3,7 +3,7 @@
 //! This module defines the EmbeddingProvider trait and implements various
 //! embedding strategies for semantic search.
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -4,7 +4,8 @@
 //! command execution, error recovery, session management, completion,
 //! and advanced features like command chaining.
 
-use std::path::PathBuf;
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use synaptic::cli::config::CliConfig;
 use synaptic::cli::shell::InteractiveShell;
 use synaptic::cli::syql::SyQLEngine;
@@ -19,7 +20,7 @@ async fn test_shell_creation() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Shell should be created successfully
     // In a real test, you'd verify the shell state
@@ -43,7 +44,7 @@ async fn test_shell_configuration() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let shell = InteractiveShell::new(
+    let _shell = InteractiveShell::new(
         &mut syql_engine,
         &config,
         Some(history_file),
@@ -65,7 +66,7 @@ async fn test_command_history() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
+    let shell =
         InteractiveShell::new(&mut syql_engine, &config, Some(history_file.clone()), true).await?;
 
     // Simulate adding commands to history
@@ -75,7 +76,8 @@ async fn test_command_history() -> Result<()> {
     drop(shell);
 
     // Create new shell and verify history is loaded
-    let shell2 = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell2 =
+        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // History should be preserved across sessions
 
@@ -90,8 +92,7 @@ async fn test_error_recovery() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test error recovery suggestions
     // This would require exposing internal methods for testing
@@ -107,8 +108,7 @@ async fn test_session_management() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test session save/load functionality
     // This would require exposing session methods for testing
@@ -124,8 +124,7 @@ async fn test_command_completion() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test completion for various inputs
     // This would require exposing completion methods for testing
@@ -141,8 +140,7 @@ async fn test_multiline_input() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test multi-line query handling
     // This would require simulating user input
@@ -158,8 +156,7 @@ async fn test_command_chaining() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test command chaining with pipes
     // This would require exposing command chain methods for testing
@@ -175,8 +172,7 @@ async fn test_variable_management() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test variable setting and getting
     // This would require exposing variable methods for testing
@@ -192,8 +188,7 @@ async fn test_output_formatting() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test different output formats
     // This would require exposing format methods for testing
@@ -209,8 +204,7 @@ async fn test_shell_commands() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test various shell commands
     let commands = vec![
@@ -238,8 +232,7 @@ async fn test_syql_execution() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let history_file = temp_dir.path().join("test_history");
 
-    let mut shell =
-        InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     // Test SyQL queries
     let queries = vec![
@@ -266,7 +259,7 @@ async fn test_shell_performance() -> Result<()> {
 
     let start_time = std::time::Instant::now();
 
-    let shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
+    let _shell = InteractiveShell::new(&mut syql_engine, &config, Some(history_file), true).await?;
 
     let creation_time = start_time.elapsed();
 
@@ -286,7 +279,7 @@ async fn test_shell_memory_usage() -> Result<()> {
     let mut syql_engine = SyQLEngine::new()?;
     let config = CliConfig::default();
     let temp_dir = TempDir::new()?;
-    let history_file = temp_dir.path().join("test_history");
+    let _history_file = temp_dir.path().join("test_history");
 
     // Create multiple shells to test memory usage
     // Note: We can't create multiple shells with the same engine due to mutable borrow restrictions

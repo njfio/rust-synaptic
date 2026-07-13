@@ -162,7 +162,7 @@ impl MAMLLearner {
         let total_chars = content.len() as f64;
         for (i, ch) in "abcdefghijklmnopqrstuvwxyz0123456789 ".chars().enumerate() {
             if i < hash_features.len() {
-                hash_features[i] = char_counts.get(&ch).unwrap_or(&0).clone() as f64 / total_chars;
+                hash_features[i] = *char_counts.get(&ch).unwrap_or(&0) as f64 / total_chars;
             }
         }
 

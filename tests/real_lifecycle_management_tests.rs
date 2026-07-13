@@ -3,6 +3,10 @@
 //! Tests the production-ready memory lifecycle management system with
 //! real custom actions, predictive analytics, and optimization capabilities.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::error::Error;
 use synaptic::memory::management::lifecycle::{
@@ -129,18 +133,15 @@ async fn test_real_custom_actions() -> Result<(), Box<dyn Error>> {
     storage.store(&memory).await?;
     manager.track_memory_creation(&storage, &memory).await?;
 
-    // Test various custom actions
+    // Test the real custom actions that remain after the simulated
+    // (theater) actions were removed in Task 5.5.
     let custom_actions = vec![
-        "backup_to_external",
-        "encrypt_sensitive_data",
         "generate_analytics_report",
-        "sync_to_cloud",
         "validate_integrity",
         "optimize_storage",
         "create_snapshot",
         "audit_access",
         "refresh_metadata",
-        "migrate_format",
     ];
 
     let _initial_event_count = manager.get_memory_events(&memory.key).len();
@@ -194,6 +195,47 @@ async fn test_real_custom_actions() -> Result<(), Box<dyn Error>> {
             action_executed,
             "Custom action '{}' should have been executed",
             action
+        );
+    }
+
+    // The simulated actions removed in Task 5.5 must now be rejected as
+    // unknown custom actions instead of pretending to succeed.
+    let removed_actions = vec![
+        "backup_to_external",
+        "encrypt_sensitive_data",
+        "sync_to_cloud",
+        "migrate_format",
+    ];
+
+    for removed_action in &removed_actions {
+        let mut removed_manager = MemoryLifecycleManager::new();
+        removed_manager
+            .track_memory_creation(&storage, &memory)
+            .await?;
+
+        removed_manager.add_policy(LifecyclePolicy {
+            id: format!("test_removed_action_{}", removed_action),
+            name: format!("Test Removed Action {}", removed_action),
+            conditions: vec![LifecycleCondition::HasTags {
+                tags: vec!["custom".to_string()],
+            }],
+            actions: vec![LifecycleAction::Custom {
+                action: removed_action.to_string(),
+            }],
+            active: true,
+            priority: 100,
+        });
+
+        let result = removed_manager.track_memory_update(&storage, &memory).await;
+        let err = result.expect_err(&format!(
+            "Removed simulated action '{}' should be rejected",
+            removed_action
+        ));
+        assert!(
+            err.to_string().contains("Unknown custom action"),
+            "Removed action '{}' should return an 'Unknown custom action' error, got: {}",
+            removed_action,
+            err
         );
     }
 
@@ -435,7 +477,10 @@ async fn test_lifecycle_optimization_execution() -> Result<(), Box<dyn Error>> {
     let memories = vec![
         MemoryEntry {
             key: "optimize_compress".to_string(),
-            value: "Memory for compression optimization".to_string(),
+            // Large, highly repetitive payload so real LZ4 compression
+            // produces a measurable size reduction (space_saved is now the
+            // actual before/after byte delta, not a fabricated constant).
+            value: "compressible lifecycle payload ".repeat(256),
             memory_type: MemoryType::LongTerm,
             metadata: MemoryMetadata::new()
                 .with_importance(0.6)
@@ -498,11 +543,13 @@ async fn test_lifecycle_optimization_execution() -> Result<(), Box<dyn Error>> {
     );
     assert!(
         optimization_result.space_saved_bytes > 0,
-        "Should save some space"
+        "Compressing the repetitive payload should measurably shrink the stored entry"
     );
-    assert!(
-        optimization_result.performance_improvement > 0.0,
-        "Should improve performance"
+    // No performance measurement is performed by optimization actions, so the
+    // reported improvement must honestly be zero.
+    assert_eq!(
+        optimization_result.performance_improvement, 0.0,
+        "Performance improvement is not measured and must be reported as 0"
     );
     assert!(
         optimization_result.errors.is_empty(),
@@ -724,18 +771,20 @@ async fn test_custom_lifecycle_policies() -> Result<(), Box<dyn Error>> {
     };
 
     // Create custom policy for memories with specific tags
+    // The simulated "encrypt_sensitive_data" action was removed in Task 5.5;
+    // audit access to sensitive data instead, which is a real custom action.
     let sensitive_data_policy = LifecyclePolicy {
-        id: "encrypt_sensitive_data".to_string(),
-        name: "Encrypt Sensitive Data".to_string(),
+        id: "audit_sensitive_data".to_string(),
+        name: "Audit Sensitive Data".to_string(),
         conditions: vec![LifecycleCondition::HasTags {
             tags: vec!["sensitive".to_string(), "pii".to_string()],
         }],
         actions: vec![
             LifecycleAction::Custom {
-                action: "encrypt_sensitive_data".to_string(),
+                action: "audit_access".to_string(),
             },
             LifecycleAction::AddWarningTag {
-                tag: "encrypted".to_string(),
+                tag: "audited".to_string(),
             },
         ],
         active: true,
@@ -840,12 +889,12 @@ async fn test_custom_lifecycle_policies() -> Result<(), Box<dyn Error>> {
         "Large memory should be compressed"
     );
 
-    // Sensitive memory should be encrypted
+    // Sensitive memory should have its access audited
     assert!(
         sensitive_action_descriptions
             .iter()
-            .any(|desc| desc.contains("encrypt_sensitive_data")),
-        "Sensitive memory should be encrypted"
+            .any(|desc| desc.contains("audit_access")),
+        "Sensitive memory access should be audited"
     );
 
     println!("Custom lifecycle policies test completed:");

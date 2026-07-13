@@ -1,5 +1,9 @@
 //! Comprehensive error handling tests for the Synaptic memory system
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use synaptic::{
@@ -111,7 +115,7 @@ fn test_safe_collection_operations() -> Result<()> {
 
 #[test]
 fn test_safe_iterator_operations() -> Result<()> {
-    let numbers = vec![3, 1, 4, 1, 5, 9, 2, 6];
+    let numbers = [3, 1, 4, 1, 5, 9, 2, 6];
 
     // Test min/max operations
     let min_val = numbers.iter().cloned().safe_min("find minimum")?;

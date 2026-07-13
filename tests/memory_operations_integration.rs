@@ -4,6 +4,8 @@
 //! storage, knowledge graphs, analytics, and all other subsystems through the
 //! MemoryOperations trait.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
 use synaptic::memory::{MemoryEntry, MemoryOperations, MemoryType};
@@ -56,7 +58,7 @@ async fn test_store_multiple_memories() {
 
 #[tokio::test]
 async fn test_retrieve_nonexistent_memory() {
-    let mut memory = SynapticMemory::new().await.unwrap();
+    let memory = SynapticMemory::new().await.unwrap();
 
     let retrieved = memory.get_memory("nonexistent_key").await.unwrap();
     assert!(
@@ -461,7 +463,7 @@ async fn test_update_preserves_metadata() {
 
     let initial = memory.get_memory("metadata_test").await.unwrap().unwrap();
     let initial_created = initial.created_at();
-    let initial_type = initial.memory_type;
+    let _initial_type = initial.memory_type;
 
     // Update content
     memory

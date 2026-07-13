@@ -3,7 +3,7 @@
 //! This module provides high-performance vector similarity search using
 //! approximate nearest neighbor (ANN) algorithms.
 
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -154,7 +154,7 @@ impl SearchResult {
         Self {
             id,
             distance,
-            similarity: similarity.max(0.0).min(1.0),
+            similarity: similarity.clamp(0.0, 1.0),
         }
     }
 }

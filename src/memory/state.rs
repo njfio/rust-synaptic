@@ -259,7 +259,7 @@ impl AgentState {
             .chain(self.long_term_memories.values())
             .collect();
 
-        all_memories.sort_by(|a, b| b.access_count().cmp(&a.access_count()));
+        all_memories.sort_by_key(|m| std::cmp::Reverse(m.access_count()));
         all_memories.into_iter().take(limit).collect()
     }
 
@@ -271,7 +271,7 @@ impl AgentState {
             .chain(self.long_term_memories.values())
             .collect();
 
-        all_memories.sort_by(|a, b| b.last_accessed().cmp(&a.last_accessed()));
+        all_memories.sort_by_key(|m| std::cmp::Reverse(m.last_accessed()));
         all_memories.into_iter().take(limit).collect()
     }
 

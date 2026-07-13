@@ -1,11 +1,12 @@
 //! Comprehensive tests for the logging and tracing infrastructure
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::collections::HashMap;
 use synaptic::error::Result;
-use synaptic::logging::{
-    AuditLogEntry, LogFormat, LogLevel, LoggingConfig, LoggingManager, PerformanceMetrics,
-    RiskLevel,
-};
+use synaptic::logging::{LogFormat, LogLevel, LoggingConfig, LoggingManager, RiskLevel};
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 

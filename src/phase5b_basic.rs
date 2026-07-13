@@ -261,6 +261,12 @@ pub struct BasicMemoryDocumentDataAdapter {
     memories: HashMap<MemoryId, MultiModalMemory>,
 }
 
+impl Default for BasicMemoryDocumentDataAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BasicMemoryDocumentDataAdapter {
     /// Create a new memory adapter
     pub fn new() -> Self {

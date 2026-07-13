@@ -3,6 +3,8 @@
 //! Tests for catastrophic forgetting prevention, selective replay,
 //! importance scoring, and consolidation strategies.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::collections::HashMap;
 use synaptic::{
@@ -18,7 +20,6 @@ use synaptic::{
         types::{MemoryEntry, MemoryType},
     },
 };
-use tokio;
 
 /// Test memory consolidation system creation and basic functionality
 #[tokio::test]

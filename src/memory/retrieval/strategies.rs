@@ -4,10 +4,10 @@
 //! in a hybrid pipeline for optimal search quality.
 
 use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
-use crate::error::{MemoryError, Result};
+use crate::error::Result;
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::storage::Storage;
-use crate::memory::types::{MemoryEntry, MemoryFragment, MemoryType};
+use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -82,7 +82,8 @@ impl RetrievalPipeline for KeywordRetriever {
             "KeywordRetriever: starting search"
         );
 
-        // Get all memories from storage (in real implementation, this would use an index)
+        // Fetch candidate memories via the storage backend's search, over-fetching
+        // 2x so BM25 re-ranking below has a wider pool to choose from.
         let fragments = self.storage.search(query, limit * 2).await?;
 
         // Score each result with BM25
@@ -164,7 +165,7 @@ impl TemporalRetriever {
         let combined =
             self.recency_weight * recency_score + self.frequency_weight * frequency_score;
 
-        combined.min(1.0).max(0.0)
+        combined.clamp(0.0, 1.0)
     }
 }
 
@@ -191,9 +192,9 @@ impl RetrievalPipeline for TemporalRetriever {
             .map(|fragment| {
                 let score = self.compute_temporal_score(&fragment);
                 ScoredMemory::new(fragment, score, RetrievalSignal::TemporalRelevance)
-                    .with_explanation(format!(
-                        "Temporal score based on recency and access patterns"
-                    ))
+                    .with_explanation(
+                        "Temporal score based on recency and access patterns".to_string(),
+                    )
             })
             .collect();
 
@@ -344,6 +345,7 @@ impl RetrievalPipeline for GraphRetriever {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::types::{MemoryEntry, MemoryType};
 
     #[test]
     fn test_bm25_score_computation() {

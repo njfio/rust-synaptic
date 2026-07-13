@@ -1,3 +1,5 @@
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::{Duration, Timelike, Utc};
 use synaptic::{
     memory::temporal::{

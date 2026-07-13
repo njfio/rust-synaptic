@@ -198,7 +198,7 @@ cargo run --example knowledge_graph_usage
 cargo run --example phase3_analytics --features analytics
 
 # Full system demo
-cargo run --example combined_full_system --features "distributed,analytics,embeddings"
+cargo run --example combined_full_system --features "distributed-experimental,analytics,embeddings"
 ```
 
 ### Read the Docs
@@ -236,7 +236,7 @@ make test-medium      # Temporal, analytics, search
 
 # Run with specific features
 cargo test --features analytics
-cargo test --features "distributed,sql-storage"
+cargo test --features "distributed-experimental,sql-storage"
 ```
 
 ## Common Patterns
@@ -315,7 +315,7 @@ Some features require specific feature flags:
 cargo build --features analytics
 
 # Distributed features
-cargo build --features distributed
+cargo build --features distributed-experimental
 
 # All features
 cargo build --all-features

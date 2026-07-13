@@ -3,15 +3,23 @@
 //! Tests the Bellman-based zk-SNARKs with production-ready algorithms
 //! ensuring 90%+ test coverage and comprehensive validation.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::error::Error;
-#[cfg(feature = "security")]
-use synaptic::memory::types::{MemoryEntry, MemoryType};
 #[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityContext, SecurityManager};
 
 #[cfg(feature = "zero-knowledge-proofs")]
 mod bellman_tests {
     use super::*;
+
+    /// ZK proof generation always requires MFA; these tests assert the proof
+    /// contract, not the MFA policy, so satisfy it up front.
+    fn mfa_context(user: &str) -> SecurityContext {
+        let mut context = SecurityContext::new(user.to_string(), vec!["admin".to_string()]);
+        context.mfa_verified = true;
+        context
+    }
 
     #[tokio::test]
     async fn test_real_zero_knowledge_proof_generation() -> Result<(), Box<dyn Error>> {
@@ -21,9 +29,14 @@ mod bellman_tests {
         config.encryption_key_size = 2048;
 
         let mut security_manager = SecurityManager::new(config).await?;
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
 
         // Create security context
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        let context = mfa_context("test_user");
 
         // Create test memory entry
         let memory_entry = MemoryEntry::new(
@@ -44,7 +57,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(&memory_entry.key, &context, access_statement.access_type)
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         // Verify proof properties
@@ -62,7 +75,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
+        let context = mfa_context("test_user");
 
         // Create access statement
         let access_statement = synaptic::security::zero_knowledge::AccessStatement {
@@ -77,14 +95,11 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
-        // Verify the proof
+        // Real Groth16 verification (Phase 4, task 4.2): an honest proof
+        // verifies true.
         let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
@@ -103,7 +118,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
+        let context = mfa_context("test_user");
 
         // Create content statement
         let content_statement = synaptic::security::zero_knowledge::ContentStatement {
@@ -126,10 +146,11 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_content_proof(&memory_entry, content_statement.predicate.clone(), &context)
+            .generate_content_proof(&memory_entry, &content_statement, &context)
             .await?;
 
-        // Verify content proof
+        // Real Groth16 verification (Phase 4, task 4.2): an honest content
+        // proof verifies true.
         let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
@@ -149,7 +170,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
+        let context = mfa_context("test_user");
 
         // Create aggregate statement
         let aggregate_statement = synaptic::security::zero_knowledge::AggregateStatement {
@@ -177,11 +203,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_aggregate_proof(
-                &entries,
-                aggregate_statement.aggregate_type.clone(),
-                &context,
-            )
+            .generate_aggregate_proof(&entries, &aggregate_statement, &context)
             .await?;
 
         // Create a statement that matches what was actually computed
@@ -204,7 +226,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("perf_test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("perf_test_user")?;
+        let context = mfa_context("perf_test_user");
 
         // Test performance with multiple proofs
         let mut proof_times = Vec::new();
@@ -224,16 +251,12 @@ mod bellman_tests {
                 .zero_knowledge_manager
                 .as_mut()
                 .unwrap()
-                .generate_access_proof(
-                    &access_statement.memory_key,
-                    &context,
-                    access_statement.access_type.clone(),
-                )
+                .generate_access_proof(&access_statement, &context)
                 .await?;
             let proof_time = start_time.elapsed();
             proof_times.push(proof_time);
 
-            // Measure verification time
+            // Measure real Groth16 verification time.
             let start_time = std::time::Instant::now();
             let is_valid = security_manager
                 .zero_knowledge_manager
@@ -257,24 +280,16 @@ mod bellman_tests {
             assert!(verify_time.as_millis() < 1000);
         }
 
-        // Test metrics collection
-        let metrics = security_manager.get_security_metrics(&context).await?;
-        assert!(
-            metrics
-                .zero_knowledge_metrics
-                .as_ref()
-                .unwrap()
-                .total_proofs_generated
-                >= 5
-        );
-        assert!(
-            metrics
-                .zero_knowledge_metrics
-                .as_ref()
-                .unwrap()
-                .total_proofs_verified
-                >= 5
-        );
+        // Test metrics collection (query the ZK manager directly; this test's
+        // context has no registered access-control session).
+        let metrics = security_manager
+            .zero_knowledge_manager
+            .as_ref()
+            .unwrap()
+            .get_metrics()
+            .await?;
+        assert!(metrics.total_proofs_generated >= 5);
+        assert!(metrics.total_proofs_verified >= 5);
 
         Ok(())
     }
@@ -285,7 +300,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
+        let context = mfa_context("test_user");
 
         // Create access statement
         let access_statement = synaptic::security::zero_knowledge::AccessStatement {
@@ -300,11 +320,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         // Create different statement for verification (should fail)
@@ -352,11 +368,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &invalid_context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &invalid_context)
             .await;
         assert!(result.is_err());
 
@@ -369,7 +381,12 @@ mod bellman_tests {
         config.enable_zero_knowledge = true;
 
         let mut security_manager = SecurityManager::new(config).await?;
-        let context = SecurityContext::new("test_user".to_string(), vec!["admin".to_string()]);
+        security_manager
+            .zero_knowledge_manager
+            .as_mut()
+            .unwrap()
+            .register_prover("test_user")?;
+        let context = mfa_context("test_user");
 
         let access_statement = synaptic::security::zero_knowledge::AccessStatement {
             memory_key: "serialization_test".to_string(),
@@ -383,11 +400,7 @@ mod bellman_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         // Test serialization/deserialization
@@ -401,7 +414,8 @@ mod bellman_tests {
         assert_eq!(proof.proof_data, deserialized.proof_data);
         assert_eq!(proof.proving_key_id, deserialized.proving_key_id);
 
-        // Verify deserialized proof still works
+        // Real Groth16 verification (Phase 4, task 4.2): the proof still
+        // verifies after a serde round trip.
         let is_valid = security_manager
             .zero_knowledge_manager
             .as_mut()
@@ -443,24 +457,23 @@ mod fallback_tests {
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
-            .generate_access_proof(
-                &access_statement.memory_key,
-                &context,
-                access_statement.access_type.clone(),
-            )
+            .generate_access_proof(&access_statement, &context)
             .await?;
 
         assert!(!proof.id.is_empty());
         assert!(!proof.proof_data.is_empty());
 
-        // Fallback verification should also work
-        let is_valid = security_manager
+        // Fallback verification fails closed: there is no cryptographic
+        // verification without the zero-knowledge-proofs feature, so an
+        // honest Err beats a fake Ok(true).
+        let err = security_manager
             .zero_knowledge_manager
             .as_mut()
             .unwrap()
             .verify_access_proof(&proof, &access_statement)
-            .await?;
-        assert!(is_valid);
+            .await
+            .expect_err("fallback verification must fail closed");
+        assert!(err.to_string().contains("zero-knowledge"));
 
         Ok(())
     }

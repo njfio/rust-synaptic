@@ -3,16 +3,16 @@
 //! This module tests MAML, Reptile, and Prototypical Networks implementations
 //! for few-shot learning in memory management tasks.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use chrono::Utc;
 use std::collections::HashMap;
 use synaptic::error::Result;
 use synaptic::memory::meta_learning::{
     task_distribution::{SamplingStrategy, TaskDistribution},
-    AdaptationResult, MetaAlgorithm, MetaLearningConfig, MetaLearningMetrics, MetaLearningSystem,
-    MetaTask, TaskType,
+    MetaAlgorithm, MetaLearningConfig, MetaLearningSystem, MetaTask, TaskType,
 };
 use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
-use uuid::Uuid;
 
 /// Create test memory entries for meta-learning tasks
 fn create_test_memories(count: usize, memory_type: MemoryType, domain: &str) -> Vec<MemoryEntry> {
@@ -32,7 +32,7 @@ fn create_test_memories(count: usize, memory_type: MemoryType, domain: &str) -> 
         metadata.importance = 0.5 + (i as f64 / count as f64) * 0.5;
         metadata.set_custom_field("context".to_string(), format!("{}_context", domain));
 
-        let entry = MemoryEntry::new(format!("{}_{}", domain, i), content, memory_type.clone())
+        let entry = MemoryEntry::new(format!("{}_{}", domain, i), content, memory_type)
             .with_metadata(metadata);
 
         memories.push(entry);
@@ -275,8 +275,8 @@ async fn test_task_distribution_management() -> Result<()> {
     // Test statistics
     let stats = task_distribution.get_statistics();
     assert_eq!(stats.total_created, 5);
-    assert!(stats.by_type.len() > 0);
-    assert!(stats.by_domain.len() > 0);
+    assert!(!stats.by_type.is_empty());
+    assert!(!stats.by_domain.is_empty());
 
     println!("Task Distribution Statistics:");
     println!("  Total tasks: {}", stats.total_created);
@@ -314,8 +314,8 @@ async fn test_task_distribution_management() -> Result<()> {
 
     assert_eq!(created_task.id, "created_task");
     assert_eq!(created_task.domain, "test_domain");
-    assert!(created_task.support_set.len() > 0);
-    assert!(created_task.query_set.len() > 0);
+    assert!(!created_task.support_set.is_empty());
+    assert!(!created_task.query_set.is_empty());
     assert!(created_task.difficulty >= 0.0 && created_task.difficulty <= 1.0);
 
     println!("Task creation tested successfully");

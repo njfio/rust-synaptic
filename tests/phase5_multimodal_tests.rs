@@ -2,6 +2,10 @@
 //!
 //! Comprehensive tests for multi-modal memory capabilities and cross-platform support.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(feature = "multimodal")]
 use synaptic::multimodal::{
     audio::AudioMemoryProcessor,

@@ -406,7 +406,7 @@ impl PatternDetector {
         let mut patterns = Vec::new();
         for cluster in clusters
             .into_iter()
-            .filter(|c| c.len() as usize >= self.config.min_data_points)
+            .filter(|c| c.len() >= self.config.min_data_points)
         {
             let start = cluster
                 .first()
@@ -795,9 +795,7 @@ impl PatternDetector {
         let statistical_confidence = 1.0 - (deviation / max_deviation);
         let sample_size_factor = (total / 100.0).min(1.0); // More confidence with more data
 
-        (statistical_confidence * sample_size_factor)
-            .max(0.0)
-            .min(1.0)
+        (statistical_confidence * sample_size_factor).clamp(0.0, 1.0)
     }
 
     /// Detect cyclical patterns with variable periods using spectral analysis
@@ -1392,11 +1390,9 @@ impl PatternDetector {
 
         let split_point = min_val + (max_val - min_val) * 0.5; // Simple midpoint split
 
-        if target[feature_idx] < split_point {
-            depth as f64 + 1.0
-        } else {
-            depth as f64 + 1.0
-        }
+        // Both branches descend one level in this simplified isolation tree.
+        let _ = target[feature_idx] < split_point;
+        depth as f64 + 1.0
     }
 
     /// Expected path length for isolation tree
@@ -1746,10 +1742,8 @@ impl PatternDetector {
 
     /// Generate decision rules from evidence
     fn generate_decision_rules(&self, _evidence: &[PatternEvidence]) -> Vec<DecisionRule> {
-        let mut rules = Vec::new();
-
         // Rule 1: High activity during business hours
-        rules.push(DecisionRule {
+        let mut rules = vec![DecisionRule {
             id: "business_hours".to_string(),
             description: "High activity during business hours (9-17)".to_string(),
             conditions: vec![
@@ -1757,7 +1751,7 @@ impl PatternDetector {
                 RuleCondition::StrengthThreshold(0.5),
             ],
             confidence: 0.8,
-        });
+        }];
 
         // Rule 2: Weekend patterns
         rules.push(DecisionRule {

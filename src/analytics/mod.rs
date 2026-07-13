@@ -9,9 +9,6 @@ pub mod intelligence;
 pub mod performance;
 /// Predictive analytics for memory patterns
 pub mod predictive;
-/// Visualization and graphical analytics
-pub mod visualization;
-
 #[cfg(test)]
 mod tests;
 
@@ -29,8 +26,6 @@ pub struct AnalyticsConfig {
     pub enable_predictive: bool,
     /// Enable behavioral analysis
     pub enable_behavioral: bool,
-    /// Enable visualization features
-    pub enable_visualization: bool,
     /// Analytics data retention period in days
     pub retention_days: u32,
     /// Prediction confidence threshold
@@ -46,7 +41,6 @@ impl Default for AnalyticsConfig {
         Self {
             enable_predictive: true,
             enable_behavioral: true,
-            enable_visualization: true,
             retention_days: 90,
             prediction_threshold: 0.7,
             pattern_sensitivity: 0.8,
@@ -226,8 +220,6 @@ pub struct AnalyticsEngine {
     predictive: predictive::PredictiveAnalytics,
     /// Behavioral analysis module
     behavioral: behavioral::BehavioralAnalyzer,
-    /// Visualization module
-    _visualization: visualization::VisualizationEngine,
 }
 
 impl AnalyticsEngine {
@@ -235,7 +227,6 @@ impl AnalyticsEngine {
     pub fn new(config: AnalyticsConfig) -> Result<Self> {
         let predictive = predictive::PredictiveAnalytics::new(&config)?;
         let behavioral = behavioral::BehavioralAnalyzer::new(&config)?;
-        let visualization = visualization::VisualizationEngine::new(&config)?;
 
         Ok(Self {
             config,
@@ -244,7 +235,6 @@ impl AnalyticsEngine {
             metrics: AnalyticsMetrics::default(),
             predictive,
             behavioral,
-            _visualization: visualization,
         })
     }
 

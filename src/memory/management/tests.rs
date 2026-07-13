@@ -1,7 +1,7 @@
 //! Comprehensive tests for memory management functionality
 
 #[cfg(test)]
-mod tests {
+mod management_tests {
     use crate::error::Result;
     use crate::memory::knowledge_graph::{GraphConfig, MemoryKnowledgeGraph};
     use crate::memory::management::{
@@ -20,7 +20,7 @@ mod tests {
         let kg_config = GraphConfig::default();
         let knowledge_graph = Some(MemoryKnowledgeGraph::new(kg_config));
 
-        MemoryManager::new(storage, knowledge_graph, None, None).await
+        MemoryManager::new(storage, knowledge_graph).await
     }
 
     /// Create a test memory entry with specified properties
@@ -362,6 +362,18 @@ mod tests {
 
         let advanced_manager = AdvancedMemoryManager::new(config);
 
+        // Store real related memories (word overlap with the new memory)
+        // so the threshold is computed from actual storage contents.
+        let storage = Arc::new(MemoryStorage::new());
+        for i in 0..4 {
+            let related = MemoryEntry::new(
+                format!("related_memory_{}", i),
+                "test memory about related content".to_string(),
+                MemoryType::LongTerm,
+            );
+            storage.store(&related).await?;
+        }
+
         // Create a memory that should trigger summarization
         let memory = MemoryEntry::new(
             "test_memory".to_string(),
@@ -371,10 +383,11 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*storage, &memory, None)
             .await?;
 
-        // Should trigger because our placeholder returns 5 related memories, which exceeds threshold of 3
+        // Should trigger: 4 stored memories overlap on >= 2 significant
+        // words, exceeding the threshold of 3.
         assert!(trigger_result.is_some());
         let trigger = trigger_result.expect("trigger_result should be valid");
         assert_eq!(
@@ -382,7 +395,13 @@ mod tests {
             SummarizationTriggerType::RelatedMemoryThreshold
         );
         assert!(trigger.confidence > 0.0);
-        assert!(trigger.reason.contains("Related memory count"));
+        assert!(trigger.reason.contains("Related memory count (4)"));
+        // The related keys are the real stored keys, not placeholders.
+        for i in 0..4 {
+            assert!(trigger
+                .related_memory_keys
+                .contains(&format!("related_memory_{}", i)));
+        }
 
         Ok(())
     }
@@ -403,7 +422,7 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*Arc::new(MemoryStorage::new()), &memory, None)
             .await?;
 
         // Should trigger due to content complexity
@@ -432,11 +451,11 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*Arc::new(MemoryStorage::new()), &memory, None)
             .await?;
 
-        // Should not trigger because our placeholder cluster size (3) is below threshold (5)
-        // But let's test that the evaluation runs without error
+        // Should not trigger: storage is empty, so the real temporal
+        // cluster contains only this memory (size 1), below threshold (5).
         if let Some(trigger) = trigger_result {
             assert_eq!(
                 trigger.trigger_type,
@@ -475,7 +494,7 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*Arc::new(MemoryStorage::new()), &memory, None)
             .await?;
 
         // Should trigger due to high semantic density
@@ -509,7 +528,7 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*Arc::new(MemoryStorage::new()), &memory, None)
             .await?;
 
         // Should trigger due to large size
@@ -543,7 +562,7 @@ mod tests {
 
         // Test the trigger evaluation
         let trigger_result = advanced_manager
-            .evaluate_summarization_triggers(&memory, None)
+            .evaluate_summarization_triggers(&*Arc::new(MemoryStorage::new()), &memory, None)
             .await?;
 
         // Should not trigger any summarization
@@ -574,8 +593,8 @@ mod tests {
         storage.store(&memory1).await?;
         storage.store(&memory2).await?;
 
-        // Create a summarization trigger with empty memory keys to test the execution flow
-        // In a real implementation, this would use the actual storage with the memories we stored
+        // Create a summarization trigger with empty memory keys to exercise
+        // the fallback execution path (no related keys resolved).
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("test_key".to_string(), "test_value".to_string());
 

@@ -1,8 +1,9 @@
 //! Integration tests for the AI Agent Memory system
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use synaptic::{
     error::{MemoryError, Result},
-    memory::types::MemoryMetadata,
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,
 };
 use tempfile::TempDir;
@@ -220,7 +221,7 @@ async fn test_error_handling() -> Result<()> {
 
     match result.unwrap_err() {
         MemoryError::NotFound { .. } => {} // Expected
-        other => assert!(false, "Expected NotFound error, got: {:?}", other),
+        other => panic!("Expected NotFound error, got: {:?}", other),
     }
 
     Ok(())

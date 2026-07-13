@@ -1,3 +1,5 @@
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use synaptic::memory::types::{MemoryEntry, MemoryType};
 use synaptic::security::access_control::{
@@ -130,6 +132,11 @@ fn bench_access_control(c: &mut Criterion) {
 
                         for i in 0..count {
                             let user_id = format!("user_{}", i);
+                            // Authentication is real (argon2) as of Task 4.7:
+                            // provision the user before authenticating.
+                            access_control
+                                .set_password(&user_id, "password123")
+                                .unwrap();
                             let creds = AuthenticationCredentials {
                                 auth_type: AuthenticationType::Password,
                                 password: Some("password123".to_string()),

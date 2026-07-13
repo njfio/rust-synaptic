@@ -494,12 +494,10 @@ impl RealTimePerformanceMonitor {
                         } else {
                             AnomalyType::Spike
                         }
+                    } else if metric_name == "cache_hit_rate" {
+                        AnomalyType::Spike
                     } else {
-                        if metric_name == "cache_hit_rate" {
-                            AnomalyType::Spike
-                        } else {
-                            AnomalyType::Drop
-                        }
+                        AnomalyType::Drop
                     };
 
                     let severity = match deviation.abs() {
@@ -766,12 +764,10 @@ impl RealTimePerformanceMonitor {
             } else {
                 TrendDirection::Improving
             }
+        } else if metric_name == "error_rate" || metric_name == "avg_latency_ms" {
+            TrendDirection::Improving
         } else {
-            if metric_name == "error_rate" || metric_name == "avg_latency_ms" {
-                TrendDirection::Improving
-            } else {
-                TrendDirection::Degrading
-            }
+            TrendDirection::Degrading
         };
 
         let trend_strength = slope.abs() * r_squared;
@@ -865,16 +861,14 @@ impl RealTimePerformanceMonitor {
             } else {
                 RiskLevel::Low
             }
+        } else if predicted_value > critical_threshold {
+            RiskLevel::Critical
+        } else if predicted_value > warning_threshold {
+            RiskLevel::High
+        } else if trend.trend_direction == TrendDirection::Degrading {
+            RiskLevel::Medium
         } else {
-            if predicted_value > critical_threshold {
-                RiskLevel::Critical
-            } else if predicted_value > warning_threshold {
-                RiskLevel::High
-            } else if trend.trend_direction == TrendDirection::Degrading {
-                RiskLevel::Medium
-            } else {
-                RiskLevel::Low
-            }
+            RiskLevel::Low
         }
     }
 

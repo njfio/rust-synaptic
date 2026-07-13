@@ -625,7 +625,7 @@ impl CodeMemoryProcessor {
             cyclomatic_complexity,
             cognitive_complexity,
             lines_of_code,
-            maintainability_index: maintainability_index.max(0.0).min(100.0),
+            maintainability_index: maintainability_index.clamp(0.0, 100.0),
         }
     }
 

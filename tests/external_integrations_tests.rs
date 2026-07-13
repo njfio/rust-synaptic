@@ -3,6 +3,10 @@
 //! Tests PostgreSQL database, BERT ML models, LLM integration,
 //! Redis caching, and visualization engine functionality.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(feature = "external-integrations")]
 mod external_integration_tests {
     use std::collections::HashMap;

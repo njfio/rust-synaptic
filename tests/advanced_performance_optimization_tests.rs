@@ -3,6 +3,8 @@
 //! Comprehensive tests for the new performance optimization system including
 //! profiling, benchmarking, caching, memory pooling, and async execution.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use synaptic::performance::{
     async_executor::AsyncExecutor,
@@ -250,10 +252,6 @@ async fn test_async_executor() {
     assert_eq!(stats.tasks_completed, 0);
 
     // Test that executor was created successfully
-    assert!(
-        true,
-        "AsyncExecutor created and statistics retrieved successfully"
-    );
 }
 
 #[tokio::test]

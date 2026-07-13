@@ -3,8 +3,8 @@
 //! This retriever uses embedding providers to perform semantic similarity search.
 
 use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
-use crate::error::{MemoryError, Result};
-use crate::memory::embeddings::{EmbedOptions, Embedding, EmbeddingProvider};
+use crate::error::Result;
+use crate::memory::embeddings::{Embedding, EmbeddingProvider};
 use crate::memory::storage::Storage;
 use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;

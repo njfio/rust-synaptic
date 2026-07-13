@@ -159,7 +159,7 @@ impl ReptileLearner {
             }
 
             // Content features
-            for (_j, &val) in content_features.iter().enumerate() {
+            for &val in content_features.iter() {
                 if feature_idx < feature_dim {
                     features[[i, feature_idx]] = val;
                     feature_idx += 1;

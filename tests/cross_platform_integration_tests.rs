@@ -3,6 +3,8 @@
 //! These tests verify that cross-platform adapters work correctly on their target platforms
 //! and provide consistent behavior across different environments.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::collections::HashMap;
 use synaptic::cross_platform::{
     CrossPlatformAdapter, CrossPlatformConfig, CrossPlatformMemoryManager, Platform,

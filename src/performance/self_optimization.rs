@@ -469,24 +469,6 @@ impl SelfOptimizationEngine {
         Ok(true)
     }
 
-    /// Apply parameter changes
-    async fn apply_parameter_changes(&mut self, _parameters: &HashMap<String, f64>) -> Result<()> {
-        // In a real implementation, this would apply the parameter changes to the system
-        Ok(())
-    }
-
-    /// Apply algorithm changes
-    async fn apply_algorithm_changes(&mut self, _algorithms: &HashMap<String, String>) -> Result<()> {
-        // In a real implementation, this would apply the algorithm changes to the system
-        Ok(())
-    }
-
-    /// Rollback changes
-    async fn rollback_changes(&mut self) -> Result<()> {
-        // In a real implementation, this would rollback to the previous configuration
-        Ok(())
-    }
-
     /// Record optimization event
     async fn record_optimization_event(
         &self,

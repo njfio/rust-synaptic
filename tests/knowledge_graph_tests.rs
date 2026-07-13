@@ -3,6 +3,8 @@
 //! Tests knowledge graph integration with memory system,
 //! relationship management, and basic graph operations.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::error::Error;
 use synaptic::{memory::knowledge_graph::RelationshipType, AgentMemory, MemoryConfig};
 

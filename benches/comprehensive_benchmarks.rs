@@ -3,19 +3,17 @@
 //! Validates 100K+ operations/second target with micro-benchmarks, integration benchmarks,
 //! and real-world scenario testing with detailed performance analysis.
 
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 #[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityManager};
-use synaptic::{
-    memory::types::MemoryMetadata, AgentMemory, MemoryConfig, MemoryEntry, MemoryType,
-    StorageBackend,
-};
+use synaptic::{AgentMemory, MemoryConfig, MemoryEntry, MemoryType};
 
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
-use uuid::Uuid;
 
 /// Benchmark configuration for different test scenarios
 #[derive(Clone)]
@@ -129,7 +127,7 @@ fn bench_memory_operations(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("store", config.memory_count),
             &(config.clone(), test_data.clone()),
-            |b, (cfg, data)| {
+            |b, (_cfg, data)| {
                 b.to_async(&rt).iter(|| async {
                     let memory_config = MemoryConfig::default();
                     let mut memory = AgentMemory::new(memory_config).await.unwrap();
@@ -151,7 +149,7 @@ fn bench_memory_operations(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("retrieve", config.memory_count),
             &(config.clone(), test_data.clone()),
-            |b, (cfg, data)| {
+            |b, (_cfg, data)| {
                 b.to_async(&rt).iter(|| async {
                     let memory_config = MemoryConfig::default();
                     let mut memory = AgentMemory::new(memory_config).await.unwrap();
@@ -178,7 +176,7 @@ fn bench_memory_operations(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("search", config.memory_count),
             &(config.clone(), test_data.clone()),
-            |b, (cfg, data)| {
+            |b, (_cfg, data)| {
                 b.to_async(&rt).iter(|| async {
                     let memory_config = MemoryConfig::default();
                     let mut memory = AgentMemory::new(memory_config).await.unwrap();

@@ -39,10 +39,20 @@ impl Default for RedisConfig {
 /// Real Redis client
 #[derive(Debug)]
 pub struct RedisClient {
-    _config: RedisConfig,
-    #[cfg(feature = "distributed")]
+    #[cfg_attr(not(feature = "distributed-experimental"), allow(dead_code))]
+    config: RedisConfig,
+    #[cfg(feature = "distributed-experimental")]
     connection_manager: Option<redis::aio::MultiplexedConnection>,
     metrics: RedisMetrics,
+}
+
+/// Cache operation kinds, used for metrics accounting
+#[cfg(feature = "distributed-experimental")]
+enum CacheOperation {
+    Set,
+    Hit,
+    Miss,
+    Delete,
 }
 
 /// Redis cache performance metrics
@@ -67,7 +77,7 @@ pub struct RedisMetrics {
 impl RedisClient {
     /// Create a new Redis client with real connection
     pub async fn new(config: RedisConfig) -> Result<Self> {
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         {
             let client = redis::Client::open(config.url.as_str()).map_err(|e| {
                 MemoryError::storage(format!("Failed to create Redis client: {}", e))
@@ -85,17 +95,17 @@ impl RedisClient {
             })
         }
 
-        #[cfg(not(feature = "distributed"))]
+        #[cfg(not(feature = "distributed-experimental"))]
         {
             Ok(Self {
-                _config: config,
+                config,
                 metrics: RedisMetrics::default(),
             })
         }
     }
 
     /// Cache a memory entry
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn cache_memory(
         &mut self,
         key: &str,
@@ -131,7 +141,7 @@ impl RedisClient {
     }
 
     /// Retrieve a cached memory entry
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn get_cached_memory(&mut self, key: &str) -> Result<Option<MemoryEntry>> {
         let start_time = std::time::Instant::now();
 
@@ -164,7 +174,7 @@ impl RedisClient {
     }
 
     /// Cache analytics data
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn cache_analytics(
         &mut self,
         key: &str,
@@ -195,7 +205,7 @@ impl RedisClient {
     }
 
     /// Get cached analytics data
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn get_cached_analytics(&mut self, key: &str) -> Result<Option<serde_json::Value>> {
         let start_time = std::time::Instant::now();
 
@@ -223,7 +233,7 @@ impl RedisClient {
     }
 
     /// Delete cached entry
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn delete_cached(&mut self, key: &str) -> Result<()> {
         let start_time = std::time::Instant::now();
 
@@ -249,7 +259,7 @@ impl RedisClient {
     }
 
     /// Cache embeddings
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn cache_embedding(
         &mut self,
         text: &str,
@@ -281,7 +291,7 @@ impl RedisClient {
     }
 
     /// Get cached embedding
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn get_cached_embedding(&mut self, text: &str) -> Result<Option<Vec<f32>>> {
         let start_time = std::time::Instant::now();
 
@@ -313,7 +323,7 @@ impl RedisClient {
     }
 
     /// Get cache statistics
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn get_cache_stats(&mut self) -> Result<CacheStats> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
@@ -358,7 +368,7 @@ impl RedisClient {
         Ok(CacheStats::default())
     }
 
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     async fn get_key_count(&mut self) -> Result<u64> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
@@ -373,24 +383,50 @@ impl RedisClient {
         Ok(0)
     }
 
+    /// Update cache metrics after an operation
+    #[cfg(feature = "distributed-experimental")]
+    fn update_metrics(&mut self, start_time: std::time::Instant, operation: CacheOperation) {
+        let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+
+        match operation {
+            CacheOperation::Set => self.metrics.cache_sets += 1,
+            CacheOperation::Hit => self.metrics.cache_hits += 1,
+            CacheOperation::Miss => self.metrics.cache_misses += 1,
+            CacheOperation::Delete => self.metrics.cache_deletes += 1,
+        }
+
+        let total = self.metrics.total_operations as f64;
+        self.metrics.avg_response_time_ms =
+            (self.metrics.avg_response_time_ms * total + elapsed_ms) / (total + 1.0);
+        self.metrics.total_operations += 1;
+    }
+
+    /// Hash text to a stable cache key component
+    #[cfg(feature = "distributed-experimental")]
+    fn hash_text(&self, text: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(text.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
     /// Compress and serialize data
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     fn compress_and_serialize(&self, entry: &MemoryEntry) -> Result<Vec<u8>> {
         let serialized = serde_json::to_vec(entry).map_err(|e| {
             MemoryError::storage(format!("Failed to serialize for compression: {}", e))
         })?;
 
-        // For now, just return serialized data without compression
-        // In production, you would use actual LZ4 compression
-        Ok(serialized)
+        Ok(lz4_flex::compress_prepend_size(&serialized))
     }
 
     /// Decompress and deserialize data
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     fn decompress_and_deserialize(&self, data: &[u8]) -> Result<MemoryEntry> {
-        // For now, just deserialize directly
-        // In production, you would decompress first
-        let entry = serde_json::from_slice(data)
+        let decompressed = lz4_flex::decompress_size_prepended(data)
+            .map_err(|e| MemoryError::storage(format!("Failed to decompress data: {}", e)))?;
+
+        let entry = serde_json::from_slice(&decompressed)
             .map_err(|e| MemoryError::storage(format!("Failed to deserialize data: {}", e)))?;
 
         Ok(entry)
@@ -398,7 +434,7 @@ impl RedisClient {
 
     /// Health check for Redis connection
     pub async fn health_check(&self) -> Result<()> {
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         {
             if let Some(ref conn) = self.connection_manager {
                 use redis::AsyncCommands;
@@ -415,7 +451,7 @@ impl RedisClient {
 
     /// Shutdown Redis connection
     pub async fn shutdown(&mut self) -> Result<()> {
-        #[cfg(feature = "distributed")]
+        #[cfg(feature = "distributed-experimental")]
         {
             self.connection_manager = None;
         }
@@ -428,7 +464,7 @@ impl RedisClient {
     }
 
     /// Clear all cached data
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     pub async fn clear_cache(&mut self) -> Result<()> {
         if let Some(ref mut conn) = self.connection_manager {
             use redis::AsyncCommands;
@@ -460,7 +496,7 @@ pub struct CacheStats {
 }
 
 // Stub implementations for when distributed feature is not enabled
-#[cfg(not(feature = "distributed"))]
+#[cfg(not(feature = "distributed-experimental"))]
 impl RedisClient {
     pub async fn cache_memory(
         &mut self,

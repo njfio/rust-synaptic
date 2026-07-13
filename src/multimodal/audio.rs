@@ -109,11 +109,12 @@ impl AudioMemoryProcessor {
             audio_host: cpal::default_host(),
         };
 
-        // Initialize Whisper for speech-to-text
+        // Whisper speech-to-text: no model file is bundled with this crate
+        // and none is configurable yet, so the context stays `None` and
+        // transcription requests degrade gracefully (callers receive empty
+        // transcripts rather than errors).
         #[cfg(feature = "whisper-rs")]
         if processor.config.enable_transcription {
-            // In a real implementation, you'd load a Whisper model file
-            // For now, we'll leave it as None and handle gracefully
             processor.whisper_context = None;
         }
 
@@ -394,8 +395,11 @@ impl AudioMemoryProcessor {
             return Ok(None);
         }
 
-        // Simplified speaker analysis
-        // In a real implementation, you'd use speaker recognition models
+        // Heuristic speaker analysis: no speaker-recognition model is
+        // available, so speaker characteristics are estimated from real
+        // signal properties (autocorrelation-based pitch and energy) rather
+        // than learned embeddings. This distinguishes coarse voice profiles,
+        // not speaker identities.
 
         // Calculate fundamental frequency (F0) for pitch analysis
         let mut pitch_estimates = Vec::new();

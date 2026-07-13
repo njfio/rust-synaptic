@@ -3,6 +3,8 @@
 //! This example demonstrates the advanced document and data processing capabilities
 //! of Phase 5B, including document analysis, data processing, and batch operations.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::fs;
 use synaptic::phase5b_basic::*;
 use tempfile::TempDir;

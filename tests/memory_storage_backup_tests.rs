@@ -1,9 +1,11 @@
 //! Tests for MemoryStorage backup and restore functionality
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::collections::HashMap;
 use synaptic::memory::storage::memory::{BackupOptions, MemoryStorage, RestoreOptions};
 use synaptic::memory::storage::Storage;
-use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
+use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tempfile::TempDir;
 
 /// Create test memory entries

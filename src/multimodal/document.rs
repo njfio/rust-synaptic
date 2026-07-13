@@ -266,9 +266,13 @@ impl DocumentMemoryProcessor {
         indicator_count >= 2 // At least 2 markdown indicators
     }
 
-    /// Detect text encoding
+    /// Detect text encoding.
+    ///
+    /// Heuristic byte-pattern classification (BOM sniffing plus an ASCII
+    /// range check, defaulting to UTF-8); no statistical charset-detection
+    /// library is used, so legacy encodings (e.g. Latin-1, Shift-JIS) are
+    /// reported as UTF-8.
     fn detect_encoding(&self, content: &[u8]) -> String {
-        // Simple encoding detection - in a real implementation, use encoding_rs
         if content.starts_with(&[0xEF, 0xBB, 0xBF]) {
             "UTF-8 BOM".to_string()
         } else if content.iter().all(|&b| b < 128) {
@@ -335,17 +339,21 @@ impl DocumentMemoryProcessor {
         Ok(text)
     }
 
-    /// Extract text from Markdown
+    /// Extract text from Markdown.
+    ///
+    /// Returns the raw Markdown source unchanged: Markdown is already
+    /// human-readable plain text, so formatting markers (`#`, `*`, links)
+    /// are intentionally preserved rather than stripped through a CommonMark
+    /// parser. Downstream indexing tokenizes the markers away.
     async fn extract_markdown_text(&self, content: &[u8]) -> MultiModalResult<String> {
-        let markdown_text = String::from_utf8_lossy(content);
-        // In a real implementation, use pulldown-cmark to parse and extract plain text
-        Ok(markdown_text.to_string())
+        Ok(String::from_utf8_lossy(content).to_string())
     }
 
     /// Extract text from HTML
     async fn extract_html_text(&self, content: &[u8]) -> MultiModalResult<String> {
         let html_text = String::from_utf8_lossy(content);
-        // Basic HTML tag removal (in real implementation, use html5ever or similar)
+        // Lightweight HTML tag stripper; deliberately avoids pulling in a full
+        // HTML parser dependency, so malformed markup is handled best-effort.
         let text = html_text
             .replace("<br>", "\n")
             .replace("<p>", "\n")
@@ -555,7 +563,8 @@ impl DocumentMemoryProcessor {
             .filter(|word| word.len() > 3) // Filter short words
             .collect();
 
-        // Simple keyword extraction (in real implementation, use TF-IDF or NLP)
+        // Frequency-based keyword extraction: count stop-word-filtered tokens
+        // and take the most frequent ones as keywords.
         let mut word_counts = HashMap::new();
         for word in words {
             let clean_word = word
@@ -737,7 +746,8 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
         let format = self.detect_document_format(content)?;
         let text = self.extract_text(content, &format).await?;
 
-        // Simple feature extraction (in real implementation, use embeddings)
+        // Lightweight statistical text features (word/char/line counts and
+        // average word length); no embedding model dependency.
         let word_count = text.split_whitespace().count() as f32;
         let char_count = text.chars().count() as f32;
         let line_count = text.lines().count() as f32;
@@ -837,7 +847,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             // Optimal keyword density is around 2-5%
             let optimal_density = 3.5;
             let density_score = 1.0 - (keyword_density - optimal_density).abs() / optimal_density;
-            density_score.max(0.0).min(1.0)
+            density_score.clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -870,7 +880,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             } else {
                 1.0 - (avg_word_length - 6.0) / 4.0
             };
-            readability.max(0.0).min(1.0)
+            readability.clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -900,7 +910,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
 
         // Calculate weighted average
         let total_score: f64 = quality_factors.iter().sum();
-        total_score.max(0.0).min(1.0)
+        total_score.clamp(0.0, 1.0)
     }
 
     /// Calculate processing confidence based on various factors
@@ -967,7 +977,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
                 1.0 - (char_to_word_ratio - 10.0) / 10.0
             }
         };
-        confidence_factors.push(consistency_confidence.max(0.0).min(1.0) * 0.15);
+        confidence_factors.push(consistency_confidence.clamp(0.0, 1.0) * 0.15);
 
         // Factor 5: Feature extraction success (0.0-1.0)
         let feature_confidence = {
@@ -986,6 +996,6 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
 
         // Calculate weighted average
         let total_confidence: f64 = confidence_factors.iter().sum();
-        total_confidence.max(0.0).min(1.0)
+        total_confidence.clamp(0.0, 1.0)
     }
 }

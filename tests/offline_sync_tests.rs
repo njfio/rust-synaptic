@@ -1,3 +1,5 @@
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(feature = "cross-platform")]
 use std::net::TcpListener;
 #[cfg(feature = "cross-platform")]

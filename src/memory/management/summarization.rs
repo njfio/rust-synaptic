@@ -321,9 +321,10 @@ impl MemorySummarizer {
             "Analysis completed: {}",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         ));
-        summary_lines.push(format!(
+        summary_lines.push(
             "Extraction methods: TF-IDF, TextRank, Entity Recognition, Importance Scoring"
-        ));
+                .to_string(),
+        );
 
         Ok(summary_lines.join("\n"))
     }
@@ -724,7 +725,7 @@ impl MemorySummarizer {
             score -= 0.1;
         }
 
-        score.max(0.0).min(1.0)
+        score.clamp(0.0, 1.0)
     }
 
     /// Split text into sentences using multiple delimiters
@@ -1943,7 +1944,7 @@ impl MemorySummarizer {
         // 2. Consistent terminology (repeated key terms)
         let words: Vec<&str> = summary_content.split_whitespace().collect();
         let unique_words: std::collections::HashSet<&str> = words.iter().cloned().collect();
-        let repetition_score = if words.len() > 0 {
+        let repetition_score = if !words.is_empty() {
             1.0 - (unique_words.len() as f64 / words.len() as f64)
         } else {
             0.0
@@ -2129,7 +2130,7 @@ impl MemorySummarizer {
             .map(|indicator| summary_lower.matches(indicator).count())
             .sum::<usize>();
 
-        let consistency_score = if summary_content.len() > 0 {
+        let consistency_score = if !summary_content.is_empty() {
             1.0 - (contradiction_count as f64 / (summary_content.len() / 100) as f64).min(1.0)
         } else {
             0.0

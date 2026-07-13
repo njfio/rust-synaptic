@@ -1,12 +1,12 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Simple Security Demo - Demonstrates Phase 4 security features
 // This example shows the security system working correctly
 
 #[cfg(feature = "security")]
 use synaptic::security::{
-    access_control::{AuthenticationCredentials, AuthenticationType},
-    privacy::{PrivacyQuery, PrivacyQueryType},
     zero_knowledge::{AccessType, ContentPredicate},
-    Permission, SecureOperation, SecurityConfig, SecurityContext, SecurityManager,
+    Permission, SecurityConfig, SecurityContext, SecurityManager,
 };
 use synaptic::MemoryEntry;
 
@@ -80,8 +80,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate zero-knowledge proof for memory access
     println!(" Generating zero-knowledge proof for memory access...");
+    security_manager.register_zk_prover(&admin_context.user_id)?;
+    let access_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "sensitive_data".to_string(),
+        user_id: admin_context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     match security_manager
-        .generate_access_proof("sensitive_data", &admin_context, AccessType::Read)
+        .generate_access_proof(&access_statement, &admin_context)
         .await
     {
         Ok(access_proof) => {
@@ -93,12 +100,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate content proof without revealing content
     println!(" Generating zero-knowledge proof for content properties...");
+    let content_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: sensitive_entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("financial".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     match security_manager
-        .generate_content_proof(
-            &sensitive_entry,
-            ContentPredicate::ContainsKeyword("financial".to_string()),
-            &admin_context,
-        )
+        .generate_content_proof(&sensitive_entry, &content_statement, &admin_context)
         .await
     {
         Ok(content_proof) => {

@@ -23,6 +23,7 @@ pub use search::{AdvancedSearchEngine, RankingStrategy, SearchFilter, SearchQuer
 pub use summarization::{ConsolidationRule, MemorySummarizer, SummaryResult, SummaryStrategy};
 
 use crate::error::Result;
+use crate::memory::indexing::{DistanceMetric, HnswIndex, HnswParams, IndexConfig, VectorIndex};
 use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
 use crate::memory::storage::Storage;
 use crate::memory::temporal::{ChangeType, TemporalMemoryManager};
@@ -31,6 +32,37 @@ use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use uuid::Uuid;
+
+/// Below this many indexed vectors, the ANN (HNSW) index has too little data
+/// to be worth its own construction/maintenance overhead versus a direct
+/// brute-force cosine scan, and small-`n` HNSW recall is also noisier.
+/// Related-memory counting below this threshold falls back to brute force.
+const MIN_INDEX_SIZE_FOR_ANN: usize = 100;
+
+/// Maximum number of nearest neighbors requested per ANN similarity query.
+/// Bounding `k` (instead of always searching the full index) is what keeps
+/// `count_similarity_related_memories` sub-linear in the index size; a query
+/// only needs enough candidates to safely cover the similarity-threshold
+/// neighborhood of a single memory, not every indexed vector.
+const ANN_SEARCH_K: usize = 200;
+
+/// State backing the approximate-nearest-neighbor similarity index used by
+/// [`MemoryManager::count_similarity_related_memories`]. Lazily created once
+/// the first embedding's dimension is known, and kept in sync with storage
+/// via [`MemoryManager::store_memory`].
+#[derive(Default)]
+struct SimilarityIndexState {
+    index: Option<HnswIndex>,
+    uuid_to_key: HashMap<Uuid, String>,
+    /// Latest (live) vector UUID for each memory key. Re-storing a key
+    /// replaces this entry; the previous UUID is tombstoned.
+    key_to_current_uuid: HashMap<String, Uuid>,
+    /// UUIDs of vectors superseded by a later re-store of the same key.
+    /// `hnsw_rs` has no deletion API, so stale vectors physically remain in
+    /// the HNSW graph; query paths skip any hit whose UUID is tombstoned.
+    tombstoned: std::collections::HashSet<Uuid>,
+}
 
 /// Simple memory manager for basic operations and testing
 pub struct MemoryManager {
@@ -38,10 +70,12 @@ pub struct MemoryManager {
     storage: Arc<dyn Storage + Send + Sync>,
     /// Knowledge graph for relationships
     knowledge_graph: Option<MemoryKnowledgeGraph>,
-    /// Temporal manager for tracking changes
-    _temporal_manager: Option<TemporalMemoryManager>,
-    /// Advanced manager for complex operations
-    _advanced_manager: Option<AdvancedMemoryManager>,
+    /// ANN index used to accelerate `count_similarity_related_memories`
+    similarity_index: std::sync::RwLock<SimilarityIndexState>,
+    /// Test-only counter of how many times the ANN path (as opposed to the
+    /// brute-force fallback) was consulted, used to prove the index is wired.
+    #[cfg(feature = "test-utils")]
+    ann_query_hits: std::sync::atomic::AtomicUsize,
 }
 
 impl MemoryManager {
@@ -49,20 +83,99 @@ impl MemoryManager {
     pub async fn new(
         storage: Arc<dyn Storage + Send + Sync>,
         knowledge_graph: Option<MemoryKnowledgeGraph>,
-        temporal_manager: Option<TemporalMemoryManager>,
-        advanced_manager: Option<AdvancedMemoryManager>,
     ) -> Result<Self> {
         Ok(Self {
             storage,
             knowledge_graph,
-            _temporal_manager: temporal_manager,
-            _advanced_manager: advanced_manager,
+            similarity_index: std::sync::RwLock::new(SimilarityIndexState::default()),
+            #[cfg(feature = "test-utils")]
+            ann_query_hits: std::sync::atomic::AtomicUsize::new(0),
         })
+    }
+
+    /// Number of times the ANN index (as opposed to brute force) was
+    /// consulted by `count_related_memories`. Test-only observability hook.
+    #[cfg(feature = "test-utils")]
+    pub fn ann_query_hit_count(&self) -> usize {
+        self.ann_query_hits
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Store a memory entry
     pub async fn store_memory(&self, memory: &MemoryEntry) -> Result<()> {
-        self.storage.store(memory).await
+        self.storage.store(memory).await?;
+        self.index_embedding(memory)?;
+        Ok(())
+    }
+
+    /// Insert (or refresh) a memory's embedding in the ANN similarity index,
+    /// lazily creating the index (sized to this embedding's dimension) on
+    /// first use. A memory without an embedding is a no-op.
+    ///
+    /// Re-storing an existing key supersedes its previous vector: `hnsw_rs`
+    /// offers no deletion, so the stale vector physically remains in the
+    /// HNSW graph, but its UUID is tombstoned (and dropped from
+    /// `uuid_to_key`) so ANN query paths skip it. Only the key's latest
+    /// embedding contributes to similarity counts, so no double-counting or
+    /// drift is possible. Note that tombstoned vectors still occupy index
+    /// slots, so `VectorIndex::len` (used for the ANN-vs-brute-force cutover
+    /// and the search `k`) counts them too. Because `k = index_len.min(
+    /// ANN_SEARCH_K)` and dead hits are filtered only *after* the top-`k`
+    /// search, under heavy-churn/adversarial tombstone accumulation many dead
+    /// near-duplicates can occupy top-`k` slots and push a genuinely-live
+    /// qualifying neighbor outside the `k`-window — an undercount that
+    /// post-filtering cannot recover. This is the same class of bounded
+    /// undercount as the pre-existing `ANN_SEARCH_K` saturation cap; it never
+    /// causes over-counting.
+    fn index_embedding(&self, memory: &MemoryEntry) -> Result<()> {
+        let Some(embedding) = &memory.embedding else {
+            return Ok(());
+        };
+        if embedding.is_empty() {
+            return Ok(());
+        }
+
+        let mut state = self.similarity_index.write().map_err(|_| {
+            crate::error::MemoryError::Internal("similarity index lock poisoned".to_string())
+        })?;
+
+        if state.index.is_none() {
+            let config = IndexConfig {
+                dimension: embedding.len(),
+                distance_metric: DistanceMetric::Cosine,
+                ..Default::default()
+            };
+            // High-accuracy parameters: `count_related_memories` needs
+            // recall close to exact-match brute force (it is used to decide
+            // whether to trigger summarization), so we trade the extra
+            // construction/search cost of `high_accuracy()` for that recall.
+            state.index = Some(HnswIndex::new(config, HnswParams::high_accuracy())?);
+        }
+
+        // Each insertion gets a fresh internal vector id, deliberately
+        // decoupled from `memory.id()`: a re-stored entry may carry either a
+        // fresh or an identical metadata UUID, and superseding must work in
+        // both cases.
+        let vector_id = Uuid::new_v4();
+
+        // A dimension mismatch (e.g. an embedder swap mid-run) is surfaced by
+        // `HnswIndex::add` as an error rather than silently corrupting the index.
+        if let Some(index) = state.index.as_mut() {
+            index.add(vector_id, embedding)?;
+        }
+
+        // Supersede any previous vector indexed for this key: tombstone the
+        // old vector id and drop its reverse mapping so query paths ignore it.
+        if let Some(old_uuid) = state
+            .key_to_current_uuid
+            .insert(memory.key.clone(), vector_id)
+        {
+            state.tombstoned.insert(old_uuid);
+            state.uuid_to_key.remove(&old_uuid);
+        }
+        state.uuid_to_key.insert(vector_id, memory.key.clone());
+
+        Ok(())
     }
 
     /// Count related memories using the implemented algorithm
@@ -179,64 +292,184 @@ impl MemoryManager {
         Ok(count)
     }
 
-    /// Count related memories using similarity metrics
+    /// Count related memories using similarity metrics.
+    ///
+    /// Uses the ANN (HNSW) index once it holds at least
+    /// [`MIN_INDEX_SIZE_FOR_ANN`] vectors, avoiding an O(n) brute-force
+    /// cosine scan over every stored memory. Below that size (or if no
+    /// index has been built yet, e.g. nothing indexed via `store_memory`)
+    /// falls back to the brute-force scan.
+    ///
+    /// Note: on the ANN path the count saturates at [`ANN_SEARCH_K`] (200).
+    /// If more than `ANN_SEARCH_K` stored memories exceed the similarity
+    /// threshold, only the top `ANN_SEARCH_K` nearest neighbors are examined,
+    /// so the returned count is capped there; the brute-force fallback has
+    /// no such cap.
     async fn count_similarity_related_memories(
         &self,
         memory: &MemoryEntry,
         processed_keys: &std::collections::HashSet<String>,
     ) -> Result<usize> {
+        // Only proceed if we have an embedding for the target memory
+        let Some(target_embedding) = &memory.embedding else {
+            tracing::debug!("Similarity analysis found 0 related memories (no embedding)");
+            return Ok(0);
+        };
+
+        let similarity_threshold = 0.7; // High similarity threshold
+
+        let index_len = self
+            .similarity_index
+            .read()
+            .map_err(|_| {
+                crate::error::MemoryError::Internal("similarity index lock poisoned".to_string())
+            })?
+            .index
+            .as_ref()
+            .map(VectorIndex::len)
+            .unwrap_or(0);
+
+        let count = if index_len >= MIN_INDEX_SIZE_FOR_ANN {
+            #[cfg(feature = "test-utils")]
+            self.ann_query_hits
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            self.count_similarity_related_memories_ann(
+                memory,
+                target_embedding,
+                similarity_threshold,
+                processed_keys,
+                index_len,
+            )?
+        } else {
+            self.count_similarity_related_memories_brute_force(
+                memory,
+                target_embedding,
+                similarity_threshold,
+                processed_keys,
+            )
+            .await?
+        };
+
+        tracing::debug!("Similarity analysis found {} related memories", count);
+        Ok(count)
+    }
+
+    /// ANN-backed similarity count: query the HNSW index for the top
+    /// [`ANN_SEARCH_K`] nearest neighbors of `target_embedding` and threshold
+    /// on cosine similarity, instead of scanning every stored memory. Capping
+    /// `k` (rather than searching the full index) is what keeps the query
+    /// sub-linear in the number of indexed vectors.
+    fn count_similarity_related_memories_ann(
+        &self,
+        memory: &MemoryEntry,
+        target_embedding: &[f32],
+        similarity_threshold: f64,
+        processed_keys: &std::collections::HashSet<String>,
+        index_len: usize,
+    ) -> Result<usize> {
+        let state = self.similarity_index.read().map_err(|_| {
+            crate::error::MemoryError::Internal("similarity index lock poisoned".to_string())
+        })?;
+
+        let Some(index) = state.index.as_ref() else {
+            return Ok(0);
+        };
+
+        let k = index_len.min(ANN_SEARCH_K);
+        let neighbors = index.search(target_embedding, k)?;
+
+        let mut count = 0;
+        let mut counted_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for (uuid, l2_distance) in neighbors {
+            // Skip vectors superseded by a later re-store of the same key;
+            // only the key's current vector may contribute to the count.
+            if state.tombstoned.contains(&uuid) {
+                continue;
+            }
+            let Some(key) = state.uuid_to_key.get(&uuid) else {
+                continue;
+            };
+            if state.key_to_current_uuid.get(key) != Some(&uuid) {
+                continue;
+            }
+            if key == &memory.key
+                || processed_keys.contains(key)
+                || counted_keys.contains(key.as_str())
+            {
+                continue;
+            }
+
+            // Vectors were normalized to unit length before insertion
+            // (DistanceMetric::Cosine), so for unit vectors a and b:
+            // ||a - b||^2 = 2 - 2*cos(a, b)  =>  cos(a, b) = 1 - dist^2 / 2.
+            let cosine_similarity = 1.0 - (l2_distance as f64 * l2_distance as f64) / 2.0;
+
+            if cosine_similarity >= similarity_threshold {
+                count += 1;
+                counted_keys.insert(key.as_str());
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Brute-force O(n) similarity scan, retained as the fallback for small
+    /// datasets (below [`MIN_INDEX_SIZE_FOR_ANN`]) where building/querying an
+    /// ANN index has no benefit.
+    async fn count_similarity_related_memories_brute_force(
+        &self,
+        memory: &MemoryEntry,
+        target_embedding: &[f32],
+        similarity_threshold: f64,
+        processed_keys: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
         let mut count = 0;
 
-        // Only proceed if we have an embedding for the target memory
-        if let Some(target_embedding) = &memory.embedding {
-            let similarity_threshold = 0.7; // High similarity threshold
+        // Get all memories from storage for comparison
+        let all_memories = self.storage.get_all_entries().await?;
 
-            // Get all memories from storage for comparison
-            let all_memories = self.storage.get_all_entries().await?;
+        for stored_memory in all_memories {
+            if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
+                continue;
+            }
 
-            for stored_memory in all_memories {
-                if stored_memory.key == memory.key || processed_keys.contains(&stored_memory.key) {
-                    continue;
-                }
+            if let Some(stored_embedding) = &stored_memory.embedding {
+                // Convert f32 to f64 for similarity calculation
+                let target_f64: Vec<f64> = target_embedding.iter().map(|&x| x as f64).collect();
+                let stored_f64: Vec<f64> = stored_embedding.iter().map(|&x| x as f64).collect();
 
-                if let Some(stored_embedding) = &stored_memory.embedding {
-                    // Convert f32 to f64 for similarity calculation
-                    let target_f64: Vec<f64> = target_embedding.iter().map(|&x| x as f64).collect();
-                    let stored_f64: Vec<f64> = stored_embedding.iter().map(|&x| x as f64).collect();
+                // Calculate cosine similarity
+                #[cfg(feature = "embeddings")]
+                let similarity = crate::memory::embeddings::similarity::cosine_similarity(
+                    &target_f64,
+                    &stored_f64,
+                );
 
-                    // Calculate cosine similarity
-                    #[cfg(feature = "embeddings")]
-                    let similarity = crate::memory::embeddings::similarity::cosine_similarity(
-                        &target_f64,
-                        &stored_f64,
-                    );
+                #[cfg(not(feature = "embeddings"))]
+                let similarity = {
+                    // Simple fallback similarity calculation when embeddings feature is disabled
+                    let dot_product: f64 = target_f64
+                        .iter()
+                        .zip(stored_f64.iter())
+                        .map(|(x, y)| x * y)
+                        .sum();
+                    let magnitude_a: f64 = target_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
+                    let magnitude_b: f64 = stored_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
 
-                    #[cfg(not(feature = "embeddings"))]
-                    let similarity = {
-                        // Simple fallback similarity calculation when embeddings feature is disabled
-                        let dot_product: f64 = target_f64
-                            .iter()
-                            .zip(stored_f64.iter())
-                            .map(|(x, y)| x * y)
-                            .sum();
-                        let magnitude_a: f64 = target_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
-                        let magnitude_b: f64 = stored_f64.iter().map(|x| x * x).sum::<f64>().sqrt();
-
-                        if magnitude_a == 0.0 || magnitude_b == 0.0 {
-                            0.0
-                        } else {
-                            dot_product / (magnitude_a * magnitude_b)
-                        }
-                    };
-
-                    if similarity >= similarity_threshold {
-                        count += 1;
+                    if magnitude_a == 0.0 || magnitude_b == 0.0 {
+                        0.0
+                    } else {
+                        dot_product / (magnitude_a * magnitude_b)
                     }
+                };
+
+                if similarity >= similarity_threshold {
+                    count += 1;
                 }
             }
         }
 
-        tracing::debug!("Similarity analysis found {} related memories", count);
         Ok(count)
     }
 
@@ -970,7 +1203,7 @@ impl AdvancedMemoryManager {
         // Check if summarization is needed
         if self.config.enable_auto_summarization {
             let summarization_result = self
-                .evaluate_summarization_triggers(&memory, knowledge_graph.as_deref())
+                .evaluate_summarization_triggers(storage, &memory, knowledge_graph.as_deref())
                 .await?;
             if let Some(trigger_info) = summarization_result {
                 messages.push(format!("Summarization triggered: {}", trigger_info.reason));
@@ -1333,6 +1566,7 @@ impl AdvancedMemoryManager {
     /// Evaluate whether summarization should be triggered for a new memory
     async fn evaluate_summarization_triggers(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
         knowledge_graph: Option<&MemoryKnowledgeGraph>,
     ) -> Result<Option<SummarizationTrigger>> {
@@ -1356,7 +1590,7 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 3: Related memory count threshold
-        if let Some(trigger) = self.check_related_memory_threshold(memory).await? {
+        if let Some(trigger) = self.check_related_memory_threshold(storage, memory).await? {
             return Ok(Some(trigger));
         }
 
@@ -1366,7 +1600,10 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 5: Temporal clustering analysis
-        if let Some(trigger) = self.check_temporal_clustering_trigger(memory).await? {
+        if let Some(trigger) = self
+            .check_temporal_clustering_trigger(storage, memory)
+            .await?
+        {
             return Ok(Some(trigger));
         }
 
@@ -1379,15 +1616,52 @@ impl AdvancedMemoryManager {
         Ok(None)
     }
 
-    /// Check if related memory count exceeds threshold
+    /// Check if related memory count exceeds threshold.
+    ///
+    /// Relatedness is computed from actual stored entries: another entry is
+    /// counted as related when it shares at least one tag with the memory or
+    /// when at least two significant words (length > 3) overlap between the
+    /// contents. This is a lexical-overlap heuristic (no embeddings are
+    /// required at this call site), but it is computed from real storage
+    /// data rather than an assumed count.
     async fn check_related_memory_threshold(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<Option<SummarizationTrigger>> {
-        // For now, we'll use a simplified approach since we don't have direct storage access
-        // In a real implementation, this would query the storage system
-        let related_count = 5; // Placeholder - would be calculated from actual storage
+        let memory_words: std::collections::HashSet<String> = memory
+            .value
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 3)
+            .map(|w| w.to_string())
+            .collect();
+        let memory_tags: std::collections::HashSet<&String> = memory.metadata.tags.iter().collect();
 
+        let mut related_keys = Vec::new();
+        for entry in storage.get_all_entries().await? {
+            if entry.key == memory.key {
+                continue;
+            }
+            let shares_tag = entry
+                .metadata
+                .tags
+                .iter()
+                .any(|tag| memory_tags.contains(tag));
+            let word_overlap = entry
+                .value
+                .to_lowercase()
+                .split_whitespace()
+                .filter(|w| w.len() > 3)
+                .filter(|w| memory_words.contains(*w))
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            if shares_tag || word_overlap >= 2 {
+                related_keys.push(entry.key.clone());
+            }
+        }
+
+        let related_count = related_keys.len();
         if related_count >= self.config.summarization_threshold {
             let confidence = (related_count as f64
                 / (self.config.summarization_threshold as f64 * 2.0))
@@ -1400,12 +1674,15 @@ impl AdvancedMemoryManager {
                 self.config.summarization_threshold.to_string(),
             );
 
+            let mut related_memory_keys = vec![memory.key.clone()];
+            related_memory_keys.extend(related_keys);
+
             return Ok(Some(SummarizationTrigger {
                 reason: format!(
                     "Related memory count ({}) exceeds threshold ({})",
                     related_count, self.config.summarization_threshold
                 ),
-                related_memory_keys: vec![memory.key.clone()], // This would be expanded with actual related keys
+                related_memory_keys,
                 trigger_type: SummarizationTriggerType::RelatedMemoryThreshold,
                 confidence,
                 metadata,
@@ -1473,20 +1750,32 @@ impl AdvancedMemoryManager {
         Ok(None)
     }
 
-    /// Check if temporal clustering suggests summarization
+    /// Check if temporal clustering suggests summarization.
+    ///
+    /// The cluster is measured from real stored entries: every entry (this
+    /// memory included) whose creation time falls within a 2-hour window
+    /// around this memory's creation time counts toward the cluster.
     async fn check_temporal_clustering_trigger(
         &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<Option<SummarizationTrigger>> {
-        let _memory_time = memory.created_at();
-        let _time_window = chrono::Duration::hours(2); // 2-hour clustering window
-
-        // This would normally query storage for memories in the time window
-        // For now, we'll use a simplified approach
+        let memory_time = memory.created_at();
+        let time_window = chrono::Duration::hours(2); // 2-hour clustering window
         let cluster_threshold = 5; // Minimum memories in cluster to trigger summarization
 
-        // Simulate cluster detection (in real implementation, this would query storage)
-        let cluster_size = 3; // Placeholder
+        // Count stored entries created within the window around this memory
+        // (the memory itself is part of its own cluster).
+        let mut cluster_size = 1;
+        for entry in storage.get_all_entries().await? {
+            if entry.key == memory.key {
+                continue;
+            }
+            let delta = entry.created_at() - memory_time;
+            if delta.abs() <= time_window {
+                cluster_size += 1;
+            }
+        }
 
         if cluster_size >= cluster_threshold {
             let confidence = (cluster_size as f64 / (cluster_threshold as f64 * 2.0)).min(1.0);
@@ -1531,9 +1820,18 @@ impl AdvancedMemoryManager {
             unique_words.len() as f64 / memory.value.split_whitespace().count().max(1) as f64;
         let tag_density = memory.metadata.tags.len() as f64 / 10.0; // Normalize to 10 tags max
 
-        // Factor in knowledge graph connectivity if available
-        let graph_connectivity = if let Some(_kg) = knowledge_graph {
-            0.3 // Placeholder for actual graph connectivity calculation
+        // Factor in knowledge graph connectivity if available: the memory's
+        // actual node degree (number of connected nodes), normalized against
+        // 10 connections (same normalization scale as tag_density) and capped
+        // at 1.0. A memory with no node in the graph contributes 0.
+        let graph_connectivity = if let Some(kg) = knowledge_graph {
+            match kg.get_node_for_memory(&memory.key).await? {
+                Some(node_id) => {
+                    let degree = kg.get_connected_nodes(node_id).await?.len();
+                    (degree as f64 / 10.0).min(1.0)
+                }
+                None => 0.0,
+            }
         } else {
             0.0
         };
@@ -1971,9 +2269,37 @@ impl AdvancedMemoryManager {
             *type_counts.entry(content_type).or_insert(0) += 1;
         }
 
-        // Calculate growth rates (simplified - would use historical data in real implementation)
-        for (content_type, _) in &type_counts {
-            type_growth_rates.insert(content_type.clone(), 0.1); // 10% growth rate placeholder
+        // Calculate per-type growth rates from the entries' actual creation
+        // history: compare how many entries of each type were created in the
+        // most recent 30 days against the preceding 30-day window.
+        // rate = (recent - previous) / previous; when the previous window is
+        // empty the rate is 1.0 if the recent window has entries (new type),
+        // otherwise 0.0 (no observable growth signal).
+        let now = Utc::now();
+        let recent_cutoff = now - Duration::days(30);
+        let previous_cutoff = now - Duration::days(60);
+        let mut recent_counts: HashMap<String, usize> = HashMap::new();
+        let mut previous_counts: HashMap<String, usize> = HashMap::new();
+        for memory in memories {
+            let content_type = self.classify_content_type(&memory.value);
+            let created = memory.created_at();
+            if created >= recent_cutoff {
+                *recent_counts.entry(content_type).or_insert(0) += 1;
+            } else if created >= previous_cutoff {
+                *previous_counts.entry(content_type).or_insert(0) += 1;
+            }
+        }
+        for content_type in type_counts.keys() {
+            let recent = *recent_counts.get(content_type).unwrap_or(&0) as f64;
+            let previous = *previous_counts.get(content_type).unwrap_or(&0) as f64;
+            let rate = if previous > 0.0 {
+                (recent - previous) / previous
+            } else if recent > 0.0 {
+                1.0
+            } else {
+                0.0
+            };
+            type_growth_rates.insert(content_type.clone(), rate);
         }
 
         // Find dominant type
@@ -2738,7 +3064,7 @@ impl AdvancedMemoryManager {
         };
         score -= size_cv * 0.1; // High variance indicates potential optimization opportunities
 
-        score.max(0.0).min(1.0)
+        score.clamp(0.0, 1.0)
     }
 
     /// Calculate complexity score for memories

@@ -3,6 +3,10 @@
 //! These tests verify that storage backends correctly report their capabilities
 //! and provide clear error messages when features are unsupported.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::error::MemoryError;
 use synaptic::memory::storage::file::FileStorage;

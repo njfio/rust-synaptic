@@ -1,9 +1,14 @@
 //! Comprehensive tests for Phase 2 distributed architecture
 //!
-//! This test suite validates all distributed system components including
-//! consensus, sharding, events, and real-time synchronization.
+//! This test suite validates the experimental distributed system components
+//! including consensus, sharding, and events. Real-time synchronization is
+//! not implemented and is not covered here.
 
-#[cfg(all(feature = "distributed", feature = "embeddings"))]
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
+#[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 mod distributed_tests {
     use chrono::Utc;
     use parking_lot::RwLock;

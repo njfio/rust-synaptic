@@ -1,5 +1,7 @@
 //! Performance benchmarks for memory retrieval operations
 
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::sync::Arc;
 use synaptic::memory::{
@@ -231,7 +233,7 @@ fn bench_sorting_overhead(c: &mut Criterion) {
 
                 b.iter(|| {
                     let mut entries_copy = entries.clone();
-                    entries_copy.sort_by(|a, b| b.last_accessed().cmp(&a.last_accessed()));
+                    entries_copy.sort_by_key(|e| std::cmp::Reverse(e.last_accessed()));
                     entries_copy.truncate(10);
                     black_box(entries_copy)
                 });
@@ -246,7 +248,7 @@ fn bench_sorting_overhead(c: &mut Criterion) {
 
                 b.iter(|| {
                     let mut entries_copy = entries.clone();
-                    entries_copy.sort_by(|a, b| b.access_count().cmp(&a.access_count()));
+                    entries_copy.sort_by_key(|e| std::cmp::Reverse(e.access_count()));
                     entries_copy.truncate(10);
                     black_box(entries_copy)
                 });

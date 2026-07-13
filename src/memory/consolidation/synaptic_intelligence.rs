@@ -215,7 +215,7 @@ impl SynapticIntelligence {
             };
 
             // Normalize importance score
-            let importance_score = (raw_importance / (1.0 + raw_importance)).min(1.0).max(0.0);
+            let importance_score = (raw_importance / (1.0 + raw_importance)).clamp(0.0, 1.0);
 
             // Calculate loss contribution (simplified)
             let loss_contribution =
@@ -367,7 +367,7 @@ impl SynapticIntelligence {
             .filter(|imp| imp.importance_score > 0.5)
             .count();
 
-        self.metrics.prevention_rate = if self.parameter_importance.len() > 0 {
+        self.metrics.prevention_rate = if !self.parameter_importance.is_empty() {
             protected_params as f64 / self.parameter_importance.len() as f64
         } else {
             0.0
@@ -381,7 +381,7 @@ impl SynapticIntelligence {
     async fn get_current_parameter_value(&self, param_id: &str) -> Result<f64> {
         // Extract memory key from parameter ID
         let memory_key = if param_id.contains('_') {
-            param_id.split('_').last().unwrap_or(param_id)
+            param_id.split('_').next_back().unwrap_or(param_id)
         } else {
             param_id
         };
@@ -506,7 +506,7 @@ impl SynapticIntelligence {
         let mut task_count = 0;
 
         // Aggregate resistance from all tasks
-        for (_task_id, task_weights) in &self.task_importance_weights {
+        for task_weights in self.task_importance_weights.values() {
             if let Some(&importance) = task_weights.get(param_id) {
                 // Get path integral contribution
                 let path_integral_contribution =
@@ -1166,7 +1166,7 @@ mod tests {
             .expect("await should be present");
 
         // Should return a valid adjusted value
-        assert!(adjusted >= -1.0 && adjusted <= 1.0);
+        assert!((-1.0..=1.0).contains(&adjusted));
     }
 
     #[tokio::test]

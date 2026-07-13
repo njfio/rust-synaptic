@@ -3,6 +3,8 @@
 //! Tests prototype networks, matching networks, relation networks, and memory-augmented
 //! few-shot learning capabilities with comprehensive validation.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::collections::HashMap;
 use synaptic::memory::meta_learning::{
@@ -152,7 +154,7 @@ async fn test_prototype_network_learning() -> synaptic::error::Result<()> {
     assert!(result.inference_time_ms > 0);
 
     // Check that prototypes were created
-    assert!(engine.get_memory_bank().prototypes.len() > 0);
+    assert!(!engine.get_memory_bank().prototypes.is_empty());
 
     // Verify per-class accuracy
     assert_eq!(result.per_class_accuracy.len(), config.num_ways);
@@ -250,7 +252,7 @@ async fn test_memory_augmentation() -> synaptic::error::Result<()> {
     // Check memory bank utilization
     let metrics = engine.get_metrics();
     assert!(metrics.memory_utilization > 0.0);
-    assert!(engine.get_memory_bank().examples.len() > 0);
+    assert!(!engine.get_memory_bank().examples.is_empty());
 
     // Test memory bank clearing
     engine.clear_memory_bank().await?;

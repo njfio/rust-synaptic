@@ -186,8 +186,11 @@ impl ImageMemoryProcessor {
         let mut text_regions = Vec::new();
 
         if !text.trim().is_empty() {
-            // For now, create a single text region covering the whole image
-            // In a real implementation, you'd use tesseract's word/character level detection
+            // Region granularity: one region covering the whole image.
+            // Tesseract's word/character-level bounding boxes are not wired
+            // up here, so the region's confidence is the real mean of
+            // Tesseract's per-fragment confidences and its box spans the
+            // full frame.
             let avg_confidence =
                 confidences.iter().sum::<i32>() as f32 / confidences.len() as f32 / 100.0;
 

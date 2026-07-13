@@ -1,3 +1,5 @@
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use synaptic::{

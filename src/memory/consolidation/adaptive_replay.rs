@@ -323,7 +323,7 @@ impl AdaptiveReplayMechanisms {
         let strategy_key = self.get_strategy_key(&self.current_strategy);
         self.strategy_performance
             .entry(strategy_key.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(feedback.success_rate);
 
         // Update metrics
@@ -512,15 +512,14 @@ impl AdaptiveReplayMechanisms {
         context: &ReplayContext,
         strategy: &AdaptiveReplayStrategy,
     ) -> Result<f64> {
-        let mut priority_factors = Vec::new();
-
-        // Base importance
-        priority_factors.push(importance.importance_score);
-
-        // Context-based adjustments
-        priority_factors.push(context.activity_level);
-        priority_factors.push(1.0 - context.system_load); // Lower load = higher priority
-        priority_factors.push(context.time_of_day_factor);
+        let mut priority_factors = vec![
+            // Base importance
+            importance.importance_score,
+            // Context-based adjustments
+            context.activity_level,
+            1.0 - context.system_load, // Lower load = higher priority
+            context.time_of_day_factor,
+        ];
 
         // Strategy-specific adjustments
         let strategy_factor = match strategy {
@@ -548,7 +547,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(priority.min(1.0).max(0.0))
+        Ok(priority.clamp(0.0, 1.0))
     }
 
     /// Calculate adaptive scheduling time
@@ -602,7 +601,7 @@ impl AdaptiveReplayMechanisms {
         let context_adjustment = (context.activity_level + importance.importance_score) / 2.0;
         let estimated_effectiveness = historical_performance * 0.7 + context_adjustment * 0.3;
 
-        Ok(estimated_effectiveness.min(1.0).max(0.0))
+        Ok(estimated_effectiveness.clamp(0.0, 1.0))
     }
 
     /// Calculate adaptation confidence
@@ -1139,7 +1138,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(fitness_score.min(1.0).max(0.0))
+        Ok(fitness_score.clamp(0.0, 1.0))
     }
 
     /// Calculate context variance for strategy selection
@@ -1218,7 +1217,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(fitness_factor.min(1.0).max(0.0))
+        Ok(fitness_factor.clamp(0.0, 1.0))
     }
 
     /// Create default context weights for context-aware strategy
@@ -1650,8 +1649,8 @@ mod tests {
             .await
             .expect("await should be present");
 
-        assert!(performance_fitness >= 0.0 && performance_fitness <= 1.0);
-        assert!(context_fitness >= 0.0 && context_fitness <= 1.0);
+        assert!((0.0..=1.0).contains(&performance_fitness));
+        assert!((0.0..=1.0).contains(&context_fitness));
 
         // Both should have reasonable fitness scores
         assert!(performance_fitness > 0.3);
@@ -1713,8 +1712,8 @@ mod tests {
             .expect("await should be present");
 
         assert!(recent_high_fitness > old_low_fitness);
-        assert!(recent_high_fitness >= 0.0 && recent_high_fitness <= 1.0);
-        assert!(old_low_fitness >= 0.0 && old_low_fitness <= 1.0);
+        assert!((0.0..=1.0).contains(&recent_high_fitness));
+        assert!((0.0..=1.0).contains(&old_low_fitness));
     }
 
     #[tokio::test]

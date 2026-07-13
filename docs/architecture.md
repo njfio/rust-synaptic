@@ -404,10 +404,5 @@ pub struct MultiModalProcessor {
 
 ### Performance Characteristics
 
-| Component | Throughput | Latency | Scalability |
-|-----------|------------|---------|-------------|
-| Memory Storage | 100K ops/sec | <1ms | Single node |
-| File Storage | 50K ops/sec | <5ms | Single node |
-| SQL Storage | 10K ops/sec | <10ms | Clustered |
-| Knowledge Graph | 1K ops/sec | <50ms | Distributed |
-| Analytics | 100 ops/sec | <100ms | Distributed |
+Measured benchmark numbers live in [performance.md](performance.md); no
+other throughput/latency figures in this document have been validated.

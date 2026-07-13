@@ -233,7 +233,7 @@ impl SelectiveReplayManager {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(weighted_priority.min(1.0).max(0.0))
+        Ok(weighted_priority.clamp(0.0, 1.0))
     }
 
     /// Calculate scheduled time for replay based on importance and algorithm
@@ -260,18 +260,14 @@ impl SelectiveReplayManager {
         Ok(base_time + Duration::hours(delay_hours))
     }
 
-    /// Replay a specific memory entry
+    /// Replay a specific memory entry.
+    ///
+    /// "Replay" in this system is bookkeeping, not neural reinforcement:
+    /// it increments the entry's replay count, refreshes its last-replayed
+    /// timestamp, recomputes its replay priority from actual performance
+    /// history, and records the event in the bounded replay history used by
+    /// the scheduling algorithms.
     async fn replay_memory(&mut self, replay_entry: &ReplayEntry) -> Result<()> {
-        // Simulate memory replay process
-        // In a real implementation, this would involve:
-        // 1. Retrieving the memory from storage
-        // 2. Reinforcing neural pathways
-        // 3. Updating memory strength
-        // 4. Recording replay event
-
-        // Add small delay to simulate processing time
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-
         let mut updated_entry = replay_entry.clone();
         updated_entry.replay_count += 1;
         updated_entry.last_replayed = Utc::now();
@@ -316,7 +312,7 @@ impl SelectiveReplayManager {
         let retention = (-hours_since_access / memory_strength).exp();
 
         // Return forgetting factor (1 - retention)
-        Ok((1.0 - retention).min(1.0).max(0.0))
+        Ok((1.0 - retention).clamp(0.0, 1.0))
     }
 
     /// Calculate interference risk for a memory
@@ -413,7 +409,7 @@ impl SelectiveReplayManager {
     async fn maintain_buffer_size(&mut self) -> Result<()> {
         while self.replay_buffer.len() > self.config.max_replay_buffer_size {
             // Remove lowest priority entries
-            if let Some(_) = self.replay_buffer.pop() {
+            if self.replay_buffer.pop().is_some() {
                 // Entry removed
             }
         }
@@ -447,7 +443,7 @@ impl SelectiveReplayManager {
         let now = Utc::now();
         self.temporal_distribution
             .entry(memory_key.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(now);
         Ok(())
     }
@@ -461,7 +457,7 @@ impl SelectiveReplayManager {
 
         self.interference_matrix
             .entry(memory_key.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert("global".to_string(), interference_score);
 
         Ok(())
@@ -612,6 +608,6 @@ mod tests {
         let result = manager.perform_selective_replay().await;
         assert!(result.is_ok());
         assert!(manager.get_metrics().total_replays > 0);
-        assert!(manager.get_replay_history(10).len() > 0);
+        assert!(!manager.get_replay_history(10).is_empty());
     }
 }

@@ -203,7 +203,7 @@ impl DomainAdaptationEngine {
         let mut rng = rand::thread_rng();
 
         // Feature extraction layers
-        let layer_sizes = vec![512, 256, 128, 64];
+        let layer_sizes = [512, 256, 128, 64];
         for (i, &size) in layer_sizes.iter().enumerate() {
             let layer_name = format!("feature_layer_{}", i);
             let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
@@ -221,7 +221,7 @@ impl DomainAdaptationEngine {
         let mut rng = rand::thread_rng();
 
         // Discriminator layers
-        let layer_sizes = vec![256, 128, 64, 1];
+        let layer_sizes = [256, 128, 64, 1];
         for (i, &size) in layer_sizes.iter().enumerate() {
             let layer_name = format!("discriminator_layer_{}", i);
             let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
@@ -491,7 +491,7 @@ impl DomainAdaptationEngine {
         // Capitalized word ratio
         let capitalized_words = words
             .iter()
-            .filter(|w| w.chars().next().map_or(false, |c| c.is_uppercase()))
+            .filter(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
             .count();
         features[4] = capitalized_words as f64 / words.len() as f64;
 

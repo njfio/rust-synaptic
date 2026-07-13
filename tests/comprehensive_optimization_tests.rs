@@ -1,5 +1,7 @@
 //! Comprehensive tests for memory optimization system
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use synaptic::memory::management::optimization::{
     MemoryOptimizer, MetricsCollector, OperationCounters, OptimizationType, PerformanceProfiler,
 };

@@ -1,7 +1,8 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Real External Integrations Example
 // Demonstrates actual database, ML models, LLM, and visualization integrations
 
-use std::collections::HashMap;
 use std::error::Error;
 use synaptic::integrations::{IntegrationConfig, IntegrationManager};
 use synaptic::{AgentMemory, MemoryConfig};
@@ -479,7 +480,7 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
     };
 
     match RedisClient::new(config).await {
-        Ok(mut client) => {
+        Ok(client) => {
             println!(" Connected to Redis successfully");
 
             // Test health check
@@ -489,13 +490,13 @@ async fn redis_cache_integration_demo() -> Result<(), Box<dyn Error>> {
             }
 
             // Test caching
-            let memory_entry = synaptic::memory::types::MemoryEntry::new(
+            let _memory_entry = synaptic::memory::types::MemoryEntry::new(
                 "cache_test_key".to_string(),
                 "Test cache integration content".to_string(),
                 synaptic::memory::types::MemoryType::ShortTerm,
             );
 
-            #[cfg(feature = "distributed")]
+            #[cfg(feature = "distributed-experimental")]
             {
                 match client
                     .cache_memory("test_key", &memory_entry, Some(60))
@@ -586,7 +587,7 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
                 Ok(health_status) => {
                     println!("🏥 Health check results:");
                     for (service, healthy) in health_status {
-                        let status = if healthy { "" } else { "" };
+                        let status = if healthy { "healthy" } else { "unhealthy" };
                         println!("   {} {}", status, service);
                     }
                 }

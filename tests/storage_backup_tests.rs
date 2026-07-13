@@ -1,9 +1,10 @@
 //! Comprehensive tests for storage backup and restore functionality
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use synaptic::memory::storage::{file::FileStorage, memory::MemoryStorage, Storage};
 use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
 use tempfile::TempDir;
-use tokio;
 
 /// Create test memory entries
 fn create_test_entries() -> Vec<MemoryEntry> {

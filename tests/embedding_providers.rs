@@ -3,12 +3,14 @@
 //! These tests verify that embedding providers work correctly with the
 //! retrieval pipeline and can be used for semantic search.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::{
     memory::{
         embeddings::{
-            compute_content_hash, normalize_vector, CacheStats, EmbedOptions, Embedding,
-            EmbeddingCache, EmbeddingProvider, TfIdfConfig, TfIdfProvider,
+            compute_content_hash, normalize_vector, EmbedOptions, EmbeddingCache,
+            EmbeddingProvider, TfIdfConfig, TfIdfProvider,
         },
         retrieval::{
             DenseVectorRetriever, FusionStrategy, HybridRetriever, KeywordRetriever,

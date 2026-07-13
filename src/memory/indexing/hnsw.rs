@@ -197,7 +197,7 @@ impl VectorIndex for HnswIndex {
         let internal_id = self.get_or_create_id(id)?;
         let processed_vector = self.preprocess_vector(vector);
 
-        let mut index = self
+        let index = self
             .index
             .write()
             .map_err(|e| MemoryError::Internal(format!("Failed to lock index: {}", e)))?;

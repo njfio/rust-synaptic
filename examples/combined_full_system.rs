@@ -7,10 +7,12 @@
 //! This showcases the full power of Synaptic as a state-of-the-art distributed
 //! AI agent memory system with real external service integrations.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 
 #[cfg(all(
-    feature = "distributed",
+    feature = "distributed-experimental",
     feature = "external-integrations",
     feature = "embeddings"
 ))]
@@ -68,7 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     check_enabled_features();
 
     #[cfg(all(
-        feature = "distributed",
+        feature = "distributed-experimental",
         feature = "external-integrations",
         feature = "embeddings"
     ))]
@@ -279,13 +281,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     #[cfg(not(all(
-        feature = "distributed",
+        feature = "distributed-experimental",
         feature = "external-integrations",
         feature = "embeddings"
     )))]
     {
         println!(" Combined demo requires all features enabled");
-        println!(" Run with: cargo run --example combined_full_system --features \"distributed,external-integrations,embeddings\"");
+        println!(" Run with: cargo run --example combined_full_system --features \"distributed-experimental,external-integrations,embeddings\"");
     }
 
     Ok(())
@@ -294,9 +296,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 fn check_enabled_features() {
     println!(" Enabled Features:");
 
-    #[cfg(feature = "distributed")]
+    #[cfg(feature = "distributed-experimental")]
     println!("    Distributed Systems (Kafka, Consensus, Sharding)");
-    #[cfg(not(feature = "distributed"))]
+    #[cfg(not(feature = "distributed-experimental"))]
     println!("    Distributed Systems (disabled)");
 
     #[cfg(feature = "external-integrations")]

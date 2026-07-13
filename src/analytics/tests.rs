@@ -6,7 +6,6 @@ mod phase3_analytics_tests {
     use super::super::*;
     use crate::memory::types::MemoryEntry;
     use chrono::{Duration, Utc};
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_analytics_engine_comprehensive() {
@@ -111,57 +110,6 @@ mod phase3_analytics_tests {
             .await
             .expect("await should be present");
         // Function works correctly regardless of result count
-    }
-
-    #[tokio::test]
-    async fn test_visualization_engine_comprehensive() {
-        let config = AnalyticsConfig::default();
-        let mut engine =
-            visualization::VisualizationEngine::new(&config).expect("value should be available");
-
-        // Test visual node creation
-        let memory_entry = MemoryEntry::new(
-            "viz_memory".to_string(),
-            "Test visualization content".to_string(),
-            crate::memory::types::MemoryType::ShortTerm,
-        );
-        let node_id = engine
-            .create_visual_node("viz_memory", &memory_entry)
-            .await
-            .expect("await should be present");
-        assert!(!node_id.is_empty());
-
-        // Test temporal timeline creation
-        let data_points = vec![visualization::TemporalDataPoint {
-            timestamp: Utc::now(),
-            value: 1.0,
-            memory_key: "viz_memory".to_string(),
-            data_type: visualization::TemporalDataType::AccessFrequency,
-            metadata: HashMap::new(),
-        }];
-
-        let timeline_id = engine
-            .create_temporal_timeline(
-                "Test Timeline",
-                data_points,
-                visualization::TimelineVisualizationType::LineChart,
-            )
-            .await
-            .expect("await should be present");
-        assert!(!timeline_id.is_empty());
-
-        // Test visualization export
-        let export = engine
-            .export_visualization_data()
-            .await
-            .expect("await should be present");
-        assert!(export.nodes.len() > 0);
-        assert!(export.timelines.len() > 0);
-
-        // Test statistics
-        let stats = engine.get_visualization_stats();
-        assert!(stats.node_count > 0);
-        assert!(stats.timeline_count > 0);
     }
 
     #[tokio::test]
@@ -464,7 +412,6 @@ mod phase3_integration_tests {
         let config = AnalyticsConfig {
             enable_predictive: true,
             enable_behavioral: true,
-            enable_visualization: true,
             retention_days: 30,
             prediction_threshold: 0.7,
             pattern_sensitivity: 0.8,
@@ -513,7 +460,7 @@ mod phase3_integration_tests {
             .expect("await should be present");
 
         // Should have generated meaningful insights
-        assert!(insights.len() > 0);
+        assert!(!insights.is_empty());
 
         // Test different insight types
         let usage_insights = engine.get_insights_by_type(InsightType::UsagePattern);

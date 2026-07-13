@@ -6,20 +6,15 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Direction for graph traversal
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TraversalDirection {
     /// Follow outgoing edges only
     Outgoing,
     /// Follow incoming edges only
     Incoming,
     /// Follow edges in both directions
+    #[default]
     Both,
-}
-
-impl Default for TraversalDirection {
-    fn default() -> Self {
-        Self::Both
-    }
 }
 
 /// Options for graph traversal

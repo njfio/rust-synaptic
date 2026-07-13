@@ -1,3 +1,5 @@
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 // Comprehensive tests for backup corruption scenarios
 //
 // These tests verify that the backup/restore functionality properly handles
@@ -6,7 +8,7 @@
 use std::io::Write;
 use std::sync::Arc;
 use synaptic::memory::storage::memory::MemoryStorage;
-use synaptic::memory::storage::{Storage, TransactionalStorage};
+use synaptic::memory::storage::Storage;
 use synaptic::memory::types::{MemoryEntry, MemoryType};
 use tempfile::NamedTempFile;
 
@@ -328,7 +330,7 @@ async fn test_concurrent_backup_operations_no_corruption() {
 
     // Create multiple backups concurrently
     let mut handles = vec![];
-    for i in 0..3 {
+    for _i in 0..3 {
         let storage_clone = Arc::clone(&storage);
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_string_lossy().to_string();

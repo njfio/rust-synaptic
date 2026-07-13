@@ -1,9 +1,13 @@
 //! Tests for optimized indexed memory retrieval
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::{DateTime, Duration, Utc};
-use std::collections::HashSet;
 use std::sync::Arc;
 use synaptic::memory::{
+    management::MemoryManager,
     retrieval::{IndexedMemoryRetriever, IndexingConfig, RetrievalConfig},
     storage::{memory::MemoryStorage, Storage},
     types::{MemoryEntry, MemoryMetadata, MemoryType},
@@ -369,5 +373,346 @@ async fn test_performance_improvement() {
         recent_fallback.len(),
         recent_indexed.len(),
         "indexed and fallback retrieval should return the same number of results"
+    );
+}
+
+// --- HNSW-backed `count_related_memories` (Task 3.2) ---------------------
+
+/// Dimension used for the deterministic cluster embeddings below. Must be
+/// >= the largest `num_clusters` used by any test in this file, so distinct
+/// > clusters always land on distinct one-hot axes (otherwise clusters would
+/// > silently alias onto the same axis via `cluster % CLUSTER_EMBEDDING_DIM`).
+const CLUSTER_EMBEDDING_DIM: usize = 256;
+
+/// Deterministic embedding: entry `i` belongs to cluster `i % num_clusters`,
+/// represented as a one-hot vector on that cluster's axis plus a tiny
+/// deterministic perturbation on every axis. This keeps intra-cluster cosine
+/// similarity near 1.0 and inter-cluster similarity near 0.0, so a 0.7
+/// similarity threshold cleanly separates "related" from "unrelated" and
+/// both brute-force and ANN search agree on the exact neighbor set.
+fn deterministic_cluster_embedding(i: usize, num_clusters: usize) -> Vec<f32> {
+    let cluster = i % num_clusters;
+    let mut v = vec![0.0f32; CLUSTER_EMBEDDING_DIM];
+    v[cluster % CLUSTER_EMBEDDING_DIM] = 1.0;
+    for (j, slot) in v.iter_mut().enumerate() {
+        *slot += 0.01 * ((i as f32 * 0.37 + j as f32).sin());
+    }
+    v
+}
+
+/// Build a memory entry with a deterministic embedding, unique word content
+/// (so the word-overlap content/temporal strategies never fire), no tags,
+/// and timestamps spread far enough apart that the 1-hour temporal-proximity
+/// strategy never fires either. This isolates `count_related_memories` to
+/// (effectively) just the embedding-similarity strategy, so it can be
+/// compared directly against a brute-force cosine computation.
+fn cluster_probe_entry(i: usize, num_clusters: usize, base_time: DateTime<Utc>) -> MemoryEntry {
+    let mut entry = MemoryEntry::new(
+        format!("cluster_entry_{i}"),
+        format!("uniqueword{i}"),
+        MemoryType::LongTerm,
+    )
+    .with_embedding(deterministic_cluster_embedding(i, num_clusters));
+
+    let mut metadata = MemoryMetadata::new();
+    metadata.created_at = base_time + Duration::hours(i as i64 * 2);
+    metadata.last_accessed = metadata.created_at;
+    entry.metadata = metadata;
+    entry
+}
+
+fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f64 {
+    let a64: Vec<f64> = a.iter().map(|&x| x as f64).collect();
+    let b64: Vec<f64> = b.iter().map(|&x| x as f64).collect();
+    let dot: f64 = a64.iter().zip(b64.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f64 = a64.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let norm_b: f64 = b64.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
+    }
+}
+
+/// Brute-force cosine count over `entries`, matching the threshold (0.7)
+/// used by `MemoryManager::count_similarity_related_memories`.
+fn brute_force_similarity_count(probe: &MemoryEntry, entries: &[MemoryEntry]) -> usize {
+    let probe_embedding = probe.embedding.as_ref().expect("probe has an embedding");
+    entries
+        .iter()
+        .filter(|e| e.key != probe.key)
+        .filter(|e| {
+            e.embedding
+                .as_ref()
+                .map(|emb| cosine_similarity_f32(probe_embedding, emb) >= 0.7)
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+#[tokio::test]
+async fn test_count_related_memories_uses_ann_index_and_matches_brute_force() {
+    const NUM_ENTRIES: usize = 200;
+    const NUM_CLUSTERS: usize = 20; // 10 entries per cluster
+
+    let storage = Arc::new(MemoryStorage::new());
+    let manager = MemoryManager::new(storage, None)
+        .await
+        .expect("manager should construct");
+
+    let base_time = Utc::now() - Duration::days(365);
+    let entries: Vec<MemoryEntry> = (0..NUM_ENTRIES)
+        .map(|i| cluster_probe_entry(i, NUM_CLUSTERS, base_time))
+        .collect();
+
+    for entry in &entries {
+        manager
+            .store_memory(entry)
+            .await
+            .expect("store_memory should succeed");
+    }
+
+    let probe = &entries[0];
+    let expected = brute_force_similarity_count(probe, &entries);
+    // Sanity: the probe's own cluster has (NUM_ENTRIES / NUM_CLUSTERS) - 1
+    // other members, all of which should be "related"; nothing else should
+    // be, given the clusters are near-orthogonal one-hot vectors.
+    assert_eq!(
+        expected,
+        NUM_ENTRIES / NUM_CLUSTERS - 1,
+        "unexpected brute-force baseline; check cluster construction"
+    );
+
+    let actual = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+
+    // HNSW is an *approximate* nearest-neighbor index, so exact equality with
+    // the brute-force count is not guaranteed on every run. Tolerate a small
+    // recall gap while still proving the ANN path finds essentially the
+    // right neighbor set.
+    let diff = actual.abs_diff(expected);
+    assert!(
+        diff <= 2,
+        "ANN-backed count_related_memories ({actual}) should closely match brute-force cosine \
+         similarity count ({expected}), diff={diff}"
+    );
+
+    // Proves the ANN (HNSW) path, not the brute-force fallback, was consulted:
+    // 200 indexed vectors exceeds MIN_INDEX_SIZE_FOR_ANN (100).
+    #[cfg(feature = "test-utils")]
+    assert!(
+        manager.ann_query_hit_count() > 0,
+        "expected the ANN index to have been consulted at least once"
+    );
+}
+
+#[tokio::test]
+async fn test_count_related_memories_falls_back_to_brute_force_below_threshold() {
+    const NUM_ENTRIES: usize = 50; // below MIN_INDEX_SIZE_FOR_ANN
+    const NUM_CLUSTERS: usize = 5;
+
+    let storage = Arc::new(MemoryStorage::new());
+    let manager = MemoryManager::new(storage, None)
+        .await
+        .expect("manager should construct");
+
+    let base_time = Utc::now() - Duration::days(365);
+    let entries: Vec<MemoryEntry> = (0..NUM_ENTRIES)
+        .map(|i| cluster_probe_entry(i, NUM_CLUSTERS, base_time))
+        .collect();
+
+    for entry in &entries {
+        manager
+            .store_memory(entry)
+            .await
+            .expect("store_memory should succeed");
+    }
+
+    let probe = &entries[0];
+    let expected = brute_force_similarity_count(probe, &entries);
+
+    let actual = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+
+    assert_eq!(actual, expected);
+    #[cfg(feature = "test-utils")]
+    assert_eq!(
+        manager.ann_query_hit_count(),
+        0,
+        "below MIN_INDEX_SIZE_FOR_ANN the brute-force fallback should be used, not the ANN index"
+    );
+}
+
+/// Perf comparison at 10k entries: ANN-backed counting should be
+/// substantially faster than the brute-force O(n) scan. Ignored by default
+/// since timing assertions are inherently environment-sensitive; run
+/// explicitly with `cargo test --test indexed_retrieval_tests -- --ignored`.
+#[tokio::test]
+#[ignore]
+#[cfg(feature = "test-utils")]
+async fn perf_count_related_memories_ann_vs_brute_force_at_10k() {
+    use std::time::Instant;
+
+    const NUM_ENTRIES: usize = 10_000;
+    // Keep clusters well under ANN_SEARCH_K (200) so the ANN query's k cap
+    // doesn't itself cause undercounting relative to brute force.
+    const NUM_CLUSTERS: usize = 200;
+
+    let base_time = Utc::now() - Duration::days(365 * 2);
+    let entries: Vec<MemoryEntry> = (0..NUM_ENTRIES)
+        .map(|i| cluster_probe_entry(i, NUM_CLUSTERS, base_time))
+        .collect();
+    let probe = entries[0].clone();
+
+    // ANN path: entries are stored via `MemoryManager::store_memory`, which
+    // populates the HNSW index as it goes.
+    let ann_storage = Arc::new(MemoryStorage::new());
+    let ann_manager = MemoryManager::new(ann_storage, None)
+        .await
+        .expect("manager should construct");
+    for entry in &entries {
+        ann_manager
+            .store_memory(entry)
+            .await
+            .expect("store_memory should succeed");
+    }
+
+    let start = Instant::now();
+    let ann_count = ann_manager
+        .count_related_memories(&probe)
+        .await
+        .expect("count_related_memories should succeed");
+    let ann_elapsed = start.elapsed();
+    assert!(ann_manager.ann_query_hit_count() > 0);
+
+    // Brute-force path: entries are written directly to storage, bypassing
+    // `store_memory`, so the ANN index stays empty and the manager falls
+    // back to the O(n) scan regardless of dataset size.
+    let brute_storage = Arc::new(MemoryStorage::new());
+    for entry in &entries {
+        brute_storage
+            .store(entry)
+            .await
+            .expect("direct storage write should succeed");
+    }
+    let brute_manager = MemoryManager::new(brute_storage, None)
+        .await
+        .expect("manager should construct");
+
+    let start = Instant::now();
+    let brute_count = brute_manager
+        .count_related_memories(&probe)
+        .await
+        .expect("count_related_memories should succeed");
+    let brute_elapsed = start.elapsed();
+    assert_eq!(brute_manager.ann_query_hit_count(), 0);
+
+    // HNSW is an *approximate* nearest-neighbor index, so at 10k entries with
+    // default (balanced) parameters its recall need not be exact; the
+    // deterministic-cluster correctness test above (at 200 entries) already
+    // proves exact agreement is achievable. Here we only require the ANN
+    // count to be within a small margin of the brute-force ground truth.
+    let diff = ann_count.abs_diff(brute_count);
+    assert!(
+        diff <= brute_count / 20 + 1,
+        "ANN count ({ann_count}) should be close to brute-force count ({brute_count}), diff={diff}"
+    );
+
+    eprintln!(
+        "10k entries: ANN {:?} vs brute-force {:?} (ANN {}x faster)",
+        ann_elapsed,
+        brute_elapsed,
+        brute_elapsed.as_secs_f64() / ann_elapsed.as_secs_f64().max(1e-9)
+    );
+    assert!(
+        ann_elapsed < brute_elapsed,
+        "expected ANN-backed counting ({ann_elapsed:?}) to beat brute force ({brute_elapsed:?}) at 10k entries"
+    );
+}
+
+/// Re-storing an existing key must supersede its previous ANN vector: the
+/// related count for a probe must reflect only the key's *latest* embedding,
+/// never a stale one, and the key must never be counted twice.
+#[tokio::test]
+async fn test_reindexing_a_key_supersedes_its_stale_ann_vector() {
+    const NUM_ENTRIES: usize = 200;
+    const NUM_CLUSTERS: usize = 20; // 10 entries per cluster; probe cluster = 0
+
+    let storage = Arc::new(MemoryStorage::new());
+    let manager = MemoryManager::new(storage, None)
+        .await
+        .expect("manager should construct");
+
+    let base_time = Utc::now() - Duration::days(365);
+    let entries: Vec<MemoryEntry> = (0..NUM_ENTRIES)
+        .map(|i| cluster_probe_entry(i, NUM_CLUSTERS, base_time))
+        .collect();
+
+    for entry in &entries {
+        manager
+            .store_memory(entry)
+            .await
+            .expect("store_memory should succeed");
+    }
+
+    let probe = &entries[0]; // cluster 0
+    let baseline = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        baseline,
+        NUM_ENTRIES / NUM_CLUSTERS - 1,
+        "unexpected baseline related count"
+    );
+
+    // Case 1: move a probe-cluster member (entry 20, cluster 0) OUT of the
+    // probe's cluster by re-storing it with embedding B from cluster 1
+    // (index 21's embedding shape). Its stale cluster-0 vector A must no
+    // longer be counted: similarity for this key is now measured against B.
+    let mut moved_out = entries[20].clone();
+    moved_out.embedding = Some(deterministic_cluster_embedding(21, NUM_CLUSTERS));
+    manager
+        .store_memory(&moved_out)
+        .await
+        .expect("re-store should succeed");
+
+    let after_move_out = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        after_move_out,
+        baseline - 1,
+        "stale vector for a re-stored key must not be counted (key moved out of the cluster)"
+    );
+
+    // Case 2: re-store the same key again with ANOTHER cluster-0 embedding.
+    // The key is back in the probe's cluster, but it now has had three
+    // vectors inserted for it; it must be counted exactly once.
+    let mut moved_back = entries[20].clone();
+    moved_back.embedding = Some(deterministic_cluster_embedding(40, NUM_CLUSTERS));
+    manager
+        .store_memory(&moved_back)
+        .await
+        .expect("re-store should succeed");
+
+    let after_move_back = manager
+        .count_related_memories(probe)
+        .await
+        .expect("count_related_memories should succeed");
+    assert_eq!(
+        after_move_back, baseline,
+        "a re-stored key must be counted at most once (no double-count of superseded vectors)"
+    );
+
+    #[cfg(feature = "test-utils")]
+    assert!(
+        manager.ann_query_hit_count() > 0,
+        "expected the ANN index to have been consulted"
     );
 }

@@ -1,5 +1,9 @@
 //! Panic prevention tests to ensure no unwrap() calls cause panics in production scenarios
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::{
     error::Result,

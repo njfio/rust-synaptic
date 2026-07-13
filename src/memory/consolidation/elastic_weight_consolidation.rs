@@ -172,7 +172,7 @@ impl ElasticWeightConsolidation {
         // Apply EWC lambda parameter
         let importance_weight = normalized_fisher * self.config.ewc_lambda;
 
-        Ok(importance_weight.min(1.0).max(0.0))
+        Ok(importance_weight.clamp(0.0, 1.0))
     }
 
     /// Create parameter protection entry
@@ -182,7 +182,6 @@ impl ElasticWeightConsolidation {
         parameter_id: &str,
         fisher_value: f64,
     ) -> Result<()> {
-        // Simulate parameter value (in real implementation, this would be actual neural network weights)
         let consolidated_value = self.get_current_parameter_value(parameter_id).await?;
 
         let protection_strength = self.calculate_protection_strength(fisher_value).await?;
@@ -207,15 +206,23 @@ impl ElasticWeightConsolidation {
         let fisher_contribution = fisher_value.min(1.0) * 0.5;
         let protection_strength = base_strength + fisher_contribution;
 
-        Ok(protection_strength.min(1.0).max(0.0))
+        Ok(protection_strength.clamp(0.0, 1.0))
     }
 
-    /// Get current parameter value (simulated)
-    async fn get_current_parameter_value(&self, _parameter_id: &str) -> Result<f64> {
-        // In a real implementation, this would retrieve actual parameter values
-        // from the neural network or memory system
-        use rand::Rng;
-        Ok(rand::thread_rng().gen::<f64>() * 2.0 - 1.0) // Random value between -1 and 1
+    /// Get the current value for a virtual parameter.
+    ///
+    /// There is no neural network in this system, so parameter ids denote
+    /// virtual per-memory parameters. The value is a deterministic mapping
+    /// of the parameter id into [-1, 1] via a stable hash: reproducible
+    /// across calls and runs (unlike the random draw this replaced), so EWC
+    /// deviation penalties for the same parameter are stable.
+    async fn get_current_parameter_value(&self, parameter_id: &str) -> Result<f64> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        parameter_id.hash(&mut hasher);
+        let hashed = hasher.finish();
+        // Map the 64-bit hash uniformly onto [-1, 1].
+        Ok((hashed as f64 / u64::MAX as f64) * 2.0 - 1.0)
     }
 
     /// Calculate EWC regularization penalty for parameter updates
@@ -319,8 +326,7 @@ impl ElasticWeightConsolidation {
 
         let fisher_value =
             (content_complexity * 0.3 + access_importance * 0.4 + metadata_importance * 0.3)
-                .min(1.0)
-                .max(0.01);
+                .clamp(0.01, 1.0);
 
         Ok(fisher_value)
     }
@@ -437,7 +443,7 @@ impl ElasticWeightConsolidation {
             retention_factors.iter().sum::<f64>() / retention_factors.len() as f64
         };
 
-        Ok(retention_score.min(1.0).max(0.0))
+        Ok(retention_score.clamp(0.0, 1.0))
     }
 }
 
@@ -524,5 +530,29 @@ mod tests {
         assert!(result.is_ok());
         assert!(ewc.get_task_fisher_info("task1").is_some());
         assert!(ewc.get_task_parameters("task1").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_parameter_values_are_deterministic_and_bounded() {
+        let config = ConsolidationConfig::default();
+        let ewc = ElasticWeightConsolidation::new(&config).expect("EWC construction should work");
+
+        let first = ewc
+            .get_current_parameter_value("task_a_param")
+            .await
+            .expect("parameter value should be computable");
+        let second = ewc
+            .get_current_parameter_value("task_a_param")
+            .await
+            .expect("parameter value should be computable");
+        let other = ewc
+            .get_current_parameter_value("task_b_param")
+            .await
+            .expect("parameter value should be computable");
+
+        // Deterministic per id (was random before), bounded, and id-dependent.
+        assert_eq!(first, second);
+        assert!((-1.0..=1.0).contains(&first));
+        assert_ne!(first, other);
     }
 }

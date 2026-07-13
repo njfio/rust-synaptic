@@ -12,18 +12,35 @@ use synaptic::security::{
 };
 use synaptic::{MemoryEntry, MemoryType};
 
-// Helper function to create authenticated security context
+// Helper function to create authenticated security context.
+//
+// Authentication is real now (Task 4.7): the user's password is provisioned
+// as an argon2 hash, a TOTP secret is enrolled, and a valid RFC 6238 token
+// for the current time step is presented so `mfa_verified` is genuinely true.
 async fn create_authenticated_context(
     security_manager: &mut SecurityManager,
     user_id: &str,
     password: &str,
 ) -> Result<SecurityContext, Box<dyn Error>> {
+    use synaptic::security::access_control::AccessControlManager;
+
+    let totp_secret = AccessControlManager::generate_totp_secret();
+    security_manager
+        .access_control
+        .set_password(user_id, password)?;
+    security_manager
+        .access_control
+        .set_totp_secret(user_id, totp_secret.clone())?;
+
+    let totp = totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, totp_secret)?;
+    let mfa_token = totp.generate_current()?;
+
     let credentials = AuthenticationCredentials {
         auth_type: AuthenticationType::Password,
         password: Some(password.to_string()),
         api_key: None,
         certificate: None,
-        mfa_token: None,
+        mfa_token: Some(mfa_token),
         ip_address: Some("127.0.0.1".to_string()),
         user_agent: Some("test-agent".to_string()),
     };
@@ -72,19 +89,13 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
         MemoryType::LongTerm,
     );
 
-    // Encrypt with homomorphic encryption
-    let encrypted = security_manager.encrypt_memory(&entry, &context).await?;
-    assert!(encrypted.is_homomorphic);
-    assert_eq!(encrypted.encryption_algorithm, "Homomorphic-CKKS");
-
-    // Decrypt and verify basic properties
-    let decrypted = security_manager
-        .decrypt_memory(&encrypted, &context)
-        .await?;
-    // Note: Homomorphic encryption may change the key during processing
-    assert_eq!(decrypted.memory_type, entry.memory_type);
-    // Verify that decryption completed successfully (non-empty result)
-    assert!(!decrypted.key.is_empty());
+    // The `homomorphic-encryption` cargo feature is off by default, so the
+    // fake CKKS-labelled encryption path must fail closed instead of
+    // returning fabricated ciphertext. Revert this assertion to the old
+    // "encrypt then decrypt" flow in Phase 4, once a real HE backend lands.
+    let result = security_manager.encrypt_memory(&entry, &context).await;
+    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
+    assert!(err.to_string().contains("homomorphic-encryption"));
 
     Ok(())
 }
@@ -117,7 +128,7 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
         create_authenticated_context(&mut security_manager, "admin", "adminpass123").await?;
 
     // Create multiple test entries
-    let entries = vec![
+    let entries = [
         MemoryEntry::new(
             "entry1".to_string(),
             "Data one".to_string(),
@@ -135,21 +146,14 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
         ),
     ];
 
-    // Encrypt all entries
-    let mut encrypted_entries = Vec::new();
-    for entry in &entries {
-        let encrypted = security_manager.encrypt_memory(entry, &context).await?;
-        encrypted_entries.push(encrypted);
-    }
-
-    // Perform secure computation
-    let result = security_manager
-        .secure_compute(&encrypted_entries, SecureOperation::Count, &context)
-        .await?;
-
-    assert!(result.privacy_preserved);
-    assert!(matches!(result.operation, SecureOperation::Count));
-    assert!(!result.result_data.is_empty());
+    // Encrypting the first entry must fail closed: the
+    // `homomorphic-encryption` cargo feature is disabled, so there is no real
+    // ciphertext to compute over. Revert to the full encrypt-then-compute
+    // flow in Phase 4, once a real HE backend lands.
+    let entry = &entries[0];
+    let result = security_manager.encrypt_memory(entry, &context).await;
+    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
+    assert!(err.to_string().contains("homomorphic-encryption"));
 
     Ok(())
 }
@@ -174,27 +178,33 @@ async fn test_zero_knowledge_access_proofs() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Authenticate user properly
-    let context =
+    let mut context =
         create_authenticated_context(&mut security_manager, "test_user", "password123").await?;
+    // ZK proof generation always requires MFA; satisfy it so we reach the
+    // proof path (this test asserts the proof contract, not the MFA policy).
+    context.mfa_verified = true;
+    // Register the prover identity (its commitment seeds the verifier's
+    // trusted store; proofs from unregistered identities are refused).
+    security_manager.register_zk_prover(&context.user_id)?;
 
-    // Generate access proof
+    // Caller-supplied statement (task 4.3): the same statement handed to
+    // generation verifies the proof.
+    let statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "test_memory_key".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
+
     let proof = security_manager
-        .generate_access_proof("test_memory_key", &context, AccessType::Read)
+        .generate_access_proof(&statement, &context)
         .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
     assert!(!proof.proof_data.is_empty());
 
-    // Create corresponding statement for verification
-    let statement = synaptic::security::zero_knowledge::AccessStatement {
-        memory_key: "test_memory_key".to_string(),
-        user_id: context.user_id.clone(),
-        access_type: AccessType::Read,
-        timestamp: proof.created_at,
-    };
-
-    // Verify the proof
+    // Real Groth16 verification (task 4.2): honest proof verifies true.
     let is_valid = security_manager
         .verify_access_proof(&proof, &statement)
         .await?;
@@ -233,21 +243,29 @@ async fn test_zero_knowledge_content_proofs() -> Result<(), Box<dyn Error>> {
         MemoryType::LongTerm,
     );
 
-    // Generate content proof for keyword presence
+    security_manager.register_zk_prover(&context.user_id)?;
+
+    // Generate content proof for keyword presence (caller-supplied statement)
+    let keyword_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("secret".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     let proof = security_manager
-        .generate_content_proof(
-            &entry,
-            ContentPredicate::ContainsKeyword("secret".to_string()),
-            &context,
-        )
+        .generate_content_proof(&entry, &keyword_statement, &context)
         .await?;
 
     assert!(!proof.id.is_empty());
     assert!(!proof.statement_hash.is_empty());
 
     // Generate proof for length constraint
+    let length_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: entry.key.clone(),
+        predicate: ContentPredicate::LengthGreaterThan(30),
+        timestamp: chrono::Utc::now(),
+    };
     let length_proof = security_manager
-        .generate_content_proof(&entry, ContentPredicate::LengthGreaterThan(30), &context)
+        .generate_content_proof(&entry, &length_statement, &context)
         .await?;
 
     assert!(!length_proof.id.is_empty());
@@ -482,8 +500,15 @@ async fn test_security_metrics_collection() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Zero-knowledge operation
+    security_manager.register_zk_prover(&context.user_id)?;
+    let metrics_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "metrics_test".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     let _proof = security_manager
-        .generate_access_proof("metrics_test", &context, AccessType::Read)
+        .generate_access_proof(&metrics_statement, &context)
         .await?;
 
     // Collect metrics
@@ -553,22 +578,34 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
     assert!(encrypted_entry.is_homomorphic);
 
     // 4. Generate zero-knowledge proof for access
+    security_manager.register_zk_prover(&context.user_id)?;
+    let workflow_statement = synaptic::security::zero_knowledge::AccessStatement {
+        memory_key: "workflow_test".to_string(),
+        user_id: context.user_id.clone(),
+        access_type: AccessType::Read,
+        timestamp: chrono::Utc::now(),
+    };
     let access_proof = security_manager
-        .generate_access_proof("workflow_test", &context, AccessType::Read)
+        .generate_access_proof(&workflow_statement, &context)
         .await?;
 
     // 5. Generate content proof
+    let workflow_content_statement = synaptic::security::zero_knowledge::ContentStatement {
+        memory_key: sensitive_entry.key.clone(),
+        predicate: ContentPredicate::ContainsKeyword("financial".to_string()),
+        timestamp: chrono::Utc::now(),
+    };
     let content_proof = security_manager
-        .generate_content_proof(
-            &sensitive_entry,
-            ContentPredicate::ContainsKeyword("financial".to_string()),
-            &context,
-        )
+        .generate_content_proof(&sensitive_entry, &workflow_content_statement, &context)
         .await?;
 
     // 6. Perform secure computation
     let computation_result = security_manager
-        .secure_compute(&[encrypted_entry.clone()], SecureOperation::Count, &context)
+        .secure_compute(
+            std::slice::from_ref(&encrypted_entry),
+            SecureOperation::Count,
+            &context,
+        )
         .await?;
 
     // 7. Verify all operations completed successfully

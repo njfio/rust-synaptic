@@ -1,6 +1,6 @@
 [package]
 name = "synaptic"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.70.0"
 authors = ["Nicholas Ferguson <me@njf.io>"]
@@ -25,10 +25,7 @@ resolver = "2"
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "allow"
-unused_imports = "allow"
-unused_variables = "allow"
-unused_mut = "allow"
-dead_code = "allow"
+dead_code = "warn"
 # Several integration tests are gated behind opt-in cfg flags that are not
 # declared as Cargo features (they are enabled manually with RUSTFLAGS when
 # running those suites). Declare them as known cfgs so `unexpected_cfgs` does
@@ -44,24 +41,42 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 ] }
 
 [lints.clippy]
-# Safety lints. `unwrap_used`/`expect_used`/`panic` are relaxed to `allow` for
-# this large legacy crate: the no-unwrap policy is enforced by a dedicated CI
-# grep gate instead, and `.expect("reason")` (with an explanatory message) is
-# the accepted replacement. `todo`/`unimplemented` remain forbidden.
-unwrap_used = "allow"
+# Safety lints. `unwrap_used`/`panic` are denied crate-wide; `.expect("reason")`
+# (with a message stating the invariant that makes it safe) is the accepted
+# replacement on paths that cannot fail. Tests, benches and examples carry
+# file/module-level `#![allow]`s where unwrap/panic is legitimate test style.
+# `todo`/`unimplemented` remain forbidden.
+unwrap_used = "deny"
 expect_used = "allow"
-panic = "allow"
+panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+# Replaces the former CI grep gate: library code must use `tracing`, not stdio.
+# (Examples print by design; they carry file-level allows where needed.)
+print_stdout = "deny"
+print_stderr = "deny"
 
-# Noisy stylistic/complexity/perf categories are relaxed to `allow` so that the
-# `-D warnings` gate passes. These are organised by clippy lint group with a
-# negative priority so individual overrides above still win.
-style = { level = "allow", priority = -1 }
-complexity = { level = "allow", priority = -1 }
-perf = { level = "allow", priority = -1 }
+# The style/complexity/perf groups run at their default (warn) levels and are
+# enforced by the `-D warnings` CI gate. pedantic/nursery stay `allow`: they
+# are opt-in, noisy-by-design groups. Negative priority lets individual
+# overrides above win.
 pedantic = { level = "allow", priority = -1 }
 nursery = { level = "allow", priority = -1 }
+
+# clippy::style is otherwise enforced; these four style lints are individually
+# relaxed with justification (finding counts as of the Phase 7 re-tightening):
+# - upper_case_acronyms (18): domain acronyms (GDPR, HIPAA, SNARK, LRU, CPU…)
+#   are public API names; renaming would be a breaking change for no clarity.
+# - enum_variant_names (3): shared variant postfixes mirror domain terminology
+#   (…Network, …Optimization, …Match) in public enums.
+# - field_reassign_with_default (20): config structs in tests/setup are built
+#   via Default::default() then adjusted field-by-field, which reads clearly.
+# - needless_range_loop (13): numeric/matrix code where index-based loops
+#   mirror the underlying math (dual indexing, in-place updates).
+upper_case_acronyms = "allow"
+enum_variant_names = "allow"
+field_reassign_with_default = "allow"
+needless_range_loop = "allow"
 
 [dependencies]
 # Serialization
@@ -141,14 +156,27 @@ hex = "0.4"
 sha2 = "0.10"
 rand = { version = "0.8.5", features = ["std_rng"] }
 rand_distr = "0.4"
+# Authentication (Task 4.7): argon2 password hashing, RFC 6238 TOTP MFA,
+# constant-time comparison for API-key digests.
+argon2 = "0.5.3"
+totp-rs = "5.7"
+subtle = "2.6"
 aes-gcm = "0.10"
+# Key hygiene (Task 4.6): zeroize in-memory secret key material on drop.
+zeroize = { version = "1.8", features = ["derive"] }
 
 # Homomorphic Encryption
-tfhe = { version = "0.7", features = ["boolean", "shortint", "integer"], optional = true }
+tfhe = { version = "0.7", features = ["boolean", "shortint", "integer", "seeder_unix"], optional = true }
 
 # Zero-Knowledge Proofs
 bellman = { version = "0.14", optional = true }
-bls12_381 = { version = "0.8", optional = true }
+bls12_381 = { version = "0.8", optional = true, features = ["zeroize"] }
+# Poseidon hash over the BLS12-381 scalar field (native + circuit gadget);
+# pinned to the 13.x line, which shares ff 0.13 / group 0.13 with bellman 0.14.
+neptune = { version = "13.0", default-features = false, optional = true }
+bellpepper-core = { version = "0.4", optional = true }
+ff = { version = "0.13", optional = true }
+typenum = { version = "1", optional = true }
 
 # Real External Integrations
 reqwest = { version = "0.11", features = ["json", "stream"], optional = true }
@@ -235,6 +263,7 @@ tempfile = "3.8"
 criterion = { version = "0.5", features = ["async_tokio"] }
 base64 = "0.21"
 tracing-test = "0.2"
+proptest = "1.5"
 
 [features]
 # Core Features (minimal dependencies) - Updated for development
@@ -254,8 +283,16 @@ compression = ["lz4", "zstd", "brotli", "flate2"]
 # Advanced Features
 security = ["tfhe", "bellman", "bls12_381"]
 homomorphic-encryption = ["tfhe"]
-zero-knowledge-proofs = ["bellman", "bls12_381"]
-distributed = ["rdkafka", "redis", "tonic", "lz4"]
+zero-knowledge-proofs = [
+    "bellman",
+    "bls12_381",
+    "neptune",
+    "bellpepper-core",
+    "ff",
+    "typenum",
+]
+# EXPERIMENTAL: incomplete distributed subsystem (not production Raft; realtime sync not implemented)
+distributed-experimental = ["redis", "lz4"]
 realtime = ["tokio-tungstenite", "futures-util"]
 observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp", "dep:opentelemetry_sdk"]
 
@@ -278,7 +315,8 @@ mobile = ["jni", "ndk", "swift-bridge"]
 cross-platform = ["wasm", "mobile", "md5", "bincode"]
 
 # Convenience Feature Groups
-full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal", "distributed"]
+full = ["storage", "embeddings", "analytics", "security", "external-integrations", "multimodal"]
+full-experimental = ["full", "distributed-experimental"]
 minimal = ["core", "storage"]
 base64 = ["dep:base64"]
 bincode = ["dep:bincode"]
@@ -302,7 +340,7 @@ path = "examples/real_integrations.rs"
 [[example]]
 name = "combined_full_system"
 path = "examples/combined_full_system.rs"
-required-features = ["distributed", "external-integrations", "embeddings"]
+required-features = ["distributed-experimental", "external-integrations", "embeddings"]
 
 [[example]]
 name = "phase4_security_privacy"
@@ -358,10 +396,6 @@ required-features = ["observability"]
 name = "security_suite"
 path = "tests/phase4_security_tests.rs"
 required-features = ["security"]
-
-[[test]]
-name = "performance_suite"
-path = "tests/real_performance_measurement_tests.rs"
 
 [[test]]
 name = "multimodal_suite"

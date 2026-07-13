@@ -2232,43 +2232,39 @@ impl AdvancedSearchEngine {
             .sum())
     }
 
-    /// Calculate tag engagement score
+    /// Calculate tag engagement score from real tag frequencies in the search index.
+    ///
+    /// Each tag's popularity is the fraction of indexed memories that carry it;
+    /// the score is the average popularity across the memory's tags. Returns a
+    /// neutral prior when the memory has no tags or the index is empty.
     fn calculate_tag_engagement_score(&self, tags: &[String]) -> f64 {
         if tags.is_empty() {
             return 0.3; // Neutral score for no tags
         }
 
-        // Simulate tag popularity (in real implementation, this would be based on actual usage data)
-        let popular_tags = [
-            "work",
-            "project",
-            "important",
-            "research",
-            "personal",
-            "meeting",
-            "idea",
-        ];
-        let engagement_tags = ["favorite", "bookmark", "starred", "priority"];
+        let total_memories = self.search_index.metadata_index.len();
+        if total_memories == 0 {
+            return 0.5; // No indexed data yet; neutral prior
+        }
 
-        let mut score = 0.0;
-        let mut tag_count = 0;
-
-        for tag in tags {
-            tag_count += 1;
-            if engagement_tags.contains(&tag.as_str()) {
-                score += 0.9; // High engagement tags
-            } else if popular_tags.contains(&tag.as_str()) {
-                score += 0.7; // Popular tags
-            } else {
-                score += 0.5; // Regular tags
+        // Count, per queried tag, how many indexed memories carry it.
+        let mut tag_counts: HashMap<&str, usize> = HashMap::new();
+        for entry in self.search_index.metadata_index.values() {
+            for tag in tags {
+                if entry.tags.contains(tag.as_str()) {
+                    *tag_counts.entry(tag.as_str()).or_insert(0) += 1;
+                }
             }
         }
 
-        if tag_count > 0 {
-            (score / tag_count as f64).min(1.0)
-        } else {
-            0.3
-        }
+        let popularity_sum: f64 = tags
+            .iter()
+            .map(|tag| {
+                tag_counts.get(tag.as_str()).copied().unwrap_or(0) as f64 / total_memories as f64
+            })
+            .sum();
+
+        (popularity_sum / tags.len() as f64).clamp(0.0, 1.0)
     }
 
     /// Calculate sophisticated content type score based on content analysis
@@ -2680,8 +2676,8 @@ impl AdvancedSearchEngine {
         }
 
         // Apply non-linear activation (sigmoid-like)
-        let activated_score = 1.0 / (1.0 + (-score * 2.0 + 1.0).exp());
-        activated_score
+
+        1.0 / (1.0 + (-score * 2.0 + 1.0).exp())
     }
 
     /// Calculate semantic context score
@@ -2814,8 +2810,7 @@ impl AdvancedSearchEngine {
         for search in recent_searches {
             let query_words: std::collections::HashSet<String> = search
                 .text_query
-                .as_ref()
-                .map(|q| q.clone())
+                .clone()
                 .unwrap_or_default()
                 .to_lowercase()
                 .split_whitespace()
@@ -2918,11 +2913,14 @@ impl AdvancedSearchEngine {
         }
     }
 
-    /// Calculate collaborative filtering score (simulated)
+    /// Calculate a content-derived engagement score.
+    ///
+    /// Heuristic: this system has no multi-user behavior data, so instead of
+    /// true collaborative filtering it combines four memory-local signals
+    /// (tag affinity, content similarity to frequently accessed patterns,
+    /// temporal patterns, and access patterns) into a weighted score. Each
+    /// factor is computed from the memory's own real metadata/content.
     async fn calculate_collaborative_filtering_score(&self, memory: &MemoryEntry) -> Result<f64> {
-        // Simulate collaborative filtering based on similar user patterns
-        // In a real implementation, this would use actual user behavior data
-
         let mut similarity_scores = Vec::new();
 
         // Factor 1: Tag-based similarity with other high-engagement memories
@@ -3177,15 +3175,14 @@ impl AdvancedSearchEngine {
 
         // Score based on seasonal relevance
         let month_diff = ((creation_month as i32 - current_month as i32).abs()).min(6);
-        let seasonal_score = match month_diff {
+
+        match month_diff {
             0 => 1.0, // Same month
             1 => 0.9, // Adjacent month
             2 => 0.7, // 2 months apart
             3 => 0.5, // Quarter apart
             _ => 0.3, // Different season
-        };
-
-        seasonal_score
+        }
     }
 
     /// Calculate content-based centrality as fallback
@@ -3274,7 +3271,7 @@ impl AdvancedSearchEngine {
         let age_days = (chrono::Utc::now() - memory.created_at()).num_days() as f64;
         let access_count = memory.access_count() as f64;
 
-        let performance_trend = if age_days > 0.0 {
+        if age_days > 0.0 {
             let access_rate = access_count / age_days;
             if access_rate > 0.5 {
                 0.9 // Improving performance
@@ -3285,9 +3282,7 @@ impl AdvancedSearchEngine {
             }
         } else {
             0.6 // New memory, neutral score
-        };
-
-        performance_trend
+        }
     }
 
     /// Simulate user feedback score
@@ -3298,8 +3293,8 @@ impl AdvancedSearchEngine {
         let access_frequency = (memory.access_count() as f64 / 20.0).min(1.0);
 
         // Simulate feedback based on these factors
-        let simulated_feedback = importance * 0.4 + confidence * 0.3 + access_frequency * 0.3;
-        simulated_feedback
+
+        importance * 0.4 + confidence * 0.3 + access_frequency * 0.3
     }
 
     /// Calculate adaptation score
@@ -3321,7 +3316,7 @@ impl AdvancedSearchEngine {
         let hours_since_access = (chrono::Utc::now() - memory.last_accessed()).num_hours() as f64;
         let access_count = memory.access_count() as f64;
 
-        let momentum = if hours_since_access < 24.0 && access_count > 3.0 {
+        if hours_since_access < 24.0 && access_count > 3.0 {
             0.9 // High momentum
         } else if hours_since_access < 168.0 && access_count > 1.0 {
             0.7 // Medium momentum
@@ -3329,9 +3324,7 @@ impl AdvancedSearchEngine {
             0.5 // Low momentum
         } else {
             0.2 // No momentum
-        };
-
-        momentum
+        }
     }
 
     /// Adapt learning weights based on performance
@@ -3405,7 +3398,7 @@ impl SearchIndex {
         for word in &words {
             self.word_index
                 .entry(word.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(memory.key.clone());
         }
 
@@ -3438,6 +3431,51 @@ impl Default for AdvancedSearchEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_tag_engagement_uses_real_index_frequencies() {
+        let mut engine = AdvancedSearchEngine::new();
+
+        // No tags: neutral score regardless of index state.
+        assert!((engine.calculate_tag_engagement_score(&[]) - 0.3).abs() < 1e-9);
+        // Empty index: neutral prior.
+        assert!((engine.calculate_tag_engagement_score(&["work".to_string()]) - 0.5).abs() < 1e-9);
+
+        // Index 4 memories: 3 tagged "common", 1 tagged "rare".
+        let memories: Vec<MemoryEntry> = (0..4)
+            .map(|i| {
+                let tags = if i < 3 {
+                    vec!["common".to_string()]
+                } else {
+                    vec!["rare".to_string()]
+                };
+                MemoryEntry::new(
+                    format!("key_{i}"),
+                    format!("content {i}"),
+                    MemoryType::ShortTerm,
+                )
+                .with_tags(tags)
+            })
+            .collect();
+        engine
+            .update_index(&memories)
+            .await
+            .expect("indexing should succeed");
+
+        let common = engine.calculate_tag_engagement_score(&["common".to_string()]);
+        let rare = engine.calculate_tag_engagement_score(&["rare".to_string()]);
+        let unseen = engine.calculate_tag_engagement_score(&["unseen".to_string()]);
+
+        // Scores reflect actual tag frequencies in the index.
+        assert!((common - 0.75).abs() < 1e-9, "got {common}");
+        assert!((rare - 0.25).abs() < 1e-9, "got {rare}");
+        assert!(unseen.abs() < 1e-9, "got {unseen}");
+
+        // Mixed tags average their popularities.
+        let mixed =
+            engine.calculate_tag_engagement_score(&["common".to_string(), "rare".to_string()]);
+        assert!((mixed - 0.5).abs() < 1e-9, "got {mixed}");
+    }
 
     #[test]
     fn test_sophisticated_content_type_scoring() {
@@ -3503,7 +3541,7 @@ mod tests {
 
         // URL content should get moderate score
         assert!(
-            url_score >= 0.5 && url_score <= 0.7,
+            (0.5..=0.7).contains(&url_score),
             "URL content should get moderate score"
         );
     }

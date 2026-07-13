@@ -126,7 +126,7 @@ pub fn jaccard_similarity(a: &[f64], b: &[f64]) -> f64 {
 pub fn angular_distance(a: &[f64], b: &[f64]) -> f64 {
     let cosine_sim = cosine_similarity(a, b);
     // Clamp to [-1, 1] to handle floating point errors
-    let cosine_sim = cosine_sim.max(-1.0).min(1.0);
+    let cosine_sim = cosine_sim.clamp(-1.0, 1.0);
     cosine_sim.acos()
 }
 

@@ -311,43 +311,41 @@ impl BehavioralAnalyzer {
 
     /// Update memory usage patterns
     async fn update_memory_patterns(&mut self, event: &AnalyticsEvent) -> Result<()> {
-        match event {
-            AnalyticsEvent::MemoryAccess {
-                memory_key,
-                timestamp,
-                user_context,
-                ..
-            } => {
-                let pattern = self
-                    .memory_patterns
-                    .entry(memory_key.clone())
-                    .or_insert_with(|| MemoryUsagePattern {
-                        memory_key: memory_key.clone(),
-                        users: HashSet::new(),
-                        peak_hours: Vec::new(),
-                        contexts: HashMap::new(),
-                        is_collaborative: false,
-                        avg_access_duration: 0.0,
-                    });
+        if let AnalyticsEvent::MemoryAccess {
+            memory_key,
+            timestamp,
+            user_context,
+            ..
+        } = event
+        {
+            let pattern = self
+                .memory_patterns
+                .entry(memory_key.clone())
+                .or_insert_with(|| MemoryUsagePattern {
+                    memory_key: memory_key.clone(),
+                    users: HashSet::new(),
+                    peak_hours: Vec::new(),
+                    contexts: HashMap::new(),
+                    is_collaborative: false,
+                    avg_access_duration: 0.0,
+                });
 
-                // Add user if provided
-                if let Some(user) = user_context {
-                    pattern.users.insert(user.clone());
-                    pattern.is_collaborative = pattern.users.len() > 1;
-                }
-
-                // Track peak hours
-                let hour = timestamp.hour();
-                if !pattern.peak_hours.contains(&hour) {
-                    pattern.peak_hours.push(hour);
-                }
-
-                // Update context if available
-                if let Some(context) = user_context {
-                    *pattern.contexts.entry(context.clone()).or_insert(0) += 1;
-                }
+            // Add user if provided
+            if let Some(user) = user_context {
+                pattern.users.insert(user.clone());
+                pattern.is_collaborative = pattern.users.len() > 1;
             }
-            _ => {}
+
+            // Track peak hours
+            let hour = timestamp.hour();
+            if !pattern.peak_hours.contains(&hour) {
+                pattern.peak_hours.push(hour);
+            }
+
+            // Update context if available
+            if let Some(context) = user_context {
+                *pattern.contexts.entry(context.clone()).or_insert(0) += 1;
+            }
         }
 
         Ok(())

@@ -66,6 +66,12 @@ pub struct GraphStats {
     pub last_updated: DateTime<Utc>,
 }
 
+impl Default for GraphStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphStats {
     pub fn new() -> Self {
         Self {
@@ -158,12 +164,12 @@ impl KnowledgeGraph {
         // Update adjacency lists
         self.adjacency
             .entry(edge.from_node)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(edge_id);
 
         self.reverse_adjacency
             .entry(edge.to_node)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(edge_id);
 
         self.edges.insert(edge_id, edge);

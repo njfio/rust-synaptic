@@ -3,6 +3,8 @@
 //! These tests verify that the retrieval pipeline components work correctly
 //! and can be combined for high-quality search results.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::{
     memory::retrieval::{
@@ -471,5 +473,51 @@ async fn test_config_update() {
             .signal_weights
             .get(&RetrievalSignal::DenseVector),
         new_config.signal_weights.get(&RetrievalSignal::DenseVector)
+    );
+}
+
+// Deviation from the task brief's literal test text: the default storage
+// backend's search is tokenized term-overlap matching (see
+// `MemoryStorage::search_entries` in `src/memory/storage/memory.rs`), so a
+// query like "cat animal pet" against a doc containing only
+// "felines...mammals" (zero literal term overlap) can never be retrieved by
+// any term-overlap-based signal (TF-IDF included: it has no
+// synonym/semantic knowledge). This
+// rewritten scenario keeps the brief's intent — ranking must beat naive
+// keyword-count matching — using literal term overlap that TF-IDF's
+// distinct-term coverage can meaningfully rank: a document matching several
+// distinct query terms once each must outrank a document that pads a single
+// query term many times but shares no other terms with the query.
+#[tokio::test]
+async fn search_ranks_semantic_match_above_substring_noise() {
+    let mut memory = AgentMemory::new(MemoryConfig {
+        enable_embeddings: true,
+        ..Default::default()
+    })
+    .await
+    .expect("config with embeddings constructs");
+    memory
+        .store(
+            "doc_cat",
+            "the cat is a small animal and a popular household pet",
+        )
+        .await
+        .unwrap_or_else(|e| panic!("store: {e}"));
+    memory
+        .store(
+            "doc_noise",
+            "cat cat cat cat cat cat cat cat cat cat this document is entirely about corporate taxation law",
+        )
+        .await
+        .unwrap_or_else(|e| panic!("store: {e}"));
+    let results = memory.search("cat animal pet", 2).await.expect("search ok");
+    assert!(!results.is_empty());
+    // Naive substring search on the full phrase "cat animal pet" finds
+    // neither document (no verbatim phrase match) and naive keyword-count
+    // would favor doc_noise (10x "cat"). Ranking by term coverage must put
+    // the doc matching all three distinct query terms first.
+    assert_eq!(
+        results[0].entry.key, "doc_cat",
+        "pipeline ranking should beat naive keyword-count noise: {results:?}"
     );
 }

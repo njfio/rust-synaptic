@@ -1,5 +1,7 @@
 //! Comprehensive tests for enhanced error handling system
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::io;
 use synaptic::error::{MemoryError, MemoryErrorExt, Result};
 
@@ -198,7 +200,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Loading configuration"));
             assert!(message.contains("File not found"));
         }
-        _ => assert!(false, "Expected storage error with context"),
+        _ => panic!("Expected storage error with context"),
     }
 
     // Test analytics context
@@ -255,7 +257,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Data compression"));
             assert!(message.contains("Algorithm not supported"));
         }
-        _ => assert!(false, "Expected compression error with context"),
+        _ => panic!("Expected compression error with context"),
     }
 
     // Test validation context
@@ -266,7 +268,7 @@ async fn test_error_context_extension() {
             assert!(message.contains("Input validation"));
             assert!(message.contains("Schema mismatch"));
         }
-        _ => assert!(false, "Expected validation error with context"),
+        _ => panic!("Expected validation error with context"),
     }
 
     // Test processing context
@@ -329,7 +331,7 @@ async fn test_error_chaining() {
             assert!(message.contains("Reading file"));
             assert!(message.contains("Access denied"));
         }
-        _ => assert!(false, "Expected storage error"),
+        _ => panic!("Expected storage error"),
     }
 
     // Test validation context

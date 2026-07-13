@@ -12,16 +12,34 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// Key management system
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KeyManager {
     config: SecurityConfig,
     master_keys: HashMap<String, MasterKey>,
     data_keys: HashMap<String, DataKey>,
     key_rotation_schedule: Vec<KeyRotationTask>,
     metrics: KeyManagementMetrics,
+}
+
+impl fmt::Debug for KeyManager {
+    /// Manual `Debug` impl: never prints key bytes. Master/data key maps are
+    /// redacted (key IDs and counts only); the fields already implement
+    /// redacted `Debug` themselves, but we keep this explicit so a future
+    /// field addition doesn't silently start leaking key material.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyManager")
+            .field("config", &self.config)
+            .field("master_key_count", &self.master_keys.len())
+            .field("data_key_count", &self.data_keys.len())
+            .field("key_rotation_schedule", &self.key_rotation_schedule)
+            .field("metrics", &self.metrics)
+            .finish()
+    }
 }
 
 impl KeyManager {
@@ -45,7 +63,9 @@ impl KeyManager {
     pub async fn generate_master_key(&mut self, key_id: &str) -> Result<String> {
         let master_key = MasterKey {
             id: key_id.to_string(),
-            key_data: self.generate_secure_key(self.config.encryption_key_size / 8)?,
+            key_data: Zeroizing::new(
+                self.generate_secure_key(self.config.encryption_key_size / 8)?,
+            ),
             algorithm: "AES-256".to_string(),
             created_at: Utc::now(),
             expires_at: Utc::now() + chrono::Duration::days(365), // 1 year
@@ -91,7 +111,7 @@ impl KeyManager {
         }
 
         let data_key_id = Uuid::new_v4().to_string();
-        let plaintext_key = self.generate_secure_key(32)?; // 256-bit key
+        let plaintext_key = Zeroizing::new(self.generate_secure_key(32)?); // 256-bit key
 
         // Encrypt the data key with the master key
         let encrypted_key = {
@@ -107,7 +127,7 @@ impl KeyManager {
             id: data_key_id.clone(),
             master_key_id: master_key_id.to_string(),
             encrypted_key,
-            plaintext_key: Some(plaintext_key), // In production, this would be cleared after use
+            plaintext_key: Some(plaintext_key),
             algorithm: "AES-256-GCM".to_string(),
             created_at: Utc::now(),
             expires_at: Utc::now()
@@ -179,7 +199,8 @@ impl KeyManager {
                 .get(&master_key_id)
                 .ok_or_else(|| MemoryError::key_management("Master key not found".to_string()))?;
 
-            let plaintext_key = self.decrypt_with_master_key(&encrypted_key, master_key)?;
+            let plaintext_key =
+                Zeroizing::new(self.decrypt_with_master_key(&encrypted_key, master_key)?);
 
             // Update the data key with the plaintext
             if let Some(data_key) = self.data_keys.get_mut(key_id) {
@@ -199,7 +220,7 @@ impl KeyManager {
                 .ok_or_else(|| {
                     MemoryError::key_management("Plaintext key not available".to_string())
                 })?
-                .clone()
+                .to_vec()
         };
 
         self.metrics.total_key_operations += 1;
@@ -225,7 +246,9 @@ impl KeyManager {
 
         let new_master_key = MasterKey {
             id: new_key_id.clone(),
-            key_data: self.generate_secure_key(self.config.encryption_key_size / 8)?,
+            key_data: Zeroizing::new(
+                self.generate_secure_key(self.config.encryption_key_size / 8)?,
+            ),
             algorithm,
             created_at: Utc::now(),
             expires_at: Utc::now() + chrono::Duration::days(365),
@@ -487,11 +510,15 @@ impl KeyManager {
     }
 }
 
-/// Master key structure
-#[derive(Debug, Clone)]
+/// Master key structure.
+///
+/// `key_data` holds the raw AES-256 master key bytes and is wrapped in
+/// `Zeroizing` so it is scrubbed from memory as soon as the struct (or any
+/// clone of it) is dropped.
+#[derive(Clone)]
 struct MasterKey {
     id: String,
-    key_data: Vec<u8>,
+    key_data: Zeroizing<Vec<u8>>,
     algorithm: String,
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
@@ -500,18 +527,60 @@ struct MasterKey {
     usage_count: u64,
 }
 
-/// Data encryption key structure
-#[derive(Debug, Clone)]
+impl fmt::Debug for MasterKey {
+    /// Redacts `key_data`; never format master key bytes into logs/errors.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MasterKey")
+            .field("id", &self.id)
+            .field("key_data", &"<redacted>")
+            .field("algorithm", &self.algorithm)
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .field("status", &self.status)
+            .field("version", &self.version)
+            .field("usage_count", &self.usage_count)
+            .finish()
+    }
+}
+
+/// Data encryption key structure.
+///
+/// `plaintext_key` is the decrypted data key material; it is wrapped in
+/// `Zeroizing` so it is scrubbed from memory on drop (including when the
+/// cache entry is replaced or evicted).
+#[derive(Clone)]
 struct DataKey {
     id: String,
     master_key_id: String,
     encrypted_key: Vec<u8>,
-    plaintext_key: Option<Vec<u8>>,
+    plaintext_key: Option<Zeroizing<Vec<u8>>>,
     algorithm: String,
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
     status: KeyStatus,
     usage_count: u64,
+}
+
+impl fmt::Debug for DataKey {
+    /// Redacts `plaintext_key`; `encrypted_key` is ciphertext (safe to show
+    /// as opaque bytes) but is still redacted defensively since it is not
+    /// useful for debugging and this keeps the invariant simple.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DataKey")
+            .field("id", &self.id)
+            .field("master_key_id", &self.master_key_id)
+            .field("encrypted_key", &"<redacted>")
+            .field(
+                "plaintext_key",
+                &self.plaintext_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("algorithm", &self.algorithm)
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .field("status", &self.status)
+            .field("usage_count", &self.usage_count)
+            .finish()
+    }
 }
 
 /// Key status enumeration
@@ -526,10 +595,14 @@ pub enum KeyStatus {
 /// Key rotation task
 #[derive(Debug, Clone)]
 struct KeyRotationTask {
+    // Task bookkeeping fields kept for logging/debug; scheduler keys off
+    // `key_id`/`scheduled_time`/`status` only.
+    #[allow(dead_code)]
     id: String,
     key_id: String,
     scheduled_time: DateTime<Utc>,
     status: RotationStatus,
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
     completed_at: Option<DateTime<Utc>>,
     error_message: Option<String>,
@@ -578,33 +651,99 @@ pub struct KeyManagementMetrics {
     pub key_rotation_success_rate: f64,
 }
 
-/// Trait for common key information
-trait KeyInfo {
-    fn get_status(&self) -> &KeyStatus;
-    fn get_created_at(&self) -> DateTime<Utc>;
-    fn get_expires_at(&self) -> DateTime<Utc>;
-}
+#[cfg(test)]
+mod key_hygiene_tests {
+    use super::*;
 
-impl KeyInfo for MasterKey {
-    fn get_status(&self) -> &KeyStatus {
-        &self.status
-    }
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
-    }
-    fn get_expires_at(&self) -> DateTime<Utc> {
-        self.expires_at
-    }
-}
+    /// Known key bytes, distinctive enough to recognize both as raw bytes
+    /// and as the hex string a naive Debug/format would produce.
+    const KNOWN_KEY_BYTES: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
 
-impl KeyInfo for DataKey {
-    fn get_status(&self) -> &KeyStatus {
-        &self.status
+    fn known_key_hex() -> String {
+        KNOWN_KEY_BYTES
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+
+    #[test]
+    fn master_key_debug_redacts_key_data() {
+        let master_key = MasterKey {
+            id: "test-master".to_string(),
+            key_data: Zeroizing::new(KNOWN_KEY_BYTES.to_vec()),
+            algorithm: "AES-256".to_string(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::days(1),
+            status: KeyStatus::Active,
+            version: 1,
+            usage_count: 0,
+        };
+
+        let debug_output = format!("{:?}", master_key);
+
+        assert!(
+            !debug_output.contains(&known_key_hex()),
+            "MasterKey Debug output leaked key bytes: {debug_output}"
+        );
+        assert!(
+            !debug_output.contains(&format!("{:?}", KNOWN_KEY_BYTES)),
+            "MasterKey Debug output leaked raw key byte array: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("redacted"),
+            "MasterKey Debug output should mark key_data as redacted: {debug_output}"
+        );
     }
-    fn get_expires_at(&self) -> DateTime<Utc> {
-        self.expires_at
+
+    #[test]
+    fn data_key_debug_redacts_plaintext_key() {
+        let data_key = DataKey {
+            id: "test-data".to_string(),
+            master_key_id: "test-master".to_string(),
+            encrypted_key: vec![1, 2, 3, 4],
+            plaintext_key: Some(Zeroizing::new(KNOWN_KEY_BYTES.to_vec())),
+            algorithm: "AES-256-GCM".to_string(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::days(1),
+            status: KeyStatus::Active,
+            usage_count: 0,
+        };
+
+        let debug_output = format!("{:?}", data_key);
+
+        assert!(
+            !debug_output.contains(&known_key_hex()),
+            "DataKey Debug output leaked plaintext key bytes: {debug_output}"
+        );
+        assert!(
+            !debug_output.contains(&format!("{:?}", KNOWN_KEY_BYTES)),
+            "DataKey Debug output leaked raw plaintext key byte array: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("redacted"),
+            "DataKey Debug output should mark plaintext_key as redacted: {debug_output}"
+        );
+    }
+
+    #[tokio::test]
+    async fn key_manager_debug_never_leaks_master_key_bytes() {
+        let config = SecurityConfig::default();
+        let manager = KeyManager::new(&config)
+            .await
+            .expect("KeyManager::new should succeed with default config");
+
+        let debug_output = format!("{:?}", manager);
+
+        // KeyManager's manual Debug only surfaces counts/config, never the
+        // per-key structs' raw fields, so no generated key bytes can appear
+        // regardless of what random master key was created during `new`.
+        assert!(
+            !debug_output.contains("key_data"),
+            "KeyManager Debug output should not expose raw key_data field: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("master_key_count"),
+            "KeyManager Debug output should summarize key counts, not enumerate keys: {debug_output}"
+        );
     }
 }

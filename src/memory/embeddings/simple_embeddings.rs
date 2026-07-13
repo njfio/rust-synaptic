@@ -251,18 +251,17 @@ mod tests {
         // For debugging, you can use tracing::debug! if needed:
         // tracing::debug!(ai_similarity, ai_cooking_similarity, "Embedding similarity comparison");
     }
-}
 
-/// Helper function for cosine similarity (used in tests)
-#[cfg(test)]
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    let dot_product: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let magnitude_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let magnitude_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
+    /// Helper function for cosine similarity (used in tests)
+    fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
+        let dot_product: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let magnitude_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let magnitude_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
 
-    if magnitude_a == 0.0 || magnitude_b == 0.0 {
-        0.0
-    } else {
-        dot_product / (magnitude_a * magnitude_b)
+        if magnitude_a == 0.0 || magnitude_b == 0.0 {
+            0.0
+        } else {
+            dot_product / (magnitude_a * magnitude_b)
+        }
     }
 }

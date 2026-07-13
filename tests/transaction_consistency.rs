@@ -6,11 +6,12 @@
 //! 3. Concurrent transactions work correctly
 //! 4. Transaction isolation is maintained
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::memory::storage::memory::MemoryStorage;
 use synaptic::memory::storage::{Storage, TransactionalStorage};
 use synaptic::memory::types::{MemoryEntry, MemoryType};
-use tokio;
 
 #[tokio::test]
 async fn test_transaction_commit_writes_to_live_storage() {

@@ -1,3 +1,5 @@
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::Arc;
 use synaptic::memory::management::MemoryManager;
@@ -154,7 +156,7 @@ fn bench_memory_manager(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+                        let manager = MemoryManager::new(storage, None).await.unwrap();
 
                         for i in 0..count {
                             let entry = MemoryEntry::new(
@@ -175,9 +177,7 @@ fn bench_memory_manager(c: &mut Criterion) {
             |b, &count| {
                 let storage = rt.block_on(async {
                     let storage = Arc::new(MemoryStorage::new());
-                    let manager = MemoryManager::new(storage.clone(), None, None, None)
-                        .await
-                        .unwrap();
+                    let manager = MemoryManager::new(storage.clone(), None).await.unwrap();
 
                     for i in 0..count {
                         let entry = MemoryEntry::new(
@@ -263,7 +263,7 @@ fn bench_consolidation(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let storage = Arc::new(MemoryStorage::new());
-                        let manager = MemoryManager::new(storage, None, None, None).await.unwrap();
+                        let manager = MemoryManager::new(storage, None).await.unwrap();
 
                         // Store memories with some duplicates
                         let mut entries = Vec::new();
@@ -310,9 +310,7 @@ fn bench_similarity_calculations(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 let storage = Arc::new(MemoryStorage::new());
-                let manager = MemoryManager::new(storage.clone(), None, None, None)
-                    .await
-                    .unwrap();
+                let manager = MemoryManager::new(storage.clone(), None).await.unwrap();
 
                 // Store entries (subset for performance)
                 for entry in &entries[..100] {

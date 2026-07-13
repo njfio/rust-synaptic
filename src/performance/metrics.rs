@@ -319,7 +319,6 @@ impl MetricsCollector {
     async fn get_resource_utilization(&self, metrics: &mut PerformanceMetrics) -> Result<()> {
         let monitor = self.resource_monitor.read().await;
 
-        // In a real implementation, these would collect actual system metrics
         metrics.cpu_usage_percent = monitor.get_cpu_usage().await;
         metrics.memory_usage_mb = monitor.get_memory_usage_mb().await;
         metrics.memory_usage_percent = monitor.get_memory_usage_percent().await;
@@ -416,10 +415,20 @@ impl OperationCounters {
     }
 }
 
-/// Resource monitor for system metrics
+/// Resource monitor backed by Linux `/proc` pseudo-files.
+///
+/// On Linux the CPU and memory figures come from real kernel-reported data
+/// (`/proc/loadavg`, `/proc/meminfo`, `/proc/self/status`). On other
+/// platforms, and for resources this process cannot observe without an
+/// external monitoring agent (disk usage, network throughput), the getters
+/// return 0.0 rather than fabricated values.
 #[derive(Debug)]
-pub struct ResourceMonitor {
-    // In a real implementation, this would contain system monitoring tools
+pub struct ResourceMonitor {}
+
+impl Default for ResourceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ResourceMonitor {
@@ -428,34 +437,66 @@ impl ResourceMonitor {
         Self {}
     }
 
-    /// Get current CPU usage percentage
+    /// Read a numeric field (in kB) from a `/proc` status-style file.
+    fn read_proc_kb(path: &str, field: &str) -> Option<f64> {
+        let content = std::fs::read_to_string(path).ok()?;
+        content
+            .lines()
+            .find(|line| line.starts_with(field))?
+            .split_whitespace()
+            .nth(1)?
+            .parse::<f64>()
+            .ok()
+    }
+
+    /// Approximate CPU pressure as a percentage: the 1-minute load average
+    /// (`/proc/loadavg`) normalized by logical CPU count, capped at 100.
+    /// This is a load-based approximation (runnable + uninterruptible
+    /// tasks), not sampled utilization. Returns 0.0 when `/proc` is
+    /// unavailable (non-Linux).
     pub async fn get_cpu_usage(&self) -> f64 {
-        // Mock implementation - would use actual system monitoring
-        45.0
+        let Some(loadavg) = std::fs::read_to_string("/proc/loadavg")
+            .ok()
+            .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok())
+        else {
+            return 0.0;
+        };
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1) as f64;
+        (loadavg / cpus * 100.0).min(100.0)
     }
 
-    /// Get current memory usage in megabytes
+    /// Current resident memory of this process in megabytes, from
+    /// `/proc/self/status` (`VmRSS`). Returns 0.0 when unavailable.
     pub async fn get_memory_usage_mb(&self) -> f64 {
-        // Mock implementation
-        512.0
+        Self::read_proc_kb("/proc/self/status", "VmRSS:")
+            .map(|kb| kb / 1024.0)
+            .unwrap_or(0.0)
     }
 
-    /// Get current memory usage as percentage
-    /// Get current memory usage as percentage
+    /// System memory usage as a percentage, from `/proc/meminfo`
+    /// (`MemTotal` vs `MemAvailable`). Returns 0.0 when unavailable.
     pub async fn get_memory_usage_percent(&self) -> f64 {
-        // Mock implementation
-        60.0
+        let total = Self::read_proc_kb("/proc/meminfo", "MemTotal:");
+        let available = Self::read_proc_kb("/proc/meminfo", "MemAvailable:");
+        match (total, available) {
+            (Some(total), Some(available)) if total > 0.0 => {
+                ((total - available) / total * 100.0).clamp(0.0, 100.0)
+            }
+            _ => 0.0,
+        }
     }
 
-    /// Get current disk usage as percentage
+    /// Disk usage is not observable from this process without platform
+    /// APIs or an external agent; always returns 0.0 (not collected).
     pub async fn get_disk_usage_percent(&self) -> f64 {
-        // Mock implementation
-        75.0
+        0.0
     }
 
-    /// Get current network I/O in megabits per second
+    /// Network throughput is not observable from this process without an
+    /// external agent; always returns 0.0 (not collected).
     pub async fn get_network_io_mbps(&self) -> f64 {
-        // Mock implementation
-        10.5
+        0.0
     }
 }

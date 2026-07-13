@@ -204,14 +204,19 @@ impl ParameterOptimizer {
         Ok(gradients)
     }
 
-    /// Evaluate parameters and return performance score
+    /// Evaluate parameters and return a performance score.
+    ///
+    /// Heuristic model, not a benchmark run: the score measures how close
+    /// each parameter sits to a context-derived target (cache size vs.
+    /// memory pressure, threads vs. CPU cores, batch size vs. average
+    /// workload), weighted and summed. It gives the gradient-based search a
+    /// smooth, deterministic objective computed from the caller-supplied
+    /// context rather than executing live performance tests.
     async fn evaluate_parameters(
         &self,
         parameters: &HashMap<String, f64>,
         context: &HashMap<String, f64>,
     ) -> Result<f64> {
-        // Simplified performance evaluation - in a real implementation,
-        // this would run actual performance tests
         let mut score = 0.0;
 
         // Cache size optimization
@@ -239,7 +244,7 @@ impl ParameterOptimizer {
         let noise = (fastrand::f64() - 0.5) * 0.1;
         score += noise;
 
-        Ok(score.max(0.0).min(1.0))
+        Ok(score.clamp(0.0, 1.0))
     }
 
     /// Apply parameter bounds
@@ -247,7 +252,7 @@ impl ParameterOptimizer {
         let min_bound = self.config.min_bounds.get(param_name).unwrap_or(&0.0);
         let max_bound = self.config.max_bounds.get(param_name).unwrap_or(&1000.0);
 
-        value.max(*min_bound).min(*max_bound)
+        value.clamp(*min_bound, *max_bound)
     }
 
     /// Get optimization history

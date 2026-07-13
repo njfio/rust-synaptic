@@ -16,6 +16,7 @@ pub mod access_control;
 pub mod audit;
 pub mod encryption;
 pub mod key_management;
+pub mod policy_engine;
 pub mod privacy;
 pub mod zero_knowledge;
 
@@ -328,6 +329,9 @@ pub struct SecurityManager {
     pub audit_logger: audit::AuditLogger,
     pub key_manager: key_management::KeyManager,
     pub zero_knowledge_manager: Option<zero_knowledge::ZeroKnowledgeManager>,
+    /// Optional policy layer consulted on every memory access decision, in
+    /// addition to (never instead of) authentication and RBAC/ABAC checks.
+    policy_engine: Option<policy_engine::PolicyEngine>,
 }
 
 impl SecurityManager {
@@ -354,7 +358,60 @@ impl SecurityManager {
             audit_logger,
             key_manager,
             zero_knowledge_manager,
+            policy_engine: None,
         })
+    }
+
+    /// Install a [`policy_engine::PolicyEngine`] as an additional access-policy
+    /// layer. Once set, every memory access decision consults
+    /// `PolicyEngine::evaluate_access` after authentication/permission checks;
+    /// a matching Deny rule (or a user unknown to the engine) blocks access.
+    pub fn set_policy_engine(&mut self, engine: policy_engine::PolicyEngine) {
+        self.policy_engine = Some(engine);
+    }
+
+    /// Evaluate the configured policy engine (if any) for this request.
+    /// No engine configured means no additional policy layer: Ok(()).
+    fn enforce_policies(
+        &self,
+        context: &SecurityContext,
+        resource_type: &str,
+        resource_id: &str,
+        action: &str,
+    ) -> Result<()> {
+        let Some(engine) = &self.policy_engine else {
+            return Ok(());
+        };
+
+        let request = policy_engine::AccessRequest {
+            user_id: context.user_id.clone(),
+            resource_type: resource_type.to_string(),
+            resource_id: resource_id.to_string(),
+            action: action.to_string(),
+            ip_address: context
+                .attributes
+                .get("ip_address")
+                .cloned()
+                .unwrap_or_default(),
+            user_agent: context
+                .attributes
+                .get("user_agent")
+                .cloned()
+                .unwrap_or_default(),
+            timestamp: Utc::now(),
+            session_id: context.session_id.clone(),
+            additional_context: context.attributes.clone(),
+        };
+
+        let decision = engine.evaluate_access(&request)?;
+        if decision.allowed {
+            Ok(())
+        } else {
+            Err(MemoryError::access_denied(format!(
+                "Denied by security policy: {}",
+                decision.reason
+            )))
+        }
     }
 
     /// Encrypt a memory entry with zero-knowledge architecture
@@ -367,6 +424,10 @@ impl SecurityManager {
         self.access_control
             .check_permission(context, Permission::WriteMemory)
             .await?;
+
+        // Consult the configured policy layer (deny rules block access even
+        // for authenticated, RBAC-permitted requests)
+        self.enforce_policies(context, "memory", &entry.key, "write")?;
 
         // Apply differential privacy if enabled
         let processed_entry = if self.config.enable_differential_privacy {
@@ -407,6 +468,9 @@ impl SecurityManager {
             .check_permission(context, Permission::ReadMemory)
             .await?;
 
+        // Consult the configured policy layer
+        self.enforce_policies(context, "memory", &encrypted_entry.id, "read")?;
+
         // Verify zero-knowledge proof if enabled
         if self.config.enable_zero_knowledge {
             if let Some(ref mut zkm) = self.zero_knowledge_manager {
@@ -415,12 +479,38 @@ impl SecurityManager {
                         serde_json::from_str(proof_json).map_err(|_| {
                             MemoryError::access_denied("Invalid proof format".to_string())
                         })?;
-                    let statement = zero_knowledge::AccessStatement {
-                        memory_key: encrypted_entry.id.clone(),
-                        user_id: context.user_id.clone(),
-                        access_type: zero_knowledge::AccessType::Read,
-                        timestamp: Utc::now(),
-                    };
+                    // The statement is caller-supplied (it carries the
+                    // timestamp/nonce the proof was generated over) and must
+                    // match both the entry and the requesting user.
+                    let statement_json =
+                        context
+                            .attributes
+                            .get("zk_access_statement")
+                            .ok_or_else(|| {
+                                MemoryError::access_denied(
+                                    "Access statement required alongside access proof".to_string(),
+                                )
+                            })?;
+                    let statement: zero_knowledge::AccessStatement =
+                        serde_json::from_str(statement_json).map_err(|_| {
+                            MemoryError::access_denied("Invalid statement format".to_string())
+                        })?;
+                    if statement.memory_key != encrypted_entry.id
+                        || statement.user_id != context.user_id
+                    {
+                        return Err(MemoryError::access_denied(
+                            "Access statement does not match this entry and user".to_string(),
+                        ));
+                    }
+                    // Freshness: reject stale (or implausibly future)
+                    // statements so a captured (proof, statement) pair cannot
+                    // replay indefinitely for the same entry and user.
+                    if !statement.is_fresh(Utc::now()) {
+                        return Err(MemoryError::access_denied(
+                            "Access statement timestamp is outside the freshness window"
+                                .to_string(),
+                        ));
+                    }
                     let valid = zkm.verify_access_proof(&proof, &statement).await?;
                     if !valid {
                         return Err(MemoryError::access_denied(
@@ -466,6 +556,9 @@ impl SecurityManager {
             .check_permission(context, Permission::ExecuteQueries)
             .await?;
 
+        // Consult the configured policy layer
+        self.enforce_policies(context, "memory", "secure_compute", "execute")?;
+
         // Perform homomorphic computation
         let result = self
             .encryption_manager
@@ -480,16 +573,30 @@ impl SecurityManager {
         Ok(result)
     }
 
-    /// Generate zero-knowledge proof for memory access
+    /// Register a zero-knowledge prover identity: creates the prover-side
+    /// secret and stores its commitment in the verifier's trusted store.
+    /// Proof generation for an identity requires prior registration.
+    pub fn register_zk_prover(&mut self, user_id: &str) -> Result<()> {
+        if let Some(ref mut zkm) = self.zero_knowledge_manager {
+            zkm.register_prover(user_id)
+        } else {
+            Err(MemoryError::access_denied(
+                "Zero-knowledge features not enabled",
+            ))
+        }
+    }
+
+    /// Generate zero-knowledge proof for memory access.
+    ///
+    /// The caller supplies the complete statement (including timestamp), so
+    /// any verifier holding the same statement can verify the proof.
     pub async fn generate_access_proof(
         &mut self,
-        memory_key: &str,
+        statement: &zero_knowledge::AccessStatement,
         context: &SecurityContext,
-        access_type: zero_knowledge::AccessType,
     ) -> Result<zero_knowledge::ZKProof> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_access_proof(memory_key, context, access_type)
-                .await
+            zkm.generate_access_proof(statement, context).await
         } else {
             Err(MemoryError::access_denied(
                 "Zero-knowledge features not enabled",
@@ -512,15 +619,16 @@ impl SecurityManager {
         }
     }
 
-    /// Generate content proof without revealing content
+    /// Generate content proof without revealing content.
+    /// The caller supplies the complete statement (including timestamp).
     pub async fn generate_content_proof(
         &mut self,
         entry: &MemoryEntry,
-        predicate: zero_knowledge::ContentPredicate,
+        statement: &zero_knowledge::ContentStatement,
         context: &SecurityContext,
     ) -> Result<zero_knowledge::ZKProof> {
         if let Some(ref mut zkm) = self.zero_knowledge_manager {
-            zkm.generate_content_proof(entry, predicate, context).await
+            zkm.generate_content_proof(entry, statement, context).await
         } else {
             Err(MemoryError::access_denied(
                 "Zero-knowledge features not enabled",

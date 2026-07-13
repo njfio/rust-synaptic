@@ -346,7 +346,7 @@ async fn test_multiple_adaptations_metrics() -> synaptic::error::Result<()> {
     let metrics = engine.get_metrics();
     assert_eq!(metrics.total_adaptations, 2);
     assert!(metrics.avg_adaptation_time_ms > 0.0);
-    assert!(metrics.strategy_performance.len() > 0);
+    assert!(!metrics.strategy_performance.is_empty());
 
     let history = engine.get_adaptation_history();
     assert_eq!(history.len(), 2);

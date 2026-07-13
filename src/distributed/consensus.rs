@@ -1,7 +1,10 @@
-//! Simple consensus implementation for distributed coordination
+//! EXPERIMENTAL single-node consensus scaffolding.
 //!
-//! This module provides a simplified consensus algorithm implementation
-//! for coordinating distributed memory operations across nodes.
+//! This is NOT a production consensus implementation and NOT a working Raft.
+//! It maintains Raft-like local state (term, log, commit index) but performs
+//! no network I/O: no vote requests, no log replication, and no
+//! append-entries RPCs. It can only "commit" on a single node with no peers;
+//! any operation that would require replication returns an error.
 
 use crate::distributed::{ConsensusConfig, NodeAddress, NodeId};
 use crate::error::{MemoryError, Result};
@@ -195,7 +198,8 @@ impl SimpleConsensus {
                 let leader = if *self.state.read() == NodeState::Leader {
                     Some(self.node_id)
                 } else {
-                    // In a real implementation, we'd track the current leader
+                    // Leader tracking across peers is not implemented in this
+                    // experimental module; only self-leadership is known.
                     None
                 };
                 let _ = response_tx.send(leader);
@@ -217,6 +221,15 @@ impl SimpleConsensus {
             });
         }
 
+        // Log replication to followers is not implemented. Refuse to fake a
+        // replicated commit when peers exist; only single-node commits are real.
+        if !self.peers.read().is_empty() {
+            return Err(MemoryError::feature_disabled(
+                "distributed-experimental",
+                "consensus log replication to peers",
+            ));
+        }
+
         let term = *self.current_term.read();
         let index = {
             let mut log = self.log.write();
@@ -230,8 +243,8 @@ impl SimpleConsensus {
             index
         };
 
-        // In a real implementation, we would replicate to followers here
-        // For now, we'll just commit immediately
+        // Single-node commit: with no peers, this node is the entire cluster
+        // and the entry is trivially committed.
         *self.commit_index.write() = index;
 
         // Update statistics
@@ -267,10 +280,18 @@ impl SimpleConsensus {
             stats.elections_started += 1;
         }
 
-        // In a real implementation, we would send vote requests to peers
-        // For now, we'll just become leader if we have no peers
+        // Vote requests to peers are not implemented. Only the trivial
+        // single-node election (no peers) can succeed; with peers present the
+        // node stays a candidate and never falsely claims leadership.
         if self.peers.read().is_empty() {
             self.become_leader().await;
+        } else {
+            tracing::warn!(
+                component = "consensus",
+                operation = "start_election",
+                node_id = %self.node_id,
+                "election with peers is not implemented (distributed-experimental); remaining candidate"
+            );
         }
     }
 
@@ -292,10 +313,9 @@ impl SimpleConsensus {
         self.send_heartbeats().await;
     }
 
-    /// Send heartbeats to followers
+    /// Record a heartbeat tick. Append-entries RPCs are not implemented;
+    /// this only updates local statistics and sends nothing over the network.
     async fn send_heartbeats(&self) {
-        // In a real implementation, we would send append entries RPCs
-        // For now, we'll just update statistics
         let mut stats = self.stats.write();
         stats.heartbeats_sent += 1;
         stats.last_heartbeat_time = Some(Utc::now());

@@ -413,7 +413,7 @@ impl CompletionEngine {
     async fn complete_files(&self, prefix: &str) -> Result<Vec<CompletionItem>> {
         let mut completions = Vec::new();
 
-        // Simple file completion (in a real implementation, you'd use proper file system APIs)
+        // Prefix-match directory listing via std::fs::read_dir.
         let path = std::path::Path::new(prefix);
         let (dir, filename_prefix) = if prefix.ends_with('/') || prefix.ends_with('\\') {
             (path, "")
@@ -455,33 +455,27 @@ impl CompletionEngine {
         Ok(completions)
     }
 
-    /// Complete variables
+    /// Complete variables from this process's real environment.
     fn complete_variables(&self, prefix: &str) -> Vec<CompletionItem> {
-        // In a real implementation, you'd get variables from the shell state
-        let variables = vec!["$USER", "$HOME", "$PATH", "$PWD"];
-
-        variables
-            .iter()
-            .filter(|var| var.to_lowercase().starts_with(&prefix.to_lowercase()))
+        let prefix_lower = prefix.to_lowercase();
+        let mut items: Vec<CompletionItem> = std::env::vars()
+            .map(|(name, _)| format!("${}", name))
+            .filter(|var| var.to_lowercase().starts_with(&prefix_lower))
             .map(|var| CompletionItem {
-                text: var.to_string(),
-                display: var.to_string(),
-                item_type: CompletionType::Variable,
+                display: var.clone(),
                 description: Some(format!("Environment variable: {}", var)),
+                text: var,
+                item_type: CompletionType::Variable,
                 priority: 65,
             })
-            .collect()
+            .collect();
+        items.sort_by(|a, b| a.text.cmp(&b.text));
+        items
     }
 
     /// Clear completion cache
     pub fn clear_cache(&mut self) {
         self.cache.clear();
-    }
-
-    /// Add custom completion items
-    pub fn add_custom_completions(&mut self, _items: Vec<CompletionItem>) {
-        // In a real implementation, you'd store these and include them in completions
-        // For now, this is a placeholder
     }
 }
 

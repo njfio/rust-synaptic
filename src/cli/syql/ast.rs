@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Root AST node for SyQL queries
+// One short-lived AST value exists per parsed query, so the size spread
+// between Query and the other variants has no practical memory cost, and
+// boxing QueryStatement would ripple through the parser/executor APIs.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Statement {
     /// SELECT/MATCH query

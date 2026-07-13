@@ -3,6 +3,8 @@
 //! Tests chart generation, timeline visualization, network graphs,
 //! and analytics visualization capabilities.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 #[cfg(feature = "visualization")]
 mod visualization_tests {
     use chrono::Utc;
