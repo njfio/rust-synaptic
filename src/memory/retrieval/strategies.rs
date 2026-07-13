@@ -380,6 +380,60 @@ impl RetrievalPipeline for GraphRetriever {
             );
         }
 
+        // Expand candidates through the knowledge graph: memories connected
+        // to the strongest direct matches are surfaced even when they share
+        // no terms with the query, scored by propagating the seed's score
+        // through the relationship strength.
+        if let Some(ref kg) = self.knowledge_graph {
+            const MAX_EXPANSION_SEEDS: usize = 5;
+
+            let mut seeds: Vec<(String, f64)> = scored_results
+                .iter()
+                .map(|s| (s.memory.entry.key.clone(), s.score))
+                .collect();
+            seeds.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            seeds.truncate(MAX_EXPANSION_SEEDS);
+
+            let mut seen: std::collections::HashSet<String> = scored_results
+                .iter()
+                .map(|s| s.memory.entry.key.clone())
+                .collect();
+
+            let kg_guard = kg.read().await;
+            for (seed_key, seed_score) in seeds {
+                let related = match kg_guard.find_related_memories(&seed_key, 2, None).await {
+                    Ok(related) => related,
+                    Err(e) => {
+                        // Seed may simply not be a graph node yet.
+                        tracing::debug!(seed = %seed_key, error = %e, "graph expansion skipped for seed");
+                        continue;
+                    }
+                };
+                for rel in related {
+                    if !seen.insert(rel.memory_key.clone()) {
+                        continue;
+                    }
+                    let entry = match self.storage.retrieve(&rel.memory_key).await {
+                        Ok(Some(entry)) => entry,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            tracing::warn!(key = %rel.memory_key, error = %e, "graph expansion candidate fetch failed");
+                            continue;
+                        }
+                    };
+                    let score =
+                        (seed_score * rel.relationship_strength.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+                    let fragment = MemoryFragment::new(entry, score);
+                    scored_results.push(
+                        ScoredMemory::new(fragment, score, RetrievalSignal::GraphRelationship)
+                            .with_explanation(format!(
+                                "Surfaced via graph relationship to '{seed_key}'"
+                            )),
+                    );
+                }
+            }
+        }
+
         // Sort by score descending
         scored_results.sort_by(|a, b| {
             b.score

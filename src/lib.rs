@@ -88,7 +88,10 @@ pub struct AgentMemory {
     state: memory::state::AgentState,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     checkpoint_manager: memory::checkpoint::CheckpointManager,
-    knowledge_graph: Option<memory::knowledge_graph::MemoryKnowledgeGraph>,
+    /// Knowledge graph shared with the retrieval pipeline's `GraphRetriever`
+    /// (hence the `Arc<RwLock<..>>`).
+    knowledge_graph:
+        Option<Arc<tokio::sync::RwLock<memory::knowledge_graph::MemoryKnowledgeGraph>>>,
     temporal_manager: Option<memory::temporal::TemporalMemoryManager>,
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
@@ -115,8 +118,10 @@ pub struct AgentMemory {
     /// Memory promotion manager for hierarchical memory management
     promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
     /// Hybrid retrieval pipeline used by `search` when embeddings are enabled;
-    /// combines dense-vector and keyword signals for ranked results instead of
-    /// naive substring matching. `None` falls back to `storage.search`.
+    /// combines dense-vector, keyword, graph, and temporal signals for ranked
+    /// results instead of naive substring matching, then applies composite
+    /// relevance × recency × importance scoring. `None` falls back to
+    /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
 }
 
@@ -156,9 +161,9 @@ impl AgentMemory {
         // Initialize knowledge graph if enabled
         let knowledge_graph = if config.enable_knowledge_graph {
             let graph_config = memory::knowledge_graph::GraphConfig::default();
-            Some(memory::knowledge_graph::MemoryKnowledgeGraph::new(
-                graph_config,
-            ))
+            Some(Arc::new(tokio::sync::RwLock::new(
+                memory::knowledge_graph::MemoryKnowledgeGraph::new(graph_config),
+            )))
         } else {
             None
         };
@@ -215,10 +220,20 @@ impl AgentMemory {
             let dense_vector =
                 memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
             let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
+            // Graph and temporal signals share the same storage; the graph
+            // retriever additionally shares the live knowledge-graph handle
+            // (it reports itself unavailable when the graph is disabled).
+            let graph = memory::retrieval::GraphRetriever::new(
+                Arc::clone(&storage),
+                knowledge_graph.clone(),
+            );
+            let temporal = memory::retrieval::TemporalRetriever::new(Arc::clone(&storage));
             let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::new(dense_vector))
-                .add_pipeline(Arc::new(keyword));
+                .add_pipeline(Arc::new(keyword))
+                .add_pipeline(Arc::new(graph))
+                .add_pipeline(Arc::new(temporal));
             Some(Arc::new(hybrid))
         } else {
             None
@@ -431,8 +446,8 @@ impl AgentMemory {
         }
 
         // Add or update in knowledge graph if enabled (intelligent merging)
-        if let Some(ref mut kg) = self.knowledge_graph {
-            if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+        if let Some(ref kg) = self.knowledge_graph {
+            if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
                 tracing::warn!(error = %e, "knowledge graph update degraded during store");
                 degradations.knowledge_graph = Some(e.to_string());
             }
@@ -440,8 +455,12 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
+            let mut kg_guard = match self.knowledge_graph {
+                Some(ref kg) => Some(kg.write().await),
+                None => None,
+            };
             if let Err(e) = am
-                .add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut())
+                .add_memory(&*self.storage, entry.clone(), kg_guard.as_deref_mut())
                 .await
             {
                 tracing::warn!(error = %e, "advanced management update degraded during store");
@@ -574,9 +593,10 @@ impl AgentMemory {
         best_neighbor_id: Option<String>,
     ) -> Result<()> {
         use memory::reasoning::ConflictResolution;
-        let Some(ref mut kg) = self.knowledge_graph else {
+        let Some(ref kg) = self.knowledge_graph else {
             return Ok(());
         };
+        let mut kg = kg.write().await;
         match resolution {
             ConflictResolution::Insert => {
                 kg.add_extracted_fact(&entry.key, fact).await?;
@@ -615,7 +635,7 @@ impl AgentMemory {
         entity_name: &str,
     ) -> Result<Vec<memory::knowledge_graph::ExtractedRelation>> {
         match self.knowledge_graph {
-            Some(ref kg) => kg.relations_for_entity(entity_name).await,
+            Some(ref kg) => kg.read().await.relations_for_entity(entity_name).await,
             None => Ok(Vec::new()),
         }
     }
@@ -699,9 +719,9 @@ impl AgentMemory {
             self.state.add_memory(entry.clone());
 
             // Refresh knowledge graph if enabled
-            if let Some(ref mut kg) = self.knowledge_graph {
+            if let Some(ref kg) = self.knowledge_graph {
                 tracing::debug!("Refreshing knowledge graph node for cache miss");
-                if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
                     tracing::warn!(error = %e, memory_key = %entry.key, "failed to refresh knowledge graph node for cache miss");
                 }
             }
@@ -834,8 +854,8 @@ impl AgentMemory {
         self.storage.clear().await?;
 
         // Clear knowledge graph if enabled
-        if let Some(ref mut kg) = self.knowledge_graph {
-            *kg = memory::knowledge_graph::MemoryKnowledgeGraph::new(
+        if let Some(ref kg) = self.knowledge_graph {
+            *kg.write().await = memory::knowledge_graph::MemoryKnowledgeGraph::new(
                 memory::knowledge_graph::GraphConfig::default(),
             );
         }
@@ -856,8 +876,10 @@ impl AgentMemory {
         validate_non_empty_string(from_memory, "from_memory key")?;
         validate_non_empty_string(to_memory, "to_memory key")?;
 
-        if let Some(ref mut kg) = self.knowledge_graph {
+        if let Some(ref kg) = self.knowledge_graph {
             let relationship_id = kg
+                .write()
+                .await
                 .create_relationship(from_memory, to_memory, relationship_type, None)
                 .await?;
 
@@ -888,7 +910,10 @@ impl AgentMemory {
         max_depth: usize,
     ) -> Result<Vec<memory::knowledge_graph::RelatedMemory>> {
         if let Some(ref kg) = self.knowledge_graph {
-            kg.find_related_memories(memory_key, max_depth, None).await
+            kg.read()
+                .await
+                .find_related_memories(memory_key, max_depth, None)
+                .await
         } else {
             Ok(Vec::new())
         }
@@ -902,7 +927,9 @@ impl AgentMemory {
         max_depth: Option<usize>,
     ) -> Result<Option<memory::knowledge_graph::GraphPath>> {
         if let Some(ref kg) = self.knowledge_graph {
-            kg.find_path_between_memories(from_memory, to_memory, max_depth)
+            kg.read()
+                .await
+                .find_path_between_memories(from_memory, to_memory, max_depth)
                 .await
         } else {
             Ok(None)
@@ -910,16 +937,22 @@ impl AgentMemory {
     }
 
     /// Get knowledge graph statistics
-    pub fn knowledge_graph_stats(&self) -> Option<memory::knowledge_graph::GraphStats> {
-        self.knowledge_graph.as_ref().map(|kg| kg.get_stats())
+    ///
+    /// Async because the graph is shared with the retrieval pipeline behind
+    /// an async `RwLock`.
+    pub async fn knowledge_graph_stats(&self) -> Option<memory::knowledge_graph::GraphStats> {
+        match self.knowledge_graph {
+            Some(ref kg) => Some(kg.read().await.get_stats()),
+            None => None,
+        }
     }
 
     /// Perform inference to discover new relationships
     pub async fn infer_relationships(
         &mut self,
     ) -> Result<Vec<memory::knowledge_graph::reasoning::InferenceResult>> {
-        if let Some(ref mut kg) = self.knowledge_graph {
-            kg.infer_relationships().await
+        if let Some(ref kg) = self.knowledge_graph {
+            kg.write().await.infer_relationships().await
         } else {
             Ok(Vec::new())
         }

@@ -201,7 +201,7 @@ impl TemporalDecayModels {
         model_type: &'a DecayModelType,
         time_elapsed_hours: f64,
         context: &'a DecayContext,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<DecayResult>> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<DecayResult>> + Send + 'a>> {
         Box::pin(async move {
             let base_result = match model_type {
                 DecayModelType::Ebbinghaus => {

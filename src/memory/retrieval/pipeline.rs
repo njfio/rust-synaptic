@@ -5,6 +5,9 @@
 //! deliver high-quality search results.
 
 use crate::error::Result;
+use crate::memory::temporal::decay_models::{
+    DecayConfig, DecayContext, DecayModelType, TemporalDecayModels,
+};
 use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -89,6 +92,38 @@ impl ScoredMemory {
     }
 }
 
+/// Weights for the post-fusion composite score.
+///
+/// After fusion, each result's final ordering score is
+/// `composite = relevance_weight · norm(fused_score)
+///            + recency_weight · recency_decay(age)
+///            + importance_weight · importance`
+/// where `norm` min-max normalizes the fused score to `[0, 1]` across the
+/// result set, `recency_decay` is the Ebbinghaus retention curve from
+/// `memory::temporal::decay_models` evaluated at the memory's age, and
+/// `importance` is `MemoryEntry.metadata.importance` (already `[0, 1]`).
+///
+/// Defaults: relevance 0.6, recency 0.2, importance 0.2.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CompositeWeights {
+    /// Weight of the normalized fused relevance score
+    pub relevance: f64,
+    /// Weight of the recency decay term
+    pub recency: f64,
+    /// Weight of the memory's stored importance
+    pub importance: f64,
+}
+
+impl Default for CompositeWeights {
+    fn default() -> Self {
+        Self {
+            relevance: 0.6,
+            recency: 0.2,
+            importance: 0.2,
+        }
+    }
+}
+
 /// Configuration for the retrieval pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineConfig {
@@ -106,6 +141,10 @@ pub struct PipelineConfig {
     pub enable_caching: bool,
     /// Cache TTL in seconds
     pub cache_ttl_seconds: u64,
+    /// Weights for the post-fusion composite (relevance × recency ×
+    /// importance) score. Defaults to 0.6 / 0.2 / 0.2.
+    #[serde(default)]
+    pub composite_weights: CompositeWeights,
 }
 
 impl Default for PipelineConfig {
@@ -124,6 +163,7 @@ impl Default for PipelineConfig {
             signal_weights,
             enable_caching: true,
             cache_ttl_seconds: 300,
+            composite_weights: CompositeWeights::default(),
         }
     }
 }
@@ -216,6 +256,12 @@ impl PipelineConfig {
     /// Builder method to set minimum score threshold
     pub fn with_min_score(mut self, min_score: f64) -> Self {
         self.min_score = min_score;
+        self
+    }
+
+    /// Builder method to set composite scoring weights
+    pub fn with_composite_weights(mut self, weights: CompositeWeights) -> Self {
+        self.composite_weights = weights;
         self
     }
 }
@@ -318,8 +364,10 @@ impl HybridRetriever {
             }
         }
 
-        // Fuse results
-        let fused_results = self.fuse_results(all_results, limit)?;
+        // Fuse results, then apply the composite
+        // relevance × recency × importance score (see `CompositeWeights`).
+        let fused = self.fuse_results(all_results, limit)?;
+        let fused_results = self.apply_composite_scoring(fused).await?;
 
         tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
 
@@ -332,12 +380,16 @@ impl HybridRetriever {
         Ok(fused_results)
     }
 
-    /// Fuse results from multiple pipelines using the configured strategy
+    /// Fuse results from multiple pipelines using the configured strategy.
+    ///
+    /// Returns each fused memory together with its fused score so the
+    /// post-fusion composite scoring stage can normalize relevance across
+    /// the result set.
     fn fuse_results(
         &self,
         all_results: Vec<Vec<ScoredMemory>>,
         limit: usize,
-    ) -> Result<Vec<MemoryFragment>> {
+    ) -> Result<Vec<(MemoryFragment, f64)>> {
         if all_results.is_empty() {
             return Ok(Vec::new());
         }
@@ -376,11 +428,7 @@ impl HybridRetriever {
         fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Take top limit results
-        Ok(fused
-            .into_iter()
-            .take(limit)
-            .map(|(memory, _score)| memory)
-            .collect())
+        Ok(fused.into_iter().take(limit).collect())
     }
 
     /// Fuse results with rank-based Reciprocal Rank Fusion.
@@ -391,11 +439,16 @@ impl HybridRetriever {
     /// retrievers. RRF scores are inherently small (at most `n / (k + 1)` for
     /// `n` retrievers), so `min_score` is applied to each retriever's raw
     /// signal scores before ranking rather than to the fused score.
+    ///
+    /// Each contribution is multiplied by the configured `signal_weights`
+    /// entry for the retriever's signal (default 1.0 when unset), so
+    /// e.g. `semantic_focus` genuinely favors dense-vector votes over
+    /// temporal votes instead of every signal voting with equal power.
     fn fuse_reciprocal_rank(
         &self,
         all_results: Vec<Vec<ScoredMemory>>,
         limit: usize,
-    ) -> Result<Vec<MemoryFragment>> {
+    ) -> Result<Vec<(MemoryFragment, f64)>> {
         const RRF_K: f64 = 60.0;
 
         // Value: (memory, rrf_score, weighted_raw_score_sum). The weighted raw
@@ -414,13 +467,13 @@ impl HybridRetriever {
             });
 
             for (rank, scored) in results.into_iter().enumerate() {
-                let contribution = 1.0 / (RRF_K + rank as f64 + 1.0);
                 let weight = self
                     .config
                     .signal_weights
                     .get(&scored.signal)
                     .copied()
                     .unwrap_or(1.0);
+                let contribution = weight / (RRF_K + rank as f64 + 1.0);
                 let entry = fused_scores
                     .entry(scored.memory.entry.key.clone())
                     .or_insert_with(|| (scored.memory.clone(), 0.0, 0.0));
@@ -439,8 +492,82 @@ impl HybridRetriever {
         Ok(fused
             .into_iter()
             .take(limit)
-            .map(|(memory, _rrf, _raw)| memory)
+            .map(|(memory, rrf, _raw)| (memory, rrf))
             .collect())
+    }
+
+    /// Apply the composite relevance × recency × importance score after
+    /// fusion and re-sort the result set.
+    ///
+    /// `composite = wr · norm(fused) + wc · recency_decay(age) + wi · importance`
+    ///
+    /// - `norm` min-max normalizes fused scores across the result set (a
+    ///   uniform set normalizes to 1.0 so relevance does not discriminate);
+    /// - `recency_decay` is the Ebbinghaus retention curve from
+    ///   `memory::temporal::decay_models`, evaluated at the memory's age
+    ///   (hours since creation) with a neutral context so age alone drives
+    ///   the term — importance is credited once, by its own weight;
+    /// - `importance` is `MemoryEntry.metadata.importance` (`[0, 1]`).
+    ///
+    /// The sort is stable, so exact composite ties preserve fused order.
+    async fn apply_composite_scoring(
+        &self,
+        fused: Vec<(MemoryFragment, f64)>,
+    ) -> Result<Vec<MemoryFragment>> {
+        if fused.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let weights = self.config.composite_weights;
+
+        let min = fused.iter().map(|(_, s)| *s).fold(f64::INFINITY, f64::min);
+        let max = fused
+            .iter()
+            .map(|(_, s)| *s)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let range = max - min;
+
+        // Deterministic Ebbinghaus decay: adaptivity disabled, neutral
+        // context, so retention depends only on age and the base half-life.
+        let mut decay_models = TemporalDecayModels::new(DecayConfig {
+            adaptive_enabled: false,
+            ..DecayConfig::default()
+        })?;
+        let neutral_context = DecayContext {
+            importance: 0.0,
+            access_frequency: 0.0,
+            hours_since_access: 0.0,
+            complexity: 0.0,
+            emotional_weight: 0.0,
+            contextual_relevance: 0.0,
+            engagement_level: 0.0,
+        };
+
+        let now = chrono::Utc::now();
+        let mut composite: Vec<(MemoryFragment, f64)> = Vec::with_capacity(fused.len());
+        for (memory, fused_score) in fused {
+            let relevance = if range > f64::EPSILON {
+                (fused_score - min) / range
+            } else {
+                1.0
+            };
+            let age_hours = (now - memory.entry.created_at()).num_seconds().max(0) as f64 / 3600.0;
+            let recency = decay_models
+                .calculate_decay(&DecayModelType::Ebbinghaus, age_hours, &neutral_context)
+                .await?
+                .retention_probability;
+            let importance = memory.entry.metadata.importance.clamp(0.0, 1.0);
+
+            let score = weights.relevance * relevance
+                + weights.recency * recency
+                + weights.importance * importance;
+            composite.push((memory, score));
+        }
+
+        // Stable sort: composite ties keep the fused ordering.
+        composite.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(composite.into_iter().map(|(memory, _)| memory).collect())
     }
 
     /// Combine scores from multiple signals using the configured strategy
@@ -688,12 +815,12 @@ mod tests {
             "RRF fusion must not filter out all results"
         );
         assert_eq!(
-            fused[0].entry.key, "a",
+            fused[0].0.entry.key, "a",
             "item ranked #1 by two retrievers must outrank item ranked #1 by one"
         );
         let pos_b = fused
             .iter()
-            .position(|m| m.entry.key == "b")
+            .position(|(m, _)| m.entry.key == "b")
             .expect("item b should be present");
         assert!(pos_b >= 1);
     }

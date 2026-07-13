@@ -169,9 +169,16 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 3.2: Composite scoring + activate Graph/Temporal retrievers
 **Files:** Modify `src/lib.rs` (`:204` pipeline build), `src/memory/retrieval/pipeline.rs` (post-fusion composite score); Test `tests/composite_scoring_tests.rs`.
 **Produces:** `CompositeWeights { relevance, recency, importance }` (default 0.6/0.2/0.2); post-fusion score `= wr·norm(relevance) + wc·recency_decay + wi·importance`. Register `GraphRetriever` + `TemporalRetriever` in the default `HybridRetriever`.
-- [ ] Failing test: given two candidates with equal relevance, the more recent+important one ranks first; a graph-connected candidate surfaces that pure dense/keyword miss.
-- [ ] Implement; recency via `decay_models.rs`, importance via `MemoryEntry.metadata.importance`.
-- [ ] Commit — `feat(retrieval): composite relevance×recency×importance scoring; wire graph+temporal signals`.
+- [x] Failing test: given two candidates with equal relevance, the more recent+important one ranks first; a graph-connected candidate surfaces that pure dense/keyword miss.
+- [x] Implement; recency via `decay_models.rs`, importance via `MemoryEntry.metadata.importance`.
+- [x] Commit — `feat(retrieval): composite relevance×recency×importance scoring; wire graph+temporal signals`.
+
+**Real-API divergences (adapted during implementation):**
+- `AgentMemory.knowledge_graph` became `Option<Arc<tokio::sync::RwLock<MemoryKnowledgeGraph>>>` so the live graph handle is shared with the pipeline's `GraphRetriever`; consequently `knowledge_graph_stats()` is now `async` (callers in examples/CLI/tests updated).
+- `GraphRetriever` alone could never surface memories dense/keyword miss (its candidates also came from `storage.search`); it now expands candidates through graph neighbors of its top matches, scoring `seed_score × relationship_strength`.
+- Rank-based RRF contributions are now multiplied by `signal_weights` (previously weights only broke ties), so wiring graph/temporal signals cannot outvote the semantic-focus weighting.
+- `TemporalDecayModels::calculate_decay`'s boxed future is now `+ Send` (required to await it inside `Send` retrieval futures).
+- Composite recency uses Ebbinghaus with adaptivity disabled and a neutral context, so age alone drives the term and importance is credited exactly once via its own weight.
 
 ### Task 3.3: Reranker trait + `HeuristicReranker`
 **Files:** Create `src/memory/retrieval/rerank.rs`; Modify `pipeline.rs` (`:382` insertion); Test `tests/reranker_tests.rs`.

@@ -13,8 +13,8 @@ pub mod strategies;
 
 // Re-export pipeline types
 pub use pipeline::{
-    CacheStats, FusionStrategy, HybridRetriever, PipelineConfig, RetrievalPipeline,
-    RetrievalSignal, ScoredMemory,
+    CacheStats, CompositeWeights, FusionStrategy, HybridRetriever, PipelineConfig,
+    RetrievalPipeline, RetrievalSignal, ScoredMemory,
 };
 
 // Re-export concrete strategies

@@ -341,7 +341,7 @@ impl GraphCommands {
         );
 
         // Get knowledge graph statistics
-        if let Some(stats) = agent_memory.knowledge_graph_stats() {
+        if let Some(stats) = agent_memory.knowledge_graph_stats().await {
             crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
             crate::cli_outln!("│ Knowledge Graph Overview                                                                │");
             crate::cli_outln!("├─────────────────────────────────────────────────────────────────────────────────────────┤");
@@ -520,7 +520,7 @@ impl GraphCommands {
             analysis_type
         );
 
-        if let Some(stats) = agent_memory.knowledge_graph_stats() {
+        if let Some(stats) = agent_memory.knowledge_graph_stats().await {
             match analysis_type {
                 "overview" => {
                     crate::cli_outln!("┌─────────────────────────────────────────────────────────────────────────────────────────┐");
@@ -751,7 +751,7 @@ impl GraphCommands {
             output.display()
         );
 
-        if let Some(stats) = agent_memory.knowledge_graph_stats() {
+        if let Some(stats) = agent_memory.knowledge_graph_stats().await {
             crate::cli_outln!(
                 "📊 Graph contains {} nodes and {} edges",
                 stats.node_count,
