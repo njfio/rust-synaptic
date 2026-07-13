@@ -100,6 +100,17 @@ pub struct AgentMemory {
     /// resolution); defaults to a `HeuristicReasoner` over the active embedder.
     #[cfg(feature = "embeddings")]
     reasoner: Arc<dyn memory::reasoning::MemoryReasoner>,
+    /// Reflection engine that clusters accumulated memories and synthesizes
+    /// provenance-linked insights via the reasoner.
+    #[cfg(feature = "embeddings")]
+    reflection_engine: memory::reflection::ReflectionEngine,
+    /// Keys of memories stored since the last reflection (insertion order).
+    #[cfg(feature = "embeddings")]
+    reflection_pending: Vec<String>,
+    /// Importance accumulated since the last reflection; `reflect` fires only
+    /// once this reaches the configured threshold.
+    #[cfg(feature = "embeddings")]
+    reflection_accumulated_importance: f64,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -202,6 +213,15 @@ impl AgentMemory {
             Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
                 memory::embeddings::TfIdfProvider::default(),
             )));
+
+        // Reflection engine: clusters memories accumulated since the last
+        // reflection by TF-IDF embedding similarity and synthesizes insights
+        // through the same reasoner as the write path.
+        #[cfg(feature = "embeddings")]
+        let reflection_engine = memory::reflection::ReflectionEngine::new(
+            memory::reflection::ReflectionConfig::default(),
+            Arc::new(memory::embeddings::TfIdfProvider::default()),
+        );
 
         // Initialize the hybrid retrieval pipeline if embeddings are enabled. This
         // routes `search` through ranked dense-vector + keyword signals instead of
@@ -330,6 +350,12 @@ impl AgentMemory {
             embedding_manager,
             #[cfg(feature = "embeddings")]
             reasoner,
+            #[cfg(feature = "embeddings")]
+            reflection_engine,
+            #[cfg(feature = "embeddings")]
+            reflection_pending: Vec::new(),
+            #[cfg(feature = "embeddings")]
+            reflection_accumulated_importance: 0.0,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -427,6 +453,15 @@ impl AgentMemory {
         self.storage.store(&entry).await?;
         self.state.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
+
+        // Track accumulation for triggered reflection.
+        #[cfg(feature = "embeddings")]
+        {
+            if !self.reflection_pending.iter().any(|k| k == key) {
+                self.reflection_pending.push(key.to_string());
+            }
+            self.reflection_accumulated_importance += entry.metadata.importance;
+        }
 
         let mut degradations = StoreDegradations::default();
 
@@ -646,6 +681,155 @@ impl AgentMemory {
             Some(ref kg) => kg.read().await.relations_for_entity(entity_name).await,
             None => Ok(Vec::new()),
         }
+    }
+
+    /// Replace the active reflection configuration (threshold, cluster
+    /// parameters). Does not reset the importance already accumulated.
+    #[cfg(feature = "embeddings")]
+    pub fn set_reflection_config(&mut self, config: memory::reflection::ReflectionConfig) {
+        self.reflection_engine.set_config(config);
+    }
+
+    /// Reflect over the memories accumulated since the last reflection.
+    ///
+    /// Triggers only once the accumulated importance reaches the configured
+    /// `importance_threshold` (returns an empty vec otherwise). When it
+    /// fires, the accumulated memories are clustered by embedding similarity
+    /// (connected components over pairwise cosine); every cluster of at least
+    /// `min_cluster` members is passed to the reasoner's `synthesize`. Each
+    /// resulting [`memory::reasoning::Insight`] is written as a new
+    /// long-term memory (tagged `insight`, custom field
+    /// `memory_source = "reflection"`) and linked in the knowledge graph
+    /// with a `derives` edge from the insight to each source memory.
+    /// Firing consumes the accumulated importance and pending set.
+    #[cfg(feature = "embeddings")]
+    pub async fn reflect(&mut self) -> Result<Vec<memory::reasoning::Insight>> {
+        let threshold = self.reflection_engine.config().importance_threshold;
+        if self.reflection_accumulated_importance < threshold {
+            return Ok(Vec::new());
+        }
+
+        let pending: Vec<String> = self.reflection_pending.clone();
+        let mut entries: Vec<MemoryEntry> = Vec::with_capacity(pending.len());
+        for key in &pending {
+            // A pending memory may have been deleted since it was stored;
+            // reflection simply skips it.
+            if let Some(entry) = self.state.get_memory(key) {
+                entries.push(entry);
+            }
+        }
+
+        let reasoner = Arc::clone(&self.reasoner);
+        let insights = self
+            .reflection_engine
+            .reflect(&entries, reasoner.as_ref())
+            .await?;
+
+        // `Insight::derived_from` carries memory ids; provenance edges are
+        // keyed by memory key, so map between the two.
+        let id_to_key: std::collections::HashMap<String, String> = entries
+            .iter()
+            .map(|e| (e.id().to_string(), e.key.clone()))
+            .collect();
+        for insight in &insights {
+            self.write_insight(insight, &id_to_key).await?;
+        }
+
+        // The trigger is consumed whether or not any cluster produced an
+        // insight: the same accumulation is never reflected over twice.
+        self.reflection_pending.clear();
+        self.reflection_accumulated_importance = 0.0;
+
+        Ok(insights)
+    }
+
+    /// Persist a synthesized insight as a new long-term memory and record
+    /// `derives` provenance edges from it to each source memory in the
+    /// knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn write_insight(
+        &mut self,
+        insight: &memory::reasoning::Insight,
+        id_to_key: &std::collections::HashMap<String, String>,
+    ) -> Result<()> {
+        let key = format!("insight_{}", Uuid::new_v4());
+        let mut metadata = memory::types::MemoryMetadata::new()
+            .with_tags(vec!["insight".to_string()])
+            .with_importance(insight.confidence);
+        metadata.set_custom_field("memory_source".to_string(), "reflection".to_string());
+        metadata.set_custom_field("derived_from".to_string(), insight.derived_from.join(","));
+        let entry = MemoryEntry::new(key.clone(), insight.text.clone(), MemoryType::LongTerm)
+            .with_metadata(metadata);
+
+        self.storage.store(&entry).await?;
+        self.state.add_memory(entry.clone());
+
+        if let Some(ref kg) = self.knowledge_graph {
+            let mut kg = kg.write().await;
+            kg.add_or_update_memory_node(&entry).await?;
+            for source_id in &insight.derived_from {
+                if let Some(source_key) = id_to_key.get(source_id) {
+                    let properties = std::collections::HashMap::from([
+                        ("source".to_string(), "reflection".to_string()),
+                        ("confidence".to_string(), insight.confidence.to_string()),
+                    ]);
+                    kg.create_relationship(
+                        &key,
+                        source_key,
+                        memory::knowledge_graph::RelationshipType::Custom("derives".to_string()),
+                        Some(properties),
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// All insight memories produced by reflection (custom field
+    /// `memory_source == "reflection"`), sorted by key for determinism.
+    #[cfg(feature = "embeddings")]
+    pub fn insight_memories(&self) -> Vec<MemoryEntry> {
+        let mut insights: Vec<MemoryEntry> = self
+            .state
+            .get_short_term_memories()
+            .values()
+            .chain(self.state.get_long_term_memories().values())
+            .filter(|e| {
+                e.metadata
+                    .get_custom_field("memory_source")
+                    .map(String::as_str)
+                    == Some("reflection")
+            })
+            .cloned()
+            .collect();
+        insights.sort_by(|a, b| a.key.cmp(&b.key));
+        insights
+    }
+
+    /// Memory keys reachable from `memory_key` over `derives` provenance
+    /// edges (depth 1). For an insight memory this is exactly its source
+    /// memories. Returns an empty list when the knowledge graph is disabled.
+    pub async fn derived_sources(&self, memory_key: &str) -> Result<Vec<String>> {
+        let Some(ref kg) = self.knowledge_graph else {
+            return Ok(Vec::new());
+        };
+        let related = kg
+            .read()
+            .await
+            .find_related_memories(
+                memory_key,
+                1,
+                Some(vec![memory::knowledge_graph::RelationshipType::Custom(
+                    "derives".to_string(),
+                )]),
+            )
+            .await?;
+        Ok(related
+            .into_iter()
+            .map(|r| r.memory_key)
+            .filter(|k| k != memory_key)
+            .collect())
     }
 
     /// Retrieve a memory by key

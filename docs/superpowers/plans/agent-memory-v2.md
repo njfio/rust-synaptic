@@ -201,9 +201,15 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 4.1: Reflection trigger + clustering + insight write
 **Files:** Create `src/memory/reflection.rs`; Modify `src/lib.rs` (`reflect()`), `src/memory/mod.rs`; Test `tests/reflection_tests.rs`.
 **Produces:** `ReflectionConfig { importance_threshold: f64, min_cluster: usize }`; `AgentMemory::reflect(&mut self) -> Result<Vec<Insight>>` — clusters memories accumulated since last reflection (connected-components over embedding similarity ≥ threshold), calls `reasoner.synthesize`, writes each `Insight` as a memory + KG `Derives` edges to sources.
-- [ ] Failing test: store 3 memories about one topic + 1 unrelated; `reflect()` returns 1 insight whose `derived_from` == the 3 topic ids and the unrelated memory is not a source; a `Derives` edge exists from insight to each source.
-- [ ] Implement; trigger fires only when accumulated importance ≥ threshold (test forces it).
-- [ ] Commit — `feat(memory): triggered reflection producing provenance-linked insights`.
+- [x] Failing test: store 3 memories about one topic + 1 unrelated; `reflect()` returns 1 insight whose `derived_from` == the 3 topic ids and the unrelated memory is not a source; a `Derives` edge exists from insight to each source.
+- [x] Implement; trigger fires only when accumulated importance ≥ threshold (test forces it).
+- [x] Commit — `feat(memory): triggered reflection producing provenance-linked insights`.
+- **Deviation note (Task 4.1, real-API divergence):**
+  - `ReflectionConfig` gains a third field, `similarity_threshold: f64` (default 0.3): the clustering cosine cutoff is data-dependent for TF-IDF embeddings, so it belongs in config rather than a hidden constant. Defaults: `importance_threshold: 3.0`, `min_cluster: 2`.
+  - `RelationshipType` already has `Custom(String)` and the traversal filter compares variants by equality, so provenance uses `Custom("derives")` — no new enum variant added.
+  - Insights are written directly to storage/state/KG (not via `store`) so writing an insight neither re-triggers reasoning nor feeds the reflection accumulator. Insight memories are `MemoryType::LongTerm`, tagged `insight`, with custom fields `memory_source = "reflection"` and `derived_from` (comma-joined source ids); importance = insight confidence.
+  - Firing `reflect()` consumes the pending set and accumulated importance even when no cluster reaches `min_cluster`, so the same accumulation is never reflected over twice.
+  - Test-visible surface: `AgentMemory::set_reflection_config` (test hook to force the trigger), `insight_memories()` (locate insight entries), and `derived_sources(key)` (depth-1 traversal over `Custom("derives")` edges).
 
 ---
 

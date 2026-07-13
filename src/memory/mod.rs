@@ -27,6 +27,9 @@ pub mod types;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 
+#[cfg(feature = "embeddings")]
+pub mod reflection;
+
 // Re-export commonly used types
 pub use checkpoint::CheckpointManager;
 pub use knowledge_graph::{
