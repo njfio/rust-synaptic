@@ -215,7 +215,9 @@ impl EncryptionManager {
         // Convert memory entry to homomorphic-compatible format
         let numeric_data = self.extract_numeric_features(entry)?;
 
-        // Encrypt using homomorphic encryption (simulated with advanced techniques)
+        // Encrypt with real TFHE homomorphic encryption when the
+        // `homomorphic-encryption` feature is enabled; otherwise this call
+        // fails closed with MemoryError::feature_disabled.
         let encrypted_data = homomorphic_context.encrypt_vector(&numeric_data).await?;
 
         let encrypted_entry = EncryptedMemoryEntry {
@@ -613,7 +615,7 @@ impl HomomorphicContext {
         {
             tracing::info!(
                 "Initializing real TFHE homomorphic encryption with key size: {}",
-                config.encryption_key_size
+                _config.encryption_key_size
             );
 
             // Generate TFHE integer keys with appropriate configuration
