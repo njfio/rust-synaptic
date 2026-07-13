@@ -342,7 +342,7 @@ impl GradualForgettingAlgorithm {
         let forgetting_probability =
             base_forgetting * (1.0 - protection_factor) * self.config.base_forgetting_rate;
 
-        Ok(forgetting_probability.min(1.0).max(0.0))
+        Ok(forgetting_probability.clamp(0.0, 1.0))
     }
 
     /// Check if memory meets minimum retention time
@@ -429,9 +429,7 @@ impl GradualForgettingAlgorithm {
         let balance_score = 1.0 - (retention_rate - 0.7).abs(); // Target 70% retention
         let strength_score = self.metrics.avg_retention_strength;
 
-        (balance_score * 0.6 + strength_score * 0.4)
-            .min(1.0)
-            .max(0.0)
+        (balance_score * 0.6 + strength_score * 0.4).clamp(0.0, 1.0)
     }
 
     /// Get forgetting decisions for a specific memory

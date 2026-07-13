@@ -2810,8 +2810,7 @@ impl AdvancedSearchEngine {
         for search in recent_searches {
             let query_words: std::collections::HashSet<String> = search
                 .text_query
-                .as_ref()
-                .map(|q| q.clone())
+                .clone()
                 .unwrap_or_default()
                 .to_lowercase()
                 .split_whitespace()

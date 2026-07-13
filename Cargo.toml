@@ -55,7 +55,6 @@ unimplemented = "deny"
 # `-D warnings` gate passes. These are organised by clippy lint group with a
 # negative priority so individual overrides above still win.
 style = { level = "allow", priority = -1 }
-complexity = { level = "allow", priority = -1 }
 perf = { level = "allow", priority = -1 }
 pedantic = { level = "allow", priority = -1 }
 nursery = { level = "allow", priority = -1 }

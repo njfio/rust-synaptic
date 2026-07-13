@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// CLI configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliConfig {
     /// Database configuration
     pub database: DatabaseConfig,
@@ -94,7 +94,7 @@ pub struct PerformanceConfig {
 }
 
 /// Security configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SecurityConfig {
     /// Enable authentication
     pub enable_auth: bool,
@@ -106,19 +106,6 @@ pub struct SecurityConfig {
     pub key_path: Option<PathBuf>,
     /// Enable TLS
     pub enable_tls: bool,
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            database: DatabaseConfig::default(),
-            shell: ShellConfig::default(),
-            output: OutputConfig::default(),
-            performance: PerformanceConfig::default(),
-            security: SecurityConfig::default(),
-            custom: HashMap::new(),
-        }
-    }
 }
 
 impl Default for DatabaseConfig {
@@ -169,18 +156,6 @@ impl Default for PerformanceConfig {
             enable_optimization: true,
             enable_parallel: true,
             worker_threads: None, // Use system default
-        }
-    }
-}
-
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            enable_auth: false,
-            api_key: None,
-            cert_path: None,
-            key_path: None,
-            enable_tls: false,
         }
     }
 }

@@ -215,7 +215,7 @@ impl SynapticIntelligence {
             };
 
             // Normalize importance score
-            let importance_score = (raw_importance / (1.0 + raw_importance)).min(1.0).max(0.0);
+            let importance_score = (raw_importance / (1.0 + raw_importance)).clamp(0.0, 1.0);
 
             // Calculate loss contribution (simplified)
             let loss_contribution =

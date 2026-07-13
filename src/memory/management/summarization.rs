@@ -321,9 +321,10 @@ impl MemorySummarizer {
             "Analysis completed: {}",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         ));
-        summary_lines.push(format!(
+        summary_lines.push(
             "Extraction methods: TF-IDF, TextRank, Entity Recognition, Importance Scoring"
-        ));
+                .to_string(),
+        );
 
         Ok(summary_lines.join("\n"))
     }
@@ -724,7 +725,7 @@ impl MemorySummarizer {
             score -= 0.1;
         }
 
-        score.max(0.0).min(1.0)
+        score.clamp(0.0, 1.0)
     }
 
     /// Split text into sentences using multiple delimiters

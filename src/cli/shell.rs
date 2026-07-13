@@ -128,7 +128,8 @@ impl<'a> InteractiveShell<'a> {
                     // Check for multi-line start
                     if trimmed.ends_with('\\') {
                         self.state.multi_line_mode = true;
-                        self.state.current_query = trimmed[..trimmed.len() - 1].to_string();
+                        self.state.current_query =
+                            trimmed.strip_suffix('\\').unwrap_or(trimmed).to_string();
                         self.state.current_query.push('\n');
                         continue;
                     }

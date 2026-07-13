@@ -222,6 +222,13 @@ impl BenchmarkSuite {
 }
 
 /// Individual benchmark definition
+/// Boxed async benchmark body: returns a pinned future producing `Result<()>`.
+pub type BenchmarkFn = Box<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
+        + Send
+        + Sync,
+>;
+
 pub struct Benchmark {
     /// Name of the benchmark
     pub name: String,
@@ -234,11 +241,7 @@ pub struct Benchmark {
     /// Number of warmup iterations
     pub warmup_iterations: usize,
     /// Function to execute for the benchmark
-    pub function: Box<
-        dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
-            + Send
-            + Sync,
-    >,
+    pub function: BenchmarkFn,
     /// Additional metadata for the benchmark
     pub metadata: HashMap<String, String>,
 }

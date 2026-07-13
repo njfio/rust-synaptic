@@ -571,6 +571,9 @@ impl LoggingManager {
     }
 
     /// Log an audit event
+    // Audit events genuinely carry 9 independent dimensions; grouping them
+    // into a struct would only move the argument list one level down.
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_audit_event(
         &self,
         operation: &str,

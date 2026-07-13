@@ -2638,7 +2638,7 @@ impl MetricsCollector {
         }
 
         let compression_estimate = 1.0 - (repeated_chars as f64 / (original_len * original_len));
-        compression_estimate.max(0.1).min(1.0) // Clamp between 0.1 and 1.0
+        compression_estimate.clamp(0.1, 1.0) // Clamp between 0.1 and 1.0
     }
 
     /// Normalize feature vector to [0, 1] range
@@ -3281,7 +3281,7 @@ impl MetricsCollector {
         // Optimal fanout based on key distribution and cache line size
         let cache_line_size = 64; // bytes
         let key_size = analysis.average_key_length as usize + 8; // key + pointer
-        let optimal_fanout = (cache_line_size / key_size).max(4).min(256);
+        let optimal_fanout = (cache_line_size / key_size).clamp(4, 256);
         optimal_fanout
     }
 
@@ -3377,14 +3377,14 @@ impl MetricsCollector {
         // Optimal bits per element for target false positive rate
         let target_fpr: f64 = 0.01; // 1% false positive rate
         let optimal_bits = (-target_fpr.ln() / (2.0_f64.ln().powi(2))).ceil() as usize;
-        optimal_bits.max(8).min(32)
+        optimal_bits.clamp(8, 32)
     }
 
     /// Calculate optimal number of hash functions for Bloom filter
     fn calculate_optimal_bloom_hashes(&self, analysis: &KeyDistributionAnalysis) -> usize {
         let bits_per_element = self.calculate_optimal_bloom_bits(analysis);
         let optimal_hashes = (bits_per_element as f64 * 2.0_f64.ln()).round() as usize;
-        optimal_hashes.max(3).min(15)
+        optimal_hashes.clamp(3, 15)
     }
 
     /// Optimize false positive rate

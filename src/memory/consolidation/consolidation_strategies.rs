@@ -613,7 +613,7 @@ impl ConsolidationStrategies {
         let age_factor = self.calculate_age_factor(memory).await?;
 
         let forgetting_prob = base_rate * importance_protection * age_factor;
-        Ok(forgetting_prob.min(1.0).max(0.0))
+        Ok(forgetting_prob.clamp(0.0, 1.0))
     }
 
     async fn calculate_replay_probability(
@@ -626,7 +626,7 @@ impl ConsolidationStrategies {
         let centrality_factor = importance.centrality_score;
 
         let replay_prob = importance_factor * 0.5 + recency_factor * 0.3 + centrality_factor * 0.2;
-        Ok(replay_prob.min(1.0).max(0.0))
+        Ok(replay_prob.clamp(0.0, 1.0))
     }
 
     async fn calculate_quality_retention(

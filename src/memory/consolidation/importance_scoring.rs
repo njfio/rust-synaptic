@@ -398,7 +398,7 @@ impl ImportanceScorer {
             (exponential_score * weights.0 + power_score * weights.1 + log_score * weights.2)
                 * frequency_factor;
 
-        Ok(combined_score.min(1.0).max(0.0))
+        Ok(combined_score.clamp(0.0, 1.0))
     }
 
     /// Calculate adaptive half-life based on memory characteristics
@@ -704,7 +704,7 @@ impl ImportanceScorer {
         ];
 
         let weighted_sum: f64 = weights.iter().zip(scores.iter()).map(|(w, s)| w * s).sum();
-        weighted_sum.min(1.0).max(0.0)
+        weighted_sum.clamp(0.0, 1.0)
     }
 
     /// Calculate a Fisher-information proxy vector for EWC.

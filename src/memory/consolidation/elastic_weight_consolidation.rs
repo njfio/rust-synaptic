@@ -172,7 +172,7 @@ impl ElasticWeightConsolidation {
         // Apply EWC lambda parameter
         let importance_weight = normalized_fisher * self.config.ewc_lambda;
 
-        Ok(importance_weight.min(1.0).max(0.0))
+        Ok(importance_weight.clamp(0.0, 1.0))
     }
 
     /// Create parameter protection entry
@@ -206,7 +206,7 @@ impl ElasticWeightConsolidation {
         let fisher_contribution = fisher_value.min(1.0) * 0.5;
         let protection_strength = base_strength + fisher_contribution;
 
-        Ok(protection_strength.min(1.0).max(0.0))
+        Ok(protection_strength.clamp(0.0, 1.0))
     }
 
     /// Get the current value for a virtual parameter.
@@ -326,8 +326,7 @@ impl ElasticWeightConsolidation {
 
         let fisher_value =
             (content_complexity * 0.3 + access_importance * 0.4 + metadata_importance * 0.3)
-                .min(1.0)
-                .max(0.01);
+                .clamp(0.01, 1.0);
 
         Ok(fisher_value)
     }
@@ -444,7 +443,7 @@ impl ElasticWeightConsolidation {
             retention_factors.iter().sum::<f64>() / retention_factors.len() as f64
         };
 
-        Ok(retention_score.min(1.0).max(0.0))
+        Ok(retention_score.clamp(0.0, 1.0))
     }
 }
 

@@ -332,7 +332,7 @@ impl PerformanceAnalyzer {
             trend_strength: trend_strength.min(1.0),
             change_rate: slope,
             analysis_period: Duration::hours(1),
-            confidence: r_squared.max(0.0).min(1.0),
+            confidence: r_squared.clamp(0.0, 1.0),
         })
     }
 

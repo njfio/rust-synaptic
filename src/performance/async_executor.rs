@@ -118,15 +118,11 @@ impl AsyncExecutor {
     }
 
     /// Submit multiple tasks in batch for optimized processing
-    pub async fn submit_batch_tasks<F, T>(
+    pub async fn submit_batch_tasks(
         &self,
         task_count: usize,
         priority: TaskPriority,
-    ) -> Result<Vec<String>>
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
-    {
+    ) -> Result<Vec<String>> {
         let task_ids: Vec<String> = (0..task_count)
             .map(|_| Uuid::new_v4().to_string())
             .collect();

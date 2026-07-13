@@ -165,7 +165,7 @@ impl TemporalRetriever {
         let combined =
             self.recency_weight * recency_score + self.frequency_weight * frequency_score;
 
-        combined.min(1.0).max(0.0)
+        combined.clamp(0.0, 1.0)
     }
 }
 
@@ -192,9 +192,9 @@ impl RetrievalPipeline for TemporalRetriever {
             .map(|fragment| {
                 let score = self.compute_temporal_score(&fragment);
                 ScoredMemory::new(fragment, score, RetrievalSignal::TemporalRelevance)
-                    .with_explanation(format!(
-                        "Temporal score based on recency and access patterns"
-                    ))
+                    .with_explanation(
+                        "Temporal score based on recency and access patterns".to_string(),
+                    )
             })
             .collect();
 

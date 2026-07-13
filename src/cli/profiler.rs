@@ -1612,8 +1612,8 @@ impl CachedService {
     fn format_text_report(&self, report: &ProfileReport) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("Performance Profile Report\n"));
-        output.push_str(&format!("==========================\n\n"));
+        output.push_str(&"Performance Profile Report\n".to_string());
+        output.push_str(&"==========================\n\n".to_string());
         output.push_str(&format!("Session: {}\n", report.session_name));
         output.push_str(&format!(
             "Generated: {}\n",
@@ -1675,7 +1675,7 @@ impl CachedService {
                     "   Impact: {:.1}% performance degradation\n",
                     bottleneck.impact.performance_degradation
                 ));
-                output.push_str(&format!("   Suggested fixes:\n"));
+                output.push_str(&"   Suggested fixes:\n".to_string());
                 for fix in &bottleneck.suggested_fixes {
                     output.push_str(&format!("   - {}\n", fix));
                 }
@@ -1721,7 +1721,7 @@ impl CachedService {
     fn format_markdown_report(&self, report: &ProfileReport) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("# Performance Profile Report\n\n"));
+        output.push_str(&"# Performance Profile Report\n\n".to_string());
         output.push_str(&format!("**Session:** {}\n", report.session_name));
         output.push_str(&format!(
             "**Generated:** {}\n",

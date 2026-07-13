@@ -154,7 +154,7 @@ impl SearchResult {
         Self {
             id,
             distance,
-            similarity: similarity.max(0.0).min(1.0),
+            similarity: similarity.clamp(0.0, 1.0),
         }
     }
 }

@@ -244,7 +244,7 @@ impl ParameterOptimizer {
         let noise = (fastrand::f64() - 0.5) * 0.1;
         score += noise;
 
-        Ok(score.max(0.0).min(1.0))
+        Ok(score.clamp(0.0, 1.0))
     }
 
     /// Apply parameter bounds
@@ -252,7 +252,7 @@ impl ParameterOptimizer {
         let min_bound = self.config.min_bounds.get(param_name).unwrap_or(&0.0);
         let max_bound = self.config.max_bounds.get(param_name).unwrap_or(&1000.0);
 
-        value.max(*min_bound).min(*max_bound)
+        value.clamp(*min_bound, *max_bound)
     }
 
     /// Get optimization history

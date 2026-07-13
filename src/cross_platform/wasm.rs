@@ -435,7 +435,7 @@ impl WasmAdapter {
                 .unwrap_or(1.0);
 
             let memory_usage = used_heap / total_heap;
-            let memory_score = (1.0 - memory_usage).max(0.0).min(1.0) as f32;
+            let memory_score = (1.0 - memory_usage).clamp(0.0, 1.0) as f32;
 
             // Estimate CPU score based on memory pressure
             let cpu_score = if memory_usage < 0.5 {

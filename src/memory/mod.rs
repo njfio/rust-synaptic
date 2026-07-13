@@ -395,9 +395,10 @@ impl Default for BasicMemoryConfig {
 }
 
 /// Memory cleanup policies
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum CleanupPolicy {
     /// Remove oldest entries when limit is reached
+    #[default]
     LeastRecentlyUsed,
     /// Remove entries based on access frequency
     LeastFrequentlyUsed,
@@ -405,10 +406,4 @@ pub enum CleanupPolicy {
     TimeBasedExpiry { max_age_hours: u64 },
     /// Custom cleanup logic
     Custom,
-}
-
-impl Default for CleanupPolicy {
-    fn default() -> Self {
-        Self::LeastRecentlyUsed
-    }
 }

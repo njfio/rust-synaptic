@@ -233,7 +233,7 @@ impl SelectiveReplayManager {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(weighted_priority.min(1.0).max(0.0))
+        Ok(weighted_priority.clamp(0.0, 1.0))
     }
 
     /// Calculate scheduled time for replay based on importance and algorithm
@@ -312,7 +312,7 @@ impl SelectiveReplayManager {
         let retention = (-hours_since_access / memory_strength).exp();
 
         // Return forgetting factor (1 - retention)
-        Ok((1.0 - retention).min(1.0).max(0.0))
+        Ok((1.0 - retention).clamp(0.0, 1.0))
     }
 
     /// Calculate interference risk for a memory

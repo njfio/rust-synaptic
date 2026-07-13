@@ -2066,7 +2066,7 @@ impl MemoryAnalytics {
         }
 
         // Simple moving average forecast
-        let window_size = (data.len() / 3).max(3).min(7);
+        let window_size = (data.len() / 3).clamp(3, 7);
         let recent_data = &data[data.len().saturating_sub(window_size)..];
         let avg = recent_data.iter().sum::<f64>() / recent_data.len() as f64;
 
@@ -2127,7 +2127,7 @@ impl MemoryAnalytics {
     async fn perform_semantic_clustering(&self, features: &[Vec<f64>]) -> Result<Vec<Vec<usize>>> {
         // Use k-means with semantic-appropriate number of clusters
         let k = (features.len() as f64).sqrt().ceil() as usize;
-        self.perform_kmeans_clustering(features, k.min(5).max(2))
+        self.perform_kmeans_clustering(features, k.clamp(2, 5))
             .await
     }
 

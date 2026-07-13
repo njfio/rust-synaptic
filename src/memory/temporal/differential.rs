@@ -902,11 +902,7 @@ impl DiffAnalyzer {
             let addition = &additions[j];
 
             // Check if they are adjacent (within reasonable distance)
-            let distance = if addition.position >= deletion.position {
-                addition.position - deletion.position
-            } else {
-                deletion.position - addition.position
-            };
+            let distance = addition.position.abs_diff(deletion.position);
 
             if distance <= 10 {
                 // Arbitrary threshold for "adjacent"

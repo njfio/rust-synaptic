@@ -825,7 +825,7 @@ impl MemoryKnowledgeGraph {
                 let edge = edge_ref.value();
                 edge.from_node == node_id || edge.to_node == node_id
             })
-            .map(|edge_ref| edge_ref.key().clone())
+            .map(|edge_ref| *edge_ref.key())
             .collect();
 
         // Update strength for each edge

@@ -406,7 +406,7 @@ impl PatternDetector {
         let mut patterns = Vec::new();
         for cluster in clusters
             .into_iter()
-            .filter(|c| c.len() as usize >= self.config.min_data_points)
+            .filter(|c| c.len() >= self.config.min_data_points)
         {
             let start = cluster
                 .first()
@@ -795,9 +795,7 @@ impl PatternDetector {
         let statistical_confidence = 1.0 - (deviation / max_deviation);
         let sample_size_factor = (total / 100.0).min(1.0); // More confidence with more data
 
-        (statistical_confidence * sample_size_factor)
-            .max(0.0)
-            .min(1.0)
+        (statistical_confidence * sample_size_factor).clamp(0.0, 1.0)
     }
 
     /// Detect cyclical patterns with variable periods using spectral analysis

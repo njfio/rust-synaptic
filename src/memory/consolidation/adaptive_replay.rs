@@ -548,7 +548,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(priority.min(1.0).max(0.0))
+        Ok(priority.clamp(0.0, 1.0))
     }
 
     /// Calculate adaptive scheduling time
@@ -602,7 +602,7 @@ impl AdaptiveReplayMechanisms {
         let context_adjustment = (context.activity_level + importance.importance_score) / 2.0;
         let estimated_effectiveness = historical_performance * 0.7 + context_adjustment * 0.3;
 
-        Ok(estimated_effectiveness.min(1.0).max(0.0))
+        Ok(estimated_effectiveness.clamp(0.0, 1.0))
     }
 
     /// Calculate adaptation confidence
@@ -1139,7 +1139,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(fitness_score.min(1.0).max(0.0))
+        Ok(fitness_score.clamp(0.0, 1.0))
     }
 
     /// Calculate context variance for strategy selection
@@ -1218,7 +1218,7 @@ impl AdaptiveReplayMechanisms {
             .map(|(factor, weight)| factor * weight)
             .sum();
 
-        Ok(fitness_factor.min(1.0).max(0.0))
+        Ok(fitness_factor.clamp(0.0, 1.0))
     }
 
     /// Create default context weights for context-aware strategy

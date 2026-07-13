@@ -30,7 +30,7 @@ fn create_test_memories(count: usize, memory_type: MemoryType, domain: &str) -> 
         metadata.importance = 0.5 + (i as f64 / count as f64) * 0.5;
         metadata.set_custom_field("context".to_string(), format!("{}_context", domain));
 
-        let entry = MemoryEntry::new(format!("{}_{}", domain, i), content, memory_type.clone())
+        let entry = MemoryEntry::new(format!("{}_{}", domain, i), content, memory_type)
             .with_metadata(metadata);
 
         memories.push(entry);

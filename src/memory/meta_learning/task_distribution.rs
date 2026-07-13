@@ -144,7 +144,7 @@ impl TaskDistribution {
         difficulty += type_complexity * 0.1;
 
         // Normalize to [0, 1]
-        Ok(difficulty.min(1.0).max(0.0))
+        Ok(difficulty.clamp(0.0, 1.0))
     }
 
     /// Compute content complexity of memory entries
@@ -200,7 +200,7 @@ impl TaskDistribution {
         let domain_frequency = domain_count / total_tasks;
         let novelty = 1.0 - domain_frequency;
 
-        Ok(novelty.max(0.0).min(1.0))
+        Ok(novelty.clamp(0.0, 1.0))
     }
 
     /// Recompute all distributions

@@ -283,7 +283,7 @@ impl EmbeddingManager {
         let variance = vector.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / vector.len() as f64;
 
         // Combine magnitude and variance for quality score
-        let quality = (magnitude * variance.sqrt()).min(1.0).max(0.0);
+        let quality = (magnitude * variance.sqrt()).clamp(0.0, 1.0);
         quality
     }
 }

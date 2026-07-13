@@ -427,8 +427,8 @@ impl PredictiveAnalytics {
                 };
 
                 let strength = match trend_direction {
-                    TrendDirection::Increasing => frequency_change.max(0.0).min(1.0),
-                    TrendDirection::Decreasing => (-frequency_change).max(0.0).min(1.0),
+                    TrendDirection::Increasing => frequency_change.clamp(0.0, 1.0),
+                    TrendDirection::Decreasing => (-frequency_change).clamp(0.0, 1.0),
                     TrendDirection::Stable => 1.0 - frequency_change.abs().min(1.0),
                     TrendDirection::Volatile => frequency_change.abs().min(1.0),
                 };

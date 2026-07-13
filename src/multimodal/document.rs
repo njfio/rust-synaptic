@@ -847,7 +847,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             // Optimal keyword density is around 2-5%
             let optimal_density = 3.5;
             let density_score = 1.0 - (keyword_density - optimal_density).abs() / optimal_density;
-            density_score.max(0.0).min(1.0)
+            density_score.clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -880,7 +880,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
             } else {
                 1.0 - (avg_word_length - 6.0) / 4.0
             };
-            readability.max(0.0).min(1.0)
+            readability.clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -910,7 +910,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
 
         // Calculate weighted average
         let total_score: f64 = quality_factors.iter().sum();
-        total_score.max(0.0).min(1.0)
+        total_score.clamp(0.0, 1.0)
     }
 
     /// Calculate processing confidence based on various factors
@@ -977,7 +977,7 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
                 1.0 - (char_to_word_ratio - 10.0) / 10.0
             }
         };
-        confidence_factors.push(consistency_confidence.max(0.0).min(1.0) * 0.15);
+        confidence_factors.push(consistency_confidence.clamp(0.0, 1.0) * 0.15);
 
         // Factor 5: Feature extraction success (0.0-1.0)
         let feature_confidence = {
@@ -996,6 +996,6 @@ impl MultiModalProcessor for DocumentMemoryProcessor {
 
         // Calculate weighted average
         let total_confidence: f64 = confidence_factors.iter().sum();
-        total_confidence.max(0.0).min(1.0)
+        total_confidence.clamp(0.0, 1.0)
     }
 }

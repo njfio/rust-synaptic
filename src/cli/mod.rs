@@ -457,7 +457,7 @@ pub struct CliRunner {
 impl CliRunner {
     /// Create a new CLI runner
     pub async fn new(args: SynapticCli) -> Result<Self> {
-        let config = config::CliConfig::load(args.config.as_ref().map(|v| &**v)).await?;
+        let config = config::CliConfig::load(args.config.as_deref()).await?;
         let syql_engine = syql::SyQLEngine::new()?;
 
         // Initialize AgentMemory with default configuration

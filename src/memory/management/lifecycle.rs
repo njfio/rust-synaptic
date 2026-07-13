@@ -986,7 +986,7 @@ impl MemoryLifecycleManager {
 
             // Reduce importance by the given factor
             memory.metadata.importance *= factor;
-            memory.metadata.importance = memory.metadata.importance.max(0.0).min(1.0); // Clamp to [0, 1]
+            memory.metadata.importance = memory.metadata.importance.clamp(0.0, 1.0); // Clamp to [0, 1]
             memory.metadata.last_accessed = chrono::Utc::now();
 
             // Add tag to indicate importance reduction
@@ -2418,7 +2418,7 @@ impl MemoryLifecycleManager {
         };
 
         // Convert daily rate to monthly and clamp to reasonable bounds
-        (weighted_avg * 30.0).max(-0.5).min(0.5) // -50% to +50% monthly growth
+        (weighted_avg * 30.0).clamp(-0.5, 0.5) // -50% to +50% monthly growth
     }
 
     /// Calculate optimization potential using advanced analysis

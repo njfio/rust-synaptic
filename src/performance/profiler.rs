@@ -299,7 +299,7 @@ impl AdvancedProfiler {
 
         // Weighted average
         let score = (cpu_score * 0.4 + memory_score * 0.3 + io_score * 0.3) * 100.0;
-        Ok(score.max(0.0).min(100.0))
+        Ok(score.clamp(0.0, 100.0))
     }
 }
 

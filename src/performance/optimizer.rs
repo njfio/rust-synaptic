@@ -297,7 +297,7 @@ impl PerformanceOptimizer {
         let score =
             (latency_score * 0.3 + throughput_score * 0.3 + memory_score * 0.2 + cpu_score * 0.2)
                 * 100.0;
-        Ok(score.max(0.0).min(100.0))
+        Ok(score.clamp(0.0, 100.0))
     }
 }
 

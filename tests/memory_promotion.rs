@@ -260,17 +260,17 @@ async fn test_access_frequency_policy_unit() {
     );
 
     // Below threshold
-    entry.metadata.access_count = 3 as u64;
+    entry.metadata.access_count = 3_u64;
     assert!(!policy.should_promote(&entry));
     assert!(policy.promotion_score(&entry) < 1.0);
 
     // At threshold
-    entry.metadata.access_count = 5 as u64;
+    entry.metadata.access_count = 5_u64;
     assert!(policy.should_promote(&entry));
     assert_eq!(policy.promotion_score(&entry), 1.0);
 
     // Above threshold
-    entry.metadata.access_count = 10 as u64;
+    entry.metadata.access_count = 10_u64;
     assert!(policy.should_promote(&entry));
     assert_eq!(policy.promotion_score(&entry), 1.0);
 }
@@ -326,17 +326,17 @@ async fn test_hybrid_policy_unit() {
     );
 
     // High access, low importance
-    entry.metadata.access_count = 10 as u64;
+    entry.metadata.access_count = 10_u64;
     entry.metadata.importance = 0.3;
     assert!(policy.should_promote(&entry)); // Access alone pushes over threshold
 
     // Low access, high importance
-    entry.metadata.access_count = 1 as u64;
+    entry.metadata.access_count = 1_u64;
     entry.metadata.importance = 0.9;
     assert!(policy.should_promote(&entry)); // Importance alone pushes over threshold
 
     // Both low
-    entry.metadata.access_count = 1 as u64;
+    entry.metadata.access_count = 1_u64;
     entry.metadata.importance = 0.3;
     assert!(!policy.should_promote(&entry));
 }
@@ -351,7 +351,7 @@ async fn test_promotion_manager_unit() {
         "content".to_string(),
         MemoryType::ShortTerm,
     );
-    entry.metadata.access_count = 5 as u64;
+    entry.metadata.access_count = 5_u64;
 
     assert!(manager.should_promote(&entry));
 

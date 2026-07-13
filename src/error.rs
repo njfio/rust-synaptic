@@ -884,7 +884,7 @@ mod tests {
     fn test_result_type_alias() {
         // Test that Result<T> is properly aliased
         let ok_result: Result<i32> = Ok(42);
-        assert_eq!(ok_result.expect("ok_result should be valid"), 42);
+        assert!(matches!(ok_result, Ok(42)));
 
         let err_result: Result<i32> = Err(MemoryError::storage("test"));
         assert!(err_result.is_err());
