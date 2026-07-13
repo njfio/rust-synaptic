@@ -112,6 +112,16 @@ impl AgentState {
         retrieved
     }
 
+    /// Get a memory by key WITHOUT marking it as accessed.
+    ///
+    /// Used by scoring paths (e.g. forgetting) that must observe access
+    /// metadata without perturbing it.
+    pub fn peek_memory(&self, key: &str) -> Option<&MemoryEntry> {
+        self.short_term_memories
+            .get(key)
+            .or_else(|| self.long_term_memories.get(key))
+    }
+
     /// Check if a memory exists
     pub fn has_memory(&self, key: &str) -> bool {
         self.short_term_memories.contains_key(key) || self.long_term_memories.contains_key(key)

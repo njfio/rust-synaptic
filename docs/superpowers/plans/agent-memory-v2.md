@@ -218,9 +218,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 5.1: ForgettingPolicy + eviction wired to promotion
 **Files:** Create `src/memory/forgetting.rs`; Modify `src/lib.rs` (`forget()`), integrate `MemoryPromotionManager` (`:112`); Test `tests/forgetting_tests.rs`.
 **Produces:** `ForgettingPolicy { retention_floor: f64, decay: DecayModelType }`; `AgentMemory::forget(&mut self, policy) -> Result<ForgetReport>` computing each memory's retained strength = `decay(age) · importance · recency_of_access`; below `retention_floor` → demote a tier or evict; report lists evicted/demoted ids.
-- [ ] Failing test: two same-age memories, one high-importance one low; after `forget`, low-importance one is evicted, high-importance one survives; a recently-accessed low-importance memory survives over a never-accessed one.
-- [ ] Implement using `decay_models.rs`; eviction goes through promotion-tier transitions, not a parallel delete path.
-- [ ] Commit — `feat(memory): importance-weighted forgetting and eviction via promotion tiers`.
+- [x] Failing test: two same-age memories, one high-importance one low; after `forget`, low-importance one is evicted, high-importance one survives; a recently-accessed low-importance memory survives over a never-accessed one.
+- [x] Implement using `decay_models.rs`; eviction goes through promotion-tier transitions, not a parallel delete path. (Note: `MemoryPromotionManager` had no downward transition, so a real `demote_memory` (LongTerm→ShortTerm) was added to the manager; below-floor long-term memories demote a tier, below-floor short-term memories — already at the lowest tier — are removed from storage+state. Strength = non-adaptive `decay(age)` × `importance` × recency-of-access factor.)
+- [x] Commit — `feat(memory): importance-weighted forgetting and eviction via promotion tiers`.
 
 ---
 

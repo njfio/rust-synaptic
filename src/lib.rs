@@ -939,6 +939,89 @@ impl AgentMemory {
         }
     }
 
+    /// Apply a forgetting pass: demote or evict memories whose retained
+    /// strength (`decay(age) * importance * recency_of_access_factor`, see
+    /// [`memory::forgetting::ForgettingPolicy::retained_strength`]) has fallen
+    /// below the policy's retention floor.
+    ///
+    /// Tier transitions route through the same [`memory::promotion::MemoryPromotionManager`]
+    /// that drives promotion: a long-term memory below the floor is demoted to
+    /// short-term (and survives until a later pass); a short-term memory below
+    /// the floor is evicted from both storage and session state. Requires
+    /// memory promotion to be enabled (`MemoryConfig::enable_memory_promotion`,
+    /// the default) so eviction is not a parallel delete path.
+    #[tracing::instrument(skip(self, policy), fields(retention_floor = policy.retention_floor))]
+    pub async fn forget(
+        &mut self,
+        policy: memory::forgetting::ForgettingPolicy,
+    ) -> Result<memory::forgetting::ForgetReport> {
+        let promotion_manager = self.promotion_manager.as_ref().ok_or_else(|| {
+            MemoryError::configuration(
+                "forget() requires memory promotion to be enabled so tier transitions \
+                 (demotion/eviction) route through the promotion machinery",
+            )
+        })?;
+
+        let mut entries = self.storage.get_all_entries().await?;
+        // Deterministic processing order regardless of backend iteration order.
+        entries.sort_by(|a, b| a.key.cmp(&b.key));
+
+        let mut report = memory::forgetting::ForgetReport {
+            examined: entries.len(),
+            ..Default::default()
+        };
+
+        for stored in entries {
+            // Prefer the in-session copy: state carries fresher access
+            // metadata (retrievals bump the state entry, not storage).
+            let entry = self
+                .state
+                .peek_memory(&stored.key)
+                .cloned()
+                .unwrap_or(stored);
+
+            let strength = policy.retained_strength(&entry).await?;
+            if strength >= policy.retention_floor {
+                continue;
+            }
+
+            match entry.memory_type {
+                memory::types::MemoryType::LongTerm => {
+                    let demoted = promotion_manager.demote_memory(entry)?;
+                    tracing::info!(
+                        memory_key = %demoted.key,
+                        retained_strength = strength,
+                        "Forgetting pass demoting memory to short-term tier"
+                    );
+                    self.storage.store(&demoted).await?;
+                    if self.state.peek_memory(&demoted.key).is_some() {
+                        self.state.remove_memory(&demoted.key);
+                        self.state.add_memory(demoted.clone());
+                    }
+                    report.demoted.push(demoted.key);
+                }
+                memory::types::MemoryType::ShortTerm => {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        retained_strength = strength,
+                        "Forgetting pass evicting memory at lowest tier"
+                    );
+                    self.state.remove_memory(&entry.key);
+                    self.storage.delete(&entry.key).await?;
+                    report.evicted.push(entry.key);
+                }
+            }
+        }
+
+        tracing::debug!(
+            examined = report.examined,
+            evicted = report.evicted.len(),
+            demoted = report.demoted.len(),
+            "Forgetting pass complete"
+        );
+        Ok(report)
+    }
+
     /// Search memories by content similarity
     #[tracing::instrument(skip(self, query), fields(query_len = query.len(), limit = limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
