@@ -6,3 +6,5 @@
 //! hand-authored fixture in `fixtures/` that mirrors both real schemas.
 
 pub mod dataset;
+pub mod metrics;
+pub mod runner;

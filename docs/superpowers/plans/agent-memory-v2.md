@@ -256,8 +256,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 7.2: Runner + retrieval/latency/growth metrics (LLM-free)
 **Files:** `tools/eval/src/{runner,metrics}.rs`; Test on fixture.
 **Produces:** ingest each conversation into `AgentMemory`, run each question through `recall`, compute retrieval precision/recall/MRR vs `evidence_ids`; latency p50/p95/p99 (store + recall); memory-growth at 1k/10k/100k (synthetic fill using dataset sessions repeated/scaled, documented).
-- [ ] Failing test: on the fixture, recall@k for a question whose evidence is ingested is 1.0; MRR computed correctly on a known ranking.
-- [ ] Commit — `feat(eval): LLM-free retrieval/latency/growth harness`.
+- [x] Failing test: on the fixture, recall@k for a question whose evidence is ingested is 1.0; MRR computed correctly on a known ranking.
+- [x] Commit — `feat(eval): LLM-free retrieval/latency/growth harness`.
+- Note (as built): retrieval uses the public `AgentMemory::search` (there is no `recall` method); turn memory keys reproduce the evidence-id schemes (LoCoMo `DN:t` dia_ids; LongMemEval `session_id::tN` keys normalized back to session ids for scoring). Growth size proxy = stored-entry count + sum of key/value UTF-8 bytes + library `MemoryStats::total_size` (payload proxy, not RSS); `measure_growth` takes targets (production `[1k,10k,100k]`, tests exercise small targets; synthetic fill entries, not repeated dataset sessions).
 
 ### Task 7.3: Ablation harness
 **Files:** `tools/eval/src/ablation.rs`; Test on fixture.
