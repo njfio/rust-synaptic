@@ -26,46 +26,102 @@ impl KeywordRetriever {
         Self { storage }
     }
 
-    /// Compute BM25-style score for a memory against a query
-    fn compute_bm25_score(&self, memory_content: &str, query: &str) -> f64 {
-        let query_lower = query.to_lowercase();
-        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+    /// Corpus statistics over the candidate set, used for real BM25 IDF.
+    fn corpus_stats(query_terms: &[String], candidate_contents: &[String]) -> CorpusStats {
+        let n_docs = candidate_contents.len();
+        let mut total_len = 0usize;
+        let mut doc_freq: HashMap<String, usize> = HashMap::new();
+
+        for content in candidate_contents {
+            let content_lower = content.to_lowercase();
+            let terms: Vec<&str> = content_lower.split_whitespace().collect();
+            total_len += terms.len();
+            for query_term in query_terms {
+                if terms.iter().any(|t| t == query_term) {
+                    *doc_freq.entry(query_term.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let avg_doc_length = if n_docs > 0 {
+            total_len as f64 / n_docs as f64
+        } else {
+            0.0
+        };
+
+        CorpusStats {
+            n_docs,
+            avg_doc_length,
+            doc_freq,
+        }
+    }
+
+    /// Compute BM25 score for a memory against a query using corpus-derived IDF.
+    ///
+    /// IDF follows the standard BM25 form:
+    /// `idf = ln((N - df + 0.5) / (df + 0.5) + 1)`
+    /// where N is the number of candidate documents and df is the number of
+    /// candidates containing the term.
+    fn compute_bm25_score(
+        &self,
+        memory_content: &str,
+        query_terms: &[String],
+        stats: &CorpusStats,
+    ) -> f64 {
         let content_lower = memory_content.to_lowercase();
         let content_terms: Vec<&str> = content_lower.split_whitespace().collect();
 
-        if query_terms.is_empty() || content_terms.is_empty() {
+        if query_terms.is_empty() || content_terms.is_empty() || stats.n_docs == 0 {
             return 0.0;
         }
 
         // Count term frequencies
-        let mut term_freq: HashMap<String, usize> = HashMap::new();
+        let mut term_freq: HashMap<&str, usize> = HashMap::new();
         for term in &content_terms {
-            *term_freq.entry(term.to_string()).or_insert(0) += 1;
+            *term_freq.entry(term).or_insert(0) += 1;
         }
 
         // BM25 parameters
         let k1 = 1.2; // Term frequency saturation parameter
         let b = 0.75; // Length normalization parameter
-        let avg_doc_length = 100.0; // Approximate average document length
+        let n = stats.n_docs as f64;
+        let avg_doc_length = stats.avg_doc_length.max(1.0);
         let doc_length = content_terms.len() as f64;
+
+        // Maximum possible IDF (df = 0 hypothetical lower bound is df >= 1 for
+        // any matched term), used to normalize the final score into 0-1.
+        let max_idf = (((n - 1.0 + 0.5) / 1.5) + 1.0).ln().max(f64::MIN_POSITIVE);
 
         // Calculate score
         let mut score = 0.0;
-        for query_term in &query_terms {
-            if let Some(&freq) = term_freq.get(*query_term) {
+        for query_term in query_terms {
+            if let Some(&freq) = term_freq.get(query_term.as_str()) {
                 let tf = freq as f64;
-                let idf = 1.0; // Simplified IDF (would need document collection for real IDF)
+                let df = *stats.doc_freq.get(query_term).unwrap_or(&0) as f64;
+                let idf = (((n - df + 0.5) / (df + 0.5)) + 1.0).ln();
 
-                // BM25 formula: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc_length / avg_doc_length))
+                // BM25: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avgdl))
                 let numerator = tf * (k1 + 1.0);
                 let denominator = tf + k1 * (1.0 - b + b * doc_length / avg_doc_length);
                 score += idf * (numerator / denominator);
             }
         }
 
-        // Normalize to 0-1 range (approximation)
-        (score / query_terms.len() as f64).min(1.0)
+        // Normalize to 0-1: divide by the best case of every query term
+        // matching at maximum IDF with saturated tf (tf-component < k1 + 1).
+        let max_score = query_terms.len() as f64 * max_idf * (k1 + 1.0);
+        (score / max_score).clamp(0.0, 1.0)
     }
+}
+
+/// Per-query corpus statistics for BM25 IDF computation.
+struct CorpusStats {
+    /// Number of candidate documents (N)
+    n_docs: usize,
+    /// Average candidate document length in terms
+    avg_doc_length: f64,
+    /// Document frequency per query term (df)
+    doc_freq: HashMap<String, usize>,
 }
 
 #[async_trait]
@@ -86,11 +142,22 @@ impl RetrievalPipeline for KeywordRetriever {
         // 2x so BM25 re-ranking below has a wider pool to choose from.
         let fragments = self.storage.search(query, limit * 2).await?;
 
+        // Build per-query corpus statistics over the candidate set so IDF
+        // reflects actual term rarity among candidates.
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<String> = query_lower
+            .split_whitespace()
+            .map(|t| t.to_string())
+            .collect();
+        let candidate_contents: Vec<String> =
+            fragments.iter().map(|f| f.entry.value.clone()).collect();
+        let stats = Self::corpus_stats(&query_terms, &candidate_contents);
+
         // Score each result with BM25
         let mut scored_results: Vec<ScoredMemory> = fragments
             .into_iter()
             .map(|fragment| {
-                let score = self.compute_bm25_score(&fragment.entry.value, query);
+                let score = self.compute_bm25_score(&fragment.entry.value, &query_terms, &stats);
                 ScoredMemory::new(fragment, score, RetrievalSignal::SparseKeyword)
             })
             .collect();
@@ -157,9 +224,11 @@ impl TemporalRetriever {
         let age_days = (now - memory.entry.created_at()).num_days() as f64;
         let recency_score = (-age_days / 30.0).exp(); // 30-day half-life
 
-        // For frequency, we'd need access count from full MemoryEntry
-        // For now, use a placeholder based on relevance_score
-        let frequency_score = memory.relevance_score;
+        // Access-frequency score from the entry's real access count,
+        // saturating so heavily-accessed memories approach 1.0.
+        // count / (count + k) gives 0.0 for never-accessed, ~0.67 at 2k accesses.
+        let access_count = memory.entry.access_count() as f64;
+        let frequency_score = access_count / (access_count + 10.0);
 
         // Combine scores
         let combined =
@@ -352,16 +421,47 @@ mod tests {
         let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
         let retriever = KeywordRetriever::new(storage);
 
-        let content = "rust programming language systems";
-        let query = "rust systems";
+        let query_terms = vec!["rust".to_string(), "systems".to_string()];
+        let corpus = vec![
+            "rust programming language systems".to_string(),
+            "rust systems".to_string(),
+            "python scripting language".to_string(),
+        ];
+        let stats = KeywordRetriever::corpus_stats(&query_terms, &corpus);
 
-        let score = retriever.compute_bm25_score(content, query);
+        let score = retriever.compute_bm25_score(&corpus[0], &query_terms, &stats);
         assert!(score > 0.0);
         assert!(score <= 1.0);
 
-        // Exact match should score higher
-        let score_exact = retriever.compute_bm25_score("rust systems", "rust systems");
+        // Exact (shorter) match should score at least as high
+        let score_exact = retriever.compute_bm25_score(&corpus[1], &query_terms, &stats);
         assert!(score_exact >= score);
+    }
+
+    #[test]
+    fn test_bm25_idf_rare_term_weighted_higher() {
+        let storage = Arc::new(crate::memory::storage::memory::MemoryStorage::new());
+        let retriever = KeywordRetriever::new(storage);
+
+        let query_terms = vec!["quokka".to_string(), "database".to_string()];
+        let corpus = vec![
+            "quokka index entry".to_string(),
+            "database index entry".to_string(),
+            "database schema design overview".to_string(),
+            "database migration tooling notes".to_string(),
+        ];
+        let stats = KeywordRetriever::corpus_stats(&query_terms, &corpus);
+
+        assert_eq!(stats.n_docs, 4);
+        assert_eq!(stats.doc_freq.get("quokka"), Some(&1));
+        assert_eq!(stats.doc_freq.get("database"), Some(&3));
+
+        let rare = retriever.compute_bm25_score(&corpus[0], &query_terms, &stats);
+        let common = retriever.compute_bm25_score(&corpus[1], &query_terms, &stats);
+        assert!(
+            rare > common,
+            "rare-term doc must outscore common-term doc: {rare} vs {common}"
+        );
     }
 
     #[test]

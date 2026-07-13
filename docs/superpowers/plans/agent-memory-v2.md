@@ -162,9 +162,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 
 ### Task 3.1: Real BM25 IDF + temporal access-frequency
 **Files:** Modify `src/memory/retrieval/strategies.rs` (`:57` IDF, `:161` frequency); Test extend `tests/retrieval_quality.rs`.
-- [ ] Failing test: a rare query term ranks its document above a document matched only on a common term (real IDF); a frequently-accessed memory scores higher on the temporal signal than an equally-recent never-accessed one.
-- [ ] Implement corpus IDF (`ln((N - df + 0.5)/(df + 0.5) + 1)`) computed from the candidate corpus; real access-frequency from the access tracker (`importance_scoring.rs` access counts) instead of `relevance_score` placeholder.
-- [ ] Commit — `fix(retrieval): real BM25 IDF and access-frequency temporal signal`.
+- [x] Failing test: a rare query term ranks its document above a document matched only on a common term (real IDF); a frequently-accessed memory scores higher on the temporal signal than an equally-recent never-accessed one.
+- [x] Implement corpus IDF (`ln((N - df + 0.5)/(df + 0.5) + 1)`) computed from the candidate corpus; real access-frequency from `MemoryEntry.metadata.access_count` (reachable directly on retrieved fragments; the `importance_scoring.rs` tracker is not wired into the retriever and would require a larger refactor) instead of `relevance_score` placeholder. Frequency saturates via `count / (count + 10)`.
+- [x] Commit — `fix(retrieval): real BM25 IDF and access-frequency temporal signal`.
 
 ### Task 3.2: Composite scoring + activate Graph/Temporal retrievers
 **Files:** Modify `src/lib.rs` (`:204` pipeline build), `src/memory/retrieval/pipeline.rs` (post-fusion composite score); Test `tests/composite_scoring_tests.rs`.
