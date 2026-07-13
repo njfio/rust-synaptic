@@ -229,11 +229,19 @@ impl AgentMemory {
             );
             let temporal = memory::retrieval::TemporalRetriever::new(Arc::clone(&storage));
             let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
+            // Deterministic heuristic reranker over the top-K: cross-features
+            // (term overlap, embedding agreement, graph proximity, recency)
+            // reorder the fused + composite-scored results.
+            let reranker = memory::retrieval::HeuristicReranker::new(
+                Some(Arc::new(memory::embeddings::TfIdfProvider::default())),
+                knowledge_graph.clone(),
+            );
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::new(dense_vector))
                 .add_pipeline(Arc::new(keyword))
                 .add_pipeline(Arc::new(graph))
-                .add_pipeline(Arc::new(temporal));
+                .add_pipeline(Arc::new(temporal))
+                .with_reranker(Arc::new(reranker));
             Some(Arc::new(hybrid))
         } else {
             None

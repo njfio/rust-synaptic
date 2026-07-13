@@ -5,6 +5,7 @@
 //! deliver high-quality search results.
 
 use crate::error::Result;
+use crate::memory::retrieval::rerank::Reranker;
 use crate::memory::temporal::decay_models::{
     DecayConfig, DecayContext, DecayModelType, TemporalDecayModels,
 };
@@ -288,6 +289,8 @@ pub struct HybridRetriever {
     config: PipelineConfig,
     /// Score cache
     cache: Option<Arc<tokio::sync::RwLock<ScoreCache>>>,
+    /// Optional reranking stage applied to the top-K after composite scoring
+    reranker: Option<Arc<dyn Reranker>>,
 }
 
 impl HybridRetriever {
@@ -305,7 +308,16 @@ impl HybridRetriever {
             pipelines: Vec::new(),
             config,
             cache,
+            reranker: None,
         }
+    }
+
+    /// Set an optional reranking stage, applied to the top-K results after
+    /// composite scoring and before the final results are returned. Default:
+    /// no reranker (pipeline behaviour unchanged).
+    pub fn with_reranker(mut self, reranker: Arc<dyn Reranker>) -> Self {
+        self.reranker = Some(reranker);
+        self
     }
 
     /// Add a retrieval pipeline to the hybrid retriever
@@ -367,7 +379,18 @@ impl HybridRetriever {
         // Fuse results, then apply the composite
         // relevance × recency × importance score (see `CompositeWeights`).
         let fused = self.fuse_results(all_results, limit)?;
-        let fused_results = self.apply_composite_scoring(fused).await?;
+        let composite = self.apply_composite_scoring(fused).await?;
+
+        // Optional reranking stage over the top-K: reorders by cross-features
+        // computed against the query; preserves scores and candidates.
+        let fused_results: Vec<MemoryFragment> = match self.reranker {
+            Some(ref reranker) => {
+                let reranked = reranker.rerank(query, composite).await?;
+                tracing::debug!(reranker = reranker.name(), "Rerank stage applied");
+                reranked.into_iter().map(|s| s.memory).collect()
+            }
+            None => composite.into_iter().map(|s| s.memory).collect(),
+        };
 
         tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
 
@@ -510,10 +533,13 @@ impl HybridRetriever {
     /// - `importance` is `MemoryEntry.metadata.importance` (`[0, 1]`).
     ///
     /// The sort is stable, so exact composite ties preserve fused order.
+    ///
+    /// Returns `ScoredMemory` (score = composite, signal = `Hybrid`) so the
+    /// optional reranking stage can consume the top-K with scores intact.
     async fn apply_composite_scoring(
         &self,
         fused: Vec<(MemoryFragment, f64)>,
-    ) -> Result<Vec<MemoryFragment>> {
+    ) -> Result<Vec<ScoredMemory>> {
         if fused.is_empty() {
             return Ok(Vec::new());
         }
@@ -567,7 +593,10 @@ impl HybridRetriever {
         // Stable sort: composite ties keep the fused ordering.
         composite.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        Ok(composite.into_iter().map(|(memory, _)| memory).collect())
+        Ok(composite
+            .into_iter()
+            .map(|(memory, score)| ScoredMemory::new(memory, score, RetrievalSignal::Hybrid))
+            .collect())
     }
 
     /// Combine scores from multiple signals using the configured strategy

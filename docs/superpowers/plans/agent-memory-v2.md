@@ -183,9 +183,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 3.3: Reranker trait + `HeuristicReranker`
 **Files:** Create `src/memory/retrieval/rerank.rs`; Modify `pipeline.rs` (`:382` insertion); Test `tests/reranker_tests.rs`.
 **Produces:** `#[async_trait] pub trait Reranker { async fn rerank(&self, query: &str, candidates: Vec<ScoredMemory>) -> Result<Vec<ScoredMemory>>; fn name(&self)->&str }`; `HeuristicReranker` scoring cross-features (term-overlap × embedding-agreement × graph-proximity × recency) over top-K. Pipeline gains optional `reranker: Option<Arc<dyn Reranker>>` applied after fusion.
-- [ ] Failing test: a candidate over-ranked by one signal alone is demoted below a candidate that multiple signals agree on, after rerank.
-- [ ] Implement; deterministic.
-- [ ] Commit — `feat(retrieval): Reranker trait and deterministic HeuristicReranker stage`.
+- [x] Failing test: a candidate over-ranked by one signal alone is demoted below a candidate that multiple signals agree on, after rerank.
+- [x] Implement; deterministic.
+- [x] Commit — `feat(retrieval): Reranker trait and deterministic HeuristicReranker stage`.
 
 ### Task 3.4: Optional cross-encoder reranker (gate b — candle)
 **Files:** `src/memory/retrieval/rerank.rs` (`CrossEncoderReranker`, feature `reranker-model`); Cargo.toml feature; Test `tests/reranker_model_tests.rs` (feature-gated).
