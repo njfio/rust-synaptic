@@ -386,9 +386,13 @@ pub struct LifecycleOptimizationResult {
 /// Result of a single optimization action
 #[derive(Debug, Clone)]
 pub struct OptimizationActionResult {
-    /// Space saved by this action
+    /// Space saved by this action, measured as the actual reduction in the
+    /// stored entry's value size (bytes before minus bytes after). Zero when
+    /// the action did not shrink the stored entry.
     pub space_saved: usize,
-    /// Performance gain from this action
+    /// Performance gain from this action. Always 0.0: no performance
+    /// measurement is performed for optimization actions, so no gain is
+    /// claimed.
     pub performance_gain: f64,
 }
 
@@ -432,9 +436,9 @@ impl Default for GrowthProjection {
     }
 }
 
-/// ML prediction result
+/// Heuristic growth prediction derived from observed size trends
 #[derive(Debug, Clone)]
-struct MLPrediction {
+struct HeuristicGrowthPrediction {
     pub growth_factor_30d: f64,
     pub growth_factor_90d: f64,
     pub growth_factor_365d: f64,
@@ -1755,7 +1759,7 @@ impl MemoryLifecycleManager {
             predicted_action,
             confidence_score,
             reasoning,
-            estimated_impact: (memory_importance * 1000.0) as usize, // Simulated impact
+            estimated_impact: (memory_importance * 1000.0) as usize, // Heuristic: impact scaled from importance; not a measured value
         })
     }
 
@@ -1844,7 +1848,7 @@ impl MemoryLifecycleManager {
         })
     }
 
-    /// Generate advanced storage projections using machine learning-based forecasting
+    /// Generate storage projections using an ensemble of trend-based forecasts
     async fn generate_storage_projections(
         &self,
         memory_keys: &[String],
@@ -1862,18 +1866,18 @@ impl MemoryLifecycleManager {
             self.calculate_exponential_growth_projection(&historical_data, &current_size_analysis);
         let seasonal_projection =
             self.calculate_seasonal_growth_projection(&historical_data, &current_size_analysis);
-        let ml_projection = self
-            .calculate_ml_based_projection(&historical_data, &current_size_analysis)
+        let trend_feature_projection = self
+            .calculate_trend_feature_projection(&historical_data, &current_size_analysis)
             .await?;
 
         // Ensemble forecasting - combine multiple models
-        let ensemble_weights = [0.2, 0.3, 0.2, 0.3]; // Linear, Exponential, Seasonal, ML
+        let ensemble_weights = [0.2, 0.3, 0.2, 0.3]; // Linear, Exponential, Seasonal, Trend-feature
         let projected_30_days = self.ensemble_forecast(
             &[
                 linear_projection.projected_30_days,
                 exponential_projection.projected_30_days,
                 seasonal_projection.projected_30_days,
-                ml_projection.projected_30_days,
+                trend_feature_projection.projected_30_days,
             ],
             &ensemble_weights,
         );
@@ -1883,7 +1887,7 @@ impl MemoryLifecycleManager {
                 linear_projection.projected_90_days,
                 exponential_projection.projected_90_days,
                 seasonal_projection.projected_90_days,
-                ml_projection.projected_90_days,
+                trend_feature_projection.projected_90_days,
             ],
             &ensemble_weights,
         );
@@ -1893,7 +1897,7 @@ impl MemoryLifecycleManager {
                 linear_projection.projected_365_days,
                 exponential_projection.projected_365_days,
                 seasonal_projection.projected_365_days,
-                ml_projection.projected_365_days,
+                trend_feature_projection.projected_365_days,
             ],
             &ensemble_weights,
         );
@@ -2205,8 +2209,12 @@ impl MemoryLifecycleManager {
         }
     }
 
-    /// Calculate ML-based projection using advanced algorithms
-    async fn calculate_ml_based_projection(
+    /// Calculate a projection from observed trend/volatility features.
+    ///
+    /// This is a documented heuristic, not a machine learning model: it
+    /// derives a daily fractional growth rate from the measured size trends
+    /// and dampens confidence by observed volatility.
+    async fn calculate_trend_feature_projection(
         &self,
         historical_data: &HistoricalStorageData,
         current_analysis: &DetailedStorageAnalysis,
@@ -2215,11 +2223,8 @@ impl MemoryLifecycleManager {
             return Ok(GrowthProjection::default());
         }
 
-        // Feature engineering for ML model
-        let features = self.extract_ml_features(historical_data, current_analysis);
-
-        // Apply simulated neural network model
-        let prediction = self.apply_neural_network_model(&features);
+        let features = self.extract_growth_features(historical_data, current_analysis);
+        let prediction = self.heuristic_growth_prediction(&features, current_analysis);
 
         let current_size = current_analysis.total_size as f64;
 
@@ -2231,8 +2236,9 @@ impl MemoryLifecycleManager {
         })
     }
 
-    /// Extract features for ML model
-    fn extract_ml_features(
+    /// Extract growth features (trends, volatility, distribution) from
+    /// measured historical data for the heuristic projection.
+    fn extract_growth_features(
         &self,
         historical_data: &HistoricalStorageData,
         current_analysis: &DetailedStorageAnalysis,
@@ -2284,54 +2290,44 @@ impl MemoryLifecycleManager {
         features
     }
 
-    /// Apply neural network model (simulated)
-    fn apply_neural_network_model(&self, features: &[f64]) -> MLPrediction {
-        // Simulated neural network with learned weights
-        let weights_layer1 = [
-            [0.15, -0.23, 0.31, 0.08, -0.12, 0.19, 0.07, -0.05],
-            [0.22, 0.11, -0.18, 0.25, 0.09, -0.14, 0.16, 0.03],
-            [-0.09, 0.27, 0.13, -0.21, 0.18, 0.06, -0.11, 0.24],
-            [0.17, -0.08, 0.29, 0.12, -0.15, 0.21, 0.04, -0.19],
-        ];
+    /// Heuristic growth prediction computed from real measured features.
+    ///
+    /// This is an explicitly documented heuristic (there is no trained model
+    /// here): it blends the recent and overall byte-per-day size trends into
+    /// a daily fractional growth rate, projects that rate linearly over each
+    /// horizon with clamping, and reduces confidence as observed growth-rate
+    /// volatility increases.
+    fn heuristic_growth_prediction(
+        &self,
+        features: &[f64],
+        current_analysis: &DetailedStorageAnalysis,
+    ) -> HeuristicGrowthPrediction {
+        // Features are laid out by extract_growth_features:
+        // [0] recent size trend (bytes/day), [1] overall size trend
+        // (bytes/day), [2] growth-rate volatility.
+        let recent_trend = features.first().copied().unwrap_or(0.0);
+        let overall_trend = features.get(1).copied().unwrap_or(0.0);
+        let volatility = features.get(2).copied().unwrap_or(0.0);
 
-        let weights_layer2 = [0.35, -0.28, 0.41, 0.19];
-        let bias_layer1 = [0.1, -0.05, 0.08, 0.03];
-        let bias_layer2 = 0.02;
+        let current_size = (current_analysis.total_size as f64).max(1.0);
 
-        // Forward pass through network
-        let mut hidden_layer = [0.0; 4];
-        for i in 0..4 {
-            let mut sum = bias_layer1[i];
-            for j in 0..features.len().min(8) {
-                sum += features[j] * weights_layer1[i][j];
-            }
-            hidden_layer[i] = self.relu(sum);
+        // Weight the recent trend more heavily than the long-run trend and
+        // express it as a fraction of current size per day.
+        let daily_growth_rate = (0.7 * recent_trend + 0.3 * overall_trend) / current_size;
+
+        // Linear projection per horizon, clamped to avoid extrapolating a
+        // short-window trend into implausible factors.
+        let factor = |days: f64| (1.0 + daily_growth_rate * days).clamp(0.5, 3.0);
+
+        // Higher observed volatility means less trust in the trend.
+        let confidence = (1.0 / (1.0 + volatility)).clamp(0.1, 0.9);
+
+        HeuristicGrowthPrediction {
+            growth_factor_30d: factor(30.0),
+            growth_factor_90d: factor(90.0),
+            growth_factor_365d: factor(365.0),
+            confidence,
         }
-
-        let mut output = bias_layer2;
-        for i in 0..4 {
-            output += hidden_layer[i] * weights_layer2[i];
-        }
-
-        let base_growth = self.sigmoid(output);
-
-        // Convert to growth factors
-        MLPrediction {
-            growth_factor_30d: 1.0 + base_growth * 0.1, // Max 10% monthly growth
-            growth_factor_90d: 1.0 + base_growth * 0.3, // Max 30% quarterly growth
-            growth_factor_365d: 1.0 + base_growth * 1.2, // Max 120% yearly growth
-            confidence: 0.8,
-        }
-    }
-
-    /// ReLU activation function
-    fn relu(&self, x: f64) -> f64 {
-        x.max(0.0)
-    }
-
-    /// Sigmoid activation function
-    fn sigmoid(&self, x: f64) -> f64 {
-        1.0 / (1.0 + (-x).exp())
     }
 
     /// Calculate trend using linear regression
@@ -2581,44 +2577,56 @@ impl MemoryLifecycleManager {
         Ok(result)
     }
 
-    /// Execute a single optimization action
+    /// Size in bytes of a stored entry's value, or 0 if the entry is absent.
+    async fn stored_value_size(
+        &self,
+        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
+        memory_key: &str,
+    ) -> Result<usize> {
+        Ok(storage
+            .retrieve(memory_key)
+            .await?
+            .map(|memory| memory.value.len())
+            .unwrap_or(0))
+    }
+
+    /// Execute a single optimization action.
+    ///
+    /// `space_saved` is the measured reduction in the stored entry's value
+    /// size (bytes before minus bytes after the action). Actions that do not
+    /// shrink the entry (archive, reindex, or tagging that grows it) report 0.
+    /// `performance_gain` is always 0.0 because no performance measurement is
+    /// performed here; no gain is claimed.
     async fn execute_optimization_action(
         &mut self,
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         action: &OptimizationAction,
     ) -> Result<OptimizationActionResult> {
+        let size_before = self.stored_value_size(storage, &action.memory_key).await?;
+
         match &action.action_type {
             OptimizationActionType::Compress => {
                 self.compress_memory(storage, &action.memory_key).await?;
-                Ok(OptimizationActionResult {
-                    space_saved: 512,       // Simulated compression savings
-                    performance_gain: 0.05, // 5% performance improvement
-                })
             }
             OptimizationActionType::Archive => {
                 self.archive_memory(storage, &action.memory_key).await?;
-                Ok(OptimizationActionResult {
-                    space_saved: 1024,      // Simulated archival savings
-                    performance_gain: 0.02, // 2% performance improvement
-                })
             }
             OptimizationActionType::Defragment => {
                 self.execute_custom_action(storage, &action.memory_key, "optimize_storage")
                     .await?;
-                Ok(OptimizationActionResult {
-                    space_saved: 256,       // Simulated defragmentation savings
-                    performance_gain: 0.03, // 3% performance improvement
-                })
             }
             OptimizationActionType::Reindex => {
                 self.execute_custom_action(storage, &action.memory_key, "refresh_metadata")
                     .await?;
-                Ok(OptimizationActionResult {
-                    space_saved: 0,        // No space savings for reindexing
-                    performance_gain: 0.1, // 10% performance improvement
-                })
             }
         }
+
+        let size_after = self.stored_value_size(storage, &action.memory_key).await?;
+
+        Ok(OptimizationActionResult {
+            space_saved: size_before.saturating_sub(size_after),
+            performance_gain: 0.0,
+        })
     }
 
     /// Analyze policy actions for a memory
@@ -2696,7 +2704,7 @@ impl MemoryLifecycleManager {
         );
     }
 
-    /// Generate advanced archiving predictions using machine learning techniques
+    /// Generate heuristic archiving likelihood scores from lifecycle state
     async fn generate_archiving_predictions(&self) -> Result<HashMap<String, f64>> {
         let mut predictions = HashMap::new();
         let current_time = Utc::now();

@@ -477,7 +477,10 @@ async fn test_lifecycle_optimization_execution() -> Result<(), Box<dyn Error>> {
     let memories = vec![
         MemoryEntry {
             key: "optimize_compress".to_string(),
-            value: "Memory for compression optimization".to_string(),
+            // Large, highly repetitive payload so real LZ4 compression
+            // produces a measurable size reduction (space_saved is now the
+            // actual before/after byte delta, not a fabricated constant).
+            value: "compressible lifecycle payload ".repeat(256),
             memory_type: MemoryType::LongTerm,
             metadata: MemoryMetadata::new()
                 .with_importance(0.6)
@@ -540,11 +543,13 @@ async fn test_lifecycle_optimization_execution() -> Result<(), Box<dyn Error>> {
     );
     assert!(
         optimization_result.space_saved_bytes > 0,
-        "Should save some space"
+        "Compressing the repetitive payload should measurably shrink the stored entry"
     );
-    assert!(
-        optimization_result.performance_improvement > 0.0,
-        "Should improve performance"
+    // No performance measurement is performed by optimization actions, so the
+    // reported improvement must honestly be zero.
+    assert_eq!(
+        optimization_result.performance_improvement, 0.0,
+        "Performance improvement is not measured and must be reported as 0"
     );
     assert!(
         optimization_result.errors.is_empty(),
