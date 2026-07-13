@@ -20,20 +20,20 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = MemoryConfig {
-//!         enable_knowledge_graph: true,
-//!         enable_temporal_tracking: true,
-//!         enable_advanced_management: true,
-//!         ..Default::default()
-//!     };
-//!     let mut memory = AgentMemory::new(config).await?;
+//!     // Default config: in-memory storage, knowledge graph enabled
+//!     let mut memory = AgentMemory::new(MemoryConfig::default()).await?;
 //!
-//!     // Store memories - similar content will be intelligently merged
-//!     memory.store("project_alpha", "A web application using React").await?;
-//!     memory.store("project_alpha", "A web application using React and Node.js").await?;
+//!     // Store memories by key
+//!     memory.store("user_name", "Alice").await?;
+//!     memory.store("user_preference", "prefers dark mode").await?;
 //!
-//!     // Find related memories
-//!     let related = memory.find_related_memories("project_alpha", 5).await?;
+//!     // Retrieve by key
+//!     let entry = memory.retrieve("user_name").await?;
+//!     assert_eq!(entry.map(|e| e.value), Some("Alice".to_string()));
+//!
+//!     // Search (tokenized keyword + semantic hybrid retrieval)
+//!     let results = memory.search("dark mode", 10).await?;
+//!     assert!(!results.is_empty());
 //!
 //!     Ok(())
 //! }
