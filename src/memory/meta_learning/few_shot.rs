@@ -276,7 +276,7 @@ impl FewShotLearningEngine {
         let mut rng = rand::thread_rng();
 
         // Embedding network parameters
-        let embedding_sizes = vec![
+        let embedding_sizes = [
             config.embedding_dim,
             config.embedding_dim / 2,
             config.embedding_dim / 4,
@@ -288,7 +288,7 @@ impl FewShotLearningEngine {
         }
 
         // Relation network parameters
-        let relation_sizes = vec![256, 128, 64, 1];
+        let relation_sizes = [256, 128, 64, 1];
         for (i, &size) in relation_sizes.iter().enumerate() {
             let layer_name = format!("relation_layer_{}", i);
             let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();
@@ -296,7 +296,7 @@ impl FewShotLearningEngine {
         }
 
         // Attention parameters
-        let attention_sizes = vec![config.embedding_dim, config.embedding_dim];
+        let attention_sizes = [config.embedding_dim, config.embedding_dim];
         for (i, &size) in attention_sizes.iter().enumerate() {
             let layer_name = format!("attention_layer_{}", i);
             let weights: Vec<f64> = (0..size).map(|_| rng.gen_range(-0.1..0.1)).collect();

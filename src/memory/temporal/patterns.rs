@@ -1744,10 +1744,8 @@ impl PatternDetector {
 
     /// Generate decision rules from evidence
     fn generate_decision_rules(&self, _evidence: &[PatternEvidence]) -> Vec<DecisionRule> {
-        let mut rules = Vec::new();
-
         // Rule 1: High activity during business hours
-        rules.push(DecisionRule {
+        let mut rules = vec![DecisionRule {
             id: "business_hours".to_string(),
             description: "High activity during business hours (9-17)".to_string(),
             conditions: vec![
@@ -1755,7 +1753,7 @@ impl PatternDetector {
                 RuleCondition::StrengthThreshold(0.5),
             ],
             confidence: 0.8,
-        });
+        }];
 
         // Rule 2: Weekend patterns
         rules.push(DecisionRule {

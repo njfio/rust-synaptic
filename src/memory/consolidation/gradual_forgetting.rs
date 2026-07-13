@@ -898,7 +898,10 @@ mod tests {
 
         // First evaluation
         algorithm
-            .evaluate_memories(&[memory.clone()], &[importance.clone()])
+            .evaluate_memories(
+                std::slice::from_ref(&memory),
+                std::slice::from_ref(&importance),
+            )
             .await
             .expect("await should be present");
 

@@ -128,7 +128,7 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
         create_authenticated_context(&mut security_manager, "admin", "adminpass123").await?;
 
     // Create multiple test entries
-    let entries = vec![
+    let entries = [
         MemoryEntry::new(
             "entry1".to_string(),
             "Data one".to_string(),
@@ -601,7 +601,11 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
 
     // 6. Perform secure computation
     let computation_result = security_manager
-        .secure_compute(&[encrypted_entry.clone()], SecureOperation::Count, &context)
+        .secure_compute(
+            std::slice::from_ref(&encrypted_entry),
+            SecureOperation::Count,
+            &context,
+        )
         .await?;
 
     // 7. Verify all operations completed successfully

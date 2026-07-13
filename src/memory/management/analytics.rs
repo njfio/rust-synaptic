@@ -959,10 +959,8 @@ impl MemoryAnalytics {
 
     /// Analyze trends in the data
     async fn analyze_trends(&self) -> Result<Vec<TrendAnalysis>> {
-        let mut trends = Vec::new();
-
         // Memory creation trend
-        trends.push(TrendAnalysis {
+        let trends = vec![TrendAnalysis {
             id: "memory_creation_trend".to_string(),
             name: "Memory Creation Rate".to_string(),
             direction: TrendDirection::Increasing,
@@ -984,7 +982,7 @@ impl MemoryAnalytics {
                 confidence: 0.6,
                 time_horizon: Duration::days(7),
             }),
-        });
+        }];
 
         Ok(trends)
     }
@@ -2085,16 +2083,16 @@ impl MemoryAnalytics {
 
     /// Extract semantic features from text using NLP-like analysis
     async fn extract_semantic_features(&self, text: &str) -> Result<Vec<f64>> {
-        let mut features = Vec::new();
-
         // Basic linguistic features
-        features.push(text.len() as f64); // Length
-        features.push(text.split_whitespace().count() as f64); // Word count
-        features.push(text.chars().filter(|c| c.is_uppercase()).count() as f64); // Uppercase count
-        features.push(text.chars().filter(|c| c.is_numeric()).count() as f64); // Numeric count
-        features.push(text.matches('_').count() as f64); // Underscore count (common in keys)
-        features.push(text.matches('-').count() as f64); // Hyphen count
-        features.push(text.matches('/').count() as f64); // Slash count (path-like)
+        let mut features = vec![
+            text.len() as f64,                                        // Length
+            text.split_whitespace().count() as f64,                   // Word count
+            text.chars().filter(|c| c.is_uppercase()).count() as f64, // Uppercase count
+            text.chars().filter(|c| c.is_numeric()).count() as f64,   // Numeric count
+            text.matches('_').count() as f64, // Underscore count (common in keys)
+            text.matches('-').count() as f64, // Hyphen count
+            text.matches('/').count() as f64, // Slash count (path-like)
+        ];
 
         // Semantic indicators
         let task_indicators = ["task", "todo", "action", "work"];

@@ -512,15 +512,14 @@ impl AdaptiveReplayMechanisms {
         context: &ReplayContext,
         strategy: &AdaptiveReplayStrategy,
     ) -> Result<f64> {
-        let mut priority_factors = Vec::new();
-
-        // Base importance
-        priority_factors.push(importance.importance_score);
-
-        // Context-based adjustments
-        priority_factors.push(context.activity_level);
-        priority_factors.push(1.0 - context.system_load); // Lower load = higher priority
-        priority_factors.push(context.time_of_day_factor);
+        let mut priority_factors = vec![
+            // Base importance
+            importance.importance_score,
+            // Context-based adjustments
+            context.activity_level,
+            1.0 - context.system_load, // Lower load = higher priority
+            context.time_of_day_factor,
+        ];
 
         // Strategy-specific adjustments
         let strategy_factor = match strategy {

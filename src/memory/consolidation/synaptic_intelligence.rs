@@ -381,7 +381,7 @@ impl SynapticIntelligence {
     async fn get_current_parameter_value(&self, param_id: &str) -> Result<f64> {
         // Extract memory key from parameter ID
         let memory_key = if param_id.contains('_') {
-            param_id.split('_').last().unwrap_or(param_id)
+            param_id.split('_').next_back().unwrap_or(param_id)
         } else {
             param_id
         };

@@ -94,13 +94,13 @@ async fn test_online_learner() {
 
     // Test prediction after training
     let trained_prediction = learner
-        .predict(&vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+        .predict(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         .unwrap();
     assert!(trained_prediction >= 0.0 && trained_prediction <= 1.0);
 
     // Test with different feature vector
     let different_prediction = learner
-        .predict(&vec![0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0])
+        .predict(&[0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0])
         .unwrap();
     assert!(different_prediction >= 0.0 && different_prediction <= 1.0);
 }

@@ -2938,7 +2938,7 @@ impl MemoryLifecycleManager {
         storage_pressure_factor: f64,
     ) -> f64 {
         // Confidence based on factor consistency
-        let factors = vec![
+        let factors = [
             age_factor,
             access_pattern_factor,
             content_importance_factor,

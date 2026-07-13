@@ -20,17 +20,16 @@ pub struct QueryOptimizer {
 impl QueryOptimizer {
     /// Create a new query optimizer
     pub fn new() -> Result<Self> {
-        let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
-
-        // Add optimization rules
-        rules.push(Box::new(PredicatePushdownRule));
-        rules.push(Box::new(ProjectionPushdownRule));
-        rules.push(Box::new(JoinReorderingRule));
-        rules.push(Box::new(IndexSelectionRule));
-        rules.push(Box::new(ConstantFoldingRule));
-        rules.push(Box::new(RedundantExpressionRule));
-        rules.push(Box::new(SubqueryOptimizationRule));
-        rules.push(Box::new(PathOptimizationRule));
+        let rules: Vec<Box<dyn OptimizationRule>> = vec![
+            Box::new(PredicatePushdownRule),
+            Box::new(ProjectionPushdownRule),
+            Box::new(JoinReorderingRule),
+            Box::new(IndexSelectionRule),
+            Box::new(ConstantFoldingRule),
+            Box::new(RedundantExpressionRule),
+            Box::new(SubqueryOptimizationRule),
+            Box::new(PathOptimizationRule),
+        ];
 
         Ok(Self {
             rules,

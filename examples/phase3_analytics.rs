@@ -165,7 +165,7 @@ async fn behavioral_analysis_demo() -> Result<(), Box<dyn Error>> {
 
     // Simulate user behavior patterns
     let users = vec!["alice", "bob", "charlie"];
-    let memories = vec!["code_review", "design_docs", "test_results"];
+    let memories = ["code_review", "design_docs", "test_results"];
 
     for user in &users {
         for (i, memory) in memories.iter().enumerate() {

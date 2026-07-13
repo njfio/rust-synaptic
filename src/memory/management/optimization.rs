@@ -4030,16 +4030,14 @@ impl PerformanceProfiler {
         _session: &ProfilingSession,
     ) -> Result<Vec<PerformanceBottleneck>> {
         // Simplified bottleneck analysis
-        let mut bottlenecks = Vec::new();
-
         // Example bottleneck detection
-        bottlenecks.push(PerformanceBottleneck {
+        let bottlenecks = vec![PerformanceBottleneck {
             bottleneck_type: BottleneckType::CacheInefficiency,
             severity: BottleneckSeverity::Medium,
             description: "Cache hit rate below optimal threshold".to_string(),
             affected_operations: vec!["retrieval".to_string()],
             suggested_fixes: vec!["Optimize cache eviction policy".to_string()],
-        });
+        }];
 
         Ok(bottlenecks)
     }
