@@ -202,11 +202,7 @@ criterion_group!(benches, benchmark_memory_storage);
 criterion_main!(benches);
 ```
 
-**Performance Targets**:
-- Memory operations: >100K ops/second
-- Search operations: <100ms for 10K entries
-- Consolidation: <1s for 1K entries
-- Concurrent access: Linear scaling up to 8 threads
+**Performance expectations**: measured numbers are in [performance.md](performance.md); earlier unvalidated targets were removed.
 
 ### 4. Error Condition Tests
 

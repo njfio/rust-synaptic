@@ -34,11 +34,9 @@ The benchmarking suite consists of multiple specialized benchmark suites that te
 - Memory consolidation efficiency
 - Backup/restore performance
 
-**Performance Targets**:
-- Storage operations: >100K ops/second
-- Search operations: <100ms for 10K entries
-- Concurrent scaling: Linear up to 8 threads
-- Consolidation: <1s for 1K entries
+**Measured results**: see [performance.md](performance.md). (Earlier
+"targets" listed here were aspirational and unvalidated; they have been
+removed.)
 
 ### 2. Analytics Performance Suite
 
@@ -59,11 +57,7 @@ The benchmarking suite consists of multiple specialized benchmark suites that te
 - Prediction accuracy vs computation time
 - Aggregation efficiency
 
-**Performance Targets**:
-- Pattern analysis: <500ms for 1K entries
-- Real-time updates: <10ms latency
-- Clustering: <2s for 1K entries
-- Predictions: <1s for 30-day history
+**Performance targets**: none validated; see [performance.md](performance.md).
 
 ### 3. Security Performance Suite
 
@@ -83,11 +77,7 @@ The benchmarking suite consists of multiple specialized benchmark suites that te
 - Key generation and rotation time
 - Secure storage overhead
 
-**Performance Targets**:
-- Encryption: >100MB/s for large files
-- Permission checks: <1ms per check
-- Audit logging: >10K events/second
-- Key operations: <100ms per operation
+**Performance targets**: none validated; see [performance.md](performance.md).
 
 ## Running Benchmarks
 
@@ -187,41 +177,10 @@ group.throughput(Throughput::Bytes(data_size as u64));
 
 ## Performance Targets and SLAs
 
-### Core Operations
-
-| Operation | Target | Measurement |
-|-----------|--------|-------------|
-| Memory Store | >100K ops/sec | Operations per second |
-| Memory Retrieve | >150K ops/sec | Operations per second |
-| Memory Search | <100ms | Latency for 10K entries |
-| Memory Delete | >200K ops/sec | Operations per second |
-
-### Analytics Operations
-
-| Operation | Target | Measurement |
-|-----------|--------|-------------|
-| Pattern Analysis | <500ms | Latency for 1K entries |
-| Trend Analysis | <1s | Latency for 30-day data |
-| Clustering | <2s | Latency for 1K entries |
-| Real-time Updates | <10ms | Update latency |
-
-### Security Operations
-
-| Operation | Target | Measurement |
-|-----------|--------|-------------|
-| AES-256-GCM Encrypt | >100MB/s | Throughput |
-| AES-256-GCM Decrypt | >100MB/s | Throughput |
-| Permission Check | <1ms | Latency per check |
-| Audit Logging | >10K events/sec | Events per second |
-
-### Scalability Targets
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Concurrent Users | 1000+ | Simultaneous operations |
-| Memory Entries | 1M+ | Total stored entries |
-| Search Index Size | 100K+ | Searchable entries |
-| Daily Operations | 10M+ | Operations per day |
+This section previously listed aspirational throughput/latency "targets"
+(e.g. >100K ops/sec store) that were never validated by measurement. They
+have been removed. Actual measured numbers are recorded in
+[performance.md](performance.md); anything not listed there is unvalidated.
 
 ## Continuous Performance Monitoring
 
