@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-12
+
+Remediation release: this release removes every simulated/fake code path,
+replaces placeholder cryptography with real implementations, and makes the
+documentation state honestly what is stable, beta, and experimental.
+
+### Removed (BREAKING)
+- **Simulated security fallbacks removed.** Zero-knowledge proofs,
+  homomorphic encryption, and differential privacy no longer silently fall
+  back to fake/pass-through implementations. Operations that are not really
+  implemented now return `MemoryError::feature_disabled` (fail closed)
+  instead of pretending to succeed.
+- Homomorphic **search, similarity, and count are descoped**: they return
+  errors rather than plaintext-based simulations. Only encrypt/decrypt/
+  sum/average are supported (real TFHE `FheInt64`).
+- Stale root PR-description files (`PR_DESCRIPTION.md`, `PR_PHASE3_*.md`).
+
+### Changed (BREAKING)
+- `distributed` feature renamed to **`distributed-experimental`** to reflect
+  reality: it is not production Raft; consensus and realtime sync fail
+  closed. Use `full-experimental` to opt in via the convenience group.
+- `AsyncExecutor::submit_batch_tasks` dropped its generic type parameters
+  (minor breaking API change).
+
+### Added
+- **Real zero-knowledge proofs** behind `zero-knowledge-proofs`: Poseidon
+  hashing with Groth16 proofs over BLS12-381 (bellman), verifier-derived
+  public inputs; soundness is attack-tested.
+- **Real homomorphic encryption** behind `homomorphic-encryption`: TFHE
+  `FheInt64` encrypt/decrypt/sum/average.
+- **Real authentication** behind `security`: argon2 password hashing, TOTP
+  MFA, constant-time API-key comparison (`subtle`), deny-by-default
+  `PolicyEngine`, zeroized key material.
+- **Differential privacy**: real Laplace noise from OS RNG with
+  property-tested epsilon-budget accounting.
+- HNSW ANN index wired in for related-memory counting.
+- `docs/performance.md` with measured (indicative) benchmark numbers.
+
+### Changed
+- **Search is now semantic**: tokenized keyword matching fused with
+  dense-vector similarity via Reciprocal Rank Fusion (RRF), replacing naive
+  substring matching.
+- **Checkpoint restore is non-destructive**: snapshot-validate-swap instead
+  of clearing storage before restoring.
+- Lint gates re-tightened: `clippy -D warnings` with dead_code, complexity,
+  perf, and style lints enforced; `unwrap`, `panic`, and `print` denied in
+  library code. 450+ library tests pass.
+- README rewritten with a per-module maturity table; unvalidated
+  performance and quality claims removed.
+- `tests/test_config.toml` no longer hardcodes test counts.
+
+### Known issues
+- `src/memory/management/optimization.rs` still contains several hundred
+  lines of `#[allow(dead_code)]` placeholder strategy/analysis subtrees
+  (plus smaller pockets in management/search and security modules); tracked
+  as a cleanup item for a future release.
+- Multimodal processing is partially real (OpenCV, Tesseract, tree-sitter,
+  document parsing) and partially heuristic; cross-platform (WASM/mobile)
+  bridges are not linked. Both remain experimental.
+
 ### Added - Phase 1: Critical Infrastructure (2025-10-21)
 - Production-ready Docker infrastructure with multi-stage builds for optimal image size
 - Docker Compose configuration with full service stack (PostgreSQL, Redis, Kafka, Prometheus, Grafana, Jaeger)
@@ -24,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added - Previous
 - Comprehensive documentation suite with user guide, API guide, architecture guide, deployment guide, and testing guide
 - Enhanced error handling with detailed error types and recovery strategies
-- Improved test coverage with 161 tests across 31 test files
+- Improved test coverage across the integration test suites
 - Performance benchmarking suite with criterion integration
 - Security testing framework with encryption and access control validation
 - Multi-modal processing capabilities for documents, images, and audio
@@ -34,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform compatibility including WebAssembly support
 
 ### Changed
-- Updated README.md with accurate test counts (161 tests, not 191)
+- Updated README.md test-count claims (later removed entirely in favor of live cargo test output)
 - Clarified experimental features status with honest production readiness assessment
 - Enhanced project status section with CI/CD information
 - More transparent about limitations of experimental features (WebAssembly, mobile, homomorphic encryption)
