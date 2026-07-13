@@ -176,7 +176,10 @@ async fn stats_computation_never_rescans_entries() {
 async fn neighbor_facts_examines_bounded_candidates() {
     use synaptic::{AgentMemory, MemoryConfig};
 
-    const K: usize = 32; // generous upper bound on the configured candidate cap
+    // Generous upper bound on the configured candidate cap: the keyword hit
+    // set (<=21) unioned with a small constant number of per-subject lookups
+    // (<=21 each). Independent of store size, which is the point.
+    const K: usize = 96;
 
     let mut memory = AgentMemory::new(MemoryConfig::default())
         .await

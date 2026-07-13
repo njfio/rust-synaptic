@@ -600,7 +600,7 @@ impl AgentMemory {
             return Ok(());
         }
         for fact in &extraction.facts {
-            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5).await?;
+            let neighbors = self.neighbor_facts(&entry.key, fact, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
             // The reasoner picks its target among the neighbors we supplied;
             // for id-less outcomes (UpdateInPlace/Append) the target is the
@@ -612,17 +612,32 @@ impl AgentMemory {
         Ok(())
     }
 
-    /// Build the top-`k` neighbor list for a candidate fact, excluding the
-    /// entry being stored. Candidates are fetched via the storage's tokenized
-    /// search (top [`Self::NEIGHBOR_CANDIDATE_LIMIT`] by term overlap) so the
-    /// per-fact cost is bounded instead of scanning every stored memory.
-    /// Similarity over the candidate set is a deterministic token-set cosine;
-    /// ties break by key so resolution is reproducible.
+    /// Build the top-`k` neighbor list for a candidate `fact`, excluding the
+    /// entry being stored.
+    ///
+    /// Candidate source (changed from the previous full state scan): the bulk
+    /// of candidates come from the storage's tokenized search over the fact
+    /// text (top [`Self::NEIGHBOR_CANDIDATE_LIMIT`] by term overlap), so the
+    /// per-fact cost is bounded (O(K)) instead of tokenizing every stored
+    /// short/long-term memory (O(n)).
+    ///
+    /// Bounded-recall tradeoff and its mitigation: a pure top-K keyword search
+    /// can miss a genuinely contradicting memory when the two share only their
+    /// subject (e.g. "Alice lives in Berlin" vs. "Alice lives in Munich" share
+    /// just "alice"/"lives"/"in") while >=K unrelated memories share more
+    /// terms — which would wrongly downgrade a Supersede to an Insert. To make
+    /// same-subject contradictions robust we (a) drop trivial (<3 char) tokens
+    /// from the search query so distinctive terms dominate ranking, and (b)
+    /// UNION the keyword hits with an exact per-subject lookup: for every
+    /// relation subject in the fact we run a targeted search so a memory about
+    /// the same subject is always in the candidate set. The final similarity
+    /// ranking over the union is unchanged (deterministic token-set cosine,
+    /// ties broken by key).
     #[cfg(feature = "embeddings")]
     async fn neighbor_facts(
         &self,
         current_key: &str,
-        fact_text: &str,
+        fact: &memory::reasoning::Fact,
         k: usize,
     ) -> Result<Vec<memory::reasoning::NeighborFact>> {
         fn tokens(text: &str) -> std::collections::HashSet<String> {
@@ -632,15 +647,55 @@ impl AgentMemory {
                 .map(str::to_string)
                 .collect()
         }
-        let candidate_tokens = tokens(fact_text);
+        let candidate_tokens = tokens(&fact.text);
         if candidate_tokens.is_empty() {
             return Ok(Vec::new());
         }
+
+        // (a) Build a keyword query from distinctive (>=3 char) tokens so a
+        // handful of long, discriminating terms outrank many short stopword
+        // matches. Fall back to the raw text if nothing survives the filter.
+        let distinctive: Vec<&str> = fact
+            .text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() >= 3)
+            .collect();
+        let query = if distinctive.is_empty() {
+            fact.text.clone()
+        } else {
+            distinctive.join(" ")
+        };
+
+        // Collect a bounded, deduplicated candidate set: the keyword hits ...
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut candidates: Vec<memory::types::MemoryFragment> = Vec::new();
         // +1 head-room: the search may return the entry being stored itself.
-        let candidates = self
+        for fragment in self
             .storage
-            .search(fact_text, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
-            .await?;
+            .search(&query, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
+            .await?
+        {
+            if seen.insert(fragment.entry.key.clone()) {
+                candidates.push(fragment);
+            }
+        }
+        // (b) ... unioned with a targeted lookup per relation subject so a
+        // same-subject memory can never be squeezed out of the candidate set.
+        for relation in &fact.relations {
+            if relation.subject.trim().is_empty() {
+                continue;
+            }
+            for fragment in self
+                .storage
+                .search(&relation.subject, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
+                .await?
+            {
+                if seen.insert(fragment.entry.key.clone()) {
+                    candidates.push(fragment);
+                }
+            }
+        }
+
         #[cfg(feature = "test-utils")]
         let examined = std::sync::atomic::AtomicUsize::new(0);
         let mut neighbors: Vec<memory::reasoning::NeighborFact> = candidates
@@ -681,10 +736,11 @@ impl AgentMemory {
         Ok(neighbors)
     }
 
-    /// Upper bound on the candidate memories `neighbor_facts` examines per
-    /// fact. Keeps the intelligent write path O(K) per fact instead of O(n)
+    /// Upper bound on the keyword-hit candidates `neighbor_facts` pulls per
+    /// search. Keeps the intelligent write path O(K) per fact instead of O(n)
     /// over the whole store; the storage's tokenized search ranks candidates
-    /// by term overlap so the strongest conflict candidates are retained.
+    /// by term overlap so the strongest conflict candidates are retained. The
+    /// per-subject union searches add at most a small constant multiple.
     #[cfg(feature = "embeddings")]
     const NEIGHBOR_CANDIDATE_LIMIT: usize = 20;
 
