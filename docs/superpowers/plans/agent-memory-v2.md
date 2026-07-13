@@ -227,9 +227,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 # PHASE 6 — Agent interface
 
 ### Task 6.1: Candle embedding provider
-**Files:** Modify `src/integrations/ml_models.rs` (impl `EmbeddingProvider` for the candle model); Test `tests/candle_embedding_provider_tests.rs` (feature `ml-models`).
-- [ ] Failing test (feature on): the candle model, wrapped as `EmbeddingProvider`, returns a fixed-dim embedding and non-trivial cosine between related vs unrelated text; selectable via `MultiProvider`. Feature off: unchanged.
-- [ ] Commit — `feat(embeddings): candle model as first-class EmbeddingProvider`.
+**Files:** Create `src/memory/embeddings/providers/candle.rs` (`CandleEmbeddingProvider` wrapping the candle `BertModel`, peer to the API providers — kept in `providers/` for consistency instead of `ml_models.rs`); Test `tests/candle_embedding_provider_tests.rs` (feature `ml-models`).
+- [x] Failing test (feature on): the candle model, wrapped as `EmbeddingProvider`, returns a fixed-dim embedding, deterministic per text and distinct across texts (semantic-cosine assertion dropped: tests build from tiny deterministic random weights — no network, no downloaded checkpoint — so cosine ordering between related/unrelated text is not meaningful); selectable via `MultiProvider`; construction fails closed when model files are missing. Feature off: unchanged.
+- [x] Commit — `feat(embeddings): candle model as first-class EmbeddingProvider`.
 
 ### Task 6.2: MCP server (gate b — rmcp)
 **Files:** Create `src/mcp/mod.rs`, `src/bin/synaptic_mcp.rs`; Cargo.toml feature `mcp`; Test `tests/mcp_tools_tests.rs` (feature `mcp`).
