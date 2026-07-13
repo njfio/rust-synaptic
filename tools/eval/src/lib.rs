@@ -8,4 +8,5 @@
 pub mod ablation;
 pub mod dataset;
 pub mod metrics;
+pub mod qa;
 pub mod runner;

@@ -270,8 +270,14 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 7.4: LLM-gated QA accuracy + Judge (gate b)
 **Files:** `tools/eval/src/{qa,judge}.rs` (feature `llm-reasoning`); Test structural (feature-gated).
 **Produces:** `Judge` trait; LLM answer-generation from recalled memories + LLM-judge grading vs gold; behind `llm-reasoning`. Feature off → QA accuracy reported as "not run — requires endpoint."
-- [ ] Failing test (feature on, mockable judge for the unit test): the QA pipeline records an accuracy for a fixture question; feature off: the runner marks QA as not-run without fabricating a number.
-- [ ] Commit — `feat(eval): LLM-gated end-to-end QA accuracy with pluggable Judge`.
+- [x] Failing test (feature on, mockable judge for the unit test): the QA pipeline records an accuracy for a fixture question; feature off: the runner marks QA as not-run without fabricating a number.
+- [x] Commit — `feat(eval): LLM-gated end-to-end QA accuracy with pluggable Judge`.
+- **Deviation notes (Task 7.4, GATE-B + as built):**
+  - Single file `tools/eval/src/qa.rs` (trait + pipeline + `LlmJudge` together) instead of split `{qa,judge}.rs` — the judge is ~150 lines and shares `QaError`.
+  - The `Judge` trait, QA pipeline (`run_qa`), mock-based tests and the `QaResult::NotRun` marker compile with the feature OFF; only the real `LlmJudge` and the live path of `run_qa_gated` are behind `llm-reasoning` (feature on the eval crate: `llm-reasoning = ["dep:reqwest"]`, reqwest 0.11 — same line as the main crate's `llm-integration`; GATE-B: no new dependency family).
+  - Not-run is a typed marker: `QaResult::{NotRun{reason}, Ran(QaReport)}`. Feature off, or `SYNAPTIC_EVAL_LLM_URL` unset → `NotRun`; URL set without `SYNAPTIC_EVAL_LLM_MODEL` → `Err` (misconfiguration, fail closed, no guessed model); judge failure mid-run → `Err` (no partial accuracy).
+  - `LlmJudge` targets any OpenAI-compatible chat-completions endpoint (incl. Ollama `/v1`): env `SYNAPTIC_EVAL_LLM_URL` / `SYNAPTIC_EVAL_LLM_MODEL` / optional `SYNAPTIC_EVAL_LLM_KEY`; grading demands a literal `CORRECT`/`INCORRECT` verdict — anything else is an error, never coerced to a score.
+  - `MockJudge` lives in the integration test (`tools/eval/tests/qa.rs`) implementing the public `Judge` trait — test-only, zero test code in the shipped module.
 
 ### Task 7.5: Produce and commit `docs/evaluation.md`
 **Files:** Create `docs/evaluation.md`; run the LLM-free harness on the real datasets (fetched locally) and record measured numbers + the ablation table; mark QA-accuracy not-run-or-run depending on endpoint availability. Update README to cite it (no standalone numbers).
