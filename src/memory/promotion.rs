@@ -494,6 +494,33 @@ impl MemoryPromotionManager {
         Ok(memory)
     }
 
+    /// Demote a memory one tier (long-term → short-term).
+    ///
+    /// The inverse tier transition of [`Self::promote_memory`], used by the
+    /// forgetting path so decayed memories move back down through the same
+    /// tier machinery rather than a parallel delete path. A memory already in
+    /// short-term storage is returned unchanged.
+    pub fn demote_memory(&self, mut memory: MemoryEntry) -> Result<MemoryEntry> {
+        if memory.memory_type == MemoryType::ShortTerm {
+            tracing::debug!(
+                memory_key = %memory.key,
+                "Memory already in short-term storage"
+            );
+            return Ok(memory);
+        }
+
+        tracing::info!(
+            memory_key = %memory.key,
+            access_count = memory.access_count(),
+            importance = memory.metadata.importance,
+            policy = %self.policy.name(),
+            "Demoting memory to short-term storage"
+        );
+
+        memory.memory_type = MemoryType::ShortTerm;
+        Ok(memory)
+    }
+
     /// Get the promotion score for a memory.
     pub fn promotion_score(&self, memory: &MemoryEntry) -> f64 {
         self.policy.promotion_score(memory)

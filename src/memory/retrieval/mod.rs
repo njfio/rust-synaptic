@@ -9,13 +9,19 @@ use serde::{Deserialize, Serialize};
 pub mod dense_vector;
 pub mod indexed;
 pub mod pipeline;
+pub mod rerank;
 pub mod strategies;
 
 // Re-export pipeline types
 pub use pipeline::{
-    CacheStats, FusionStrategy, HybridRetriever, PipelineConfig, RetrievalPipeline,
-    RetrievalSignal, ScoredMemory,
+    CacheStats, CompositeWeights, FusionStrategy, HybridRetriever, PipelineConfig,
+    RetrievalPipeline, RetrievalSignal, ScoredMemory,
 };
+
+// Re-export reranking stage
+#[cfg(feature = "reranker-model")]
+pub use rerank::CrossEncoderReranker;
+pub use rerank::{HeuristicRerankWeights, HeuristicReranker, Reranker};
 
 // Re-export concrete strategies
 pub use strategies::{GraphRetriever, KeywordRetriever, TemporalRetriever};

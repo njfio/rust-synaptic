@@ -298,6 +298,8 @@ observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp"
 
 # External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+# Optional candle cross-encoder reranker (reuses the ml-models candle stack)
+reranker-model = ["ml-models"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
@@ -321,8 +323,17 @@ minimal = ["core", "storage"]
 base64 = ["dep:base64"]
 bincode = ["dep:bincode"]
 
+# Minimal MCP stdio server (JSON-RPC 2.0 over line-delimited stdio) exposing
+# remember/recall/reflect/forget. No new dependencies: reuses serde_json/tokio.
+mcp = []
+
 # Testing utilities
 test-utils = []
+
+[[bin]]
+name = "synaptic_mcp"
+path = "src/bin/synaptic_mcp.rs"
+required-features = ["mcp"]
 
 [[example]]
 name = "basic_usage"
@@ -438,3 +449,8 @@ required-features = ["analytics"]
 name = "security_performance"
 harness = false
 required-features = ["security"]
+
+# Workspace: the main `synaptic` crate plus auxiliary tooling crates.
+# `tools/eval` hosts the LongMemEval/LoCoMo evaluation harness (not published).
+[workspace]
+members = [".", "tools/eval"]

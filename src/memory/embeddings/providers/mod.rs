@@ -11,6 +11,9 @@ pub mod ollama;
 #[cfg(feature = "llm-integration")]
 pub mod cohere;
 
+#[cfg(feature = "ml-models")]
+pub mod candle;
+
 // Re-export providers
 pub use tfidf::{TfIdfConfig, TfIdfProvider};
 
@@ -22,3 +25,6 @@ pub use ollama::{OllamaConfig, OllamaProvider};
 
 #[cfg(feature = "llm-integration")]
 pub use cohere::{CohereConfig, CohereInputType, CohereModel, CohereProvider};
+
+#[cfg(feature = "ml-models")]
+pub use candle::CandleEmbeddingProvider;

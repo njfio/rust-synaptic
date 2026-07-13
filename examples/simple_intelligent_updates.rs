@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("✓ Created 3 initial memories");
 
     // Show initial knowledge graph stats
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!(
             " Initial graph: {} nodes, {} edges",
             stats.node_count, stats.edge_count
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("✓ Updated existing memories with additional information");
 
     // Show that nodes were updated, not duplicated
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!(
             " After updates: {} nodes, {} edges (nodes should be same count)",
             stats.node_count, stats.edge_count
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("✓ Added similar but distinct memories");
 
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!(
             " After new memories: {} nodes, {} edges",
             stats.node_count, stats.edge_count
@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("✓ Created explicit relationships between memories");
 
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!(
             " After relationships: {} nodes, {} edges",
             stats.node_count, stats.edge_count
@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!(
             " After inference: {} nodes, {} edges",
             stats.node_count, stats.edge_count
@@ -210,7 +210,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("  • Long-term memories: {}", stats.long_term_count);
     println!("  • Total memory size: {} bytes", stats.total_size);
 
-    if let Some(kg_stats) = memory.knowledge_graph_stats() {
+    if let Some(kg_stats) = memory.knowledge_graph_stats().await {
         println!("\nKnowledge Graph Statistics:");
         println!("  • Total nodes: {}", kg_stats.node_count);
         println!("  • Total edges: {}", kg_stats.edge_count);

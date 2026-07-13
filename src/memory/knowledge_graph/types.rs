@@ -109,6 +109,14 @@ impl std::fmt::Display for RelationshipType {
     }
 }
 
+/// Serde default for `valid_from`/`ingested_at` on data serialized before the
+/// bi-temporal fields existed. `DateTime::<Utc>::MIN_UTC` means "valid from the
+/// beginning of time", which is the safe default for legacy data: it keeps every
+/// previously stored node/edge visible at any query time.
+fn default_bitemporal_start() -> DateTime<Utc> {
+    DateTime::<Utc>::MIN_UTC
+}
+
 /// A node in the knowledge graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
@@ -134,6 +142,18 @@ pub struct Node {
     pub confidence: f64,
     /// Tags for categorization
     pub tags: Vec<String>,
+    /// Event time: when the fact this node represents became true
+    #[serde(default = "default_bitemporal_start")]
+    pub valid_from: DateTime<Utc>,
+    /// Event time: when the fact this node represents stopped being true (None = still true)
+    #[serde(default)]
+    pub valid_to: Option<DateTime<Utc>>,
+    /// System time: when this node was ingested into the graph
+    #[serde(default = "default_bitemporal_start")]
+    pub ingested_at: DateTime<Utc>,
+    /// System time: when this node was retracted from the graph (None = current)
+    #[serde(default)]
+    pub expired_at: Option<DateTime<Utc>>,
 }
 
 impl Node {
@@ -152,7 +172,33 @@ impl Node {
             importance: 0.5,
             confidence: 1.0,
             tags: Vec::new(),
+            valid_from: now,
+            valid_to: None,
+            ingested_at: now,
+            expired_at: None,
         }
+    }
+
+    /// Check whether this node is valid at time `t` on both temporal axes:
+    /// event time (`valid_from`/`valid_to`) and system time (`expired_at`).
+    pub fn is_valid_at(&self, t: DateTime<Utc>) -> bool {
+        self.valid_from <= t
+            && self.valid_to.map_or(true, |end| t < end)
+            && self.expired_at.map_or(true, |end| t < end)
+    }
+
+    /// System-time retraction: mark this node as expired (removed from the
+    /// current view of the graph) as of time `t`.
+    pub fn expire_at(&mut self, t: DateTime<Utc>) {
+        self.expired_at = Some(t);
+        self.mark_modified();
+    }
+
+    /// Event-time end: record that the fact this node represents stopped
+    /// being true at `valid_to`.
+    pub fn invalidate(&mut self, valid_to: DateTime<Utc>) {
+        self.valid_to = Some(valid_to);
+        self.mark_modified();
     }
 
     /// Create a node from a memory entry
@@ -306,6 +352,18 @@ pub struct Edge {
     pub to_node: Uuid,
     /// Relationship information
     pub relationship: Relationship,
+    /// Event time: when the fact this edge represents became true
+    #[serde(default = "default_bitemporal_start")]
+    pub valid_from: DateTime<Utc>,
+    /// Event time: when the fact this edge represents stopped being true (None = still true)
+    #[serde(default)]
+    pub valid_to: Option<DateTime<Utc>>,
+    /// System time: when this edge was ingested into the graph
+    #[serde(default = "default_bitemporal_start")]
+    pub ingested_at: DateTime<Utc>,
+    /// System time: when this edge was retracted from the graph (None = current)
+    #[serde(default)]
+    pub expired_at: Option<DateTime<Utc>>,
 }
 
 impl Edge {
@@ -322,12 +380,39 @@ impl Edge {
             Relationship::new(relationship_type)
         };
 
+        let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
             from_node,
             to_node,
             relationship,
+            valid_from: now,
+            valid_to: None,
+            ingested_at: now,
+            expired_at: None,
         }
+    }
+
+    /// Check whether this edge is valid at time `t` on both temporal axes:
+    /// event time (`valid_from`/`valid_to`) and system time (`expired_at`).
+    pub fn is_valid_at(&self, t: DateTime<Utc>) -> bool {
+        self.valid_from <= t
+            && self.valid_to.map_or(true, |end| t < end)
+            && self.expired_at.map_or(true, |end| t < end)
+    }
+
+    /// System-time retraction: mark this edge as expired (removed from the
+    /// current view of the graph) as of time `t`.
+    pub fn expire_at(&mut self, t: DateTime<Utc>) {
+        self.expired_at = Some(t);
+        self.relationship.mark_modified();
+    }
+
+    /// Event-time end: record that the fact this edge represents stopped
+    /// being true at `valid_to`.
+    pub fn invalidate(&mut self, valid_to: DateTime<Utc>) {
+        self.valid_to = Some(valid_to);
+        self.relationship.mark_modified();
     }
 
     /// Check if this edge connects the given nodes (in either direction)

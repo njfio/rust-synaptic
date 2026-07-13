@@ -239,6 +239,43 @@ impl KnowledgeGraph {
         }
     }
 
+    /// End an edge's bi-temporal validity at `at`: sets the event-time end
+    /// (`valid_to = at`) and the system-time expiry (`expired_at = at`), so
+    /// the edge is excluded from as-of queries at or after `at` while
+    /// remaining stored in the graph. Returns whether an edge with the given
+    /// id was found. A string that does not parse as a UUID matches no edge.
+    pub fn invalidate_edge(&self, edge_id: &str, at: DateTime<Utc>) -> Result<bool> {
+        let Ok(id) = Uuid::parse_str(edge_id) else {
+            return Ok(false);
+        };
+        if let Some(mut edge) = self.edges.get_mut(&id) {
+            edge.invalidate(at);
+            edge.expire_at(at);
+            self.mark_modified();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Point-in-time neighborhood query: all edges incident to `node_id`
+    /// (either direction) that are bi-temporally valid at `at`. A string
+    /// that does not parse as a UUID matches no node. Results are sorted by
+    /// edge id for deterministic ordering.
+    pub fn neighbors_as_of(&self, node_id: &str, at: DateTime<Utc>) -> Vec<Edge> {
+        let Ok(id) = Uuid::parse_str(node_id) else {
+            return Vec::new();
+        };
+        let mut edges: Vec<Edge> = self
+            .edges
+            .iter()
+            .filter(|edge| (edge.from_node == id || edge.to_node == id) && edge.is_valid_at(at))
+            .map(|edge| edge.clone())
+            .collect();
+        edges.sort_by_key(|edge| edge.id);
+        edges
+    }
+
     /// Get all neighbors of a node
     pub async fn get_neighbors(&self, node_id: Uuid) -> Result<Vec<Uuid>> {
         let mut neighbors = HashSet::new();

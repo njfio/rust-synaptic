@@ -1,0 +1,452 @@
+//! Reranking stage for the retrieval pipeline.
+//!
+//! A [`Reranker`] takes the top-K candidates produced by fusion + composite
+//! scoring and re-orders them using cross-features computed between the query
+//! and each candidate. Rerankers reorder; they do not fabricate scores — each
+//! candidate's original pipeline score travels through unchanged.
+
+use crate::error::Result;
+use crate::memory::embeddings::provider::EmbeddingProvider;
+use crate::memory::knowledge_graph::MemoryKnowledgeGraph;
+use crate::memory::retrieval::pipeline::ScoredMemory;
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::sync::Arc;
+
+/// A reranking stage applied to the top-K candidates after composite scoring.
+#[async_trait]
+pub trait Reranker: Send + Sync {
+    /// Re-order the candidates by relevance to the query.
+    ///
+    /// Implementations must return the same candidates (no additions, no
+    /// drops) in a new order, preserving each candidate's original score.
+    async fn rerank(&self, query: &str, candidates: Vec<ScoredMemory>)
+        -> Result<Vec<ScoredMemory>>;
+
+    /// Name of this reranker.
+    fn name(&self) -> &str;
+}
+
+/// Weights for the heuristic cross-features. Weights over unavailable
+/// features (no embedding provider, no graph) are dropped and the remainder
+/// renormalized, so the rerank score is always a `[0, 1]` blend of the
+/// features actually computed.
+#[derive(Debug, Clone, Copy)]
+pub struct HeuristicRerankWeights {
+    /// Weight of query-term / candidate-content overlap
+    pub term_overlap: f64,
+    /// Weight of query↔candidate embedding cosine agreement
+    pub embedding_agreement: f64,
+    /// Weight of graph proximity to the other top-K candidates
+    pub graph_proximity: f64,
+    /// Weight of recency (exponential decay by age)
+    pub recency: f64,
+}
+
+impl Default for HeuristicRerankWeights {
+    fn default() -> Self {
+        Self {
+            term_overlap: 0.35,
+            embedding_agreement: 0.35,
+            graph_proximity: 0.15,
+            recency: 0.15,
+        }
+    }
+}
+
+/// Recency half-life for the heuristic reranker: one week, in hours.
+const RECENCY_HALF_LIFE_HOURS: f64 = 168.0;
+
+/// Deterministic cross-feature reranker.
+///
+/// For each candidate it computes, against the query:
+/// - **term overlap** — fraction of query terms present in the candidate's
+///   content (case-insensitive, alphanumeric tokenization);
+/// - **embedding agreement** — cosine similarity between the query embedding
+///   and the candidate-content embedding (via the configured
+///   [`EmbeddingProvider`]), clamped to `[0, 1]`;
+/// - **graph proximity** — fraction of the *other* top-K candidates reachable
+///   from this candidate within 2 hops of the knowledge graph (when a graph
+///   handle is configured and the candidate is a graph node);
+/// - **recency** — exponential decay of the memory's age with a one-week
+///   half-life.
+///
+/// These are blended with [`HeuristicRerankWeights`] (renormalized over the
+/// available features) and the candidates re-ordered by the blend, descending,
+/// with exact ties broken by ascending memory key so the ordering is stable
+/// and deterministic. Original scores are preserved.
+pub struct HeuristicReranker {
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    knowledge_graph: Option<Arc<tokio::sync::RwLock<MemoryKnowledgeGraph>>>,
+    weights: HeuristicRerankWeights,
+}
+
+impl HeuristicReranker {
+    /// Create a reranker with the given (optional) embedding provider and
+    /// (optional) knowledge-graph handle, using default weights.
+    pub fn new(
+        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+        knowledge_graph: Option<Arc<tokio::sync::RwLock<MemoryKnowledgeGraph>>>,
+    ) -> Self {
+        Self {
+            embedding_provider,
+            knowledge_graph,
+            weights: HeuristicRerankWeights::default(),
+        }
+    }
+
+    /// Override the cross-feature weights.
+    pub fn with_weights(mut self, weights: HeuristicRerankWeights) -> Self {
+        self.weights = weights;
+        self
+    }
+
+    fn tokenize(text: &str) -> HashSet<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_lowercase())
+            .collect()
+    }
+
+    /// Fraction of query terms found in the candidate content.
+    fn term_overlap(query_terms: &HashSet<String>, content: &str) -> f64 {
+        if query_terms.is_empty() {
+            return 0.0;
+        }
+        let content_terms = Self::tokenize(content);
+        let hits = query_terms
+            .iter()
+            .filter(|t| content_terms.contains(*t))
+            .count();
+        hits as f64 / query_terms.len() as f64
+    }
+
+    /// Graph proximity: fraction of the other candidates reachable from this
+    /// candidate within 2 hops. Candidates absent from the graph score 0.
+    async fn graph_proximity(&self, key: &str, other_keys: &HashSet<String>) -> f64 {
+        let Some(ref kg) = self.knowledge_graph else {
+            return 0.0;
+        };
+        if other_keys.is_empty() {
+            return 0.0;
+        }
+        let related = match kg.read().await.find_related_memories(key, 2, None).await {
+            Ok(related) => related,
+            Err(e) => {
+                // The candidate may simply not be a graph node yet.
+                tracing::debug!(key = %key, error = %e, "graph proximity unavailable for candidate");
+                return 0.0;
+            }
+        };
+        let hits = related
+            .iter()
+            .filter(|r| other_keys.contains(&r.memory_key))
+            .count();
+        (hits as f64 / other_keys.len() as f64).clamp(0.0, 1.0)
+    }
+
+    /// Recency via exponential decay: `0.5 ^ (age_hours / half_life)`.
+    fn recency(
+        created_at: chrono::DateTime<chrono::Utc>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> f64 {
+        let age_hours = (now - created_at).num_seconds().max(0) as f64 / 3600.0;
+        0.5_f64.powf(age_hours / RECENCY_HALF_LIFE_HOURS)
+    }
+}
+
+#[async_trait]
+impl Reranker for HeuristicReranker {
+    async fn rerank(
+        &self,
+        query: &str,
+        candidates: Vec<ScoredMemory>,
+    ) -> Result<Vec<ScoredMemory>> {
+        if candidates.len() < 2 {
+            return Ok(candidates);
+        }
+
+        let query_terms = Self::tokenize(query);
+        let now = chrono::Utc::now();
+
+        // Embed the query once; embedding agreement is only computed when a
+        // provider is configured and available.
+        let query_embedding = match self.embedding_provider {
+            Some(ref provider) if provider.is_available() => {
+                Some(provider.embed(query, None).await?)
+            }
+            _ => None,
+        };
+
+        // Renormalize weights over the available features.
+        let w = self.weights;
+        let embedding_weight = if query_embedding.is_some() {
+            w.embedding_agreement
+        } else {
+            0.0
+        };
+        let graph_weight = if self.knowledge_graph.is_some() {
+            w.graph_proximity
+        } else {
+            0.0
+        };
+        let total_weight = w.term_overlap + embedding_weight + graph_weight + w.recency;
+        if total_weight <= f64::EPSILON {
+            return Ok(candidates);
+        }
+
+        let all_keys: HashSet<String> = candidates
+            .iter()
+            .map(|c| c.memory.entry.key.clone())
+            .collect();
+
+        let mut ranked: Vec<(f64, ScoredMemory)> = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let content = &candidate.memory.entry.value;
+            let key = &candidate.memory.entry.key;
+
+            let overlap = Self::term_overlap(&query_terms, content);
+
+            let agreement = match query_embedding {
+                Some(ref qe) => {
+                    let provider = self
+                        .embedding_provider
+                        .as_ref()
+                        .expect("query_embedding is Some only when a provider is configured");
+                    let ce = provider.embed(content, None).await?;
+                    qe.cosine_similarity(&ce).clamp(0.0, 1.0)
+                }
+                None => 0.0,
+            };
+
+            let mut other_keys = all_keys.clone();
+            other_keys.remove(key);
+            let proximity = self.graph_proximity(key, &other_keys).await;
+
+            let recency = Self::recency(candidate.memory.entry.created_at(), now);
+
+            let rerank_score = (w.term_overlap * overlap
+                + embedding_weight * agreement
+                + graph_weight * proximity
+                + w.recency * recency)
+                / total_weight;
+
+            tracing::trace!(
+                key = %key,
+                overlap,
+                agreement,
+                proximity,
+                recency,
+                rerank_score,
+                "heuristic rerank features"
+            );
+            ranked.push((rerank_score, candidate));
+        }
+
+        // Deterministic ordering: rerank score descending, ties broken by
+        // ascending memory key. Original scores are left untouched.
+        ranked.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.memory.entry.key.cmp(&b.1.memory.entry.key))
+        });
+
+        Ok(ranked.into_iter().map(|(_, c)| c).collect())
+    }
+
+    fn name(&self) -> &str {
+        "HeuristicReranker"
+    }
+}
+
+#[cfg(feature = "reranker-model")]
+pub use cross_encoder::CrossEncoderReranker;
+
+/// Candle-backed BERT cross-encoder reranker (feature `reranker-model`).
+#[cfg(feature = "reranker-model")]
+mod cross_encoder {
+    use super::Reranker;
+    use crate::error::{MemoryError, Result};
+    use crate::memory::retrieval::pipeline::ScoredMemory;
+    use async_trait::async_trait;
+    use candle_core::{DType, Device, IndexOp, Tensor};
+    use candle_nn::{linear, Linear, Module, VarBuilder};
+    use candle_transformers::models::bert::{BertModel, Config as BertConfig};
+    use std::path::Path;
+    use tokenizers::Tokenizer;
+
+    /// A cross-encoder reranker: for each candidate it tokenizes the
+    /// `(query, candidate content)` pair, runs a BERT forward pass, and reads
+    /// a single relevance logit off a linear classification head over the
+    /// `[CLS]` position. Candidates are re-ordered by that logit, descending,
+    /// with exact ties broken by ascending memory key. Original pipeline
+    /// scores travel through unchanged.
+    ///
+    /// Construction fails closed: if the model files (config, tokenizer,
+    /// weights) cannot be loaded, [`CrossEncoderReranker::new`] returns an
+    /// error — there is no fallback scoring path in this type.
+    pub struct CrossEncoderReranker {
+        model: BertModel,
+        classifier: Linear,
+        tokenizer: Tokenizer,
+        device: Device,
+        max_length: usize,
+    }
+
+    impl CrossEncoderReranker {
+        /// Load a cross-encoder from a local model directory containing
+        /// `config.json`, `tokenizer.json` and `model.safetensors` (the
+        /// standard HuggingFace layout for BERT sequence-classification
+        /// cross-encoders, e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2`).
+        ///
+        /// Fails closed with an error if any file is missing or malformed.
+        /// Inference runs on CPU.
+        pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
+            let model_dir = model_dir.as_ref();
+            let device = Device::Cpu;
+
+            let config_path = model_dir.join("config.json");
+            let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder config not readable at {}: {}",
+                    config_path.display(),
+                    e
+                ))
+            })?;
+            let config: BertConfig = serde_json::from_str(&config_str).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder config at {} is not a valid BERT config: {}",
+                    config_path.display(),
+                    e
+                ))
+            })?;
+
+            let tokenizer_path = model_dir.join("tokenizer.json");
+            let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder tokenizer not loadable from {}: {}",
+                    tokenizer_path.display(),
+                    e
+                ))
+            })?;
+
+            let weights_path = model_dir.join("model.safetensors");
+            let weights = std::fs::read(&weights_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder weights not readable at {}: {}",
+                    weights_path.display(),
+                    e
+                ))
+            })?;
+            let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &device)?;
+
+            let max_length = config.max_position_embeddings;
+            Self::from_var_builder(vb, &config, tokenizer, max_length)
+        }
+
+        /// Build a cross-encoder from an already-constructed [`VarBuilder`]
+        /// and tokenizer. This is the shared trunk of [`Self::new`]; it also
+        /// lets tests exercise the real inference path from in-memory
+        /// weights without touching the network or filesystem.
+        pub fn from_var_builder(
+            vb: VarBuilder,
+            config: &BertConfig,
+            tokenizer: Tokenizer,
+            max_length: usize,
+        ) -> Result<Self> {
+            if max_length == 0 || max_length > config.max_position_embeddings {
+                return Err(MemoryError::configuration(format!(
+                    "cross-encoder max_length {} must be in 1..={}",
+                    max_length, config.max_position_embeddings
+                )));
+            }
+            let device = vb.device().clone();
+            // BertModel::load itself falls back to the `bert.` prefix used by
+            // sequence-classification checkpoints.
+            let model = BertModel::load(vb.clone(), config)?;
+            let classifier = linear(config.hidden_size, 1, vb.pp("classifier"))?;
+            Ok(Self {
+                model,
+                classifier,
+                tokenizer,
+                device,
+                max_length,
+            })
+        }
+
+        /// Relevance logit for a `(query, candidate)` pair: tokenize the
+        /// pair, run the BERT forward pass, apply the classification head to
+        /// the `[CLS]` position. Higher means more relevant.
+        pub fn score(&self, query: &str, candidate: &str) -> Result<f32> {
+            let encoding = self
+                .tokenizer
+                .encode((query, candidate), true)
+                .map_err(|e| {
+                    MemoryError::processing_error(format!(
+                        "cross-encoder tokenization failed: {}",
+                        e
+                    ))
+                })?;
+
+            let take = encoding.get_ids().len().min(self.max_length);
+            if take == 0 {
+                return Err(MemoryError::processing_error(
+                    "cross-encoder tokenization produced no tokens",
+                ));
+            }
+            let ids = &encoding.get_ids()[..take];
+            let type_ids = &encoding.get_type_ids()[..take];
+            let mask = &encoding.get_attention_mask()[..take];
+
+            let input_ids = Tensor::new(ids, &self.device)?.unsqueeze(0)?;
+            let token_type_ids = Tensor::new(type_ids, &self.device)?.unsqueeze(0)?;
+            let attention_mask = Tensor::new(mask, &self.device)?.unsqueeze(0)?;
+
+            let hidden = self
+                .model
+                .forward(&input_ids, &token_type_ids, Some(&attention_mask))?;
+            // [CLS] position: (batch=1, hidden) -> classifier -> (1, 1).
+            let cls = hidden.i((.., 0))?;
+            let logit = self.classifier.forward(&cls)?;
+            Ok(logit.flatten_all()?.to_vec1::<f32>()?[0])
+        }
+    }
+
+    #[async_trait]
+    impl Reranker for CrossEncoderReranker {
+        async fn rerank(
+            &self,
+            query: &str,
+            candidates: Vec<ScoredMemory>,
+        ) -> Result<Vec<ScoredMemory>> {
+            if candidates.len() < 2 {
+                return Ok(candidates);
+            }
+
+            let mut ranked: Vec<(f32, ScoredMemory)> = Vec::with_capacity(candidates.len());
+            for candidate in candidates {
+                let logit = self.score(query, &candidate.memory.entry.value)?;
+                tracing::trace!(
+                    key = %candidate.memory.entry.key,
+                    logit,
+                    "cross-encoder rerank logit"
+                );
+                ranked.push((logit, candidate));
+            }
+
+            // Logit descending; exact ties broken by ascending memory key so
+            // the ordering is stable and deterministic.
+            ranked.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.memory.entry.key.cmp(&b.1.memory.entry.key))
+            });
+
+            Ok(ranked.into_iter().map(|(_, c)| c).collect())
+        }
+
+        fn name(&self) -> &str {
+            "CrossEncoderReranker"
+        }
+    }
+}

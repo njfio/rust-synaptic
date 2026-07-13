@@ -521,3 +521,99 @@ async fn search_ranks_semantic_match_above_substring_noise() {
         "pipeline ranking should beat naive keyword-count noise: {results:?}"
     );
 }
+
+/// Real BM25 IDF: a document matched on a RARE query term must rank above
+/// a document matched only on a COMMON term. With a constant IDF of 1.0
+/// both documents would tie (equal tf, equal length), so a strict ordering
+/// proves corpus-derived IDF.
+#[tokio::test]
+async fn test_bm25_rare_term_outranks_common_term() {
+    use synaptic::memory::types::{MemoryEntry, MemoryType};
+
+    let config = MemoryConfig {
+        storage_backend: StorageBackend::Memory,
+        ..Default::default()
+    };
+    let agent = AgentMemory::new(config).await.unwrap();
+    let storage = agent.storage().clone();
+
+    // "database" appears in 3 of 4 candidates (common); "quokka" in 1 (rare).
+    // The rare-term doc and one common-term doc have identical length and
+    // term frequency, so only IDF can separate them.
+    for (key, value) in [
+        ("doc_rare", "quokka index entry"),
+        ("doc_common", "database index entry"),
+        ("doc_common_2", "database schema design overview"),
+        ("doc_common_3", "database migration tooling notes"),
+    ] {
+        let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::LongTerm);
+        storage.store(&entry).await.unwrap();
+    }
+
+    let retriever = KeywordRetriever::new(storage);
+    let results = retriever.search("quokka database", 4, None).await.unwrap();
+
+    let score_of = |key: &str| {
+        results
+            .iter()
+            .find(|r| r.memory.entry.key == key)
+            .unwrap_or_else(|| panic!("{key} missing from results: {results:?}"))
+            .score
+    };
+    assert!(
+        score_of("doc_rare") > score_of("doc_common"),
+        "rare-term match must outscore common-term match (real IDF): {results:?}"
+    );
+}
+
+/// Real access-frequency temporal signal: a frequently-accessed memory must
+/// score higher than an equally-recent never-accessed one.
+#[tokio::test]
+async fn test_temporal_access_frequency_signal() {
+    use synaptic::memory::types::{MemoryEntry, MemoryType};
+
+    let config = MemoryConfig {
+        storage_backend: StorageBackend::Memory,
+        ..Default::default()
+    };
+    let agent = AgentMemory::new(config).await.unwrap();
+    let storage = agent.storage().clone();
+
+    let created = chrono::Utc::now() - chrono::Duration::days(2);
+
+    let mut hot = MemoryEntry::new(
+        "hot_memory".to_string(),
+        "shared topic content".to_string(),
+        MemoryType::LongTerm,
+    );
+    hot.metadata.created_at = created;
+    for _ in 0..20 {
+        hot.mark_accessed();
+    }
+
+    let mut cold = MemoryEntry::new(
+        "cold_memory".to_string(),
+        "shared topic content".to_string(),
+        MemoryType::LongTerm,
+    );
+    cold.metadata.created_at = created;
+    assert_eq!(cold.access_count(), 0);
+
+    storage.store(&hot).await.unwrap();
+    storage.store(&cold).await.unwrap();
+
+    let retriever = TemporalRetriever::new(storage);
+    let results = retriever.search("shared topic", 10, None).await.unwrap();
+
+    let score_of = |key: &str| {
+        results
+            .iter()
+            .find(|r| r.memory.entry.key == key)
+            .unwrap_or_else(|| panic!("{key} missing from results: {results:?}"))
+            .score
+    };
+    assert!(
+        score_of("hot_memory") > score_of("cold_memory"),
+        "frequently-accessed memory must outscore never-accessed one: {results:?}"
+    );
+}

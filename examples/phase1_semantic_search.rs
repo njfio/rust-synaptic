@@ -139,7 +139,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Get knowledge graph statistics
-    if let Some(kg_stats) = memory.knowledge_graph_stats() {
+    if let Some(kg_stats) = memory.knowledge_graph_stats().await {
         println!("\n Knowledge Graph Statistics:");
         println!("  • Total nodes: {}", kg_stats.node_count);
         println!("  • Total edges: {}", kg_stats.edge_count);

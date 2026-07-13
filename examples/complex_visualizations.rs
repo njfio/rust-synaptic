@@ -397,7 +397,7 @@ async fn create_enterprise_knowledge_graph(memory: &mut AgentMemory) -> Result<(
         )
         .await?;
 
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!("✓ Created enterprise knowledge graph:");
         println!("  - {} nodes", stats.node_count);
         println!("  - {} edges", stats.edge_count);
@@ -673,7 +673,7 @@ async fn create_multilayer_networks(memory: &mut AgentMemory) -> Result<(), Box<
         )
         .await?;
 
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!("✓ Created multi-layered networks:");
         println!("  - {} total nodes", stats.node_count);
         println!("  - {} total edges", stats.edge_count);

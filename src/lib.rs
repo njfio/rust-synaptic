@@ -54,6 +54,8 @@ pub mod distributed;
 pub mod analytics;
 
 pub mod integrations;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod performance;
 
 #[cfg(feature = "security")]
@@ -88,11 +90,29 @@ pub struct AgentMemory {
     state: memory::state::AgentState,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     checkpoint_manager: memory::checkpoint::CheckpointManager,
-    knowledge_graph: Option<memory::knowledge_graph::MemoryKnowledgeGraph>,
+    /// Knowledge graph shared with the retrieval pipeline's `GraphRetriever`
+    /// (hence the `Arc<RwLock<..>>`).
+    knowledge_graph:
+        Option<Arc<tokio::sync::RwLock<memory::knowledge_graph::MemoryKnowledgeGraph>>>,
     temporal_manager: Option<memory::temporal::TemporalMemoryManager>,
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
+    /// Reasoner driving the intelligent write path (extraction + conflict
+    /// resolution); defaults to a `HeuristicReasoner` over the active embedder.
+    #[cfg(feature = "embeddings")]
+    reasoner: Arc<dyn memory::reasoning::MemoryReasoner>,
+    /// Reflection engine that clusters accumulated memories and synthesizes
+    /// provenance-linked insights via the reasoner.
+    #[cfg(feature = "embeddings")]
+    reflection_engine: memory::reflection::ReflectionEngine,
+    /// Keys of memories stored since the last reflection (insertion order).
+    #[cfg(feature = "embeddings")]
+    reflection_pending: Vec<String>,
+    /// Importance accumulated since the last reflection; `reflect` fires only
+    /// once this reaches the configured threshold.
+    #[cfg(feature = "embeddings")]
+    reflection_accumulated_importance: f64,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -111,8 +131,10 @@ pub struct AgentMemory {
     /// Memory promotion manager for hierarchical memory management
     promotion_manager: Option<memory::promotion::MemoryPromotionManager>,
     /// Hybrid retrieval pipeline used by `search` when embeddings are enabled;
-    /// combines dense-vector and keyword signals for ranked results instead of
-    /// naive substring matching. `None` falls back to `storage.search`.
+    /// combines dense-vector, keyword, graph, and temporal signals for ranked
+    /// results instead of naive substring matching, then applies composite
+    /// relevance × recency × importance scoring. `None` falls back to
+    /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
 }
 
@@ -152,9 +174,9 @@ impl AgentMemory {
         // Initialize knowledge graph if enabled
         let knowledge_graph = if config.enable_knowledge_graph {
             let graph_config = memory::knowledge_graph::GraphConfig::default();
-            Some(memory::knowledge_graph::MemoryKnowledgeGraph::new(
-                graph_config,
-            ))
+            Some(Arc::new(tokio::sync::RwLock::new(
+                memory::knowledge_graph::MemoryKnowledgeGraph::new(graph_config),
+            )))
         } else {
             None
         };
@@ -186,6 +208,23 @@ impl AgentMemory {
             None
         };
 
+        // Default reasoner for the intelligent write path: the deterministic
+        // heuristic reasoner over the active (TF-IDF) embedding provider.
+        #[cfg(feature = "embeddings")]
+        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> =
+            Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
+                memory::embeddings::TfIdfProvider::default(),
+            )));
+
+        // Reflection engine: clusters memories accumulated since the last
+        // reflection by TF-IDF embedding similarity and synthesizes insights
+        // through the same reasoner as the write path.
+        #[cfg(feature = "embeddings")]
+        let reflection_engine = memory::reflection::ReflectionEngine::new(
+            memory::reflection::ReflectionConfig::default(),
+            Arc::new(memory::embeddings::TfIdfProvider::default()),
+        );
+
         // Initialize the hybrid retrieval pipeline if embeddings are enabled. This
         // routes `search` through ranked dense-vector + keyword signals instead of
         // naive substring matching. It intentionally builds its own lightweight
@@ -203,10 +242,28 @@ impl AgentMemory {
             let dense_vector =
                 memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
             let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
+            // Graph and temporal signals share the same storage; the graph
+            // retriever additionally shares the live knowledge-graph handle
+            // (it reports itself unavailable when the graph is disabled).
+            let graph = memory::retrieval::GraphRetriever::new(
+                Arc::clone(&storage),
+                knowledge_graph.clone(),
+            );
+            let temporal = memory::retrieval::TemporalRetriever::new(Arc::clone(&storage));
             let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
+            // Deterministic heuristic reranker over the top-K: cross-features
+            // (term overlap, embedding agreement, graph proximity, recency)
+            // reorder the fused + composite-scored results.
+            let reranker = memory::retrieval::HeuristicReranker::new(
+                Some(Arc::new(memory::embeddings::TfIdfProvider::default())),
+                knowledge_graph.clone(),
+            );
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::new(dense_vector))
-                .add_pipeline(Arc::new(keyword));
+                .add_pipeline(Arc::new(keyword))
+                .add_pipeline(Arc::new(graph))
+                .add_pipeline(Arc::new(temporal))
+                .with_reranker(Arc::new(reranker));
             Some(Arc::new(hybrid))
         } else {
             None
@@ -293,6 +350,14 @@ impl AgentMemory {
             advanced_manager,
             #[cfg(feature = "embeddings")]
             embedding_manager,
+            #[cfg(feature = "embeddings")]
+            reasoner,
+            #[cfg(feature = "embeddings")]
+            reflection_engine,
+            #[cfg(feature = "embeddings")]
+            reflection_pending: Vec::new(),
+            #[cfg(feature = "embeddings")]
+            reflection_accumulated_importance: 0.0,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -343,6 +408,16 @@ impl AgentMemory {
         self.storage = storage;
     }
 
+    /// Shared handle to the knowledge graph, if enabled. Used by the MCP
+    /// `recall` tool to apply bi-temporal `as_of` filtering via the graph's
+    /// node validity (`Node::is_valid_at`).
+    #[cfg(feature = "mcp")]
+    pub(crate) fn knowledge_graph_handle(
+        &self,
+    ) -> Option<Arc<tokio::sync::RwLock<memory::knowledge_graph::MemoryKnowledgeGraph>>> {
+        self.knowledge_graph.clone()
+    }
+
     /// Store a memory entry with intelligent updating
     #[tracing::instrument(skip(self, value), fields(key = %key, value_len = value.len()))]
     pub async fn store(&mut self, key: &str, value: &str) -> Result<()> {
@@ -391,6 +466,15 @@ impl AgentMemory {
         self.state.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
 
+        // Track accumulation for triggered reflection.
+        #[cfg(feature = "embeddings")]
+        {
+            if !self.reflection_pending.iter().any(|k| k == key) {
+                self.reflection_pending.push(key.to_string());
+            }
+            self.reflection_accumulated_importance += entry.metadata.importance;
+        }
+
         let mut degradations = StoreDegradations::default();
 
         // Track temporal changes if enabled
@@ -417,8 +501,8 @@ impl AgentMemory {
         }
 
         // Add or update in knowledge graph if enabled (intelligent merging)
-        if let Some(ref mut kg) = self.knowledge_graph {
-            if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+        if let Some(ref kg) = self.knowledge_graph {
+            if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
                 tracing::warn!(error = %e, "knowledge graph update degraded during store");
                 degradations.knowledge_graph = Some(e.to_string());
             }
@@ -426,8 +510,12 @@ impl AgentMemory {
 
         // Use advanced management if enabled
         if let Some(ref mut am) = self.advanced_manager {
+            let mut kg_guard = match self.knowledge_graph {
+                Some(ref kg) => Some(kg.write().await),
+                None => None,
+            };
             if let Err(e) = am
-                .add_memory(&*self.storage, entry.clone(), self.knowledge_graph.as_mut())
+                .add_memory(&*self.storage, entry.clone(), kg_guard.as_deref_mut())
                 .await
             {
                 tracing::warn!(error = %e, "advanced management update degraded during store");
@@ -444,6 +532,17 @@ impl AgentMemory {
             }
         }
 
+        // Intelligent write path: extract facts from the new value, resolve
+        // each against similar existing memories, and apply the outcome to
+        // the knowledge graph. Best-effort like the other subsystems.
+        #[cfg(feature = "embeddings")]
+        if self.knowledge_graph.is_some() {
+            if let Err(e) = self.reason_over_store(&entry).await {
+                tracing::warn!(error = %e, "reasoning degraded during store");
+                degradations.reasoning = Some(e.to_string());
+            }
+        }
+
         // Check if we need to create a checkpoint
         if self.checkpoint_manager.should_checkpoint(&self.state) {
             self.checkpoint_manager
@@ -452,6 +551,297 @@ impl AgentMemory {
         }
 
         Ok(degradations)
+    }
+
+    /// Run the reasoner over a freshly stored entry: extract facts, resolve
+    /// each against the most similar existing memories, and apply the
+    /// resolution to the knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn reason_over_store(&mut self, entry: &MemoryEntry) -> Result<()> {
+        let ctx = memory::reasoning::ExtractionContext {
+            source_key: entry.key.clone(),
+            timestamp: Utc::now(),
+        };
+        let reasoner = Arc::clone(&self.reasoner);
+        let extraction = reasoner.extract(&entry.value, &ctx).await?;
+        // Empty extraction: default behavior stays identical (no KG change
+        // beyond what the earlier subsystems already applied).
+        if extraction.facts.is_empty() {
+            return Ok(());
+        }
+        for fact in &extraction.facts {
+            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5);
+            let resolution = reasoner.resolve(fact, &neighbors).await?;
+            // The reasoner picks its target among the neighbors we supplied;
+            // for id-less outcomes (UpdateInPlace/Append) the target is the
+            // best neighbor by the same deterministic ordering.
+            let best_neighbor_id = neighbors.first().map(|n| n.id.clone());
+            self.apply_resolution(entry, fact, resolution, best_neighbor_id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Build the top-`k` neighbor list for a candidate fact from existing
+    /// memories (short- and long-term state), excluding the entry being
+    /// stored. Similarity is a deterministic token-set cosine; ties break by
+    /// key so resolution is reproducible.
+    #[cfg(feature = "embeddings")]
+    fn neighbor_facts(
+        &self,
+        current_key: &str,
+        fact_text: &str,
+        k: usize,
+    ) -> Vec<memory::reasoning::NeighborFact> {
+        fn tokens(text: &str) -> std::collections::HashSet<String> {
+            text.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| !w.is_empty())
+                .map(str::to_string)
+                .collect()
+        }
+        let candidate_tokens = tokens(fact_text);
+        if candidate_tokens.is_empty() {
+            return Vec::new();
+        }
+        let mut neighbors: Vec<memory::reasoning::NeighborFact> = self
+            .state
+            .get_short_term_memories()
+            .iter()
+            .chain(self.state.get_long_term_memories().iter())
+            .filter(|(key, _)| key.as_str() != current_key)
+            .filter_map(|(key, mem)| {
+                let mem_tokens = tokens(&mem.value);
+                if mem_tokens.is_empty() {
+                    return None;
+                }
+                let intersection = candidate_tokens.intersection(&mem_tokens).count() as f64;
+                let similarity = intersection
+                    / ((candidate_tokens.len() as f64).sqrt() * (mem_tokens.len() as f64).sqrt());
+                if similarity > 0.0 {
+                    Some(memory::reasoning::NeighborFact {
+                        id: key.clone(),
+                        similarity,
+                        text: mem.value.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        neighbors.sort_by(|a, b| {
+            b.similarity
+                .total_cmp(&a.similarity)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        neighbors.truncate(k);
+        neighbors
+    }
+
+    /// Apply a conflict resolution outcome to the knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn apply_resolution(
+        &mut self,
+        entry: &MemoryEntry,
+        fact: &memory::reasoning::Fact,
+        resolution: memory::reasoning::ConflictResolution,
+        best_neighbor_id: Option<String>,
+    ) -> Result<()> {
+        use memory::reasoning::ConflictResolution;
+        let Some(ref kg) = self.knowledge_graph else {
+            return Ok(());
+        };
+        let mut kg = kg.write().await;
+        match resolution {
+            ConflictResolution::Insert => {
+                kg.add_extracted_fact(&entry.key, fact).await?;
+            }
+            ConflictResolution::Supersede { old_id, reason } => {
+                tracing::debug!(old_id = %old_id, reason = %reason, "superseding fact");
+                // Bi-temporally invalidate only the contradicted edges of
+                // the old memory (same subject + predicate as the new fact).
+                kg.supersede_matching_relations(&old_id, fact).await?;
+                kg.add_extracted_fact(&entry.key, fact).await?;
+            }
+            ConflictResolution::UpdateInPlace { reason } => {
+                tracing::debug!(reason = %reason, "updating fact in place");
+                if let Some(target) = best_neighbor_id {
+                    kg.update_memory_node_content(&target, &fact.text).await?;
+                }
+            }
+            ConflictResolution::Append { reason } => {
+                tracing::debug!(reason = %reason, "appending to existing fact");
+                if let Some(target) = best_neighbor_id {
+                    kg.append_memory_content(&target, &fact.text).await?;
+                }
+            }
+            ConflictResolution::NoOp { reason } => {
+                tracing::debug!(reason = %reason, "reasoner chose no-op");
+            }
+        }
+        Ok(())
+    }
+
+    /// Query the knowledge graph for all extracted relations whose subject is
+    /// the given entity (case-insensitive). Returns an empty list when the
+    /// knowledge graph is disabled or the entity is unknown.
+    pub async fn entity_relations(
+        &self,
+        entity_name: &str,
+    ) -> Result<Vec<memory::knowledge_graph::ExtractedRelation>> {
+        match self.knowledge_graph {
+            Some(ref kg) => kg.read().await.relations_for_entity(entity_name).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Replace the active reflection configuration (threshold, cluster
+    /// parameters). Does not reset the importance already accumulated.
+    #[cfg(feature = "embeddings")]
+    pub fn set_reflection_config(&mut self, config: memory::reflection::ReflectionConfig) {
+        self.reflection_engine.set_config(config);
+    }
+
+    /// Reflect over the memories accumulated since the last reflection.
+    ///
+    /// Triggers only once the accumulated importance reaches the configured
+    /// `importance_threshold` (returns an empty vec otherwise). When it
+    /// fires, the accumulated memories are clustered by embedding similarity
+    /// (connected components over pairwise cosine); every cluster of at least
+    /// `min_cluster` members is passed to the reasoner's `synthesize`. Each
+    /// resulting [`memory::reasoning::Insight`] is written as a new
+    /// long-term memory (tagged `insight`, custom field
+    /// `memory_source = "reflection"`) and linked in the knowledge graph
+    /// with a `derives` edge from the insight to each source memory.
+    /// Firing consumes the accumulated importance and pending set.
+    #[cfg(feature = "embeddings")]
+    pub async fn reflect(&mut self) -> Result<Vec<memory::reasoning::Insight>> {
+        let threshold = self.reflection_engine.config().importance_threshold;
+        if self.reflection_accumulated_importance < threshold {
+            return Ok(Vec::new());
+        }
+
+        let pending: Vec<String> = self.reflection_pending.clone();
+        let mut entries: Vec<MemoryEntry> = Vec::with_capacity(pending.len());
+        for key in &pending {
+            // A pending memory may have been deleted since it was stored;
+            // reflection simply skips it.
+            if let Some(entry) = self.state.get_memory(key) {
+                entries.push(entry);
+            }
+        }
+
+        let reasoner = Arc::clone(&self.reasoner);
+        let insights = self
+            .reflection_engine
+            .reflect(&entries, reasoner.as_ref())
+            .await?;
+
+        // `Insight::derived_from` carries memory ids; provenance edges are
+        // keyed by memory key, so map between the two.
+        let id_to_key: std::collections::HashMap<String, String> = entries
+            .iter()
+            .map(|e| (e.id().to_string(), e.key.clone()))
+            .collect();
+        for insight in &insights {
+            self.write_insight(insight, &id_to_key).await?;
+        }
+
+        // The trigger is consumed whether or not any cluster produced an
+        // insight: the same accumulation is never reflected over twice.
+        self.reflection_pending.clear();
+        self.reflection_accumulated_importance = 0.0;
+
+        Ok(insights)
+    }
+
+    /// Persist a synthesized insight as a new long-term memory and record
+    /// `derives` provenance edges from it to each source memory in the
+    /// knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn write_insight(
+        &mut self,
+        insight: &memory::reasoning::Insight,
+        id_to_key: &std::collections::HashMap<String, String>,
+    ) -> Result<()> {
+        let key = format!("insight_{}", Uuid::new_v4());
+        let mut metadata = memory::types::MemoryMetadata::new()
+            .with_tags(vec!["insight".to_string()])
+            .with_importance(insight.confidence);
+        metadata.set_custom_field("memory_source".to_string(), "reflection".to_string());
+        metadata.set_custom_field("derived_from".to_string(), insight.derived_from.join(","));
+        let entry = MemoryEntry::new(key.clone(), insight.text.clone(), MemoryType::LongTerm)
+            .with_metadata(metadata);
+
+        self.storage.store(&entry).await?;
+        self.state.add_memory(entry.clone());
+
+        if let Some(ref kg) = self.knowledge_graph {
+            let mut kg = kg.write().await;
+            kg.add_or_update_memory_node(&entry).await?;
+            for source_id in &insight.derived_from {
+                if let Some(source_key) = id_to_key.get(source_id) {
+                    let properties = std::collections::HashMap::from([
+                        ("source".to_string(), "reflection".to_string()),
+                        ("confidence".to_string(), insight.confidence.to_string()),
+                    ]);
+                    kg.create_relationship(
+                        &key,
+                        source_key,
+                        memory::knowledge_graph::RelationshipType::Custom("derives".to_string()),
+                        Some(properties),
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// All insight memories produced by reflection (custom field
+    /// `memory_source == "reflection"`), sorted by key for determinism.
+    #[cfg(feature = "embeddings")]
+    pub fn insight_memories(&self) -> Vec<MemoryEntry> {
+        let mut insights: Vec<MemoryEntry> = self
+            .state
+            .get_short_term_memories()
+            .values()
+            .chain(self.state.get_long_term_memories().values())
+            .filter(|e| {
+                e.metadata
+                    .get_custom_field("memory_source")
+                    .map(String::as_str)
+                    == Some("reflection")
+            })
+            .cloned()
+            .collect();
+        insights.sort_by(|a, b| a.key.cmp(&b.key));
+        insights
+    }
+
+    /// Memory keys reachable from `memory_key` over `derives` provenance
+    /// edges (depth 1). For an insight memory this is exactly its source
+    /// memories. Returns an empty list when the knowledge graph is disabled.
+    pub async fn derived_sources(&self, memory_key: &str) -> Result<Vec<String>> {
+        let Some(ref kg) = self.knowledge_graph else {
+            return Ok(Vec::new());
+        };
+        let related = kg
+            .read()
+            .await
+            .find_related_memories(
+                memory_key,
+                1,
+                Some(vec![memory::knowledge_graph::RelationshipType::Custom(
+                    "derives".to_string(),
+                )]),
+            )
+            .await?;
+        Ok(related
+            .into_iter()
+            .map(|r| r.memory_key)
+            .filter(|k| k != memory_key)
+            .collect())
     }
 
     /// Retrieve a memory by key
@@ -533,9 +923,9 @@ impl AgentMemory {
             self.state.add_memory(entry.clone());
 
             // Refresh knowledge graph if enabled
-            if let Some(ref mut kg) = self.knowledge_graph {
+            if let Some(ref kg) = self.knowledge_graph {
                 tracing::debug!("Refreshing knowledge graph node for cache miss");
-                if let Err(e) = kg.add_or_update_memory_node(&entry).await {
+                if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
                     tracing::warn!(error = %e, memory_key = %entry.key, "failed to refresh knowledge graph node for cache miss");
                 }
             }
@@ -559,6 +949,92 @@ impl AgentMemory {
             tracing::debug!("Memory not found in storage");
             Ok(None)
         }
+    }
+
+    /// Apply a forgetting pass: demote or evict memories whose retained
+    /// strength (`decay(age) * importance * recency_of_access_factor`, see
+    /// [`memory::forgetting::ForgettingPolicy::retained_strength`]) has fallen
+    /// below the policy's retention floor.
+    ///
+    /// Tier transitions route through the same [`memory::promotion::MemoryPromotionManager`]
+    /// that drives promotion: a long-term memory below the floor is demoted to
+    /// short-term (and survives until a later pass); a short-term memory below
+    /// the floor is evicted from both storage and session state. Requires
+    /// memory promotion to be enabled (`MemoryConfig::enable_memory_promotion`,
+    /// the default) so eviction is not a parallel delete path.
+    #[tracing::instrument(skip(self, policy), fields(retention_floor = policy.retention_floor))]
+    pub async fn forget(
+        &mut self,
+        policy: memory::forgetting::ForgettingPolicy,
+    ) -> Result<memory::forgetting::ForgetReport> {
+        let promotion_manager = self.promotion_manager.as_ref().ok_or_else(|| {
+            MemoryError::configuration(
+                "forget() requires memory promotion to be enabled so tier transitions \
+                 (demotion/eviction) route through the promotion machinery",
+            )
+        })?;
+
+        let mut entries = self.storage.get_all_entries().await?;
+        // Deterministic processing order regardless of backend iteration order.
+        entries.sort_by(|a, b| a.key.cmp(&b.key));
+
+        let mut report = memory::forgetting::ForgetReport {
+            examined: entries.len(),
+            ..Default::default()
+        };
+
+        for stored in entries {
+            // Prefer the in-session copy: state carries fresher access
+            // metadata (retrievals bump the state entry, not storage).
+            let entry = self
+                .state
+                .peek_memory(&stored.key)
+                .cloned()
+                .unwrap_or(stored);
+
+            let strength = policy.retained_strength(&entry).await?;
+            if strength >= policy.retention_floor {
+                continue;
+            }
+
+            match entry.memory_type {
+                memory::types::MemoryType::LongTerm => {
+                    let demoted = promotion_manager.demote_memory(entry)?;
+                    tracing::info!(
+                        memory_key = %demoted.key,
+                        retained_strength = strength,
+                        "Forgetting pass demoting memory to short-term tier"
+                    );
+                    self.storage.store(&demoted).await?;
+                    if self.state.peek_memory(&demoted.key).is_some() {
+                        // Preserve real access metadata: relocating between
+                        // tiers is not an access, so do not bump
+                        // last_accessed/access_count (which would grant
+                        // artificial recency protection on later passes).
+                        self.state.insert_preserving_access(demoted.clone());
+                    }
+                    report.demoted.push(demoted.key);
+                }
+                memory::types::MemoryType::ShortTerm => {
+                    tracing::info!(
+                        memory_key = %entry.key,
+                        retained_strength = strength,
+                        "Forgetting pass evicting memory at lowest tier"
+                    );
+                    self.state.remove_memory(&entry.key);
+                    self.storage.delete(&entry.key).await?;
+                    report.evicted.push(entry.key);
+                }
+            }
+        }
+
+        tracing::debug!(
+            examined = report.examined,
+            evicted = report.evicted.len(),
+            demoted = report.demoted.len(),
+            "Forgetting pass complete"
+        );
+        Ok(report)
     }
 
     /// Search memories by content similarity
@@ -668,8 +1144,8 @@ impl AgentMemory {
         self.storage.clear().await?;
 
         // Clear knowledge graph if enabled
-        if let Some(ref mut kg) = self.knowledge_graph {
-            *kg = memory::knowledge_graph::MemoryKnowledgeGraph::new(
+        if let Some(ref kg) = self.knowledge_graph {
+            *kg.write().await = memory::knowledge_graph::MemoryKnowledgeGraph::new(
                 memory::knowledge_graph::GraphConfig::default(),
             );
         }
@@ -690,8 +1166,10 @@ impl AgentMemory {
         validate_non_empty_string(from_memory, "from_memory key")?;
         validate_non_empty_string(to_memory, "to_memory key")?;
 
-        if let Some(ref mut kg) = self.knowledge_graph {
+        if let Some(ref kg) = self.knowledge_graph {
             let relationship_id = kg
+                .write()
+                .await
                 .create_relationship(from_memory, to_memory, relationship_type, None)
                 .await?;
 
@@ -722,7 +1200,10 @@ impl AgentMemory {
         max_depth: usize,
     ) -> Result<Vec<memory::knowledge_graph::RelatedMemory>> {
         if let Some(ref kg) = self.knowledge_graph {
-            kg.find_related_memories(memory_key, max_depth, None).await
+            kg.read()
+                .await
+                .find_related_memories(memory_key, max_depth, None)
+                .await
         } else {
             Ok(Vec::new())
         }
@@ -736,7 +1217,9 @@ impl AgentMemory {
         max_depth: Option<usize>,
     ) -> Result<Option<memory::knowledge_graph::GraphPath>> {
         if let Some(ref kg) = self.knowledge_graph {
-            kg.find_path_between_memories(from_memory, to_memory, max_depth)
+            kg.read()
+                .await
+                .find_path_between_memories(from_memory, to_memory, max_depth)
                 .await
         } else {
             Ok(None)
@@ -744,16 +1227,22 @@ impl AgentMemory {
     }
 
     /// Get knowledge graph statistics
-    pub fn knowledge_graph_stats(&self) -> Option<memory::knowledge_graph::GraphStats> {
-        self.knowledge_graph.as_ref().map(|kg| kg.get_stats())
+    ///
+    /// Async because the graph is shared with the retrieval pipeline behind
+    /// an async `RwLock`.
+    pub async fn knowledge_graph_stats(&self) -> Option<memory::knowledge_graph::GraphStats> {
+        match self.knowledge_graph {
+            Some(ref kg) => Some(kg.read().await.get_stats()),
+            None => None,
+        }
     }
 
     /// Perform inference to discover new relationships
     pub async fn infer_relationships(
         &mut self,
     ) -> Result<Vec<memory::knowledge_graph::reasoning::InferenceResult>> {
-        if let Some(ref mut kg) = self.knowledge_graph {
-            kg.infer_relationships().await
+        if let Some(ref kg) = self.knowledge_graph {
+            kg.write().await.infer_relationships().await
         } else {
             Ok(Vec::new())
         }

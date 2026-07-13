@@ -22,10 +22,33 @@ pub type MemoryNode = Node;
 pub type MemoryEdge = Edge;
 
 use crate::error::{MemoryError, Result};
+use crate::memory::reasoning::{EntityKind, Fact};
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+/// A subject-predicate-object relation materialized in the knowledge graph
+/// from reasoner extraction, with its provenance and supersession state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtractedRelation {
+    /// Label of the subject entity node.
+    pub subject: String,
+    /// Normalized predicate the edge was created with.
+    pub predicate: String,
+    /// Label of the object entity node.
+    pub object: String,
+    /// Key of the memory the relation was extracted from, if recorded.
+    pub source_memory: Option<String>,
+    /// True if the relation's edge is no longer bi-temporally valid (it was
+    /// invalidated by a superseding fact).
+    pub superseded: bool,
+}
+
+/// Edge property key recording which memory a relation was extracted from.
+const PROP_SOURCE_MEMORY: &str = "source_memory";
+/// Edge property key carrying the normalized predicate.
+const PROP_PREDICATE: &str = "predicate";
 
 /// Main knowledge graph interface for the memory system
 pub struct MemoryKnowledgeGraph {
@@ -35,6 +58,8 @@ pub struct MemoryKnowledgeGraph {
     memory_to_node: HashMap<String, Uuid>, // memory_key -> node_id
     /// Node to memory entry mapping
     node_to_memory: HashMap<Uuid, String>, // node_id -> memory_key
+    /// Extracted entity nodes by lowercased entity name
+    entity_nodes: HashMap<String, Uuid>,
     /// Graph configuration
     config: GraphConfig,
     /// Reasoning engine
@@ -51,9 +76,207 @@ impl MemoryKnowledgeGraph {
             graph,
             memory_to_node: HashMap::new(),
             node_to_memory: HashMap::new(),
+            entity_nodes: HashMap::new(),
             config,
             reasoner,
         }
+    }
+
+    /// Get or create the concept node for an extracted entity, keyed by its
+    /// lowercased name so repeated mentions map onto one node.
+    async fn get_or_create_entity_node(&mut self, name: &str, kind: &EntityKind) -> Result<Uuid> {
+        let key = name.to_lowercase();
+        if let Some(id) = self.entity_nodes.get(&key) {
+            return Ok(*id);
+        }
+        let node_type = match kind {
+            EntityKind::Person => NodeType::Person,
+            EntityKind::Place => NodeType::Location,
+            _ => NodeType::Concept,
+        };
+        let mut node = Node::new(node_type, name.to_string());
+        node.add_property("concept".to_string(), key.clone());
+        let node_id = self.graph.add_node(node).await?;
+        self.entity_nodes.insert(key, node_id);
+        Ok(node_id)
+    }
+
+    /// Materialize an extracted fact into the graph: one node per entity and
+    /// one edge per relation, each edge recording its source memory key.
+    pub async fn add_extracted_fact(&mut self, source_memory_key: &str, fact: &Fact) -> Result<()> {
+        for entity in &fact.entities {
+            self.get_or_create_entity_node(&entity.name, &entity.kind)
+                .await?;
+        }
+        for relation in &fact.relations {
+            let subject_id = match self.entity_nodes.get(&relation.subject.to_lowercase()) {
+                Some(id) => *id,
+                None => {
+                    self.get_or_create_entity_node(&relation.subject, &EntityKind::Term)
+                        .await?
+                }
+            };
+            let object_id = match self.entity_nodes.get(&relation.object.to_lowercase()) {
+                Some(id) => *id,
+                None => {
+                    self.get_or_create_entity_node(&relation.object, &EntityKind::Term)
+                        .await?
+                }
+            };
+            let mut properties = HashMap::new();
+            properties.insert(PROP_PREDICATE.to_string(), relation.predicate.clone());
+            properties.insert(
+                PROP_SOURCE_MEMORY.to_string(),
+                source_memory_key.to_string(),
+            );
+            let edge = Edge::new(
+                subject_id,
+                object_id,
+                RelationshipType::Custom(relation.predicate.clone()),
+                Some(properties),
+            );
+            self.graph.add_edge(edge).await?;
+        }
+        Ok(())
+    }
+
+    /// Bi-temporally invalidate the edges from `old_memory_key` that the
+    /// superseding `fact` contradicts: for each relation in `fact`, only the
+    /// still-valid edges with the same subject and predicate sourced from
+    /// `old_memory_key` are invalidated (per-fact granularity — unrelated
+    /// edges from the same source memory are left untouched). The edges
+    /// remain stored but are no longer valid at or after now. Returns the
+    /// number of edges invalidated.
+    pub async fn supersede_matching_relations(
+        &mut self,
+        old_memory_key: &str,
+        fact: &Fact,
+    ) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let mut invalidated = 0;
+        for relation in &fact.relations {
+            let Some(subject_id) = self.entity_nodes.get(&relation.subject.to_lowercase()) else {
+                continue;
+            };
+            let edge_ids: Vec<Uuid> = self
+                .graph
+                .edges
+                .iter()
+                .filter(|edge| {
+                    edge.from_node == *subject_id
+                        && edge
+                            .relationship
+                            .properties
+                            .get(PROP_SOURCE_MEMORY)
+                            .map(String::as_str)
+                            == Some(old_memory_key)
+                        && edge
+                            .relationship
+                            .properties
+                            .get(PROP_PREDICATE)
+                            .map(String::as_str)
+                            == Some(relation.predicate.as_str())
+                        && edge.is_valid_at(now)
+                })
+                .map(|edge| edge.id)
+                .collect();
+            for edge_id in edge_ids {
+                if self.graph.invalidate_edge(&edge_id.to_string(), now)? {
+                    invalidated += 1;
+                }
+            }
+        }
+        Ok(invalidated)
+    }
+
+    /// Replace the content of the node backing `memory_key`. Returns true if
+    /// the node existed and was updated.
+    pub async fn update_memory_node_content(
+        &mut self,
+        memory_key: &str,
+        content: &str,
+    ) -> Result<bool> {
+        let Some(node_id) = self.memory_to_node.get(memory_key) else {
+            return Ok(false);
+        };
+        if let Some(mut node) = self.graph.nodes.get_mut(node_id) {
+            node.description = Some(content.to_string());
+            node.last_modified = Some(chrono::Utc::now());
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Append `new_content` to the node backing `memory_key` using the
+    /// existing content-merge behavior. Returns true if the node existed.
+    pub async fn append_memory_content(
+        &mut self,
+        memory_key: &str,
+        new_content: &str,
+    ) -> Result<bool> {
+        let Some(node_id) = self.memory_to_node.get(memory_key).copied() else {
+            return Ok(false);
+        };
+        let Some(existing) = self.graph.get_node(node_id).await? else {
+            return Ok(false);
+        };
+        let merged = self
+            .merge_content(&existing.description.unwrap_or_default(), new_content)
+            .await?;
+        if let Some(mut node) = self.graph.nodes.get_mut(&node_id) {
+            node.description = Some(merged);
+            node.last_modified = Some(chrono::Utc::now());
+        }
+        Ok(true)
+    }
+
+    /// All extracted relations whose subject node is the entity named
+    /// `entity_name` (case-insensitive), with supersession state.
+    pub async fn relations_for_entity(&self, entity_name: &str) -> Result<Vec<ExtractedRelation>> {
+        let Some(subject_id) = self.entity_nodes.get(&entity_name.to_lowercase()) else {
+            return Ok(Vec::new());
+        };
+        let subject_label = self
+            .graph
+            .nodes
+            .get(subject_id)
+            .map(|n| n.label.clone())
+            .unwrap_or_else(|| entity_name.to_string());
+        let mut relations = Vec::new();
+        for edge in self.graph.edges.iter() {
+            if edge.from_node != *subject_id {
+                continue;
+            }
+            let Some(predicate) = edge.relationship.properties.get(PROP_PREDICATE).cloned() else {
+                continue;
+            };
+            let object = self
+                .graph
+                .nodes
+                .get(&edge.to_node)
+                .map(|n| n.label.clone())
+                .unwrap_or_default();
+            relations.push(ExtractedRelation {
+                subject: subject_label.clone(),
+                predicate,
+                object,
+                source_memory: edge
+                    .relationship
+                    .properties
+                    .get(PROP_SOURCE_MEMORY)
+                    .cloned(),
+                superseded: !edge.is_valid_at(chrono::Utc::now()),
+            });
+        }
+        relations.sort_by(|a, b| {
+            (&a.predicate, &a.object, &a.source_memory).cmp(&(
+                &b.predicate,
+                &b.object,
+                &b.source_memory,
+            ))
+        });
+        Ok(relations)
     }
 
     /// Add or update a memory entry in the knowledge graph
@@ -236,6 +459,24 @@ impl MemoryKnowledgeGraph {
     /// Get the node ID for a given memory key
     pub async fn get_node_for_memory(&self, memory_key: &str) -> Result<Option<Uuid>> {
         Ok(self.memory_to_node.get(memory_key).copied())
+    }
+
+    /// Bi-temporal validity of the node backing `memory_key` at instant `at`
+    /// (event time and system time, via [`Node::is_valid_at`]). Returns
+    /// `Ok(None)` when no graph node backs the memory key.
+    pub async fn memory_node_valid_at(
+        &self,
+        memory_key: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<bool>> {
+        let Some(node_id) = self.memory_to_node.get(memory_key).copied() else {
+            return Ok(None);
+        };
+        Ok(self
+            .graph
+            .get_node(node_id)
+            .await?
+            .map(|node| node.is_valid_at(at)))
     }
 
     /// Get the memory key for a given node ID

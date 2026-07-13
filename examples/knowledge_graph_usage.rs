@@ -63,7 +63,7 @@ async fn basic_knowledge_graph_operations() -> Result<()> {
     println!("✓ Stored 4 memories in the system");
 
     // Get knowledge graph statistics
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!("✓ Knowledge graph stats:");
         println!("  - Nodes: {}", stats.node_count);
         println!("  - Edges: {}", stats.edge_count);
@@ -346,7 +346,7 @@ async fn complex_graph_queries() -> Result<()> {
     }
 
     // Get final knowledge graph statistics
-    if let Some(stats) = memory.knowledge_graph_stats() {
+    if let Some(stats) = memory.knowledge_graph_stats().await {
         println!("\n Final Knowledge Graph Statistics:");
         println!("  - Total nodes: {}", stats.node_count);
         println!("  - Total edges: {}", stats.edge_count);

@@ -10,12 +10,14 @@
 pub mod checkpoint;
 pub mod consolidation;
 pub mod context;
+pub mod forgetting;
 pub mod indexing;
 pub mod knowledge_graph;
 pub mod management;
 pub mod meta_learning;
 pub mod operations;
 pub mod promotion;
+pub mod reasoning;
 pub mod retrieval;
 pub mod state;
 pub mod storage;
@@ -26,6 +28,9 @@ pub mod types;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 
+#[cfg(feature = "embeddings")]
+pub mod reflection;
+
 // Re-export commonly used types
 pub use checkpoint::CheckpointManager;
 pub use knowledge_graph::{
@@ -35,6 +40,10 @@ pub use knowledge_graph::{
 pub use meta_learning::{
     AdaptationResult, MAMLLearner, MetaAlgorithm, MetaLearningConfig, MetaLearningMetrics,
     MetaLearningSystem, MetaTask, PrototypicalLearner, ReptileLearner, TaskType,
+};
+pub use reasoning::{
+    ConflictResolution, Entity, EntityKind, Extraction, ExtractionContext, Fact, Insight,
+    MemoryReasoner, NeighborFact, Relation,
 };
 pub use retrieval::MemoryRetriever;
 pub use state::AgentState;
