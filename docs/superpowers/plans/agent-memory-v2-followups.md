@@ -36,6 +36,7 @@
 4. L2: GraphRetriever must collect related keys, DROP the `kg.read()` guard, THEN `storage.retrieve` — no lock held across awaits.
 **TDD:** correctness-preserving — retrieval_quality + composite_scoring + reranker suites stay green (same rankings). Add a test asserting a query embeds each distinct candidate content at most once (cache hit-count via a test-utils counter), and that the query-time embed path does not mutate vocabulary (vocab size unchanged after N scoring embeds). 
 **Commits:** may split ("perf(embeddings): read-only query embed + incremental IDF + content-hash cache", "perf(retrieval): reuse embeddings, drop KG lock before awaits, memoize lowercase"). Gates each.
+**Follow-up finding (out of P2 scope, tracked here):** the scoring provider wired into the shipped hybrid pipeline only ever has `embed_for_scoring` called on it — never `embed` — so its TF-IDF vocabulary stays empty and every term's IDF falls back to `1.0`. Dense retrieval is therefore currently hashed-TF cosine with NO real IDF weighting. This is a PRE-EXISTING design gap (ties to the SimpleEmbedder-not-fed-corpus carry-forward), partly explains weak recall, and should be fixed in a future task by feeding the corpus into / sharing the store-time vocabulary with the scoring provider. Documented in `dense_vector.rs` and `tfidf.rs`; deliberately NOT fixed in P2 (perf-only scope).
 
 ### Task P3: Re-run eval, prove the speedup (measured)
 **Files:** `docs/evaluation.md`.

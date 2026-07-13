@@ -28,10 +28,24 @@ use std::sync::{Arc, RwLock};
 ///   or mutating any state, and caches the result by content hash so a given
 ///   content string is embedded at most once (shared across the dense
 ///   retriever and the reranker when they hold the same provider).
+///
+/// The scoring cache is invalidated whenever `embed` mutates the vocabulary
+/// (so a cached vector never reflects stale IDF state), and its size is
+/// capped ([`SCORING_CACHE_CAP`]) to bound memory.
+///
+/// KNOWN PRE-EXISTING RETRIEVAL GAP (out of P2 perf scope, tracked as a
+/// follow-up): in the shipped hybrid pipeline the provider instance shared by
+/// the dense retriever and reranker only ever has `embed_for_scoring` called
+/// on it — never `embed` — so its vocabulary stays empty and every term's IDF
+/// falls back to `1.0`. Dense retrieval is therefore currently hashed-TF
+/// cosine with no real IDF weighting. This ties to the carry-forward gap
+/// where the corpus is not fed into the scoring provider, partly explains the
+/// weak recall, and should be addressed in a future task (NOT here).
 pub struct TfIdfProvider {
     config: TfIdfConfig,
     state: Arc<RwLock<TfIdfState>>,
     /// Content-hash-keyed cache of scoring vectors (query-time path only).
+    /// Invalidated on vocabulary mutation; bounded by [`SCORING_CACHE_CAP`].
     scoring_cache: DashMap<String, Vec<f32>>,
     /// Test-only op counters for the scoring path.
     #[cfg(feature = "test-utils")]
@@ -39,6 +53,12 @@ pub struct TfIdfProvider {
     #[cfg(feature = "test-utils")]
     scoring_cache_hits: std::sync::atomic::AtomicUsize,
 }
+
+/// Upper bound on the number of entries retained in the scoring cache. When
+/// an insertion would exceed this cap the cache is cleared wholesale (a crude
+/// but O(1)-amortized eviction — correctness is unaffected, only cache hit
+/// rate). Sized generously so a single search's candidate set always fits.
+const SCORING_CACHE_CAP: usize = 8192;
 
 /// Configuration for TF-IDF embeddings
 #[derive(Debug, Clone)]
@@ -174,6 +194,12 @@ impl TfIdfProvider {
                 .expect("TfIdfProvider state lock is never poisoned: no panics while held");
             state.update_vocabulary(text, self.config.min_word_length);
         }
+        // Vocabulary/IDF state just changed: any cached scoring vector is now
+        // computed against stale statistics, so drop the whole scoring cache.
+        // (Under the shipped wiring the scoring provider is never fed via
+        // `embed`, so this rarely fires; it keeps mixed embed/scoring callers
+        // correct.)
+        self.scoring_cache.clear();
         self.embed_text_readonly(text)
     }
 
@@ -290,6 +316,11 @@ impl EmbeddingProvider for TfIdfProvider {
         #[cfg(feature = "test-utils")]
         self.scoring_embeds_computed
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Bound cache growth: clear wholesale before crossing the cap. Crude
+        // but O(1)-amortized; only affects hit rate, never correctness.
+        if self.scoring_cache.len() >= SCORING_CACHE_CAP {
+            self.scoring_cache.clear();
+        }
         self.scoring_cache
             .insert(content_hash.clone(), vector.clone());
         Ok(self.build_embedding(vector, content_hash, options))
@@ -348,6 +379,48 @@ mod tests {
         assert_eq!(provider.embedding_dimension(), 384);
         assert_eq!(provider.name(), "TfIdfProvider");
         assert!(provider.is_available());
+    }
+
+    #[tokio::test]
+    async fn scoring_cache_invalidated_on_vocab_mutation() {
+        // A scoring vector cached against one vocabulary state must NOT be
+        // served stale after `embed` mutates the vocabulary/IDF state.
+        let provider = TfIdfProvider::default();
+        let text = "alpha beta gamma delta";
+
+        // Seed some vocabulary, then cache a scoring vector for `text`.
+        provider
+            .embed("alpha beta gamma delta", None)
+            .await
+            .expect("seed embed");
+        let before = provider
+            .embed_for_scoring(text, None)
+            .await
+            .expect("scoring embed")
+            .vector;
+
+        // Mutate the vocabulary via the document path so that `alpha`'s
+        // document frequency rises while `beta`/`gamma`/`delta` stay at 1.
+        // This changes the RELATIVE IDF weighting among the query's tokens
+        // (a change that survives normalization), so the scoring vector must
+        // differ from the cached one.
+        for _ in 0..25 {
+            provider
+                .embed("alpha epsilon zeta eta", None)
+                .await
+                .expect("mutating embed");
+        }
+
+        let after = provider
+            .embed_for_scoring(text, None)
+            .await
+            .expect("scoring embed after mutation")
+            .vector;
+
+        assert_ne!(
+            before, after,
+            "scoring cache must reflect the mutated vocabulary, not a stale hit"
+        );
     }
 
     #[tokio::test]
