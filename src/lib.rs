@@ -136,6 +136,11 @@ pub struct AgentMemory {
     /// relevance × recency × importance scoring. `None` falls back to
     /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
+    /// Test-only op-count proxy: max number of candidate memories examined by
+    /// a single `neighbor_facts` call. Bounded write path keeps this <= the
+    /// candidate cap regardless of store size.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    neighbor_examined_max: std::sync::atomic::AtomicUsize,
 }
 
 impl AgentMemory {
@@ -370,6 +375,8 @@ impl AgentMemory {
             cross_platform_manager,
             promotion_manager,
             retrieval_pipeline,
+            #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+            neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -500,9 +507,32 @@ impl AgentMemory {
             }
         }
 
-        // Add or update in knowledge graph if enabled (intelligent merging)
+        // Add or update in knowledge graph if enabled (intelligent merging).
+        // The O(n) similarity/relationship computation runs under READ locks;
+        // the write lock is held only for the actual node/edge mutations so
+        // concurrent readers are not blocked behind full-graph scans.
         if let Some(ref kg) = self.knowledge_graph {
-            if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
+            let kg_result: Result<()> = async {
+                let plan = kg.read().await.plan_memory_node_update(&entry).await?;
+                let (node_id, needs_detection) = kg
+                    .write()
+                    .await
+                    .apply_memory_node_plan(plan, &entry)
+                    .await?;
+                if needs_detection {
+                    let edges = kg
+                        .read()
+                        .await
+                        .detect_relationship_edges(node_id, &entry)
+                        .await?;
+                    if !edges.is_empty() {
+                        kg.write().await.add_detected_edges(edges).await?;
+                    }
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(e) = kg_result {
                 tracing::warn!(error = %e, "knowledge graph update degraded during store");
                 degradations.knowledge_graph = Some(e.to_string());
             }
@@ -570,7 +600,7 @@ impl AgentMemory {
             return Ok(());
         }
         for fact in &extraction.facts {
-            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5);
+            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
             // The reasoner picks its target among the neighbors we supplied;
             // for id-less outcomes (UpdateInPlace/Append) the target is the
@@ -582,17 +612,19 @@ impl AgentMemory {
         Ok(())
     }
 
-    /// Build the top-`k` neighbor list for a candidate fact from existing
-    /// memories (short- and long-term state), excluding the entry being
-    /// stored. Similarity is a deterministic token-set cosine; ties break by
-    /// key so resolution is reproducible.
+    /// Build the top-`k` neighbor list for a candidate fact, excluding the
+    /// entry being stored. Candidates are fetched via the storage's tokenized
+    /// search (top [`Self::NEIGHBOR_CANDIDATE_LIMIT`] by term overlap) so the
+    /// per-fact cost is bounded instead of scanning every stored memory.
+    /// Similarity over the candidate set is a deterministic token-set cosine;
+    /// ties break by key so resolution is reproducible.
     #[cfg(feature = "embeddings")]
-    fn neighbor_facts(
+    async fn neighbor_facts(
         &self,
         current_key: &str,
         fact_text: &str,
         k: usize,
-    ) -> Vec<memory::reasoning::NeighborFact> {
+    ) -> Result<Vec<memory::reasoning::NeighborFact>> {
         fn tokens(text: &str) -> std::collections::HashSet<String> {
             text.to_lowercase()
                 .split(|c: char| !c.is_alphanumeric())
@@ -602,16 +634,22 @@ impl AgentMemory {
         }
         let candidate_tokens = tokens(fact_text);
         if candidate_tokens.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        let mut neighbors: Vec<memory::reasoning::NeighborFact> = self
-            .state
-            .get_short_term_memories()
+        // +1 head-room: the search may return the entry being stored itself.
+        let candidates = self
+            .storage
+            .search(fact_text, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
+            .await?;
+        #[cfg(feature = "test-utils")]
+        let examined = std::sync::atomic::AtomicUsize::new(0);
+        let mut neighbors: Vec<memory::reasoning::NeighborFact> = candidates
             .iter()
-            .chain(self.state.get_long_term_memories().iter())
-            .filter(|(key, _)| key.as_str() != current_key)
-            .filter_map(|(key, mem)| {
-                let mem_tokens = tokens(&mem.value);
+            .filter(|fragment| fragment.entry.key != current_key)
+            .filter_map(|fragment| {
+                #[cfg(feature = "test-utils")]
+                examined.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let mem_tokens = tokens(&fragment.entry.value);
                 if mem_tokens.is_empty() {
                     return None;
                 }
@@ -620,9 +658,9 @@ impl AgentMemory {
                     / ((candidate_tokens.len() as f64).sqrt() * (mem_tokens.len() as f64).sqrt());
                 if similarity > 0.0 {
                     Some(memory::reasoning::NeighborFact {
-                        id: key.clone(),
+                        id: fragment.entry.key.clone(),
                         similarity,
-                        text: mem.value.clone(),
+                        text: fragment.entry.value.clone(),
                     })
                 } else {
                     None
@@ -635,7 +673,27 @@ impl AgentMemory {
                 .then_with(|| a.id.cmp(&b.id))
         });
         neighbors.truncate(k);
-        neighbors
+        #[cfg(feature = "test-utils")]
+        self.neighbor_examined_max.fetch_max(
+            examined.load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        Ok(neighbors)
+    }
+
+    /// Upper bound on the candidate memories `neighbor_facts` examines per
+    /// fact. Keeps the intelligent write path O(K) per fact instead of O(n)
+    /// over the whole store; the storage's tokenized search ranks candidates
+    /// by term overlap so the strongest conflict candidates are retained.
+    #[cfg(feature = "embeddings")]
+    const NEIGHBOR_CANDIDATE_LIMIT: usize = 20;
+
+    /// Test-only op-count proxy: the maximum number of candidate memories a
+    /// single `neighbor_facts` call has examined so far.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    pub fn max_neighbor_candidates_examined(&self) -> usize {
+        self.neighbor_examined_max
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Apply a conflict resolution outcome to the knowledge graph.
