@@ -262,9 +262,10 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 
 ### Task 7.3: Ablation harness
 **Files:** `tools/eval/src/ablation.rs`; Test on fixture.
-**Produces:** run the metric suite under configs: baseline (pre-v2 pipeline), +composite, +reranker, +bi-temporal, +reflection; emit a delta table.
-- [ ] Failing test: two configs on the fixture produce distinct, comparable metric records (structure), and enabling the reranker changes the ranking on a crafted case.
-- [ ] Commit — `feat(eval): capability ablation harness`.
+**Produces:** run the metric suite under a cumulative config ladder built directly from the public pipeline builder: `baseline` (dense+keyword RRF fusion only — composite weights 1.0/0.0/0.0, no reranker, no graph/temporal signals), `+composite` (default 0.6/0.2/0.2 relevance×recency×importance), `+reranker` (`HeuristicReranker`, graph-blind), `+graph_temporal` (graph + temporal signal retrievers, KG populated at ingest), `+all` (graph-aware reranker); emit an `AblationTable` with real `config − baseline` deltas (may be zero/negative).
+*(Deviation from original sketch: bi-temporal and reflection are `AgentMemory`-level write-path capabilities, not retrieval-pipeline toggles — they cannot be ablated through the retrieval pipeline builder, so the ladder toggles the retrieval capabilities that are separable via public API: composite scoring, reranker, graph+temporal signals.)*
+- [x] Failing test: two configs on the fixture produce distinct, comparable metric records (structure), and enabling the reranker changes the ranking on a crafted case (fresh full-overlap paraphrase vs 600h-old exact-match evidence: composite keeps evidence at rank 1, the relevance-blind reranker demotes it to rank 2).
+- [x] Commit — `feat(eval): capability ablation harness`.
 
 ### Task 7.4: LLM-gated QA accuracy + Judge (gate b)
 **Files:** `tools/eval/src/{qa,judge}.rs` (feature `llm-reasoning`); Test structural (feature-gated).

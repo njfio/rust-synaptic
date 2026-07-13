@@ -5,6 +5,7 @@
 //! the gitignored `data/` directory; unit tests run against a small
 //! hand-authored fixture in `fixtures/` that mirrors both real schemas.
 
+pub mod ablation;
 pub mod dataset;
 pub mod metrics;
 pub mod runner;
