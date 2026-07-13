@@ -273,8 +273,8 @@ async fn test_task_distribution_management() -> Result<()> {
     // Test statistics
     let stats = task_distribution.get_statistics();
     assert_eq!(stats.total_created, 5);
-    assert!(stats.by_type.len() > 0);
-    assert!(stats.by_domain.len() > 0);
+    assert!(!stats.by_type.is_empty());
+    assert!(!stats.by_domain.is_empty());
 
     println!("Task Distribution Statistics:");
     println!("  Total tasks: {}", stats.total_created);
@@ -312,8 +312,8 @@ async fn test_task_distribution_management() -> Result<()> {
 
     assert_eq!(created_task.id, "created_task");
     assert_eq!(created_task.domain, "test_domain");
-    assert!(created_task.support_set.len() > 0);
-    assert!(created_task.query_set.len() > 0);
+    assert!(!created_task.support_set.is_empty());
+    assert!(!created_task.query_set.is_empty());
     assert!(created_task.difficulty >= 0.0 && created_task.difficulty <= 1.0);
 
     println!("Task creation tested successfully");

@@ -189,7 +189,7 @@ impl GradualForgettingAlgorithm {
             // Store decision in history
             self.decision_history
                 .entry(memory.key.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(decision.clone());
 
             decisions.push(decision);

@@ -143,7 +143,7 @@ impl PrototypicalLearner {
             }
 
             // Semantic features
-            for (_j, &val) in semantic_features.iter().enumerate() {
+            for &val in semantic_features.iter() {
                 if idx < feature_dim {
                     features[[i, idx]] = val;
                     idx += 1;

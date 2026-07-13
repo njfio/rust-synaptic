@@ -93,7 +93,7 @@ impl AgentContext {
             for summary in &self.summaries {
                 output.push_str(&format!("- {}\n", summary));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
 
         if !self.core_memories.is_empty() {
@@ -101,7 +101,7 @@ impl AgentContext {
             for (i, memory) in self.core_memories.iter().enumerate() {
                 output.push_str(&format!("{}. {}\n", i + 1, memory.value));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
 
         if !self.related_memories.is_empty() {
@@ -112,7 +112,7 @@ impl AgentContext {
                     memory.value, strength
                 ));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
 
         if !self.temporal_memories.is_empty() {
@@ -140,7 +140,7 @@ impl AgentContext {
             for summary in &self.summaries {
                 output.push_str(&format!("- {}\n", summary));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
 
         if !self.core_memories.is_empty() {
@@ -165,7 +165,7 @@ impl AgentContext {
                     strength * 100.0
                 ));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
 
         if !self.temporal_memories.is_empty() {

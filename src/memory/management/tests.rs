@@ -1,7 +1,7 @@
 //! Comprehensive tests for memory management functionality
 
 #[cfg(test)]
-mod tests {
+mod management_tests {
     use crate::error::Result;
     use crate::memory::knowledge_graph::{GraphConfig, MemoryKnowledgeGraph};
     use crate::memory::management::{

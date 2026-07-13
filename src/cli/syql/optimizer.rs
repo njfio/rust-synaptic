@@ -291,6 +291,12 @@ pub struct CostModel {
     operation_costs: HashMap<String, f64>,
 }
 
+impl Default for CostModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CostModel {
     /// Create a new cost model
     pub fn new() -> Self {
@@ -403,6 +409,12 @@ pub struct QueryStatistics {
     pub estimated_rows: usize,
     /// Available indexes
     pub available_indexes: Vec<IndexInfo>,
+}
+
+impl Default for QueryStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QueryStatistics {

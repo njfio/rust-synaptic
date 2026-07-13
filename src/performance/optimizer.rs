@@ -437,6 +437,12 @@ pub struct MLPredictor {
     online_learner: OnlineLearner,
 }
 
+impl Default for MLPredictor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MLPredictor {
     pub fn new() -> Self {
         Self {
@@ -706,6 +712,12 @@ pub struct AdaptiveTuner {
     hyperparameter_tuner: HyperparameterTuner,
 }
 
+impl Default for AdaptiveTuner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdaptiveTuner {
     pub fn new() -> Self {
         Self {
@@ -726,7 +738,7 @@ impl AdaptiveTuner {
                     let history = self
                         .parameter_history
                         .entry(param_name.clone())
-                        .or_insert_with(Vec::new);
+                        .or_default();
 
                     history.push(value);
 
@@ -787,7 +799,7 @@ impl AdaptiveTuner {
             let mut param_vector = Vec::new();
 
             // Convert parameters to numerical vector
-            for (param_name, _) in &self.parameter_bounds {
+            for param_name in self.parameter_bounds.keys() {
                 if let Some(history) = self.parameter_history.get(param_name) {
                     if let Some(&last_value) = history.last() {
                         param_vector.push(last_value);
@@ -868,7 +880,7 @@ impl AdaptiveTuner {
                     let history = self
                         .parameter_history
                         .entry(param_name.clone())
-                        .or_insert_with(Vec::new);
+                        .or_default();
                     history.push(clamped_value);
                 }
             }
@@ -921,7 +933,7 @@ impl AdaptiveTuner {
                 let history = self
                     .parameter_history
                     .entry(param_name.clone())
-                    .or_insert_with(Vec::new);
+                    .or_default();
                 history.push(gene_value);
             }
         }
@@ -984,7 +996,7 @@ impl AdaptiveTuner {
             let history = self
                 .parameter_history
                 .entry(param_name.clone())
-                .or_insert_with(Vec::new);
+                .or_default();
             history.push(value);
         }
 
@@ -1038,6 +1050,12 @@ pub struct OnlineLearner {
     momentum: f64,
     velocity: Vec<f64>,
     sample_count: usize,
+}
+
+impl Default for OnlineLearner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OnlineLearner {
@@ -1097,6 +1115,12 @@ pub struct BayesianOptimizer {
     observations: Vec<(Vec<f64>, f64)>,
     acquisition_function: AcquisitionFunction,
     gaussian_process: GaussianProcess,
+}
+
+impl Default for BayesianOptimizer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BayesianOptimizer {
@@ -1203,6 +1227,12 @@ pub struct GaussianProcess {
     kernel_params: Vec<f64>,
     noise_variance: f64,
     training_data: Vec<(Vec<f64>, f64)>,
+}
+
+impl Default for GaussianProcess {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GaussianProcess {
@@ -1334,6 +1364,12 @@ pub struct GeneticAlgorithm {
     elite_size: usize,
 }
 
+impl Default for GeneticAlgorithm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GeneticAlgorithm {
     pub fn new() -> Self {
         Self {
@@ -1421,7 +1457,7 @@ impl GeneticAlgorithm {
 
         // Penalize extreme values
         for &gene in genes {
-            if gene < 0.0 || gene > 1.0 {
+            if !(0.0..=1.0).contains(&gene) {
                 fitness -= 10.0;
             } else {
                 // Reward balanced parameters
@@ -1514,6 +1550,12 @@ pub struct Individual {
 #[derive(Debug)]
 pub struct HyperparameterTuner {
     search_history: Vec<HyperparameterResult>,
+}
+
+impl Default for HyperparameterTuner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HyperparameterTuner {
@@ -1644,21 +1686,25 @@ impl HyperparameterTuner {
 
         // Evaluate learning rate
         if let Some(&lr) = hyperparams.get("learning_rate") {
-            score += if lr >= 0.001 && lr <= 0.1 { 1.0 } else { 0.0 };
+            score += if (0.001..=0.1).contains(&lr) {
+                1.0
+            } else {
+                0.0
+            };
         }
 
         // Evaluate regularization
         if let Some(&l1) = hyperparams.get("l1_reg") {
-            score += if l1 >= 0.0 && l1 <= 0.1 { 0.5 } else { 0.0 };
+            score += if (0.0..=0.1).contains(&l1) { 0.5 } else { 0.0 };
         }
 
         if let Some(&l2) = hyperparams.get("l2_reg") {
-            score += if l2 >= 0.0 && l2 <= 0.1 { 0.5 } else { 0.0 };
+            score += if (0.0..=0.1).contains(&l2) { 0.5 } else { 0.0 };
         }
 
         // Evaluate model complexity
         if let Some(&layers) = hyperparams.get("hidden_layers") {
-            score += if layers >= 1.0 && layers <= 3.0 {
+            score += if (1.0..=3.0).contains(&layers) {
                 1.0
             } else {
                 0.5

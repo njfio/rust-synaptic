@@ -670,7 +670,7 @@ impl CliRunner {
     async fn export_data(
         &self,
         format: ExportFormat,
-        output: &PathBuf,
+        output: &std::path::Path,
         filter: Option<&String>,
     ) -> Result<()> {
         let format_str = match format {
@@ -692,7 +692,7 @@ impl CliRunner {
     /// Import data
     async fn import_data(
         &self,
-        input: &PathBuf,
+        input: &std::path::Path,
         format: Option<ImportFormat>,
         merge: MergeStrategy,
     ) -> Result<()> {

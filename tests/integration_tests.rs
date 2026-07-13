@@ -219,7 +219,7 @@ async fn test_error_handling() -> Result<()> {
 
     match result.unwrap_err() {
         MemoryError::NotFound { .. } => {} // Expected
-        other => assert!(false, "Expected NotFound error, got: {:?}", other),
+        other => panic!("Expected NotFound error, got: {:?}", other),
     }
 
     Ok(())

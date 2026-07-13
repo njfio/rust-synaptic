@@ -585,7 +585,7 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
                 Ok(health_status) => {
                     println!("🏥 Health check results:");
                     for (service, healthy) in health_status {
-                        let status = if healthy { "" } else { "" };
+                        let status = if healthy { "healthy" } else { "unhealthy" };
                         println!("   {} {}", status, service);
                     }
                 }

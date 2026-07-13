@@ -18,6 +18,12 @@ pub struct BenchmarkSuite {
     baseline_results: HashMap<String, BenchmarkResult>,
 }
 
+impl Default for BenchmarkSuite {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BenchmarkSuite {
     /// Create a new benchmark suite
     pub fn new() -> Self {

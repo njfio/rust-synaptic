@@ -62,6 +62,12 @@ pub enum SamplingStrategy {
     Custom(HashMap<String, f64>),
 }
 
+impl Default for TaskDistribution {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskDistribution {
     /// Create a new task distribution manager
     pub fn new() -> Self {

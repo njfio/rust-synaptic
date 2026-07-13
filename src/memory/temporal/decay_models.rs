@@ -842,10 +842,7 @@ impl TemporalDecayModels {
     ) -> Result<()> {
         let model_key = self.get_model_key(model_type);
 
-        let performances = self
-            .model_performance
-            .entry(model_key)
-            .or_insert_with(Vec::new);
+        let performances = self.model_performance.entry(model_key).or_default();
         performances.push(performance_score);
 
         // Keep only recent performance data
@@ -1189,8 +1186,8 @@ mod tests {
         let complex_complexity = models.estimate_content_complexity(&complex_memory);
 
         assert!(complex_complexity > simple_complexity);
-        assert!(simple_complexity >= 0.0 && simple_complexity <= 1.0);
-        assert!(complex_complexity >= 0.0 && complex_complexity <= 1.0);
+        assert!((0.0..=1.0).contains(&simple_complexity));
+        assert!((0.0..=1.0).contains(&complex_complexity));
     }
 
     #[tokio::test]
@@ -1214,8 +1211,8 @@ mod tests {
         let emotional_weight = models.estimate_emotional_weight(&emotional_memory);
 
         assert!(emotional_weight > neutral_weight);
-        assert!(neutral_weight >= 0.0 && neutral_weight <= 1.0);
-        assert!(emotional_weight >= 0.0 && emotional_weight <= 1.0);
+        assert!((0.0..=1.0).contains(&neutral_weight));
+        assert!((0.0..=1.0).contains(&emotional_weight));
     }
 
     #[tokio::test]

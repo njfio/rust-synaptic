@@ -310,12 +310,10 @@ impl PerformanceAnalyzer {
             } else {
                 (TrendDirection::Improving, slope.abs())
             }
+        } else if metric_name == "avg_response_time_ms" || metric_name == "error_rate" {
+            (TrendDirection::Improving, slope.abs())
         } else {
-            if metric_name == "avg_response_time_ms" || metric_name == "error_rate" {
-                (TrendDirection::Improving, slope.abs())
-            } else {
-                (TrendDirection::Degrading, slope.abs())
-            }
+            (TrendDirection::Degrading, slope.abs())
         };
 
         // Check for volatility

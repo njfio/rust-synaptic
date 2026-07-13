@@ -83,7 +83,8 @@ async fn test_myers_histogram_algorithm() -> Result<(), Box<dyn Error>> {
 
     // Verify histogram algorithm handled the diff
     assert!(
-        diff.content_changes.modifications.len() > 0 || diff.content_changes.additions.len() > 0
+        !diff.content_changes.modifications.is_empty()
+            || !diff.content_changes.additions.is_empty()
     );
     assert!(diff.significance_score > 0.0);
 
@@ -119,7 +120,8 @@ async fn test_myers_histogram_large_text() -> Result<(), Box<dyn Error>> {
 
     // Verify histogram algorithm processed the large diff
     assert!(
-        diff.content_changes.additions.len() > 0 || diff.content_changes.modifications.len() > 0
+        !diff.content_changes.additions.is_empty()
+            || !diff.content_changes.modifications.is_empty()
     );
     assert!(diff.significance_score > 0.0);
 
@@ -239,9 +241,9 @@ async fn test_modification_type_classification() -> Result<(), Box<dyn Error>> {
 
     // Should detect some form of modification
     assert!(
-        diff.content_changes.modifications.len() > 0
-            || diff.content_changes.additions.len() > 0
-            || diff.content_changes.deletions.len() > 0
+        !diff.content_changes.modifications.is_empty()
+            || !diff.content_changes.additions.is_empty()
+            || !diff.content_changes.deletions.is_empty()
     );
 
     // Test expansion
@@ -305,7 +307,7 @@ async fn test_context_extraction() -> Result<(), Box<dyn Error>> {
             .deletions
             .iter()
             .any(|seg| seg.context.is_some())
-        || diff.content_changes.modifications.len() > 0;
+        || !diff.content_changes.modifications.is_empty();
 
     assert!(has_context);
 
@@ -410,9 +412,9 @@ async fn test_large_text_diff_performance() -> Result<(), Box<dyn Error>> {
 
     // Should detect the changes
     assert!(
-        diff.content_changes.additions.len() > 0
-            || diff.content_changes.deletions.len() > 0
-            || diff.content_changes.modifications.len() > 0
+        !diff.content_changes.additions.is_empty()
+            || !diff.content_changes.deletions.is_empty()
+            || !diff.content_changes.modifications.is_empty()
     );
 
     Ok(())

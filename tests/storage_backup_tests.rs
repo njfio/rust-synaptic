@@ -3,7 +3,6 @@
 use synaptic::memory::storage::{file::FileStorage, memory::MemoryStorage, Storage};
 use synaptic::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
 use tempfile::TempDir;
-use tokio;
 
 /// Create test memory entries
 fn create_test_entries() -> Vec<MemoryEntry> {

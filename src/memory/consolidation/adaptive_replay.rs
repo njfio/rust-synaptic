@@ -323,7 +323,7 @@ impl AdaptiveReplayMechanisms {
         let strategy_key = self.get_strategy_key(&self.current_strategy);
         self.strategy_performance
             .entry(strategy_key.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(feedback.success_rate);
 
         // Update metrics
@@ -1649,8 +1649,8 @@ mod tests {
             .await
             .expect("await should be present");
 
-        assert!(performance_fitness >= 0.0 && performance_fitness <= 1.0);
-        assert!(context_fitness >= 0.0 && context_fitness <= 1.0);
+        assert!((0.0..=1.0).contains(&performance_fitness));
+        assert!((0.0..=1.0).contains(&context_fitness));
 
         // Both should have reasonable fitness scores
         assert!(performance_fitness > 0.3);
@@ -1712,8 +1712,8 @@ mod tests {
             .expect("await should be present");
 
         assert!(recent_high_fitness > old_low_fitness);
-        assert!(recent_high_fitness >= 0.0 && recent_high_fitness <= 1.0);
-        assert!(old_low_fitness >= 0.0 && old_low_fitness <= 1.0);
+        assert!((0.0..=1.0).contains(&recent_high_fitness));
+        assert!((0.0..=1.0).contains(&old_low_fitness));
     }
 
     #[tokio::test]

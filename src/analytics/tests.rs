@@ -460,7 +460,7 @@ mod phase3_integration_tests {
             .expect("await should be present");
 
         // Should have generated meaningful insights
-        assert!(insights.len() > 0);
+        assert!(!insights.is_empty());
 
         // Test different insight types
         let usage_insights = engine.get_insights_by_type(InsightType::UsagePattern);

@@ -629,7 +629,7 @@ impl ImportanceScorer {
 
         // Content length factor
         let length = content.len();
-        let length_score = if length < 50 || length > 2000 {
+        let length_score = if !(50..=2000).contains(&length) {
             0.8 // Very short or very long content is more unique
         } else {
             0.4 // Average length content is less unique
@@ -1086,8 +1086,8 @@ mod tests {
 
         // Recent memory should have higher recency score
         assert!(recent_score >= old_score);
-        assert!(recent_score >= 0.0 && recent_score <= 1.0);
-        assert!(old_score >= 0.0 && old_score <= 1.0);
+        assert!((0.0..=1.0).contains(&recent_score));
+        assert!((0.0..=1.0).contains(&old_score));
     }
 
     #[tokio::test]
@@ -1147,8 +1147,8 @@ mod tests {
 
         // Hub memory should have higher centrality
         assert!(hub_centrality > isolated_centrality);
-        assert!(hub_centrality >= 0.0 && hub_centrality <= 1.0);
-        assert!(isolated_centrality >= 0.0 && isolated_centrality <= 1.0);
+        assert!((0.0..=1.0).contains(&hub_centrality));
+        assert!((0.0..=1.0).contains(&isolated_centrality));
     }
 
     #[tokio::test]
@@ -1173,7 +1173,7 @@ mod tests {
 
         // Bridge memory should have higher betweenness
         assert!(bridge_betweenness > regular_betweenness);
-        assert!(bridge_betweenness >= 0.0 && bridge_betweenness <= 1.0);
+        assert!((0.0..=1.0).contains(&bridge_betweenness));
     }
 
     #[tokio::test]
@@ -1203,8 +1203,8 @@ mod tests {
 
         // Frequently accessed memory should have higher consistency
         assert!(frequent_consistency > rare_consistency);
-        assert!(frequent_consistency >= 0.0 && frequent_consistency <= 1.0);
-        assert!(rare_consistency >= 0.0 && rare_consistency <= 1.0);
+        assert!((0.0..=1.0).contains(&frequent_consistency));
+        assert!((0.0..=1.0).contains(&rare_consistency));
     }
 
     #[tokio::test]

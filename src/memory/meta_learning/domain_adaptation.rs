@@ -491,7 +491,7 @@ impl DomainAdaptationEngine {
         // Capitalized word ratio
         let capitalized_words = words
             .iter()
-            .filter(|w| w.chars().next().map_or(false, |c| c.is_uppercase()))
+            .filter(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
             .count();
         features[4] = capitalized_words as f64 / words.len() as f64;
 

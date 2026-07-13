@@ -668,7 +668,7 @@ mod tests {
         }
 
         // Should have generated some predictions
-        assert!(!analytics.predictions.is_empty() || analytics.patterns.len() > 0);
+        assert!(!analytics.predictions.is_empty() || !analytics.patterns.is_empty());
     }
 
     #[tokio::test]

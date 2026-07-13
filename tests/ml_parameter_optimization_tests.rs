@@ -47,7 +47,7 @@ async fn test_ml_predictor_training_and_prediction() {
         .predict_effectiveness(&OptimizationType::MemoryPoolOptimization)
         .await
         .unwrap();
-    assert!(prediction >= 0.0 && prediction <= 1.0);
+    assert!((0.0..=1.0).contains(&prediction));
 
     // Test model metrics
     let metrics = predictor.get_model_metrics();
@@ -65,7 +65,7 @@ async fn test_ml_predictor_training_and_prediction() {
         .predict_effectiveness(&OptimizationType::MemoryPoolOptimization)
         .await
         .unwrap();
-    assert!(improved_prediction >= 0.0 && improved_prediction <= 1.0);
+    assert!((0.0..=1.0).contains(&improved_prediction));
 
     // Verify model has learned
     let final_metrics = predictor.get_model_metrics();
@@ -79,7 +79,7 @@ async fn test_online_learner() {
     // Test initial prediction
     let features = vec![0.5, 0.3, 0.8, 0.1, 0.9, 0.2, 0.7, 0.4, 0.6, 1.0];
     let initial_prediction = learner.predict(&features).unwrap();
-    assert!(initial_prediction >= 0.0 && initial_prediction <= 1.0);
+    assert!((0.0..=1.0).contains(&initial_prediction));
 
     // Train with multiple samples
     let training_data = vec![
@@ -96,13 +96,13 @@ async fn test_online_learner() {
     let trained_prediction = learner
         .predict(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         .unwrap();
-    assert!(trained_prediction >= 0.0 && trained_prediction <= 1.0);
+    assert!((0.0..=1.0).contains(&trained_prediction));
 
     // Test with different feature vector
     let different_prediction = learner
         .predict(&[0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0])
         .unwrap();
-    assert!(different_prediction >= 0.0 && different_prediction <= 1.0);
+    assert!((0.0..=1.0).contains(&different_prediction));
 }
 
 #[tokio::test]
@@ -127,7 +127,7 @@ async fn test_bayesian_optimizer() {
     let suggestion = optimizer.suggest_next_parameters().unwrap();
     assert_eq!(suggestion.len(), 10);
     for &param in &suggestion {
-        assert!(param >= 0.0 && param <= 1.0);
+        assert!((0.0..=1.0).contains(&param));
     }
 }
 
@@ -153,7 +153,7 @@ async fn test_genetic_algorithm() {
     assert!(best_individual.fitness >= 0.0);
 
     for &gene in &best_individual.genes {
-        assert!(gene >= 0.0 && gene <= 1.0);
+        assert!((0.0..=1.0).contains(&gene));
     }
 }
 

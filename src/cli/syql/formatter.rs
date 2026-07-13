@@ -185,7 +185,7 @@ impl ResultFormatter {
                     row.values
                         .get(col)
                         .map(|v| self.format_csv_value(v))
-                        .unwrap_or_else(|| String::new())
+                        .unwrap_or_else(String::new)
                 })
                 .collect();
             output.push_str(&values.join(","));
@@ -300,7 +300,7 @@ impl ResultFormatter {
                 .map(|v| self.format_value(v))
                 .unwrap_or_else(|| "unknown".to_string());
 
-            tree_map.entry(parent).or_insert_with(Vec::new).push(child);
+            tree_map.entry(parent).or_default().push(child);
         }
 
         // Display tree

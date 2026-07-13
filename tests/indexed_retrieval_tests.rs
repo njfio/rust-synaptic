@@ -376,8 +376,8 @@ async fn test_performance_improvement() {
 
 /// Dimension used for the deterministic cluster embeddings below. Must be
 /// >= the largest `num_clusters` used by any test in this file, so distinct
-/// clusters always land on distinct one-hot axes (otherwise clusters would
-/// silently alias onto the same axis via `cluster % CLUSTER_EMBEDDING_DIM`).
+/// > clusters always land on distinct one-hot axes (otherwise clusters would
+/// > silently alias onto the same axis via `cluster % CLUSTER_EMBEDDING_DIM`).
 const CLUSTER_EMBEDDING_DIM: usize = 256;
 
 /// Deterministic embedding: entry `i` belongs to cluster `i % num_clusters`,

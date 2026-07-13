@@ -396,6 +396,12 @@ pub struct TaskScheduler {
     load_balancer: LoadBalancer,
 }
 
+impl Default for TaskScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskScheduler {
     /// Create a new task scheduler
     pub fn new() -> Self {
@@ -469,6 +475,12 @@ pub enum SchedulingStrategy {
 #[derive(Debug)]
 pub struct LoadBalancer {
     _task_history: VecDeque<TaskExecutionRecord>,
+}
+
+impl Default for LoadBalancer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LoadBalancer {
@@ -549,6 +561,12 @@ pub struct ExecutorStatistics {
     pub worker_utilization: f64,
     /// Blocking thread utilization percentage
     pub blocking_utilization: f64,
+}
+
+impl Default for ExecutorStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExecutorStatistics {

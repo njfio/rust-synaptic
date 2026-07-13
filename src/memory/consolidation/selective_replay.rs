@@ -409,7 +409,7 @@ impl SelectiveReplayManager {
     async fn maintain_buffer_size(&mut self) -> Result<()> {
         while self.replay_buffer.len() > self.config.max_replay_buffer_size {
             // Remove lowest priority entries
-            if let Some(_) = self.replay_buffer.pop() {
+            if self.replay_buffer.pop().is_some() {
                 // Entry removed
             }
         }
@@ -443,7 +443,7 @@ impl SelectiveReplayManager {
         let now = Utc::now();
         self.temporal_distribution
             .entry(memory_key.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(now);
         Ok(())
     }
@@ -457,7 +457,7 @@ impl SelectiveReplayManager {
 
         self.interference_matrix
             .entry(memory_key.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert("global".to_string(), interference_score);
 
         Ok(())
@@ -608,6 +608,6 @@ mod tests {
         let result = manager.perform_selective_replay().await;
         assert!(result.is_ok());
         assert!(manager.get_metrics().total_replays > 0);
-        assert!(manager.get_replay_history(10).len() > 0);
+        assert!(!manager.get_replay_history(10).is_empty());
     }
 }

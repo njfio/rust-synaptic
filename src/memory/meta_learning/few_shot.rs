@@ -825,7 +825,7 @@ impl FewShotLearningEngine {
         }
 
         // Return final score (sigmoid activation)
-        Ok(self.sigmoid(output.get(0).unwrap_or(&0.0)))
+        Ok(self.sigmoid(output.first().unwrap_or(&0.0)))
     }
 
     /// Apply linear layer transformation
@@ -1101,7 +1101,7 @@ impl FewShotLearningEngine {
                 let scale = self
                     .model_parameters
                     .get("attention_scale")
-                    .and_then(|v| v.get(0))
+                    .and_then(|v| v.first())
                     .unwrap_or(&1.0);
 
                 let dot_product: f64 = query_features

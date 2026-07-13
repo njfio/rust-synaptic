@@ -1390,11 +1390,9 @@ impl PatternDetector {
 
         let split_point = min_val + (max_val - min_val) * 0.5; // Simple midpoint split
 
-        if target[feature_idx] < split_point {
-            depth as f64 + 1.0
-        } else {
-            depth as f64 + 1.0
-        }
+        // Both branches descend one level in this simplified isolation tree.
+        let _ = target[feature_idx] < split_point;
+        depth as f64 + 1.0
     }
 
     /// Expected path length for isolation tree

@@ -425,6 +425,12 @@ impl OperationCounters {
 #[derive(Debug)]
 pub struct ResourceMonitor {}
 
+impl Default for ResourceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceMonitor {
     /// Create new system metrics collector
     pub fn new() -> Self {

@@ -2676,8 +2676,8 @@ impl AdvancedSearchEngine {
         }
 
         // Apply non-linear activation (sigmoid-like)
-        let activated_score = 1.0 / (1.0 + (-score * 2.0 + 1.0).exp());
-        activated_score
+
+        1.0 / (1.0 + (-score * 2.0 + 1.0).exp())
     }
 
     /// Calculate semantic context score
@@ -3175,15 +3175,14 @@ impl AdvancedSearchEngine {
 
         // Score based on seasonal relevance
         let month_diff = ((creation_month as i32 - current_month as i32).abs()).min(6);
-        let seasonal_score = match month_diff {
+
+        match month_diff {
             0 => 1.0, // Same month
             1 => 0.9, // Adjacent month
             2 => 0.7, // 2 months apart
             3 => 0.5, // Quarter apart
             _ => 0.3, // Different season
-        };
-
-        seasonal_score
+        }
     }
 
     /// Calculate content-based centrality as fallback
@@ -3272,7 +3271,7 @@ impl AdvancedSearchEngine {
         let age_days = (chrono::Utc::now() - memory.created_at()).num_days() as f64;
         let access_count = memory.access_count() as f64;
 
-        let performance_trend = if age_days > 0.0 {
+        if age_days > 0.0 {
             let access_rate = access_count / age_days;
             if access_rate > 0.5 {
                 0.9 // Improving performance
@@ -3283,9 +3282,7 @@ impl AdvancedSearchEngine {
             }
         } else {
             0.6 // New memory, neutral score
-        };
-
-        performance_trend
+        }
     }
 
     /// Simulate user feedback score
@@ -3296,8 +3293,8 @@ impl AdvancedSearchEngine {
         let access_frequency = (memory.access_count() as f64 / 20.0).min(1.0);
 
         // Simulate feedback based on these factors
-        let simulated_feedback = importance * 0.4 + confidence * 0.3 + access_frequency * 0.3;
-        simulated_feedback
+
+        importance * 0.4 + confidence * 0.3 + access_frequency * 0.3
     }
 
     /// Calculate adaptation score
@@ -3319,7 +3316,7 @@ impl AdvancedSearchEngine {
         let hours_since_access = (chrono::Utc::now() - memory.last_accessed()).num_hours() as f64;
         let access_count = memory.access_count() as f64;
 
-        let momentum = if hours_since_access < 24.0 && access_count > 3.0 {
+        if hours_since_access < 24.0 && access_count > 3.0 {
             0.9 // High momentum
         } else if hours_since_access < 168.0 && access_count > 1.0 {
             0.7 // Medium momentum
@@ -3327,9 +3324,7 @@ impl AdvancedSearchEngine {
             0.5 // Low momentum
         } else {
             0.2 // No momentum
-        };
-
-        momentum
+        }
     }
 
     /// Adapt learning weights based on performance
@@ -3403,7 +3398,7 @@ impl SearchIndex {
         for word in &words {
             self.word_index
                 .entry(word.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(memory.key.clone());
         }
 
@@ -3546,7 +3541,7 @@ mod tests {
 
         // URL content should get moderate score
         assert!(
-            url_score >= 0.5 && url_score <= 0.7,
+            (0.5..=0.7).contains(&url_score),
             "URL content should get moderate score"
         );
     }

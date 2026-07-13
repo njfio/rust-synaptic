@@ -18,7 +18,6 @@ use synaptic::{
         types::{MemoryEntry, MemoryType},
     },
 };
-use tokio;
 
 /// Test memory consolidation system creation and basic functionality
 #[tokio::test]

@@ -458,7 +458,7 @@ impl MemoryIntelligenceEngine {
                 let hour = timestamp.hour();
                 hourly_access
                     .entry(hour)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(memory_key.clone());
             }
         }
@@ -504,10 +504,7 @@ impl MemoryIntelligenceEngine {
                 "medium"
             };
 
-            groups
-                .entry(bucket)
-                .or_insert_with(Vec::new)
-                .push(key.clone());
+            groups.entry(bucket).or_default().push(key.clone());
         }
 
         let mut patterns = Vec::new();
@@ -1035,10 +1032,12 @@ impl MemoryIntelligenceEngine {
 
         for event in events {
             total_events += 1;
-            if let AnalyticsEvent::MemoryAccess { user_context, .. } = event {
-                if let Some(user) = user_context {
-                    user_contexts.insert(user.clone());
-                }
+            if let AnalyticsEvent::MemoryAccess {
+                user_context: Some(user),
+                ..
+            } = event
+            {
+                user_contexts.insert(user.clone());
             }
         }
 
@@ -1191,9 +1190,9 @@ impl MemoryIntelligenceEngine {
 
         // 1. Content length uniqueness (very short or very long content is more unique)
         let length = content.len();
-        let length_uniqueness = if length < 50 || length > 2000 {
+        let length_uniqueness = if !(50..=2000).contains(&length) {
             0.8 // Short or very long content is more unique
-        } else if length < 100 || length > 1000 {
+        } else if !(100..=1000).contains(&length) {
             0.6 // Moderately short/long content
         } else {
             0.3 // Average length content is less unique
@@ -1234,7 +1233,7 @@ impl MemoryIntelligenceEngine {
         // 5. Pattern uniqueness (repetitive patterns are less unique)
         let mut pattern_score = 1.0;
         let words_set: std::collections::HashSet<&str> = words.iter().cloned().collect();
-        if words.len() > 0 && words_set.len() < words.len() / 2 {
+        if !words.is_empty() && words_set.len() < words.len() / 2 {
             pattern_score = 0.3; // High repetition = low uniqueness
         }
         uniqueness_factors.push(pattern_score);
@@ -1310,7 +1309,7 @@ mod tests {
             .recognize_patterns()
             .await
             .expect("await should be present");
-        assert!(patterns.len() > 0);
+        assert!(!patterns.is_empty());
     }
 
     #[tokio::test]
@@ -1380,6 +1379,6 @@ mod tests {
             .generate_insights()
             .await
             .expect("await should be present");
-        assert!(insights.len() > 0);
+        assert!(!insights.is_empty());
     }
 }

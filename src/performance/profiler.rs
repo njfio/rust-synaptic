@@ -361,6 +361,12 @@ pub struct ProfilingData {
     pub last_updated: DateTime<Utc>,
 }
 
+impl Default for ProfilingData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProfilingData {
     pub fn new() -> Self {
         Self {
@@ -444,6 +450,12 @@ pub struct CpuProfiler {
     is_running: bool,
 }
 
+impl Default for CpuProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpuProfiler {
     /// Create a new CPU profiler
     pub fn new() -> Self {
@@ -505,6 +517,12 @@ pub struct MemoryProfiler {
     is_running: bool,
 }
 
+impl Default for MemoryProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MemoryProfiler {
     /// Create a new memory profiler
     pub fn new() -> Self {
@@ -560,6 +578,12 @@ pub struct IoProfiler {
     is_running: bool,
 }
 
+impl Default for IoProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IoProfiler {
     /// Create a new I/O profiler
     pub fn new() -> Self {
@@ -608,6 +632,12 @@ pub struct CustomProfiler {
     metrics: HashMap<String, VecDeque<f64>>,
 }
 
+impl Default for CustomProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CustomProfiler {
     /// Create a new custom metrics collector
     pub fn new() -> Self {
@@ -618,7 +648,7 @@ impl CustomProfiler {
 
     /// Record a custom metric value
     pub async fn record_metric(&mut self, name: String, value: f64) -> Result<()> {
-        let entry = self.metrics.entry(name).or_insert_with(VecDeque::new);
+        let entry = self.metrics.entry(name).or_default();
 
         // Keep only last 1000 values
         if entry.len() >= 1000 {

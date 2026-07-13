@@ -125,6 +125,12 @@ impl TfIdfState {
     }
 }
 
+impl Default for TfIdfProvider {
+    fn default() -> Self {
+        Self::new(TfIdfConfig::default())
+    }
+}
+
 impl TfIdfProvider {
     /// Create a new TF-IDF provider
     pub fn new(config: TfIdfConfig) -> Self {
@@ -132,11 +138,6 @@ impl TfIdfProvider {
             config,
             state: Arc::new(RwLock::new(TfIdfState::new())),
         }
-    }
-
-    /// Create with default configuration
-    pub fn default() -> Self {
-        Self::new(TfIdfConfig::default())
     }
 
     /// Embed text using TF-IDF

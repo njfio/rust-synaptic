@@ -233,13 +233,13 @@ impl ConsolidationStrategies {
         }
 
         let preserved_count = memories.len() - forgotten_count;
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             preserved_count as f64 / memories.len() as f64
         } else {
             1.0
         };
 
-        let compression_ratio = if memories.len() > 0 {
+        let compression_ratio = if !memories.is_empty() {
             forgotten_count as f64 / memories.len() as f64
         } else {
             0.0
@@ -282,7 +282,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             replayed_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -321,7 +321,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             consolidated_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -363,7 +363,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             protected_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -413,7 +413,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             distilled_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -467,7 +467,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             compressed_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -517,7 +517,7 @@ impl ConsolidationStrategies {
             }
         }
 
-        let success_rate = if memories.len() > 0 {
+        let success_rate = if !memories.is_empty() {
             updated_count as f64 / memories.len() as f64
         } else {
             1.0
@@ -702,7 +702,7 @@ impl ConsolidationStrategies {
     ) -> Result<()> {
         self.performance_history
             .entry(strategy)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(result.clone());
 
         // Keep only recent performance data

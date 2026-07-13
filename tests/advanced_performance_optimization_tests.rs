@@ -250,10 +250,6 @@ async fn test_async_executor() {
     assert_eq!(stats.tasks_completed, 0);
 
     // Test that executor was created successfully
-    assert!(
-        true,
-        "AsyncExecutor created and statistics retrieved successfully"
-    );
 }
 
 #[tokio::test]

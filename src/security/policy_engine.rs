@@ -660,6 +660,12 @@ impl std::fmt::Debug for PolicyEngine {
     }
 }
 
+impl Default for ComplianceChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ComplianceChecker {
     /// Create a new compliance checker
     pub fn new() -> Self {

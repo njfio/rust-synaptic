@@ -146,7 +146,7 @@ impl AccessFrequencyIndex {
         let old_count = self.key_to_count.insert(key.clone(), count);
 
         // Mark as dirty if this is a significant change
-        if old_count.map_or(true, |old| old != count) {
+        if old_count != Some(count) {
             self.dirty = true;
             self.updates_since_rebuild += 1;
         }
@@ -469,7 +469,7 @@ impl IndexedMemoryRetriever {
         config: RetrievalConfig,
         indexing_config: IndexingConfig,
     ) -> Self {
-        let retriever = Self {
+        Self {
             storage,
             _config: config,
             indexing_config: indexing_config.clone(),
@@ -481,9 +481,7 @@ impl IndexedMemoryRetriever {
             hot_cache: HotDataCache::new(indexing_config.hot_cache_size),
             query_cache: QueryResultCache::new(indexing_config.query_cache_ttl_seconds),
             maintenance_handle: RwLock::new(None),
-        };
-
-        retriever
+        }
     }
 
     /// Start background maintenance tasks

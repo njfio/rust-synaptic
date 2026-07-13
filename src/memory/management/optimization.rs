@@ -1907,6 +1907,12 @@ impl Default for MemoryOptimizer {
     }
 }
 
+impl Default for PerformanceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerformanceMonitor {
     /// Create a new performance monitor
     pub fn new() -> Self {
@@ -2222,6 +2228,12 @@ struct CompressionAnalysis {
 }
 
 #[allow(dead_code)]
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsCollector {
     /// Create a new metrics collector
     pub fn new() -> Self {
@@ -2556,6 +2568,9 @@ impl MetricsCollector {
     }
 
     /// Perform advanced clustering using multiple similarity metrics (placeholder)
+    // Placeholder subtree not yet wired into the optimizer; rooted here so its
+    // helper methods are not flagged dead until it is either wired or removed.
+    #[allow(dead_code)]
     async fn _perform_advanced_clustering(&self) -> Result<HashMap<String, Vec<String>>> {
         let mut clusters: HashMap<String, Vec<String>> = HashMap::new();
         let mut processed_keys = std::collections::HashSet::new();
@@ -2595,69 +2610,6 @@ impl MetricsCollector {
 
         // Simplified implementation - return empty features
         Ok(HashMap::new())
-    }
-
-    /// Calculate entropy of a string
-    fn calculate_entropy(&self, text: &str) -> f64 {
-        let mut char_counts = std::collections::HashMap::new();
-        let total_chars = text.len() as f64;
-
-        for ch in text.chars() {
-            *char_counts.entry(ch).or_insert(0) += 1;
-        }
-
-        let mut entropy = 0.0;
-        for &count in char_counts.values() {
-            let probability = count as f64 / total_chars;
-            if probability > 0.0 {
-                entropy -= probability * probability.ln();
-            }
-        }
-
-        entropy
-    }
-
-    /// Calculate compression ratio estimate
-    fn calculate_compression_ratio(&self, text: &str) -> f64 {
-        // Simple compression ratio estimation based on repetition patterns
-        let original_len = text.len() as f64;
-        if original_len == 0.0 {
-            return 1.0;
-        }
-
-        // Count repeated substrings
-        let mut repeated_chars = 0;
-        let chars: Vec<char> = text.chars().collect();
-
-        for i in 0..chars.len() {
-            for j in (i + 1)..chars.len() {
-                if chars[i] == chars[j] {
-                    repeated_chars += 1;
-                }
-            }
-        }
-
-        let compression_estimate = 1.0 - (repeated_chars as f64 / (original_len * original_len));
-        compression_estimate.clamp(0.1, 1.0) // Clamp between 0.1 and 1.0
-    }
-
-    /// Normalize feature vector to [0, 1] range
-    fn normalize_features(&self, features: &[f64]) -> Vec<f64> {
-        if features.is_empty() {
-            return Vec::new();
-        }
-
-        let min_val = features.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        let max_val = features.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-
-        if (max_val - min_val).abs() < 1e-10 {
-            return vec![0.5; features.len()]; // All values are the same
-        }
-
-        features
-            .iter()
-            .map(|&x| (x - min_val) / (max_val - min_val))
-            .collect()
     }
 
     /// Hierarchical clustering implementation
@@ -2893,175 +2845,10 @@ impl MetricsCollector {
         neighbors
     }
 
-    /// Calculate Levenshtein distance-based similarity
-    fn calculate_levenshtein_similarity(&self, s1: &str, s2: &str) -> f64 {
-        let distance = self.levenshtein_distance(s1, s2);
-        let max_len = s1.len().max(s2.len());
-
-        if max_len == 0 {
-            1.0
-        } else {
-            1.0 - (distance as f64 / max_len as f64)
-        }
-    }
-
-    /// Calculate Levenshtein distance
-    fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
-        let chars1: Vec<char> = s1.chars().collect();
-        let chars2: Vec<char> = s2.chars().collect();
-        let len1 = chars1.len();
-        let len2 = chars2.len();
-
-        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
-
-        // Initialize first row and column
-        for i in 0..=len1 {
-            matrix[i][0] = i;
-        }
-        for j in 0..=len2 {
-            matrix[0][j] = j;
-        }
-
-        // Fill the matrix
-        for i in 1..=len1 {
-            for j in 1..=len2 {
-                let cost = if chars1[i - 1] == chars2[j - 1] { 0 } else { 1 };
-                matrix[i][j] = (matrix[i - 1][j] + 1)
-                    .min(matrix[i][j - 1] + 1)
-                    .min(matrix[i - 1][j - 1] + cost);
-            }
-        }
-
-        matrix[len1][len2]
-    }
-
-    /// Calculate Jaccard similarity based on character n-grams
-    fn calculate_jaccard_similarity(&self, s1: &str, s2: &str) -> f64 {
-        let ngrams1 = self.extract_character_ngrams(s1, 2);
-        let ngrams2 = self.extract_character_ngrams(s2, 2);
-
-        let set1: std::collections::HashSet<_> = ngrams1.into_iter().collect();
-        let set2: std::collections::HashSet<_> = ngrams2.into_iter().collect();
-
-        let intersection = set1.intersection(&set2).count();
-        let union = set1.union(&set2).count();
-
-        if union == 0 {
-            0.0
-        } else {
-            intersection as f64 / union as f64
-        }
-    }
-
-    /// Extract character n-grams from string
-    fn extract_character_ngrams(&self, text: &str, n: usize) -> Vec<String> {
-        let chars: Vec<char> = text.chars().collect();
-        if chars.len() < n {
-            return vec![text.to_string()];
-        }
-
-        chars
-            .windows(n)
-            .map(|window| window.iter().collect())
-            .collect()
-    }
-
-    /// Calculate cosine similarity based on character frequency vectors
-    fn calculate_cosine_similarity(&self, s1: &str, s2: &str) -> f64 {
-        let freq1 = self.character_frequency_vector(s1);
-        let freq2 = self.character_frequency_vector(s2);
-
-        let mut all_chars: std::collections::HashSet<char> = std::collections::HashSet::new();
-        all_chars.extend(freq1.keys());
-        all_chars.extend(freq2.keys());
-
-        if all_chars.is_empty() {
-            return 0.0;
-        }
-
-        let mut dot_product = 0.0;
-        let mut norm1 = 0.0;
-        let mut norm2 = 0.0;
-
-        for &ch in &all_chars {
-            let f1 = *freq1.get(&ch).unwrap_or(&0) as f64;
-            let f2 = *freq2.get(&ch).unwrap_or(&0) as f64;
-
-            dot_product += f1 * f2;
-            norm1 += f1 * f1;
-            norm2 += f2 * f2;
-        }
-
-        if norm1 == 0.0 || norm2 == 0.0 {
-            0.0
-        } else {
-            dot_product / (norm1.sqrt() * norm2.sqrt())
-        }
-    }
-
-    /// Calculate character frequency vector
-    fn character_frequency_vector(&self, text: &str) -> std::collections::HashMap<char, usize> {
-        let mut freq = std::collections::HashMap::new();
-        for ch in text.chars() {
-            *freq.entry(ch).or_insert(0) += 1;
-        }
-        freq
-    }
-
-    /// Calculate Longest Common Subsequence similarity
-    fn calculate_lcs_similarity(&self, s1: &str, s2: &str) -> f64 {
-        let lcs_length = self.longest_common_subsequence(s1, s2);
-        let max_len = s1.len().max(s2.len());
-
-        if max_len == 0 {
-            1.0
-        } else {
-            lcs_length as f64 / max_len as f64
-        }
-    }
-
-    /// Calculate length of Longest Common Subsequence
-    fn longest_common_subsequence(&self, s1: &str, s2: &str) -> usize {
-        let chars1: Vec<char> = s1.chars().collect();
-        let chars2: Vec<char> = s2.chars().collect();
-        let len1 = chars1.len();
-        let len2 = chars2.len();
-
-        let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-
-        for i in 1..=len1 {
-            for j in 1..=len2 {
-                if chars1[i - 1] == chars2[j - 1] {
-                    dp[i][j] = dp[i - 1][j - 1] + 1;
-                } else {
-                    dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
-                }
-            }
-        }
-
-        dp[len1][len2]
-    }
-
-    /// Calculate semantic similarity using word-level analysis
-    fn calculate_semantic_similarity(&self, s1: &str, s2: &str) -> f64 {
-        let words1: std::collections::HashSet<&str> = s1.split_whitespace().collect();
-        let words2: std::collections::HashSet<&str> = s2.split_whitespace().collect();
-
-        if words1.is_empty() && words2.is_empty() {
-            return 1.0;
-        }
-
-        let intersection = words1.intersection(&words2).count();
-        let union = words1.union(&words2).count();
-
-        if union == 0 {
-            0.0
-        } else {
-            intersection as f64 / union as f64
-        }
-    }
-
     /// Perform advanced index optimization
+    // Placeholder subtree not yet wired into the optimizer; rooted here so its
+    // helper methods are not flagged dead until it is either wired or removed.
+    #[allow(dead_code)]
     async fn perform_advanced_index_optimization(&self) -> Result<IndexOptimizationResult> {
         let mut strategies_applied = 0;
         let mut total_efficiency_gain = 0.0;
@@ -3162,7 +2949,7 @@ impl MetricsCollector {
         let mut improvement = 0.0;
 
         // Load factor optimization
-        if load_factor < 0.7 || load_factor > 0.9 {
+        if !(0.7..=0.9).contains(&load_factor) {
             improvement += 0.12; // 12% improvement from optimal load factor
         }
 
@@ -3281,8 +3068,7 @@ impl MetricsCollector {
         // Optimal fanout based on key distribution and cache line size
         let cache_line_size = 64; // bytes
         let key_size = analysis.average_key_length as usize + 8; // key + pointer
-        let optimal_fanout = (cache_line_size / key_size).clamp(4, 256);
-        optimal_fanout
+        (cache_line_size / key_size).clamp(4, 256)
     }
 
     /// Assess B-tree rebalancing need
@@ -3442,6 +3228,7 @@ impl MetricsCollector {
     }
 
     /// Apply optimal compression algorithm based on content analysis
+    #[allow(dead_code)] // duplicate/placeholder MetricsCollector copy, pending dedup with MemoryOptimizer
     async fn apply_optimal_compression(&self, content: &str) -> Result<CompressionResult> {
         // Analyze content to determine best compression algorithm
         let content_analysis = self.analyze_content_for_compression(content);
@@ -3772,6 +3559,7 @@ impl MetricsCollector {
     }
 
     /// Calculate recency score for cache warming
+    #[allow(dead_code)] // duplicate/placeholder MetricsCollector copy, pending dedup with MemoryOptimizer
     fn calculate_recency_score(&self, last_accessed: &DateTime<Utc>) -> f64 {
         let hours_since_access = (Utc::now() - *last_accessed).num_hours();
         if hours_since_access < 1 {
@@ -3786,6 +3574,7 @@ impl MetricsCollector {
     }
 
     /// Calculate access pattern predictability
+    #[allow(dead_code)] // duplicate/placeholder MetricsCollector copy, pending dedup with MemoryOptimizer
     fn calculate_access_pattern_predictability(&self, entry: &MemoryEntry) -> f64 {
         // Simulate predictability based on access count and regularity
         let access_count = entry.metadata.access_count as f64;
@@ -3800,6 +3589,7 @@ impl MetricsCollector {
     }
 
     /// Calculate temporal access score
+    #[allow(dead_code)] // duplicate/placeholder MetricsCollector copy, pending dedup with MemoryOptimizer
     fn calculate_temporal_access_score(&self, entry: &MemoryEntry) -> f64 {
         let hour = Utc::now().hour();
         let access_hour = entry.metadata.last_accessed.hour();
@@ -3816,6 +3606,7 @@ impl MetricsCollector {
     }
 
     /// Calculate content similarity prefetch score
+    #[allow(dead_code)] // duplicate/placeholder MetricsCollector copy, pending dedup with MemoryOptimizer
     fn calculate_content_similarity_prefetch_score(&self, _key: &str) -> f64 {
         // Simplified similarity score
         0.5
@@ -3865,6 +3656,12 @@ impl Default for LatencyPercentiles {
     }
 }
 
+impl Default for OperationCounters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OperationCounters {
     pub fn new() -> Self {
         Self {
@@ -3881,6 +3678,12 @@ impl OperationCounters {
     }
 }
 
+impl Default for TimingMeasurements {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimingMeasurements {
     pub fn new() -> Self {
         Self {
@@ -3888,6 +3691,12 @@ impl TimingMeasurements {
             timing_buckets: HashMap::new(),
             active_timers: HashMap::new(),
         }
+    }
+}
+
+impl Default for MemoryUsageTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -3900,6 +3709,12 @@ impl MemoryUsageTracker {
             deallocation_count: AtomicU64::new(0),
             allocation_history: VecDeque::with_capacity(10000),
         }
+    }
+}
+
+impl Default for CachePerformanceTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -3916,6 +3731,12 @@ impl CachePerformanceTracker {
     }
 }
 
+impl Default for CpuUsageTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpuUsageTracker {
     pub fn new() -> Self {
         Self {
@@ -3924,6 +3745,12 @@ impl CpuUsageTracker {
             peak_usage: 0.0,
             average_usage: 0.0,
         }
+    }
+}
+
+impl Default for AllocationTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -3939,6 +3766,12 @@ impl AllocationTracker {
     }
 }
 
+impl Default for IoPerformanceTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IoPerformanceTracker {
     pub fn new() -> Self {
         Self {
@@ -3950,6 +3783,12 @@ impl IoPerformanceTracker {
             average_read_latency: 0.0,
             average_write_latency: 0.0,
         }
+    }
+}
+
+impl Default for PerformanceProfiler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -4051,6 +3890,12 @@ impl PerformanceProfiler {
             "Optimize hot code paths identified in profiling".to_string(),
             "Review I/O patterns for potential batching opportunities".to_string(),
         ])
+    }
+}
+
+impl Default for BenchmarkRunner {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -4212,6 +4057,12 @@ impl BenchmarkRunner {
         self.regression_detector
             .detect_regressions(&self.benchmark_results, &self.performance_baselines)
             .await
+    }
+}
+
+impl Default for RegressionDetector {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

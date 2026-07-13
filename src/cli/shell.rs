@@ -200,19 +200,19 @@ impl<'a> InteractiveShell<'a> {
         match parts[0].to_lowercase().as_str() {
             "exit" | "quit" | "q" => {
                 crate::cli_outln!("Goodbye!");
-                return Ok(Some(true));
+                Ok(Some(true))
             }
             "help" | "h" => {
                 self.print_help();
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "clear" | "cls" => {
                 crate::cli_out!("\x1B[2J\x1B[1;1H"); // Clear screen
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "history" => {
                 self.show_history();
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "set" => {
                 if parts.len() >= 3 {
@@ -220,7 +220,7 @@ impl<'a> InteractiveShell<'a> {
                 } else {
                     crate::cli_outln!("Usage: set <key> <value>");
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "get" => {
                 if parts.len() >= 2 {
@@ -228,7 +228,7 @@ impl<'a> InteractiveShell<'a> {
                 } else {
                     self.show_all_variables();
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "format" => {
                 if parts.len() >= 2 {
@@ -237,7 +237,7 @@ impl<'a> InteractiveShell<'a> {
                     crate::cli_outln!("Current format: {:?}", self.state.output_format);
                     crate::cli_outln!("Available formats: table, json, csv, yaml, graph, tree");
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "timing" => {
                 if parts.len() >= 2 {
@@ -249,7 +249,7 @@ impl<'a> InteractiveShell<'a> {
                     "Timing display: {}",
                     if self.state.show_timing { "on" } else { "off" }
                 );
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "stats" => {
                 if parts.len() >= 2 {
@@ -265,7 +265,7 @@ impl<'a> InteractiveShell<'a> {
                         "off"
                     }
                 );
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "explain" => {
                 if parts.len() >= 2 {
@@ -274,11 +274,11 @@ impl<'a> InteractiveShell<'a> {
                 } else {
                     crate::cli_outln!("Usage: explain <query>");
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "recover" => {
                 self.handle_error_recovery().await?;
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "session" => {
                 if parts.len() >= 2 {
@@ -291,7 +291,7 @@ impl<'a> InteractiveShell<'a> {
                 } else {
                     self.show_session_info().await?;
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
             "complete" => {
                 if parts.len() >= 2 {
@@ -300,9 +300,9 @@ impl<'a> InteractiveShell<'a> {
                 } else {
                     crate::cli_outln!("Usage: complete <partial_query>");
                 }
-                return Ok(Some(false));
+                Ok(Some(false))
             }
-            _ => return Ok(None), // Not a shell command
+            _ => Ok(None), // Not a shell command
         }
     }
 

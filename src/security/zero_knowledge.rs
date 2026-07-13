@@ -693,7 +693,7 @@ impl ZeroKnowledgeManager {
             user_attributes: HashMap::new(),
             session_proof: aggregate_value.to_string(),
             timestamp_proof: statement.timestamp.timestamp() as u64,
-            access_signature: format!("aggregate_{}", statement.aggregate_type.to_string()),
+            access_signature: format!("aggregate_{}", statement.aggregate_type.label()),
         };
 
         Ok(Witness {
@@ -714,7 +714,7 @@ impl ZeroKnowledgeManager {
             "{}:{}:{}:{}",
             statement.memory_key,
             statement.user_id,
-            statement.access_type.to_string(),
+            statement.access_type.label(),
             context.session_id
         );
         Ok(format!("sig_{}", hash_content(&signature_input)))
@@ -1366,12 +1366,12 @@ pub enum AccessType {
 }
 
 impl AccessType {
-    fn to_string(&self) -> String {
+    fn label(&self) -> &'static str {
         match self {
-            AccessType::Read => "read".to_string(),
-            AccessType::Write => "write".to_string(),
-            AccessType::Delete => "delete".to_string(),
-            AccessType::Query => "query".to_string(),
+            AccessType::Read => "read",
+            AccessType::Write => "write",
+            AccessType::Delete => "delete",
+            AccessType::Query => "query",
         }
     }
 }
@@ -1392,11 +1392,11 @@ pub enum AggregateType {
 }
 
 impl AggregateType {
-    fn to_string(&self) -> String {
+    fn label(&self) -> &'static str {
         match self {
-            AggregateType::Count => "count".to_string(),
-            AggregateType::AverageLength => "avg_length".to_string(),
-            AggregateType::TotalSize => "total_size".to_string(),
+            AggregateType::Count => "count",
+            AggregateType::AverageLength => "avg_length",
+            AggregateType::TotalSize => "total_size",
         }
     }
 }
