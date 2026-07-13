@@ -86,7 +86,7 @@ fn fact_holds_entities_and_relations() {
     assert_eq!(f.entities.len(), 2); assert_eq!(f.relations[0].predicate, "lives_in");
 }
 ```
-- [ ] **Step 2: Run — expect FAIL** (`cargo test --test reasoning_types_tests`) — module not found.
+- [ ] **Step 2: Run — expect FAIL** (`cargo test --test reasoning_types_tests`) — module not found. (Note: the crate denies `clippy::panic` crate-wide via Cargo.toml `[lints]`, so the test file needs `#![allow(clippy::panic)]` like the other integration tests.)
 - [ ] **Step 3: Implement** the types + trait above in `src/memory/reasoning/mod.rs` with derives `Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize` on the data types; `pub mod heuristic;` declared but content in 1.2. Add `pub mod reasoning;` to `src/memory/mod.rs` and re-export the trait + key types from there. `async-trait` is already a dependency (check `grep async-trait Cargo.toml`; if absent, add `async-trait = "0.1"`).
 - [ ] **Step 4: Run — expect PASS**; plus `cargo test --lib`, fmt, clippy.
 - [ ] **Step 5: Commit** — `feat(reasoning): MemoryReasoner trait and extraction/conflict types`.
