@@ -298,6 +298,8 @@ observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp"
 
 # External Integrations
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+# Optional candle cross-encoder reranker (reuses the ml-models candle stack)
+reranker-model = ["ml-models"]
 llm-integration = ["reqwest", "base64"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]

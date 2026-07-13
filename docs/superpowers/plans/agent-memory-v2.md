@@ -189,9 +189,10 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 
 ### Task 3.4: Optional cross-encoder reranker (gate b — candle)
 **Files:** `src/memory/retrieval/rerank.rs` (`CrossEncoderReranker`, feature `reranker-model`); Cargo.toml feature; Test `tests/reranker_model_tests.rs` (feature-gated).
-- Gate b: present the cross-encoder model choice + pinned candle version before adding. Disabled feature → type absent; no fake path.
-- [ ] Failing test (feature on): reranker loads and produces a monotonic re-ordering on a tiny fixture. Feature off: `HeuristicReranker` remains the default and tests pass.
-- [ ] Commit — `feat(retrieval): optional candle cross-encoder reranker (feature reranker-model)`.
+- Gate b: DECIDED — reuse the existing candle stack (candle 0.8.x already optional under `ml-models`); `reranker-model = ["ml-models"]`, no new crate. Disabled feature → type absent; no fake path.
+- [x] Failing test (feature on): reranker built from in-memory deterministic weights (tiny `BertConfig` + custom `SimpleBackend` VarBuilder, no network) produces a deterministic re-ordering monotonic in its own pair logits; `new()` fails closed on missing model files. Feature off: `HeuristicReranker` remains the default and tests pass.
+- [x] Commit — `feat(retrieval): optional candle cross-encoder reranker (feature reranker-model)`.
+- Deviation: the crate forbids `unsafe_code`, so weights load via safe `VarBuilder::from_buffered_safetensors` instead of the mmap path; the pre-existing `unsafe` mmap in `src/integrations/ml_models.rs` (which never compiled under the forbid) was migrated the same way.
 
 ---
 

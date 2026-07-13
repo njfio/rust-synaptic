@@ -19,6 +19,8 @@ pub use pipeline::{
 };
 
 // Re-export reranking stage
+#[cfg(feature = "reranker-model")]
+pub use rerank::CrossEncoderReranker;
 pub use rerank::{HeuristicRerankWeights, HeuristicReranker, Reranker};
 
 // Re-export concrete strategies

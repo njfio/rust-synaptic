@@ -258,3 +258,195 @@ impl Reranker for HeuristicReranker {
         "HeuristicReranker"
     }
 }
+
+#[cfg(feature = "reranker-model")]
+pub use cross_encoder::CrossEncoderReranker;
+
+/// Candle-backed BERT cross-encoder reranker (feature `reranker-model`).
+#[cfg(feature = "reranker-model")]
+mod cross_encoder {
+    use super::Reranker;
+    use crate::error::{MemoryError, Result};
+    use crate::memory::retrieval::pipeline::ScoredMemory;
+    use async_trait::async_trait;
+    use candle_core::{DType, Device, IndexOp, Tensor};
+    use candle_nn::{linear, Linear, Module, VarBuilder};
+    use candle_transformers::models::bert::{BertModel, Config as BertConfig};
+    use std::path::Path;
+    use tokenizers::Tokenizer;
+
+    /// A cross-encoder reranker: for each candidate it tokenizes the
+    /// `(query, candidate content)` pair, runs a BERT forward pass, and reads
+    /// a single relevance logit off a linear classification head over the
+    /// `[CLS]` position. Candidates are re-ordered by that logit, descending,
+    /// with exact ties broken by ascending memory key. Original pipeline
+    /// scores travel through unchanged.
+    ///
+    /// Construction fails closed: if the model files (config, tokenizer,
+    /// weights) cannot be loaded, [`CrossEncoderReranker::new`] returns an
+    /// error — there is no fallback scoring path in this type.
+    pub struct CrossEncoderReranker {
+        model: BertModel,
+        classifier: Linear,
+        tokenizer: Tokenizer,
+        device: Device,
+        max_length: usize,
+    }
+
+    impl CrossEncoderReranker {
+        /// Load a cross-encoder from a local model directory containing
+        /// `config.json`, `tokenizer.json` and `model.safetensors` (the
+        /// standard HuggingFace layout for BERT sequence-classification
+        /// cross-encoders, e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2`).
+        ///
+        /// Fails closed with an error if any file is missing or malformed.
+        /// Inference runs on CPU.
+        pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
+            let model_dir = model_dir.as_ref();
+            let device = Device::Cpu;
+
+            let config_path = model_dir.join("config.json");
+            let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder config not readable at {}: {}",
+                    config_path.display(),
+                    e
+                ))
+            })?;
+            let config: BertConfig = serde_json::from_str(&config_str).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder config at {} is not a valid BERT config: {}",
+                    config_path.display(),
+                    e
+                ))
+            })?;
+
+            let tokenizer_path = model_dir.join("tokenizer.json");
+            let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder tokenizer not loadable from {}: {}",
+                    tokenizer_path.display(),
+                    e
+                ))
+            })?;
+
+            let weights_path = model_dir.join("model.safetensors");
+            let weights = std::fs::read(&weights_path).map_err(|e| {
+                MemoryError::configuration(format!(
+                    "cross-encoder weights not readable at {}: {}",
+                    weights_path.display(),
+                    e
+                ))
+            })?;
+            let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &device)?;
+
+            let max_length = config.max_position_embeddings;
+            Self::from_var_builder(vb, &config, tokenizer, max_length)
+        }
+
+        /// Build a cross-encoder from an already-constructed [`VarBuilder`]
+        /// and tokenizer. This is the shared trunk of [`Self::new`]; it also
+        /// lets tests exercise the real inference path from in-memory
+        /// weights without touching the network or filesystem.
+        pub fn from_var_builder(
+            vb: VarBuilder,
+            config: &BertConfig,
+            tokenizer: Tokenizer,
+            max_length: usize,
+        ) -> Result<Self> {
+            if max_length == 0 || max_length > config.max_position_embeddings {
+                return Err(MemoryError::configuration(format!(
+                    "cross-encoder max_length {} must be in 1..={}",
+                    max_length, config.max_position_embeddings
+                )));
+            }
+            let device = vb.device().clone();
+            // BertModel::load itself falls back to the `bert.` prefix used by
+            // sequence-classification checkpoints.
+            let model = BertModel::load(vb.clone(), config)?;
+            let classifier = linear(config.hidden_size, 1, vb.pp("classifier"))?;
+            Ok(Self {
+                model,
+                classifier,
+                tokenizer,
+                device,
+                max_length,
+            })
+        }
+
+        /// Relevance logit for a `(query, candidate)` pair: tokenize the
+        /// pair, run the BERT forward pass, apply the classification head to
+        /// the `[CLS]` position. Higher means more relevant.
+        pub fn score(&self, query: &str, candidate: &str) -> Result<f32> {
+            let encoding = self
+                .tokenizer
+                .encode((query, candidate), true)
+                .map_err(|e| {
+                    MemoryError::processing_error(format!(
+                        "cross-encoder tokenization failed: {}",
+                        e
+                    ))
+                })?;
+
+            let take = encoding.get_ids().len().min(self.max_length);
+            if take == 0 {
+                return Err(MemoryError::processing_error(
+                    "cross-encoder tokenization produced no tokens",
+                ));
+            }
+            let ids = &encoding.get_ids()[..take];
+            let type_ids = &encoding.get_type_ids()[..take];
+            let mask = &encoding.get_attention_mask()[..take];
+
+            let input_ids = Tensor::new(ids, &self.device)?.unsqueeze(0)?;
+            let token_type_ids = Tensor::new(type_ids, &self.device)?.unsqueeze(0)?;
+            let attention_mask = Tensor::new(mask, &self.device)?.unsqueeze(0)?;
+
+            let hidden = self
+                .model
+                .forward(&input_ids, &token_type_ids, Some(&attention_mask))?;
+            // [CLS] position: (batch=1, hidden) -> classifier -> (1, 1).
+            let cls = hidden.i((.., 0))?;
+            let logit = self.classifier.forward(&cls)?;
+            Ok(logit.flatten_all()?.to_vec1::<f32>()?[0])
+        }
+    }
+
+    #[async_trait]
+    impl Reranker for CrossEncoderReranker {
+        async fn rerank(
+            &self,
+            query: &str,
+            candidates: Vec<ScoredMemory>,
+        ) -> Result<Vec<ScoredMemory>> {
+            if candidates.len() < 2 {
+                return Ok(candidates);
+            }
+
+            let mut ranked: Vec<(f32, ScoredMemory)> = Vec::with_capacity(candidates.len());
+            for candidate in candidates {
+                let logit = self.score(query, &candidate.memory.entry.value)?;
+                tracing::trace!(
+                    key = %candidate.memory.entry.key,
+                    logit,
+                    "cross-encoder rerank logit"
+                );
+                ranked.push((logit, candidate));
+            }
+
+            // Logit descending; exact ties broken by ascending memory key so
+            // the ordering is stable and deterministic.
+            ranked.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.memory.entry.key.cmp(&b.1.memory.entry.key))
+            });
+
+            Ok(ranked.into_iter().map(|(_, c)| c).collect())
+        }
+
+        fn name(&self) -> &str {
+            "CrossEncoderReranker"
+        }
+    }
+}

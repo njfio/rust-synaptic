@@ -141,9 +141,9 @@ impl MLModelManager {
             if weights_path.exists() {
                 tracing::info!("Model weights found, loading BERT model...");
 
-                let vb = unsafe {
-                    VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &self.device)
-                }?;
+                let weights = std::fs::read(&weights_path)
+                    .map_err(|e| MemoryError::storage(format!("Failed to read weights: {}", e)))?;
+                let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &self.device)?;
                 let model = BertModel::load(vb, &bert_config)?;
 
                 self.embedding_model = Some(Box::new(SimpleBertModel::new(
