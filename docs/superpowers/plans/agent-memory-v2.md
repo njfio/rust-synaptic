@@ -249,8 +249,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 7.1: Dataset loaders + fetch script
 **Files:** Create `tools/eval/fetch_datasets.sh`, `tools/eval/src/dataset.rs` (or a `tools/eval` crate / `benches` module); `.gitignore` `tools/eval/data/`; Test `tools/eval` unit tests on a tiny committed fixture (a 2-conversation JSON sample structurally identical to the real format, committed as a fixture — NOT the real dataset).
 **Produces:** loaders parsing LongMemEval-S and LoCoMo JSON into `EvalConversation { sessions, questions[] with evidence_ids, gold_answer, qtype }`.
-- [ ] Failing test: loader parses the committed fixture into the expected typed structure; question types map to the enum.
-- [ ] Commit — `feat(eval): LongMemEval/LoCoMo dataset loaders + fetch script`.
+- [x] Failing test: loader parses the committed fixture into the expected typed structure; question types map to the enum.
+- [x] Commit — `feat(eval): LongMemEval/LoCoMo dataset loaders + fetch script`.
+- Note (implementation): `tools/eval` is a separate workspace crate `synaptic-eval` (a `[workspace]` section with members `[".", "tools/eval"]` was added to the root Cargo.toml; the main crate still builds unchanged). LongMemEval abstention instances are detected by the `_abs` question_id suffix; LoCoMo qa categories map 1→MultiHop, 2→Temporal, 3→OpenDomain, 4→SingleHop, 5→Abstention (category-5 items carry `adversarial_answer` instead of `answer`).
 
 ### Task 7.2: Runner + retrieval/latency/growth metrics (LLM-free)
 **Files:** `tools/eval/src/{runner,metrics}.rs`; Test on fixture.

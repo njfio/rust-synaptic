@@ -1,0 +1,80 @@
+{
+  "_comment": "Hand-authored fixture for loader unit tests. Structurally identical to the real LongMemEval-S and LoCoMo JSON schemas, but the content is invented — this is NOT real benchmark data.",
+  "longmemeval": [
+    {
+      "question_id": "fixture_lme_1",
+      "question_type": "knowledge-update",
+      "question": "What city does the user live in now?",
+      "answer": "Lisbon",
+      "question_date": "2023/06/01 (Thu) 10:00",
+      "haystack_dates": ["2023/05/20 (Sat) 02:21", "2023/05/28 (Sun) 14:05"],
+      "haystack_session_ids": ["fixture_sess_a", "fixture_sess_b"],
+      "haystack_sessions": [
+        [
+          {"role": "user", "content": "I just moved to Porto last month.", "has_answer": false},
+          {"role": "assistant", "content": "Porto is lovely — congratulations on the move!"}
+        ],
+        [
+          {"role": "user", "content": "Update: I relocated again, I live in Lisbon now.", "has_answer": true},
+          {"role": "assistant", "content": "Noted — Lisbon it is."}
+        ]
+      ],
+      "answer_session_ids": ["fixture_sess_b"]
+    },
+    {
+      "question_id": "fixture_lme_2_abs",
+      "question_type": "single-session-user",
+      "question": "What is the user's favorite opera?",
+      "answer": "The user never mentioned a favorite opera.",
+      "question_date": "2023/06/02 (Fri) 09:00",
+      "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+      "haystack_session_ids": ["fixture_sess_c"],
+      "haystack_sessions": [
+        [
+          {"role": "user", "content": "I enjoy hiking on weekends.", "has_answer": false},
+          {"role": "assistant", "content": "Hiking is a great way to unwind."}
+        ]
+      ],
+      "answer_session_ids": []
+    }
+  ],
+  "locomo": [
+    {
+      "sample_id": "fixture_locomo_1",
+      "conversation": {
+        "speaker_a": "Maya",
+        "speaker_b": "Tom",
+        "session_1_date_time": "1:56 pm on 8 May, 2023",
+        "session_1": [
+          {"speaker": "Maya", "dia_id": "D1:1", "text": "I adopted a beagle named Waffles last week."},
+          {"speaker": "Tom", "dia_id": "D1:2", "text": "That's wonderful! I started pottery classes."}
+        ],
+        "session_2_date_time": "7:30 pm on 21 June, 2023",
+        "session_2": [
+          {"speaker": "Maya", "dia_id": "D2:1", "text": "Waffles chewed through my pottery mug, ironically."},
+          {"speaker": "Tom", "dia_id": "D2:2", "text": "Ha! I can make you a new one in class."}
+        ]
+      },
+      "qa": [
+        {
+          "question": "What is the name of Maya's dog and who offered to replace her mug?",
+          "answer": "Waffles; Tom offered to make a new mug",
+          "evidence": ["D1:1", "D2:1", "D2:2"],
+          "category": 1
+        },
+        {
+          "question": "When did Maya adopt her dog?",
+          "answer": "The first week of May 2023",
+          "evidence": ["D1:1"],
+          "category": 2
+        },
+        {
+          "question": "What color is Tom's car?",
+          "adversarial_answer": "Not mentioned in the conversation",
+          "evidence": [],
+          "category": 5
+        }
+      ]
+    }
+  ]
+}

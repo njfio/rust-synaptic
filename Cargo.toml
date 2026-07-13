@@ -449,3 +449,8 @@ required-features = ["analytics"]
 name = "security_performance"
 harness = false
 required-features = ["security"]
+
+# Workspace: the main `synaptic` crate plus auxiliary tooling crates.
+# `tools/eval` hosts the LongMemEval/LoCoMo evaluation harness (not published).
+[workspace]
+members = [".", "tools/eval"]
