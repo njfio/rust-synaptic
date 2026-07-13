@@ -8,6 +8,7 @@ pub struct StoreDegradations {
     pub knowledge_graph: Option<String>,
     pub advanced_management: Option<String>,
     pub embeddings: Option<String>,
+    pub reasoning: Option<String>,
 }
 
 impl StoreDegradations {
@@ -18,5 +19,6 @@ impl StoreDegradations {
             && self.knowledge_graph.is_none()
             && self.advanced_management.is_none()
             && self.embeddings.is_none()
+            && self.reasoning.is_none()
     }
 }

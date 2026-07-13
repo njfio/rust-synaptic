@@ -124,11 +124,18 @@ Extraction rules (real, deterministic — extend `management/summarization.rs:92
 
 Write path change: after storage+state write, run `reasoner.extract` on the value; for each fact, embed-dedup against existing (via `EmbeddingManager::get_memory_similarities`), `reasoner.resolve`, then apply: `Insert`→new KG nodes/edges from entities/relations; `Supersede`→invalidate the old KG fact (Phase 4 fields; until Phase 4 lands, mark superseded via a metadata flag and record it) and add new; `UpdateInPlace`→update node; `Append`→existing behavior; `NoOp`→skip. Failures set `degradations.reasoning` and log at warn (best-effort like the other subsystems). Replace the `merge_content` Jaccard/concat call site in `knowledge_graph/mod.rs:688` path so the concat separator is no longer the merge mechanism (keep `merge_content` only as an `Append` helper).
 
-- [ ] **Step 1: Failing test** — store "Alice lives in Berlin", then store "Alice lives in Munich"; assert `store_with_report` for the second returns a report indicating a supersede occurred (expose the resolution outcome in the report, e.g. `reasoning: None` on success + a queryable KG state), and that the KG has a Munich residence relation and the Berlin one flagged superseded. (Full bi-temporal assertion lands in Phase 4; here assert the resolution path ran and the KG reflects Munich as current.)
-- [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement.** Keep default behavior identical when extraction yields nothing.
-- [ ] **Step 4: Run — expect PASS**; `cargo test --lib`, fmt, clippy `--features "security test-utils"`.
-- [ ] **Step 5: Commit** — `feat(core): intelligent write path with extraction and conflict resolution`.
+- [x] **Step 1: Failing test** — store "Alice lives in Berlin", then store "Alice lives in Munich"; assert `store_with_report` for the second returns a report indicating a supersede occurred (expose the resolution outcome in the report, e.g. `reasoning: None` on success + a queryable KG state), and that the KG has a Munich residence relation and the Berlin one flagged superseded. (Full bi-temporal assertion lands in Phase 4; here assert the resolution path ran and the KG reflects Munich as current.)
+- [x] **Step 2: Run — expect FAIL.**
+- [x] **Step 3: Implement.** Keep default behavior identical when extraction yields nothing.
+- [x] **Step 4: Run — expect PASS**; `cargo test --lib`, fmt, clippy `--features "security test-utils"`.
+- [x] **Step 5: Commit** — `feat(core): intelligent write path with extraction and conflict resolution`.
+
+- **Deviation note (Task 1.3, real-API divergence):**
+  - Neighbor discovery does NOT use `EmbeddingManager::get_memory_similarities`: `SimpleEmbedder` TF-IDF is degenerate on small corpora (the first document embeds to an all-zero vector because every IDF is `ln(1)=0`, and `embed_text` mutates the vocabulary per call, so scores drift between queries). Instead `AgentMemory::neighbor_facts` scores all state memories (short- + long-term, excluding the entry being stored) with a deterministic token-set cosine, ties broken by key, top-5 passed as `NeighborFact { id: memory_key, similarity, text: value }`. `NeighborFact.id` is the memory KEY (not a UUID) so `Supersede{old_id}` applies directly against the KG's `memory_to_node` mapping.
+  - `SUPERSEDE_THRESHOLD` in `HeuristicReasoner` lowered 0.85 → 0.6: it is only a candidate gate (Supersede/UpdateInPlace still require extracted-relation evidence), and single-slot paraphrases like "Alice lives in Berlin"/"Alice lives in Munich" score 0.75 under the token-set cosine the write path actually supplies. No Task 1.2 test pinned the old boundary.
+  - `UpdateInPlace`/`Append` carry no target id; the write path applies them to the best neighbor (same deterministic ordering the reasoner uses to pick its comparison target).
+  - Supersede flags the old memory's KG node AND every edge whose `properties["source_memory"]` matches with `properties["superseded_at"]` (Phase 2.2 replaces this flag with `invalidate_edge`). KG state is queryable via `MemoryKnowledgeGraph::relations_for_entity` / `AgentMemory::entity_relations` returning `ExtractedRelation { subject, predicate, object, source_memory, superseded }`.
+  - The reasoner field and write-path stage are gated `#[cfg(feature = "embeddings")]` (the `reasoning` module depends on `embeddings`, a default feature) and short-circuit when the knowledge graph is disabled. `merge_content` survives solely as the `Append` helper (`append_memory_content`).
 
 ---
 

@@ -19,7 +19,13 @@ use crate::memory::types::MemoryEntry;
 /// Similarity at or above which an equal-text candidate is a duplicate.
 const DEDUP_THRESHOLD: f64 = 0.95;
 /// Similarity at or above which contradiction/refinement checks apply.
-const SUPERSEDE_THRESHOLD: f64 = 0.85;
+///
+/// This is only a candidate gate: Supersede/UpdateInPlace additionally
+/// require explicit extracted-relation evidence, so the gate is calibrated
+/// to the deterministic token-set cosine the write path supplies (single-slot
+/// paraphrases like "Alice lives in Berlin" / "Alice lives in Munich" score
+/// 0.75 there, well below what a dense semantic embedder would report).
+const SUPERSEDE_THRESHOLD: f64 = 0.6;
 
 /// Known place names (lowercased) used to classify capitalized spans.
 const PLACE_LEXICON: &[&str] = &[

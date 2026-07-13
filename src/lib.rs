@@ -93,6 +93,10 @@ pub struct AgentMemory {
     advanced_manager: Option<memory::management::AdvancedMemoryManager>,
     #[cfg(feature = "embeddings")]
     embedding_manager: Option<memory::embeddings::EmbeddingManager>,
+    /// Reasoner driving the intelligent write path (extraction + conflict
+    /// resolution); defaults to a `HeuristicReasoner` over the active embedder.
+    #[cfg(feature = "embeddings")]
+    reasoner: Arc<dyn memory::reasoning::MemoryReasoner>,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -185,6 +189,14 @@ impl AgentMemory {
         } else {
             None
         };
+
+        // Default reasoner for the intelligent write path: the deterministic
+        // heuristic reasoner over the active (TF-IDF) embedding provider.
+        #[cfg(feature = "embeddings")]
+        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> =
+            Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
+                memory::embeddings::TfIdfProvider::default(),
+            )));
 
         // Initialize the hybrid retrieval pipeline if embeddings are enabled. This
         // routes `search` through ranked dense-vector + keyword signals instead of
@@ -293,6 +305,8 @@ impl AgentMemory {
             advanced_manager,
             #[cfg(feature = "embeddings")]
             embedding_manager,
+            #[cfg(feature = "embeddings")]
+            reasoner,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -444,6 +458,17 @@ impl AgentMemory {
             }
         }
 
+        // Intelligent write path: extract facts from the new value, resolve
+        // each against similar existing memories, and apply the outcome to
+        // the knowledge graph. Best-effort like the other subsystems.
+        #[cfg(feature = "embeddings")]
+        if self.knowledge_graph.is_some() {
+            if let Err(e) = self.reason_over_store(&entry).await {
+                tracing::warn!(error = %e, "reasoning degraded during store");
+                degradations.reasoning = Some(e.to_string());
+            }
+        }
+
         // Check if we need to create a checkpoint
         if self.checkpoint_manager.should_checkpoint(&self.state) {
             self.checkpoint_manager
@@ -452,6 +477,146 @@ impl AgentMemory {
         }
 
         Ok(degradations)
+    }
+
+    /// Run the reasoner over a freshly stored entry: extract facts, resolve
+    /// each against the most similar existing memories, and apply the
+    /// resolution to the knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn reason_over_store(&mut self, entry: &MemoryEntry) -> Result<()> {
+        let ctx = memory::reasoning::ExtractionContext {
+            source_key: entry.key.clone(),
+            timestamp: Utc::now(),
+        };
+        let reasoner = Arc::clone(&self.reasoner);
+        let extraction = reasoner.extract(&entry.value, &ctx).await?;
+        // Empty extraction: default behavior stays identical (no KG change
+        // beyond what the earlier subsystems already applied).
+        if extraction.facts.is_empty() {
+            return Ok(());
+        }
+        for fact in &extraction.facts {
+            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5);
+            let resolution = reasoner.resolve(fact, &neighbors).await?;
+            // The reasoner picks its target among the neighbors we supplied;
+            // for id-less outcomes (UpdateInPlace/Append) the target is the
+            // best neighbor by the same deterministic ordering.
+            let best_neighbor_id = neighbors.first().map(|n| n.id.clone());
+            self.apply_resolution(entry, fact, resolution, best_neighbor_id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Build the top-`k` neighbor list for a candidate fact from existing
+    /// memories (short- and long-term state), excluding the entry being
+    /// stored. Similarity is a deterministic token-set cosine; ties break by
+    /// key so resolution is reproducible.
+    #[cfg(feature = "embeddings")]
+    fn neighbor_facts(
+        &self,
+        current_key: &str,
+        fact_text: &str,
+        k: usize,
+    ) -> Vec<memory::reasoning::NeighborFact> {
+        fn tokens(text: &str) -> std::collections::HashSet<String> {
+            text.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| !w.is_empty())
+                .map(str::to_string)
+                .collect()
+        }
+        let candidate_tokens = tokens(fact_text);
+        if candidate_tokens.is_empty() {
+            return Vec::new();
+        }
+        let mut neighbors: Vec<memory::reasoning::NeighborFact> = self
+            .state
+            .get_short_term_memories()
+            .iter()
+            .chain(self.state.get_long_term_memories().iter())
+            .filter(|(key, _)| key.as_str() != current_key)
+            .filter_map(|(key, mem)| {
+                let mem_tokens = tokens(&mem.value);
+                if mem_tokens.is_empty() {
+                    return None;
+                }
+                let intersection = candidate_tokens.intersection(&mem_tokens).count() as f64;
+                let similarity = intersection
+                    / ((candidate_tokens.len() as f64).sqrt() * (mem_tokens.len() as f64).sqrt());
+                if similarity > 0.0 {
+                    Some(memory::reasoning::NeighborFact {
+                        id: key.clone(),
+                        similarity,
+                        text: mem.value.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        neighbors.sort_by(|a, b| {
+            b.similarity
+                .total_cmp(&a.similarity)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        neighbors.truncate(k);
+        neighbors
+    }
+
+    /// Apply a conflict resolution outcome to the knowledge graph.
+    #[cfg(feature = "embeddings")]
+    async fn apply_resolution(
+        &mut self,
+        entry: &MemoryEntry,
+        fact: &memory::reasoning::Fact,
+        resolution: memory::reasoning::ConflictResolution,
+        best_neighbor_id: Option<String>,
+    ) -> Result<()> {
+        use memory::reasoning::ConflictResolution;
+        let Some(ref mut kg) = self.knowledge_graph else {
+            return Ok(());
+        };
+        match resolution {
+            ConflictResolution::Insert => {
+                kg.add_extracted_fact(&entry.key, fact).await?;
+            }
+            ConflictResolution::Supersede { old_id, reason } => {
+                tracing::debug!(old_id = %old_id, reason = %reason, "superseding fact");
+                // Phase 2.2 replaces this flag with invalidate_edge.
+                kg.mark_memory_superseded(&old_id).await?;
+                kg.add_extracted_fact(&entry.key, fact).await?;
+            }
+            ConflictResolution::UpdateInPlace { reason } => {
+                tracing::debug!(reason = %reason, "updating fact in place");
+                if let Some(target) = best_neighbor_id {
+                    kg.update_memory_node_content(&target, &fact.text).await?;
+                }
+            }
+            ConflictResolution::Append { reason } => {
+                tracing::debug!(reason = %reason, "appending to existing fact");
+                if let Some(target) = best_neighbor_id {
+                    kg.append_memory_content(&target, &fact.text).await?;
+                }
+            }
+            ConflictResolution::NoOp { reason } => {
+                tracing::debug!(reason = %reason, "reasoner chose no-op");
+            }
+        }
+        Ok(())
+    }
+
+    /// Query the knowledge graph for all extracted relations whose subject is
+    /// the given entity (case-insensitive). Returns an empty list when the
+    /// knowledge graph is disabled or the entity is unknown.
+    pub async fn entity_relations(
+        &self,
+        entity_name: &str,
+    ) -> Result<Vec<memory::knowledge_graph::ExtractedRelation>> {
+        match self.knowledge_graph {
+            Some(ref kg) => kg.relations_for_entity(entity_name).await,
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Retrieve a memory by key
