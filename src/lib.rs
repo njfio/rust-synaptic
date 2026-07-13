@@ -215,11 +215,27 @@ impl AgentMemory {
 
         // Default reasoner for the intelligent write path: the deterministic
         // heuristic reasoner over the active (TF-IDF) embedding provider.
+        // With the `llm-reasoning` feature enabled AND an endpoint configured
+        // via SYNAPTIC_LLM_URL/SYNAPTIC_LLM_MODEL (or the SYNAPTIC_EVAL_LLM_*
+        // fallbacks), an LlmReasoner is used instead; it fails open to its own
+        // inner HeuristicReasoner on any LLM error, so the write path never
+        // hard-fails or fabricates. Feature off or unconfigured: heuristic.
         #[cfg(feature = "embeddings")]
-        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> =
-            Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
-                memory::embeddings::TfIdfProvider::default(),
-            )));
+        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> = {
+            let heuristic: Arc<dyn memory::reasoning::MemoryReasoner> =
+                Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
+                    memory::embeddings::TfIdfProvider::default(),
+                )));
+            #[cfg(feature = "llm-reasoning")]
+            {
+                match memory::reasoning::LlmReasoner::from_env() {
+                    Some(llm) => Arc::new(llm),
+                    None => heuristic,
+                }
+            }
+            #[cfg(not(feature = "llm-reasoning"))]
+            heuristic
+        };
 
         // Reflection engine: clusters memories accumulated since the last
         // reflection by TF-IDF embedding similarity and synthesizes insights
