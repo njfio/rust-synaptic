@@ -101,17 +101,18 @@ fn fact_holds_entities_and_relations() {
 
 Extraction rules (real, deterministic — extend `management/summarization.rs:922` logic): sentence-split; per sentence, entities = capitalized multi-word spans (Person/Org/Place disambiguated by a small lexicon + heuristics: trailing "Inc/Corp/Ltd"→Org, known-place lexicon→Place, else Person if preceded by a person-cue), ISO/`Month DD, YYYY`/numeric dates→Date, bare numbers→Number, quoted spans→Quoted, lexicon terms→Term. Relations = subject-verb-object where subject/object are extracted entities and predicate is the normalized verb lemma (small verb-normalization map: "lives in/moved to/relocated to" → residence predicates, etc.). `resolve`: if max neighbor similarity ≥ `supersede_threshold` (0.85) AND the candidate contradicts (shares subject+predicate, differs object — detected via extracted relations) → `Supersede`; ≥ `dedup_threshold` (0.95) and equal text → `NoOp`; ≥ update threshold (0.85) same subject/predicate/object with more detail → `UpdateInPlace`; else `Insert`. `synthesize`: pick the highest-importance representative sentence(s) across the cluster, template `"Across N related memories: <rep>"`, `derived_from` = cluster ids, `confidence` = mean pairwise similarity.
 
-- [ ] **Step 1: Failing test** — `tests/heuristic_reasoner_tests.rs` (use `TfIdfProvider` as embedder):
+- [x] **Step 1: Failing test** — `tests/heuristic_reasoner_tests.rs` (use `TfIdfProvider` as embedder):
 ```rust
 // extract entities+relation from "Alice moved to Berlin in 2021."
 // assert an entity "Alice" (Person), "Berlin" (Place), a Date "2021", and a relation (Alice, moved_to/residence, Berlin).
 // resolve: candidate "Alice moved to Munich" against neighbor list containing the Berlin memory at similarity 0.9 → Supersede.
 // synthesize: 3 related memories → Some(Insight) whose derived_from == the 3 ids.
 ```
-- [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** `HeuristicReasoner`. Deterministic; no randomness.
-- [ ] **Step 4: Run — expect PASS**; `cargo test --lib`, fmt, clippy.
-- [ ] **Step 5: Commit** — `feat(reasoning): deterministic HeuristicReasoner (NER + conflict + synthesis)`.
+- [x] **Step 2: Run — expect FAIL.**
+- [x] **Step 3: Implement** `HeuristicReasoner`. Deterministic; no randomness.
+- [x] **Step 4: Run — expect PASS**; `cargo test --lib`, fmt, clippy.
+- [x] **Step 5: Commit** — `feat(reasoning): deterministic HeuristicReasoner (NER + conflict + synthesis)`.
+  - **Deviation note (Task 1.2):** `resolve` receives only `(memory_id, similarity)` neighbors, so the reasoner keeps an internal `source_key -> Vec<Fact>` cache populated by `extract`; contradiction (same subject+predicate, differing object) is detected against cached neighbor relations. For neighbors never seen by `extract`, it falls back to similarity-only thresholds (>=0.95 NoOp, >=0.85 UpdateInPlace, else Insert) and never Supersedes blind. `synthesize` returns `None` for clusters of size < 2.
 
 ### Task 1.3: Intelligent write path wired into `store_with_report`
 

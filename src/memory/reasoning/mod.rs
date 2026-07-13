@@ -8,6 +8,8 @@
 
 pub mod heuristic;
 
+pub use heuristic::HeuristicReasoner;
+
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;
 use serde::{Deserialize, Serialize};
