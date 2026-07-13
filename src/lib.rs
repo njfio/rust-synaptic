@@ -583,8 +583,9 @@ impl AgentMemory {
             }
             ConflictResolution::Supersede { old_id, reason } => {
                 tracing::debug!(old_id = %old_id, reason = %reason, "superseding fact");
-                // Phase 2.2 replaces this flag with invalidate_edge.
-                kg.mark_memory_superseded(&old_id).await?;
+                // Bi-temporally invalidate only the contradicted edges of
+                // the old memory (same subject + predicate as the new fact).
+                kg.supersede_matching_relations(&old_id, fact).await?;
                 kg.add_extracted_fact(&entry.key, fact).await?;
             }
             ConflictResolution::UpdateInPlace { reason } => {

@@ -150,11 +150,11 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 - [x] Step 5: commit — `feat(kg): bi-temporal validity fields on nodes and edges`.
 
 ### Task 2.2: Invalidation + point-in-time query
-**Files:** Modify `src/memory/knowledge_graph/graph.rs` (add `invalidate_edge`, `query_as_of`), `src/memory/knowledge_graph/mod.rs` (Supersede → real invalidation); Test `tests/bitemporal_query_tests.rs`.
-**Produces:** `KnowledgeGraph::invalidate_edge(&self, edge_id, at: DateTime<Utc>)`; `KnowledgeGraph::neighbors_as_of(&self, node_id, at: DateTime<Utc>) -> Vec<Edge>` returning only edges valid at `at`.
-- [ ] Step 1: failing test — add Berlin residence edge at t0; supersede with Munich at t1; `neighbors_as_of(alice, t0)` → Berlin only; `neighbors_as_of(alice, t1+)` → Munich only; Berlin edge still present but invalid (not deleted).
-- [ ] Steps 2-4: implement; wire the Phase-1 `Supersede` to call `invalidate_edge` instead of the metadata flag.
-- [ ] Step 5: commit — `feat(kg): edge invalidation and point-in-time neighbors_as_of query`.
+**Files:** Modify `src/memory/knowledge_graph/graph.rs` (add `invalidate_edge`, `neighbors_as_of`), `src/memory/knowledge_graph/mod.rs` (Supersede → real invalidation); Test `tests/bitemporal_query_tests.rs`.
+**Produces:** `KnowledgeGraph::invalidate_edge(&self, edge_id: &str, at: DateTime<Utc>) -> Result<bool>`; `KnowledgeGraph::neighbors_as_of(&self, node_id: &str, at: DateTime<Utc>) -> Vec<Edge>` returning only edges valid at `at`; `MemoryKnowledgeGraph::supersede_matching_relations(old_memory_key, fact)` invalidating only the edges whose (subject, predicate) match the superseding fact's relations (per-fact, not per-memory). The `superseded_at` metadata flag and `mark_memory_superseded` were removed; `ExtractedRelation.superseded` now reads bi-temporal validity (`!is_valid_at(now)`).
+- [x] Step 1: failing test — add Berlin residence edge at t0; supersede with Munich at t1; `neighbors_as_of(alice, t0)` → Berlin only; `neighbors_as_of(alice, t1+)` → Munich only; Berlin edge still present but invalid (not deleted). Plus: superseding `lives_in` does not invalidate an unrelated `works_at` edge from the same source memory.
+- [x] Steps 2-4: implement; wire the Phase-1 `Supersede` to call `invalidate_edge` (via `supersede_matching_relations`) instead of the metadata flag.
+- [x] Step 5: commit — `feat(kg): edge invalidation and point-in-time neighbors_as_of query`.
 
 ---
 

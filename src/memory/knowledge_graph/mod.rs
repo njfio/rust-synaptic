@@ -40,14 +40,13 @@ pub struct ExtractedRelation {
     pub object: String,
     /// Key of the memory the relation was extracted from, if recorded.
     pub source_memory: Option<String>,
-    /// True if the relation has been flagged superseded by a newer fact.
+    /// True if the relation's edge is no longer bi-temporally valid (it was
+    /// invalidated by a superseding fact).
     pub superseded: bool,
 }
 
 /// Edge property key recording which memory a relation was extracted from.
 const PROP_SOURCE_MEMORY: &str = "source_memory";
-/// Property key flagging a node/edge as superseded (RFC 3339 timestamp).
-const PROP_SUPERSEDED_AT: &str = "superseded_at";
 /// Edge property key carrying the normalized predicate.
 const PROP_PREDICATE: &str = "predicate";
 
@@ -141,34 +140,53 @@ impl MemoryKnowledgeGraph {
         Ok(())
     }
 
-    /// Flag everything extracted from `memory_key` (and its memory node, if
-    /// one exists) as superseded via a `superseded_at` property.
-    ///
-    /// Phase 2.2 replaces this flag with `invalidate_edge` once bi-temporal
-    /// edge invalidation lands.
-    pub async fn mark_memory_superseded(&mut self, memory_key: &str) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
-        if let Some(node_id) = self.memory_to_node.get(memory_key) {
-            if let Some(mut node) = self.graph.nodes.get_mut(node_id) {
-                node.properties
-                    .insert(PROP_SUPERSEDED_AT.to_string(), now.clone());
-                node.last_modified = Some(chrono::Utc::now());
+    /// Bi-temporally invalidate the edges from `old_memory_key` that the
+    /// superseding `fact` contradicts: for each relation in `fact`, only the
+    /// still-valid edges with the same subject and predicate sourced from
+    /// `old_memory_key` are invalidated (per-fact granularity — unrelated
+    /// edges from the same source memory are left untouched). The edges
+    /// remain stored but are no longer valid at or after now. Returns the
+    /// number of edges invalidated.
+    pub async fn supersede_matching_relations(
+        &mut self,
+        old_memory_key: &str,
+        fact: &Fact,
+    ) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let mut invalidated = 0;
+        for relation in &fact.relations {
+            let Some(subject_id) = self.entity_nodes.get(&relation.subject.to_lowercase()) else {
+                continue;
+            };
+            let edge_ids: Vec<Uuid> = self
+                .graph
+                .edges
+                .iter()
+                .filter(|edge| {
+                    edge.from_node == *subject_id
+                        && edge
+                            .relationship
+                            .properties
+                            .get(PROP_SOURCE_MEMORY)
+                            .map(String::as_str)
+                            == Some(old_memory_key)
+                        && edge
+                            .relationship
+                            .properties
+                            .get(PROP_PREDICATE)
+                            .map(String::as_str)
+                            == Some(relation.predicate.as_str())
+                        && edge.is_valid_at(now)
+                })
+                .map(|edge| edge.id)
+                .collect();
+            for edge_id in edge_ids {
+                if self.graph.invalidate_edge(&edge_id.to_string(), now)? {
+                    invalidated += 1;
+                }
             }
         }
-        for mut edge in self.graph.edges.iter_mut() {
-            if edge
-                .relationship
-                .properties
-                .get(PROP_SOURCE_MEMORY)
-                .map(String::as_str)
-                == Some(memory_key)
-            {
-                edge.relationship
-                    .properties
-                    .insert(PROP_SUPERSEDED_AT.to_string(), now.clone());
-            }
-        }
-        Ok(())
+        Ok(invalidated)
     }
 
     /// Replace the content of the node backing `memory_key`. Returns true if
@@ -248,10 +266,7 @@ impl MemoryKnowledgeGraph {
                     .properties
                     .get(PROP_SOURCE_MEMORY)
                     .cloned(),
-                superseded: edge
-                    .relationship
-                    .properties
-                    .contains_key(PROP_SUPERSEDED_AT),
+                superseded: !edge.is_valid_at(chrono::Utc::now()),
             });
         }
         relations.sort_by(|a, b| {
