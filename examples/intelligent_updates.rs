@@ -4,6 +4,8 @@
 //! memory updates without creating duplicate nodes and edges, while tracking
 //! changes over time.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 use synaptic::{
     memory::knowledge_graph::RelationshipType, AgentMemory, MemoryConfig, MemoryEntry, MemoryType,

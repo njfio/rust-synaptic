@@ -1,5 +1,7 @@
 //! Tests for WebAssembly adapter implementation
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(feature = "wasm")]
 use synaptic::cross_platform::{
     wasm::{WasmAdapter, WasmConfig},

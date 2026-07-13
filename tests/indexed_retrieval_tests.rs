@@ -1,5 +1,9 @@
 //! Tests for optimized indexed memory retrieval
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
 use synaptic::memory::{

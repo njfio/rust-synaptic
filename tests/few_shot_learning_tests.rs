@@ -3,6 +3,8 @@
 //! Tests prototype networks, matching networks, relation networks, and memory-augmented
 //! few-shot learning capabilities with comprehensive validation.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::collections::HashMap;
 use synaptic::memory::meta_learning::{

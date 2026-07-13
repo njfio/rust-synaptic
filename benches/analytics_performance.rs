@@ -1,3 +1,5 @@
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use synaptic::analytics::{
     AccessType, AnalyticsConfig, AnalyticsEngine, AnalyticsEvent, ModificationType,

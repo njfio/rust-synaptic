@@ -1,5 +1,9 @@
 //! Comprehensive error handling tests for the Synaptic memory system
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use synaptic::{

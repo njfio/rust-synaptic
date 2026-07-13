@@ -3,6 +3,8 @@
 //! Comprehensive tests for the machine learning-based parameter optimization system
 //! including online learning, Bayesian optimization, genetic algorithms, and hyperparameter tuning.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::collections::HashMap;
 use std::time::Duration;

@@ -4,6 +4,8 @@
 //! storage, knowledge graphs, analytics, and all other subsystems through the
 //! MemoryOperations trait.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
 use synaptic::memory::{MemoryEntry, MemoryOperations, MemoryType};

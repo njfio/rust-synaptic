@@ -3,6 +3,8 @@
 //! This example shows how the AI Agent Memory System intelligently handles
 //! memory updates without creating duplicate nodes and edges.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 use synaptic::{memory::knowledge_graph::RelationshipType, AgentMemory, MemoryConfig};
 

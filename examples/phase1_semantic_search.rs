@@ -3,6 +3,8 @@
 //! This example demonstrates the semantic search capabilities using
 //! vector embeddings for intelligent memory retrieval.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 use synaptic::{AgentMemory, MemoryConfig};
 

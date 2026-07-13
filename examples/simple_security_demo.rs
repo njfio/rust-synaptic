@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Simple Security Demo - Demonstrates Phase 4 security features
 // This example shows the security system working correctly
 

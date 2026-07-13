@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Phase 4: Security & Privacy Example
 // Demonstrates state-of-the-art security features including zero-knowledge architecture,
 // homomorphic encryption, differential privacy, and advanced access control

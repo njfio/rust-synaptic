@@ -3,6 +3,10 @@
 //! Tests the production-ready memory lifecycle management system with
 //! real custom actions, predictive analytics, and optimization capabilities.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Utc;
 use std::error::Error;
 use synaptic::memory::management::lifecycle::{

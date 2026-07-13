@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Complex Visualizations Example
 // Demonstrates sophisticated visualization capabilities with large-scale data
 

@@ -2,6 +2,8 @@
 //!
 //! Comprehensive tests for Phase 5B document and data processing capabilities.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use base64::Engine;
 use std::fs;
 use synaptic::phase5b_basic::*;

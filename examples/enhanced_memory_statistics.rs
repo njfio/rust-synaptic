@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use chrono::Utc;
 use std::error::Error;
 use synaptic::memory::management::{AdvancedMemoryManager, MemoryManagementConfig};

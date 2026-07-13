@@ -1,5 +1,7 @@
 //! Integration tests for the AI Agent Memory system
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use synaptic::{
     error::{MemoryError, Result},
     AgentMemory, MemoryConfig, MemoryEntry, MemoryType, StorageBackend,

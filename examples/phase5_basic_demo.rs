@@ -3,6 +3,8 @@
 //! Demonstrates the basic Phase 5 capabilities without heavy external dependencies.
 //! Shows multi-modal content handling, cross-platform adaptation, and relationship detection.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use synaptic::phase5_basic::{
     BasicContentDetector, BasicCrossPlatformAdapter, BasicMemoryAdapter, BasicMetadata,
     BasicMultiModalManager,

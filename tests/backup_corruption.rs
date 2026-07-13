@@ -1,3 +1,5 @@
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 // Comprehensive tests for backup corruption scenarios
 //
 // These tests verify that the backup/restore functionality properly handles

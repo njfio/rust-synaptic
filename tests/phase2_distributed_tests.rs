@@ -4,6 +4,10 @@
 //! including consensus, sharding, and events. Real-time synchronization is
 //! not implemented and is not covered here.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 mod distributed_tests {
     use chrono::Utc;

@@ -1,5 +1,7 @@
 //! Comprehensive tests for enhanced error handling system
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::io;
 use synaptic::error::{MemoryError, MemoryErrorExt, Result};
 

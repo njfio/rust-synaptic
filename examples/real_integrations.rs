@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Real External Integrations Example
 // Demonstrates actual database, ML models, LLM, and visualization integrations
 

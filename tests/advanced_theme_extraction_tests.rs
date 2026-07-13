@@ -3,6 +3,8 @@
 //! Tests the production-ready theme extraction algorithms including TF-IDF,
 //! semantic clustering, topic modeling, and NLP pattern recognition.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 use synaptic::memory::management::summarization::MemorySummarizer;
 use synaptic::memory::types::{MemoryEntry, MemoryType};

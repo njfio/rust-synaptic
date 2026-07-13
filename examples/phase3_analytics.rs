@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Phase 3: Advanced Analytics Example
 // Demonstrates the comprehensive analytics capabilities
 

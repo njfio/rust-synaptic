@@ -1,5 +1,7 @@
 //! Basic usage example for the AI Agent Memory system
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use synaptic::{
     error::Result,
     memory::retrieval::{SearchQuery, SortBy},

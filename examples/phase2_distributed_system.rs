@@ -3,6 +3,10 @@
 //! This example demonstrates the distributed capabilities of Synaptic,
 //! including consensus, sharding, real-time synchronization, and event-driven architecture.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// Example code: unwrap keeps the demo focused; real callers should handle errors.
+#![allow(clippy::unwrap_used, clippy::panic)]
 #[cfg(all(feature = "distributed-experimental", feature = "embeddings"))]
 use synaptic::{
     distributed::{

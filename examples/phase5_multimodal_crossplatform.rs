@@ -6,6 +6,8 @@
 //! - Cross-modal relationship detection
 //! - Platform-optimized performance
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 #[cfg(feature = "multimodal")]
 use synaptic::multimodal::{
     cross_modal::{CrossModalAnalyzer, CrossModalConfig},

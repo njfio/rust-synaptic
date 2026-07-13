@@ -942,6 +942,8 @@ pub enum StorageBackend {
 }
 
 #[cfg(test)]
+// Test code: panic on unexpected variants is the intended behaviour.
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
 

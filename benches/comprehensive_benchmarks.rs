@@ -3,6 +3,8 @@
 //! Validates 100K+ operations/second target with micro-benchmarks, integration benchmarks,
 //! and real-world scenario testing with detailed performance analysis.
 
+// Benchmark code: unwrap on setup failure is acceptable.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 #[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityManager};

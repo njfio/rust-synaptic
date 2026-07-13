@@ -3,6 +3,8 @@
 //! These tests verify that the retrieval pipeline components work correctly
 //! and can be combined for high-quality search results.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::sync::Arc;
 use synaptic::{
     memory::retrieval::{

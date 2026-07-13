@@ -3,6 +3,8 @@
 //! Comprehensive tests for the new performance optimization system including
 //! profiling, benchmarking, caching, memory pooling, and async execution.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use synaptic::performance::{
     async_executor::AsyncExecutor,

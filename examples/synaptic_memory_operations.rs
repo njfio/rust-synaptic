@@ -9,6 +9,8 @@
 //! - Concurrent operations
 //! - Best practices for production use
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::time::Duration;
 use synaptic::memory::operations::{SynapticMemory, SynapticMemoryBuilder};
 use synaptic::memory::{MemoryEntry, MemoryOperations, MemoryType};

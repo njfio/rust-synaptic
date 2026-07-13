@@ -41,15 +41,20 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 ] }
 
 [lints.clippy]
-# Safety lints. `unwrap_used`/`expect_used`/`panic` are relaxed to `allow` for
-# this large legacy crate: the no-unwrap policy is enforced by a dedicated CI
-# grep gate instead, and `.expect("reason")` (with an explanatory message) is
-# the accepted replacement. `todo`/`unimplemented` remain forbidden.
-unwrap_used = "allow"
+# Safety lints. `unwrap_used`/`panic` are denied crate-wide; `.expect("reason")`
+# (with a message stating the invariant that makes it safe) is the accepted
+# replacement on paths that cannot fail. Tests, benches and examples carry
+# file/module-level `#![allow]`s where unwrap/panic is legitimate test style.
+# `todo`/`unimplemented` remain forbidden.
+unwrap_used = "deny"
 expect_used = "allow"
-panic = "allow"
+panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+# Replaces the former CI grep gate: library code must use `tracing`, not stdio.
+# (Examples print by design; they carry file-level allows where needed.)
+print_stdout = "deny"
+print_stderr = "deny"
 
 # The style/complexity/perf groups run at their default (warn) levels and are
 # enforced by the `-D warnings` CI gate. pedantic/nursery stay `allow`: they

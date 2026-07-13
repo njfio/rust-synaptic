@@ -3,6 +3,8 @@
 //! Tests the Bellman-based zk-SNARKs with production-ready algorithms
 //! ensuring 90%+ test coverage and comprehensive validation.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::error::Error;
 #[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityContext, SecurityManager};

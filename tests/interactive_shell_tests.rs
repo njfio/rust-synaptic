@@ -4,6 +4,8 @@
 //! command execution, error recovery, session management, completion,
 //! and advanced features like command chaining.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use synaptic::cli::config::CliConfig;
 use synaptic::cli::shell::InteractiveShell;
 use synaptic::cli::syql::SyQLEngine;

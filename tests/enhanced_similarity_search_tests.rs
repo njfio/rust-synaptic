@@ -3,6 +3,8 @@
 //! Tests the production-ready similarity algorithms including multi-dimensional
 //! similarity scoring, semantic analysis, and advanced filtering capabilities.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 use synaptic::memory::management::search::AdvancedSearchEngine;
 

@@ -1,5 +1,7 @@
 //! Tests for logging standards compliance and configuration
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 use tracing_test::traced_test;

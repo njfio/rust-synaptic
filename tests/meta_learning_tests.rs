@@ -3,6 +3,8 @@
 //! This module tests MAML, Reptile, and Prototypical Networks implementations
 //! for few-shot learning in memory management tasks.
 
+// Tests may print diagnostic output.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use chrono::Utc;
 use std::collections::HashMap;
 use synaptic::error::Result;

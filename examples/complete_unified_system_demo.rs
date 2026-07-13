@@ -1,3 +1,5 @@
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 // Complete Unified System Demo - Shows all Phase 1-4 features working together
 // This demonstrates the complete Synaptic AI Agent Memory system
 

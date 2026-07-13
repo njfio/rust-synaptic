@@ -3,6 +3,8 @@
 //! These tests verify that memories are automatically promoted from short-term to
 //! long-term storage based on various criteria.
 
+// Test code: unwrap/panic on failure is the intended behaviour.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use chrono::Duration;
 use synaptic::memory::promotion::{
     AccessFrequencyPolicy, HybridPolicy, ImportancePolicy, MemoryPromotionManager,

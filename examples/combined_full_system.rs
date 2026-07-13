@@ -7,6 +7,8 @@
 //! This showcases the full power of Synaptic as a state-of-the-art distributed
 //! AI agent memory system with real external service integrations.
 
+// Examples print to stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::error::Error;
 
 #[cfg(all(
