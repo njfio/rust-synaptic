@@ -100,7 +100,7 @@ this repository should be treated as validated.
 ## Testing
 
 ```bash
-cargo test --lib                                   # library unit tests (450+)
+cargo test --lib                                   # library unit tests (440+)
 cargo test                                          # default-feature test suite
 cargo test --features "security test-utils"        # include security suites
 ```

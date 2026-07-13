@@ -53,7 +53,7 @@ documentation state honestly what is stable, beta, and experimental.
   of clearing storage before restoring.
 - Lint gates re-tightened: `clippy -D warnings` with dead_code, complexity,
   perf, and style lints enforced; `unwrap`, `panic`, and `print` denied in
-  library code. 450+ library tests pass.
+  library code. 440+ library tests pass.
 - README rewritten with a per-module maturity table; unvalidated
   performance and quality claims removed.
 - `tests/test_config.toml` no longer hardcodes test counts.
@@ -197,6 +197,9 @@ documentation state honestly what is stable, beta, and experimental.
 ### Technical Specifications
 
 #### Performance Characteristics
+> **Historical note:** the throughput/coverage figures in this 0.1.0 section were
+> never validated and are retained only as immutable changelog history. For
+> measured numbers see `docs/performance.md`; superseded by the 0.2.0 remediation.
 - **Memory Storage**: 100K+ operations/second, <1ms latency
 - **File Storage**: 50K+ operations/second, <5ms latency
 - **SQL Storage**: 10K+ operations/second, <10ms latency
