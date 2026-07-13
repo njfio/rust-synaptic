@@ -104,6 +104,21 @@ jobs:
         files: lcov.info
         fail_ci_if_error: true
 
+  examples:
+    name: Example Smoke Run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build all examples (default features)
+      run: cargo build --examples
+
+    - name: Smoke-run wired default-feature example
+      run: cargo run --example synaptic_memory_operations
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest

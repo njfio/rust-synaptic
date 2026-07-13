@@ -94,7 +94,7 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           file: ./cobertura.xml
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   test-matrix:
     name: Test Matrix
@@ -125,6 +125,8 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+  # Non-blocking while 11 TODO markers remain in src/ (as of Phase 7);
+  # flip to a hard failure once the count reaches zero.
   check-todos:
     name: Check for TODO/FIXME in production code
     runs-on: ubuntu-latest
