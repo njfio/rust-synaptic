@@ -372,3 +372,255 @@ impl Judge for LlmJudge {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Codex CLI judge
+// ---------------------------------------------------------------------------
+
+/// Extract the model's answer from `codex exec` stdout.
+///
+/// codex 0.144.0 prints just the final answer on stdout (banner/progress go
+/// to stderr), but this parser is defensive against the alternate format
+/// where stdout carries a banner, a `codex` marker line, the answer, and a
+/// `tokens used` trailer. Returns `None` when no answer text remains —
+/// callers must treat that as an error (fail closed).
+pub fn parse_codex_stdout(stdout: &str) -> Option<String> {
+    let lines: Vec<&str> = stdout.lines().collect();
+    // If a `codex` marker line exists, the answer is what follows the last one.
+    let start = lines
+        .iter()
+        .rposition(|l| {
+            let t = l.trim();
+            t == "codex" || t.ends_with("] codex")
+        })
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let is_banner = |t: &str| {
+        t.starts_with("OpenAI Codex")
+            || t.starts_with("--------")
+            || t.starts_with("workdir:")
+            || t.starts_with("model:")
+            || t.starts_with("provider:")
+            || t.starts_with("approval:")
+            || t.starts_with("sandbox:")
+            || t.starts_with("reasoning ")
+            || t.starts_with("session id:")
+            || t.contains("tokens used")
+    };
+    let answer = lines[start..]
+        .iter()
+        .filter(|l| !is_banner(l.trim()))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    if answer.is_empty() {
+        None
+    } else {
+        Some(answer)
+    }
+}
+
+/// Parse a YES/NO grading verdict out of codex stdout. `None` when the reply
+/// is not clearly YES or NO — callers must fail closed, never guess.
+pub fn parse_grade_verdict(stdout: &str) -> Option<bool> {
+    let text = parse_codex_stdout(stdout)?;
+    let word = text
+        .split_whitespace()
+        .last()?
+        .trim_matches(|c: char| !c.is_ascii_alphabetic())
+        .to_ascii_uppercase();
+    match word.as_str() {
+        "YES" => Some(true),
+        "NO" => Some(false),
+        _ => None,
+    }
+}
+
+/// Judge that shells out to the `codex` CLI (`codex exec`) for answer
+/// generation and grading. No network crate dependency and no feature gate;
+/// requires a locally installed, logged-in codex CLI. Fail-closed: any spawn
+/// failure, non-zero exit, timeout, or unparseable output is a
+/// [`QaError::Judge`].
+pub struct CodexCliJudge {
+    bin: String,
+    timeout_secs: u64,
+}
+
+impl Default for CodexCliJudge {
+    fn default() -> Self {
+        Self::from_env()
+    }
+}
+
+impl CodexCliJudge {
+    /// Env var overriding the codex binary path (default `codex`).
+    pub const ENV_BIN: &'static str = "SYNAPTIC_EVAL_CODEX_BIN";
+    /// Env var overriding the per-call timeout in seconds (default 120).
+    pub const ENV_TIMEOUT: &'static str = "SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS";
+
+    /// Build from environment (`SYNAPTIC_EVAL_CODEX_BIN`,
+    /// `SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS`), with defaults `codex` / 120 s.
+    pub fn from_env() -> Self {
+        let bin = std::env::var(Self::ENV_BIN)
+            .ok()
+            .filter(|b| !b.trim().is_empty())
+            .unwrap_or_else(|| "codex".to_string());
+        let timeout_secs = std::env::var(Self::ENV_TIMEOUT)
+            .ok()
+            .and_then(|t| t.trim().parse().ok())
+            .unwrap_or(120);
+        Self { bin, timeout_secs }
+    }
+
+    /// Check that the codex CLI is runnable (`codex --version` exits 0).
+    pub fn is_available(&self) -> bool {
+        std::process::Command::new(&self.bin)
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Run one `codex exec` call with `prompt` and return parsed stdout.
+    /// Runs on a blocking thread; enforces the timeout via the coreutils
+    /// `timeout` wrapper (exit 124 → timeout error).
+    async fn run_codex(&self, prompt: String) -> Result<String, QaError> {
+        let bin = self.bin.clone();
+        let secs = self.timeout_secs;
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("timeout")
+                .arg(secs.to_string())
+                .arg(&bin)
+                .args(["exec", "--skip-git-repo-check", &prompt])
+                .stdin(std::process::Stdio::null())
+                .output()
+        })
+        .await
+        .map_err(|e| QaError::Judge(format!("codex task join failed: {e}")))?
+        .map_err(|e| QaError::Judge(format!("failed to spawn codex CLI: {e}")))?;
+
+        if output.status.code() == Some(124) {
+            return Err(QaError::Judge(format!(
+                "codex exec timed out after {secs}s"
+            )));
+        }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let tail: String = stderr.chars().rev().take(400).collect::<String>();
+            let tail: String = tail.chars().rev().collect();
+            return Err(QaError::Judge(format!(
+                "codex exec exited with {}: {tail}",
+                output.status
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+}
+
+#[async_trait::async_trait]
+impl Judge for CodexCliJudge {
+    async fn answer(&self, question: &str, recalled: &[String]) -> Result<String, QaError> {
+        let context = if recalled.is_empty() {
+            "(no memories recalled)".to_string()
+        } else {
+            recalled
+                .iter()
+                .enumerate()
+                .map(|(i, m)| format!("[{}] {m}", i + 1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let prompt = format!(
+            "Answer concisely using ONLY the provided memories; if not \
+             answerable from them, say 'I don't know'. Do not use any other \
+             knowledge or tools.\n\nMemories:\n{context}\n\nQuestion: \
+             {question}\nAnswer:"
+        );
+        let stdout = self.run_codex(prompt).await?;
+        parse_codex_stdout(&stdout)
+            .ok_or_else(|| QaError::Judge("codex exec produced no parseable answer".to_string()))
+    }
+
+    async fn grade(&self, question: &str, gold: &str, predicted: &str) -> Result<bool, QaError> {
+        let prompt = format!(
+            "Question: {question}\nGold answer: {gold}\nPredicted answer: \
+             {predicted}\n\nDoes the predicted answer match the gold answer \
+             in meaning? Reply exactly YES or NO."
+        );
+        let stdout = self.run_codex(prompt).await?;
+        parse_grade_verdict(&stdout).ok_or_else(|| {
+            QaError::Judge(format!(
+                "unparseable YES/NO grading verdict from codex: {:?}",
+                stdout.trim()
+            ))
+        })
+    }
+}
+
+#[cfg(test)]
+mod codex_parse_tests {
+    use super::{parse_codex_stdout, parse_grade_verdict};
+
+    #[test]
+    fn parses_plain_stdout_answer() {
+        // Real captured behavior of codex 0.144.0: stdout is just the answer.
+        assert_eq!(parse_codex_stdout("4\n").as_deref(), Some("4"));
+    }
+
+    #[test]
+    fn parses_marker_and_banner_format() {
+        // Defensive: older/alternate format with banner + `codex` marker +
+        // tokens-used trailer on stdout.
+        let sample = "\
+OpenAI Codex v0.144.0
+--------
+workdir: /tmp/x
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+--------
+[2026-07-13T01:02:03] User instructions:
+Some prompt text
+[2026-07-13T01:02:10] thinking
+Working it out
+[2026-07-13T01:02:12] codex
+7 May 2023
+[2026-07-13T01:02:12] tokens used: 1234
+";
+        assert_eq!(parse_codex_stdout(sample).as_deref(), Some("7 May 2023"));
+    }
+
+    #[test]
+    fn empty_stdout_is_none() {
+        assert_eq!(parse_codex_stdout("  \n"), None);
+        assert_eq!(parse_codex_stdout(""), None);
+    }
+
+    #[test]
+    fn multiline_answer_after_marker_is_kept() {
+        let sample = "[t] codex\nline one\nline two\n[t] tokens used: 9\n";
+        assert_eq!(
+            parse_codex_stdout(sample).as_deref(),
+            Some("line one\nline two")
+        );
+    }
+
+    #[test]
+    fn grade_verdict_yes_no() {
+        assert_eq!(parse_grade_verdict("YES\n"), Some(true));
+        assert_eq!(parse_grade_verdict("yes."), Some(true));
+        assert_eq!(parse_grade_verdict("NO"), Some(false));
+        assert_eq!(
+            parse_grade_verdict("[t] codex\nNO\n[t] tokens used: 3"),
+            Some(false)
+        );
+        assert_eq!(parse_grade_verdict("maybe"), None);
+        assert_eq!(parse_grade_verdict(""), None);
+    }
+}
