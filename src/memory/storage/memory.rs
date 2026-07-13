@@ -91,6 +91,39 @@ impl Default for RestoreOptions {
     }
 }
 
+/// Insert an entry into the map while keeping the incremental size counter
+/// coherent (adds the new entry's size, subtracts a replaced entry's size).
+/// Shared by the storage and its transaction handles.
+fn insert_tracked(
+    entries: &DashMap<String, MemoryEntry>,
+    total_size: &std::sync::atomic::AtomicUsize,
+    entry: MemoryEntry,
+) {
+    use std::sync::atomic::Ordering;
+    let new_size = entry.estimated_size();
+    let replaced = entries.insert(entry.key.clone(), entry);
+    total_size.fetch_add(new_size, Ordering::Relaxed);
+    if let Some(old) = replaced {
+        total_size.fetch_sub(old.estimated_size(), Ordering::Relaxed);
+    }
+}
+
+/// Remove an entry from the map while keeping the incremental size counter
+/// coherent. Returns true if the key existed.
+fn remove_tracked(
+    entries: &DashMap<String, MemoryEntry>,
+    total_size: &std::sync::atomic::AtomicUsize,
+    key: &str,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    if let Some((_, old)) = entries.remove(key) {
+        total_size.fetch_sub(old.estimated_size(), Ordering::Relaxed);
+        true
+    } else {
+        false
+    }
+}
+
 /// In-memory storage implementation using DashMap for thread-safe concurrent access
 pub struct MemoryStorage {
     /// Main storage for memory entries (wrapped in Arc for transaction support)
@@ -99,6 +132,14 @@ pub struct MemoryStorage {
     stats: RwLock<StorageStats>,
     /// Creation timestamp
     created_at: DateTime<Utc>,
+    /// Incrementally maintained total estimated size of all entries, in
+    /// bytes. Shared with transaction handles so committed transactions keep
+    /// the counter coherent.
+    total_size: Arc<std::sync::atomic::AtomicUsize>,
+    /// Test-only op-count proxy: number of entries examined by stats
+    /// computation. Stays 0 when stats are maintained incrementally.
+    #[cfg(feature = "test-utils")]
+    stats_entries_scanned: std::sync::atomic::AtomicUsize,
 }
 
 impl MemoryStorage {
@@ -108,7 +149,18 @@ impl MemoryStorage {
             entries: Arc::new(DashMap::new()),
             stats: RwLock::new(StorageStats::new("memory".to_string())),
             created_at: Utc::now(),
+            total_size: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            #[cfg(feature = "test-utils")]
+            stats_entries_scanned: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// Test-only op-count proxy: total entries examined by stats computation
+    /// since construction. Incremental stats keep this at 0.
+    #[cfg(feature = "test-utils")]
+    pub fn stats_entries_scanned(&self) -> usize {
+        self.stats_entries_scanned
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get the number of stored entries
@@ -121,16 +173,13 @@ impl MemoryStorage {
         self.entries.is_empty()
     }
 
-    /// Update internal statistics
+    /// Update internal statistics from the incrementally maintained size
+    /// counter. O(1): no rescan of stored entries.
     fn update_stats(&self) {
         let mut stats = self.stats.write();
         stats.total_entries = self.entries.len();
 
-        let total_size: usize = self
-            .entries
-            .iter()
-            .map(|entry| entry.value().estimated_size())
-            .sum();
+        let total_size = self.total_size.load(std::sync::atomic::Ordering::Relaxed);
 
         stats.total_size_bytes = total_size;
         stats.average_entry_size = if stats.total_entries > 0 {
@@ -206,7 +255,7 @@ impl Storage for MemoryStorage {
     #[tracing::instrument(skip(self, entry), fields(key = %entry.key))]
     async fn store(&self, entry: &MemoryEntry) -> Result<()> {
         tracing::debug!("Storing entry in memory storage");
-        self.entries.insert(entry.key.clone(), entry.clone());
+        insert_tracked(&self.entries, &self.total_size, entry.clone());
         self.update_stats();
         tracing::debug!("Entry stored successfully");
         Ok(())
@@ -238,7 +287,9 @@ impl Storage for MemoryStorage {
 
     async fn update(&self, key: &str, entry: &MemoryEntry) -> Result<()> {
         if self.entries.contains_key(key) {
-            self.entries.insert(key.to_string(), entry.clone());
+            let mut entry = entry.clone();
+            entry.key = key.to_string();
+            insert_tracked(&self.entries, &self.total_size, entry);
             self.update_stats();
             Ok(())
         } else {
@@ -249,7 +300,7 @@ impl Storage for MemoryStorage {
     }
 
     async fn delete(&self, key: &str) -> Result<bool> {
-        let removed = self.entries.remove(key).is_some();
+        let removed = remove_tracked(&self.entries, &self.total_size, key);
         if removed {
             self.update_stats();
         }
@@ -270,6 +321,8 @@ impl Storage for MemoryStorage {
 
     async fn clear(&self) -> Result<()> {
         self.entries.clear();
+        self.total_size
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         self.update_stats();
         Ok(())
     }
@@ -442,6 +495,8 @@ impl MemoryStorage {
         } else {
             tracing::info!("Replacing all existing data with backup");
             self.entries.clear();
+            self.total_size
+                .store(0, std::sync::atomic::Ordering::Relaxed);
         }
 
         // Restore entries
@@ -457,7 +512,7 @@ impl MemoryStorage {
                 continue;
             }
 
-            self.entries.insert(entry.key.clone(), entry);
+            insert_tracked(&self.entries, &self.total_size, entry);
             restored_count += 1;
         }
 
@@ -648,7 +703,7 @@ pub struct BackupInfo {
 impl BatchStorage for MemoryStorage {
     async fn store_batch(&self, entries: &[MemoryEntry]) -> Result<()> {
         for entry in entries {
-            self.entries.insert(entry.key.clone(), entry.clone());
+            insert_tracked(&self.entries, &self.total_size, entry.clone());
         }
         self.update_stats();
         Ok(())
@@ -665,7 +720,7 @@ impl BatchStorage for MemoryStorage {
     async fn delete_batch(&self, keys: &[String]) -> Result<usize> {
         let mut deleted_count = 0;
         for key in keys {
-            if self.entries.remove(key).is_some() {
+            if remove_tracked(&self.entries, &self.total_size, key) {
                 deleted_count += 1;
             }
         }
@@ -722,6 +777,8 @@ impl BatchStorage for MemoryStorage {
 pub struct MemoryTransactionHandle {
     /// Reference to the live storage's entry map (not a copy)
     entries: Arc<DashMap<String, MemoryEntry>>,
+    /// Shared incremental size counter of the owning storage
+    total_size: Arc<std::sync::atomic::AtomicUsize>,
     /// Buffered operations to apply on commit
     operations: Vec<(String, Option<MemoryEntry>)>, // (key, entry) - None means delete
     /// Whether the transaction has been committed or rolled back
@@ -729,9 +786,13 @@ pub struct MemoryTransactionHandle {
 }
 
 impl MemoryTransactionHandle {
-    fn new(entries: Arc<DashMap<String, MemoryEntry>>) -> Self {
+    fn new(
+        entries: Arc<DashMap<String, MemoryEntry>>,
+        total_size: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
         Self {
             entries,
+            total_size,
             operations: Vec::new(),
             committed: false,
         }
@@ -760,10 +821,12 @@ impl TransactionHandle for MemoryTransactionHandle {
         for (key, entry_opt) in &self.operations {
             match entry_opt {
                 Some(entry) => {
-                    self.entries.insert(key.clone(), entry.clone());
+                    let mut entry = entry.clone();
+                    entry.key = key.clone();
+                    insert_tracked(&self.entries, &self.total_size, entry);
                 }
                 None => {
-                    self.entries.remove(key);
+                    remove_tracked(&self.entries, &self.total_size, key);
                 }
             }
         }
@@ -785,14 +848,14 @@ impl TransactionalStorage for MemoryStorage {
         // Execute all operations atomically
         for operation in transaction.operations() {
             match operation {
-                crate::memory::storage::StorageOperation::Store { key, entry } => {
-                    self.entries.insert(key.clone(), entry.clone());
-                }
-                crate::memory::storage::StorageOperation::Update { key, entry } => {
-                    self.entries.insert(key.clone(), entry.clone());
+                crate::memory::storage::StorageOperation::Store { key, entry }
+                | crate::memory::storage::StorageOperation::Update { key, entry } => {
+                    let mut entry = entry.clone();
+                    entry.key = key.clone();
+                    insert_tracked(&self.entries, &self.total_size, entry);
                 }
                 crate::memory::storage::StorageOperation::Delete { key } => {
-                    self.entries.remove(key);
+                    remove_tracked(&self.entries, &self.total_size, key);
                 }
             }
         }
@@ -801,9 +864,10 @@ impl TransactionalStorage for MemoryStorage {
     }
 
     async fn begin_transaction(&self) -> Result<Box<dyn TransactionHandle>> {
-        Ok(Box::new(MemoryTransactionHandle::new(Arc::clone(
-            &self.entries,
-        ))))
+        Ok(Box::new(MemoryTransactionHandle::new(
+            Arc::clone(&self.entries),
+            Arc::clone(&self.total_size),
+        )))
     }
 }
 
