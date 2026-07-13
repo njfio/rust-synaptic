@@ -94,8 +94,11 @@ experimental, see maturity table). Convenience groups: `full`, `full-experimenta
 ## Performance
 
 Measured benchmark results (with methodology and caveats) live in
-[docs/performance.md](docs/performance.md). No other performance numbers in
-this repository should be treated as validated.
+[docs/performance.md](docs/performance.md). Retrieval-quality evaluation on
+the LoCoMo long-term-memory benchmark — recall/precision/MRR, latency, memory
+growth, and a per-capability ablation — lives in
+[docs/evaluation.md](docs/evaluation.md). No other performance or quality
+numbers in this repository should be treated as validated.
 
 ## Testing
 
@@ -141,6 +144,7 @@ src/
 - [API Guide](docs/api_guide.md)
 - [Architecture Guide](docs/architecture.md)
 - [Performance](docs/performance.md)
+- [Evaluation (LoCoMo benchmark)](docs/evaluation.md)
 - [Testing Guide](docs/testing_guide.md)
 
 Generate API docs with `cargo doc --no-deps --open`.
