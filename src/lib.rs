@@ -243,9 +243,15 @@ impl AgentMemory {
         // term matches), so multi-word queries yield candidates directly and
         // no widening wrapper is needed.
         let retrieval_pipeline = if config.enable_embeddings {
-            let provider = Arc::new(memory::embeddings::TfIdfProvider::default());
-            let dense_vector =
-                memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
+            // ONE shared provider instance for the dense retriever AND the
+            // reranker: its content-hash scoring cache means each candidate
+            // content is embedded at most once per query across both stages.
+            let provider: Arc<dyn memory::embeddings::provider::EmbeddingProvider> =
+                Arc::new(memory::embeddings::TfIdfProvider::default());
+            let dense_vector = memory::retrieval::DenseVectorRetriever::new(
+                Arc::clone(&storage),
+                Arc::clone(&provider),
+            );
             let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
             // Graph and temporal signals share the same storage; the graph
             // retriever additionally shares the live knowledge-graph handle
@@ -260,7 +266,7 @@ impl AgentMemory {
             // (term overlap, embedding agreement, graph proximity, recency)
             // reorder the fused + composite-scored results.
             let reranker = memory::retrieval::HeuristicReranker::new(
-                Some(Arc::new(memory::embeddings::TfIdfProvider::default())),
+                Some(Arc::clone(&provider)),
                 knowledge_graph.clone(),
             );
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)

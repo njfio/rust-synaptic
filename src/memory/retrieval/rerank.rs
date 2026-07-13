@@ -121,28 +121,45 @@ impl HeuristicReranker {
         hits as f64 / query_terms.len() as f64
     }
 
-    /// Graph proximity: fraction of the other candidates reachable from this
-    /// candidate within 2 hops. Candidates absent from the graph score 0.
-    async fn graph_proximity(&self, key: &str, other_keys: &HashSet<String>) -> f64 {
+    /// Graph proximity for ALL candidates in one pass: fraction of the other
+    /// candidates reachable from each candidate within 2 hops. Candidates
+    /// absent from the graph score 0. The knowledge-graph read lock is taken
+    /// ONCE for the whole batch and released before this returns, so it is
+    /// never held across the embedding awaits of the main rerank loop.
+    async fn graph_proximities(
+        &self,
+        candidates: &[ScoredMemory],
+        all_keys: &HashSet<String>,
+    ) -> std::collections::HashMap<String, f64> {
+        let mut proximities = std::collections::HashMap::with_capacity(candidates.len());
         let Some(ref kg) = self.knowledge_graph else {
-            return 0.0;
+            return proximities;
         };
-        if other_keys.is_empty() {
-            return 0.0;
-        }
-        let related = match kg.read().await.find_related_memories(key, 2, None).await {
-            Ok(related) => related,
-            Err(e) => {
-                // The candidate may simply not be a graph node yet.
-                tracing::debug!(key = %key, error = %e, "graph proximity unavailable for candidate");
-                return 0.0;
+        let kg_guard = kg.read().await;
+        for candidate in candidates {
+            let key = &candidate.memory.entry.key;
+            let other_count = all_keys.len().saturating_sub(1);
+            if other_count == 0 {
+                continue;
             }
-        };
-        let hits = related
-            .iter()
-            .filter(|r| other_keys.contains(&r.memory_key))
-            .count();
-        (hits as f64 / other_keys.len() as f64).clamp(0.0, 1.0)
+            let related = match kg_guard.find_related_memories(key, 2, None).await {
+                Ok(related) => related,
+                Err(e) => {
+                    // The candidate may simply not be a graph node yet.
+                    tracing::debug!(key = %key, error = %e, "graph proximity unavailable for candidate");
+                    continue;
+                }
+            };
+            let hits = related
+                .iter()
+                .filter(|r| r.memory_key != *key && all_keys.contains(&r.memory_key))
+                .count();
+            proximities.insert(
+                key.clone(),
+                (hits as f64 / other_count as f64).clamp(0.0, 1.0),
+            );
+        }
+        proximities
     }
 
     /// Recency via exponential decay: `0.5 ^ (age_hours / half_life)`.
@@ -173,7 +190,7 @@ impl Reranker for HeuristicReranker {
         // provider is configured and available.
         let query_embedding = match self.embedding_provider {
             Some(ref provider) if provider.is_available() => {
-                Some(provider.embed(query, None).await?)
+                Some(provider.embed_for_scoring(query, None).await?)
             }
             _ => None,
         };
@@ -200,6 +217,10 @@ impl Reranker for HeuristicReranker {
             .map(|c| c.memory.entry.key.clone())
             .collect();
 
+        // Batch the knowledge-graph reads under a single, short-lived read
+        // lock, released before any embedding awaits below.
+        let proximities = self.graph_proximities(&candidates, &all_keys).await;
+
         let mut ranked: Vec<(f64, ScoredMemory)> = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let content = &candidate.memory.entry.value;
@@ -213,15 +234,16 @@ impl Reranker for HeuristicReranker {
                         .embedding_provider
                         .as_ref()
                         .expect("query_embedding is Some only when a provider is configured");
-                    let ce = provider.embed(content, None).await?;
+                    // Read-only, content-hash-cached scoring path: reuses the
+                    // embedding computed by the dense retriever when the
+                    // provider instance is shared.
+                    let ce = provider.embed_for_scoring(content, None).await?;
                     qe.cosine_similarity(&ce).clamp(0.0, 1.0)
                 }
                 None => 0.0,
             };
 
-            let mut other_keys = all_keys.clone();
-            other_keys.remove(key);
-            let proximity = self.graph_proximity(key, &other_keys).await;
+            let proximity = proximities.get(key).copied().unwrap_or(0.0);
 
             let recency = Self::recency(candidate.memory.entry.created_at(), now);
 

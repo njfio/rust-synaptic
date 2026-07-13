@@ -97,10 +97,14 @@ impl Default for RestoreOptions {
 fn insert_tracked(
     entries: &DashMap<String, MemoryEntry>,
     total_size: &std::sync::atomic::AtomicUsize,
+    lowercase: &DashMap<String, Arc<str>>,
     entry: MemoryEntry,
 ) {
     use std::sync::atomic::Ordering;
     let new_size = entry.estimated_size();
+    // Memoize the lowercased content so search never re-lowercases the
+    // corpus; maintained on every mutation path for coherence.
+    lowercase.insert(entry.key.clone(), Arc::from(entry.value.to_lowercase()));
     let replaced = entries.insert(entry.key.clone(), entry);
     total_size.fetch_add(new_size, Ordering::Relaxed);
     if let Some(old) = replaced {
@@ -113,9 +117,11 @@ fn insert_tracked(
 fn remove_tracked(
     entries: &DashMap<String, MemoryEntry>,
     total_size: &std::sync::atomic::AtomicUsize,
+    lowercase: &DashMap<String, Arc<str>>,
     key: &str,
 ) -> bool {
     use std::sync::atomic::Ordering;
+    lowercase.remove(key);
     if let Some((_, old)) = entries.remove(key) {
         total_size.fetch_sub(old.estimated_size(), Ordering::Relaxed);
         true
@@ -136,6 +142,10 @@ pub struct MemoryStorage {
     /// bytes. Shared with transaction handles so committed transactions keep
     /// the counter coherent.
     total_size: Arc<std::sync::atomic::AtomicUsize>,
+    /// Memoized lowercased content per key, maintained on every mutation
+    /// path (store/update/delete/batch/transactions/restore), so search
+    /// scans never re-lowercase the whole corpus per query.
+    lowercase: Arc<DashMap<String, Arc<str>>>,
     /// Test-only op-count proxy: number of entries examined by stats
     /// computation. Stays 0 when stats are maintained incrementally.
     #[cfg(feature = "test-utils")]
@@ -150,6 +160,7 @@ impl MemoryStorage {
             stats: RwLock::new(StorageStats::new("memory".to_string())),
             created_at: Utc::now(),
             total_size: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            lowercase: Arc::new(DashMap::new()),
             #[cfg(feature = "test-utils")]
             stats_entries_scanned: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -203,11 +214,23 @@ impl MemoryStorage {
             return Vec::new();
         }
 
-        // (distinct terms matched, total term frequency, key, entry)
-        let mut matches: Vec<(usize, usize, String, MemoryEntry)> = Vec::new();
+        // (distinct terms matched, total term frequency, key, entry, lowered len)
+        let mut matches: Vec<(usize, usize, String, MemoryEntry, usize)> = Vec::new();
         for entry_ref in self.entries.iter() {
             let entry = entry_ref.value();
-            let content_lower = entry.value.to_lowercase();
+            // Memoized lowercase: computed once per entry mutation, not once
+            // per (entry x pipeline x query) scan.
+            let content_lower: Arc<str> = match self.lowercase.get(&entry.key) {
+                Some(cached) => Arc::clone(cached.value()),
+                None => {
+                    // Coherence fallback (should not happen: all mutation
+                    // paths populate the cache).
+                    let lowered: Arc<str> = Arc::from(entry.value.to_lowercase());
+                    self.lowercase
+                        .insert(entry.key.clone(), Arc::clone(&lowered));
+                    lowered
+                }
+            };
 
             let mut distinct = 0usize;
             let mut total_freq = 0usize;
@@ -220,7 +243,13 @@ impl MemoryStorage {
             }
 
             if distinct > 0 {
-                matches.push((distinct, total_freq, entry.key.clone(), entry.clone()));
+                matches.push((
+                    distinct,
+                    total_freq,
+                    entry.key.clone(),
+                    entry.clone(),
+                    content_lower.len(),
+                ));
             }
         }
 
@@ -233,11 +262,12 @@ impl MemoryStorage {
 
         matches
             .into_iter()
-            .map(|(_, total_freq, _, entry)| {
+            .map(|(_, total_freq, _, entry, lowered_len)| {
                 // Relevance keeps the prior shape: term frequency normalized
-                // by content length.
-                let relevance_score =
-                    total_freq as f64 / entry.value.to_lowercase().len().max(1) as f64;
+                // by content length (lowercasing preserves byte length only
+                // for most text, so use the memoized lowered length, which
+                // matches the previous computation exactly).
+                let relevance_score = total_freq as f64 / lowered_len.max(1) as f64;
                 MemoryFragment::new(entry, relevance_score)
             })
             .collect()
@@ -255,7 +285,12 @@ impl Storage for MemoryStorage {
     #[tracing::instrument(skip(self, entry), fields(key = %entry.key))]
     async fn store(&self, entry: &MemoryEntry) -> Result<()> {
         tracing::debug!("Storing entry in memory storage");
-        insert_tracked(&self.entries, &self.total_size, entry.clone());
+        insert_tracked(
+            &self.entries,
+            &self.total_size,
+            &self.lowercase,
+            entry.clone(),
+        );
         self.update_stats();
         tracing::debug!("Entry stored successfully");
         Ok(())
@@ -289,7 +324,7 @@ impl Storage for MemoryStorage {
         if self.entries.contains_key(key) {
             let mut entry = entry.clone();
             entry.key = key.to_string();
-            insert_tracked(&self.entries, &self.total_size, entry);
+            insert_tracked(&self.entries, &self.total_size, &self.lowercase, entry);
             self.update_stats();
             Ok(())
         } else {
@@ -300,7 +335,7 @@ impl Storage for MemoryStorage {
     }
 
     async fn delete(&self, key: &str) -> Result<bool> {
-        let removed = remove_tracked(&self.entries, &self.total_size, key);
+        let removed = remove_tracked(&self.entries, &self.total_size, &self.lowercase, key);
         if removed {
             self.update_stats();
         }
@@ -321,6 +356,7 @@ impl Storage for MemoryStorage {
 
     async fn clear(&self) -> Result<()> {
         self.entries.clear();
+        self.lowercase.clear();
         self.total_size
             .store(0, std::sync::atomic::Ordering::Relaxed);
         self.update_stats();
@@ -495,6 +531,7 @@ impl MemoryStorage {
         } else {
             tracing::info!("Replacing all existing data with backup");
             self.entries.clear();
+            self.lowercase.clear();
             self.total_size
                 .store(0, std::sync::atomic::Ordering::Relaxed);
         }
@@ -512,7 +549,7 @@ impl MemoryStorage {
                 continue;
             }
 
-            insert_tracked(&self.entries, &self.total_size, entry);
+            insert_tracked(&self.entries, &self.total_size, &self.lowercase, entry);
             restored_count += 1;
         }
 
@@ -703,7 +740,12 @@ pub struct BackupInfo {
 impl BatchStorage for MemoryStorage {
     async fn store_batch(&self, entries: &[MemoryEntry]) -> Result<()> {
         for entry in entries {
-            insert_tracked(&self.entries, &self.total_size, entry.clone());
+            insert_tracked(
+                &self.entries,
+                &self.total_size,
+                &self.lowercase,
+                entry.clone(),
+            );
         }
         self.update_stats();
         Ok(())
@@ -720,7 +762,7 @@ impl BatchStorage for MemoryStorage {
     async fn delete_batch(&self, keys: &[String]) -> Result<usize> {
         let mut deleted_count = 0;
         for key in keys {
-            if remove_tracked(&self.entries, &self.total_size, key) {
+            if remove_tracked(&self.entries, &self.total_size, &self.lowercase, key) {
                 deleted_count += 1;
             }
         }
@@ -779,6 +821,8 @@ pub struct MemoryTransactionHandle {
     entries: Arc<DashMap<String, MemoryEntry>>,
     /// Shared incremental size counter of the owning storage
     total_size: Arc<std::sync::atomic::AtomicUsize>,
+    /// Shared lowercase memoization map of the owning storage
+    lowercase: Arc<DashMap<String, Arc<str>>>,
     /// Buffered operations to apply on commit
     operations: Vec<(String, Option<MemoryEntry>)>, // (key, entry) - None means delete
     /// Whether the transaction has been committed or rolled back
@@ -789,10 +833,12 @@ impl MemoryTransactionHandle {
     fn new(
         entries: Arc<DashMap<String, MemoryEntry>>,
         total_size: Arc<std::sync::atomic::AtomicUsize>,
+        lowercase: Arc<DashMap<String, Arc<str>>>,
     ) -> Self {
         Self {
             entries,
             total_size,
+            lowercase,
             operations: Vec::new(),
             committed: false,
         }
@@ -823,10 +869,10 @@ impl TransactionHandle for MemoryTransactionHandle {
                 Some(entry) => {
                     let mut entry = entry.clone();
                     entry.key = key.clone();
-                    insert_tracked(&self.entries, &self.total_size, entry);
+                    insert_tracked(&self.entries, &self.total_size, &self.lowercase, entry);
                 }
                 None => {
-                    remove_tracked(&self.entries, &self.total_size, key);
+                    remove_tracked(&self.entries, &self.total_size, &self.lowercase, key);
                 }
             }
         }
@@ -852,10 +898,10 @@ impl TransactionalStorage for MemoryStorage {
                 | crate::memory::storage::StorageOperation::Update { key, entry } => {
                     let mut entry = entry.clone();
                     entry.key = key.clone();
-                    insert_tracked(&self.entries, &self.total_size, entry);
+                    insert_tracked(&self.entries, &self.total_size, &self.lowercase, entry);
                 }
                 crate::memory::storage::StorageOperation::Delete { key } => {
-                    remove_tracked(&self.entries, &self.total_size, key);
+                    remove_tracked(&self.entries, &self.total_size, &self.lowercase, key);
                 }
             }
         }
@@ -867,6 +913,7 @@ impl TransactionalStorage for MemoryStorage {
         Ok(Box::new(MemoryTransactionHandle::new(
             Arc::clone(&self.entries),
             Arc::clone(&self.total_size),
+            Arc::clone(&self.lowercase),
         )))
     }
 }

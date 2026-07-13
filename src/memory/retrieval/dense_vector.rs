@@ -49,8 +49,12 @@ impl DenseVectorRetriever {
         fragment: &MemoryFragment,
         query_embedding: &Embedding,
     ) -> Result<f64> {
-        // Generate embedding for the fragment
-        let fragment_embedding = self.provider.embed(&fragment.entry.value, None).await?;
+        // Generate embedding for the fragment via the read-only,
+        // content-hash-cached scoring path (no vocabulary mutation).
+        let fragment_embedding = self
+            .provider
+            .embed_for_scoring(&fragment.entry.value, None)
+            .await?;
 
         // Compute cosine similarity
         let similarity = query_embedding.cosine_similarity(&fragment_embedding);
@@ -74,8 +78,8 @@ impl RetrievalPipeline for DenseVectorRetriever {
             "DenseVectorRetriever: starting semantic search"
         );
 
-        // Generate embedding for the query
-        let query_embedding = self.provider.embed(query, None).await?;
+        // Generate embedding for the query (read-only scoring path)
+        let query_embedding = self.provider.embed_for_scoring(query, None).await?;
 
         // Get candidate memories from storage
         // In a production system, this would use an ANN index
