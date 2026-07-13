@@ -54,6 +54,8 @@ pub mod distributed;
 pub mod analytics;
 
 pub mod integrations;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod performance;
 
 #[cfg(feature = "security")]
@@ -404,6 +406,16 @@ impl AgentMemory {
         storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     ) {
         self.storage = storage;
+    }
+
+    /// Shared handle to the knowledge graph, if enabled. Used by the MCP
+    /// `recall` tool to apply bi-temporal `as_of` filtering via the graph's
+    /// node validity (`Node::is_valid_at`).
+    #[cfg(feature = "mcp")]
+    pub(crate) fn knowledge_graph_handle(
+        &self,
+    ) -> Option<Arc<tokio::sync::RwLock<memory::knowledge_graph::MemoryKnowledgeGraph>>> {
+        self.knowledge_graph.clone()
     }
 
     /// Store a memory entry with intelligent updating

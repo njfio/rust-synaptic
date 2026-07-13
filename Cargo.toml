@@ -323,8 +323,17 @@ minimal = ["core", "storage"]
 base64 = ["dep:base64"]
 bincode = ["dep:bincode"]
 
+# Minimal MCP stdio server (JSON-RPC 2.0 over line-delimited stdio) exposing
+# remember/recall/reflect/forget. No new dependencies: reuses serde_json/tokio.
+mcp = []
+
 # Testing utilities
 test-utils = []
+
+[[bin]]
+name = "synaptic_mcp"
+path = "src/bin/synaptic_mcp.rs"
+required-features = ["mcp"]
 
 [[example]]
 name = "basic_usage"

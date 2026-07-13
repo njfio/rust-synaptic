@@ -234,8 +234,13 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 6.2: MCP server (gate b — rmcp)
 **Files:** Create `src/mcp/mod.rs`, `src/bin/synaptic_mcp.rs`; Cargo.toml feature `mcp`; Test `tests/mcp_tools_tests.rs` (feature `mcp`).
 **Produces:** MCP tools `remember{content, metadata?}`, `recall{query, limit?, as_of?}`, `reflect{}`, `forget{policy?}` over stdio JSON-RPC, backed by a shared `AgentMemory`. Gate b: present `rmcp` pinned version before adding.
-- [ ] Failing test (feature on): in-process, calling the `remember` tool then `recall` returns the stored content; `recall` with `as_of` respects bi-temporal validity. Feature off: binary/module not built; no fake responses.
-- [ ] Commit — `feat(mcp): agent tool server exposing remember/recall/reflect/forget`.
+- [x] Failing test (feature on): in-process, calling the `remember` tool then `recall` returns the stored content; `recall` with `as_of` respects bi-temporal validity. Feature off: binary/module not built; no fake responses.
+- [x] Commit — `feat(mcp): agent tool server exposing remember/recall/reflect/forget`.
+- **Deviation notes (Task 6.2, GATE-B + real-API divergence):**
+  - GATE-B decision: `rmcp` was NOT added. The server is a minimal, protocol-correct MCP stdio implementation (JSON-RPC 2.0, protocol rev `2024-11-05`, `initialize`/`ping`/`tools/list`/`tools/call`, notifications get no response) over the existing `serde_json`/`tokio` — feature `mcp = []` adds zero dependencies. The binary is gated via `[[bin]] required-features = ["mcp"]`.
+  - `forget{policy?}` narrowed to `forget{retention_floor?: number}`: the only policy field an MCP client meaningfully tunes; the decay model stays `ForgettingPolicy::default()` (Ebbinghaus).
+  - `remember.metadata` supports exactly `{ key: string }` (choose the memory key; otherwise a `mcp-<uuid>` key is generated). `AgentMemory::store` accepts no other metadata, so any other metadata field is rejected with JSON-RPC `-32602` rather than silently dropped (fail closed, no fake acceptance).
+  - `recall.as_of`: `search` has no bi-temporal path, so filtering added post-search: a result survives iff its backing KG node `is_valid_at(as_of)` (new `MemoryKnowledgeGraph::memory_node_valid_at`, both temporal axes), falling back to `created_at <= as_of` for memories without a graph node. Unknown tool → `-32602`; unknown method → `-32601`; tool runtime failure → MCP result with `isError: true`.
 
 ---
 

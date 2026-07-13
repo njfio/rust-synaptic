@@ -461,6 +461,24 @@ impl MemoryKnowledgeGraph {
         Ok(self.memory_to_node.get(memory_key).copied())
     }
 
+    /// Bi-temporal validity of the node backing `memory_key` at instant `at`
+    /// (event time and system time, via [`Node::is_valid_at`]). Returns
+    /// `Ok(None)` when no graph node backs the memory key.
+    pub async fn memory_node_valid_at(
+        &self,
+        memory_key: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<bool>> {
+        let Some(node_id) = self.memory_to_node.get(memory_key).copied() else {
+            return Ok(None);
+        };
+        Ok(self
+            .graph
+            .get_node(node_id)
+            .await?
+            .map(|node| node.is_valid_at(at)))
+    }
+
     /// Get the memory key for a given node ID
     pub async fn get_memory_for_node(&self, node_id: Uuid) -> Result<Option<String>> {
         Ok(self.node_to_memory.get(&node_id).cloned())
