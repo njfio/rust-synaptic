@@ -122,10 +122,22 @@ pub struct Insight {
     pub confidence: f64,
 }
 
-/// Reasoning over memories: extraction, conflict resolution, and synthesis.
+/// A neighbor memory considered during conflict resolution.
 ///
-/// `neighbors` in [`MemoryReasoner::resolve`] is `(memory_id, similarity)`
-/// to keep the trait free of retrieval types.
+/// Carries the neighbor's content so [`MemoryReasoner::resolve`] can compare
+/// against it without any instance-level state, keeping the trait free of
+/// retrieval types.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NeighborFact {
+    /// Identifier of the neighbor memory.
+    pub id: String,
+    /// Similarity of the neighbor to the candidate, in `[0.0, 1.0]`.
+    pub similarity: f64,
+    /// The neighbor memory's text content.
+    pub text: String,
+}
+
+/// Reasoning over memories: extraction, conflict resolution, and synthesis.
 #[async_trait::async_trait]
 pub trait MemoryReasoner: Send + Sync {
     /// Extract structured facts from `text`.
@@ -134,7 +146,7 @@ pub trait MemoryReasoner: Send + Sync {
     async fn resolve(
         &self,
         candidate: &Fact,
-        neighbors: &[(String, f64)],
+        neighbors: &[NeighborFact],
     ) -> Result<ConflictResolution>;
     /// Synthesize an insight from a cluster of related memories, if any.
     async fn synthesize(&self, cluster: &[MemoryEntry]) -> Result<Option<Insight>>;

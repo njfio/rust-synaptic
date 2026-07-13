@@ -7,6 +7,7 @@ use std::sync::Arc;
 use synaptic::memory::embeddings::TfIdfProvider;
 use synaptic::memory::reasoning::{
     ConflictResolution, EntityKind, ExtractionContext, HeuristicReasoner, MemoryReasoner,
+    NeighborFact,
 };
 use synaptic::memory::types::{MemoryEntry, MemoryType};
 
@@ -18,6 +19,14 @@ fn ctx(key: &str) -> ExtractionContext {
     ExtractionContext {
         source_key: key.to_string(),
         timestamp: chrono::Utc::now(),
+    }
+}
+
+fn neighbor(id: &str, similarity: f64, text: &str) -> NeighborFact {
+    NeighborFact {
+        id: id.to_string(),
+        similarity,
+        text: text.to_string(),
     }
 }
 
@@ -120,10 +129,6 @@ async fn extract_is_deterministic() {
 #[tokio::test]
 async fn resolve_supersedes_contradicting_residence() {
     let r = reasoner();
-    // Teach the reasoner the existing Berlin fact under its memory id.
-    r.extract("Alice moved to Berlin in 2021.", &ctx("mem-berlin"))
-        .await
-        .expect("extract old");
     // Candidate contradicts: same subject+predicate, different object.
     let candidate = &r
         .extract("Alice moved to Munich.", &ctx("mem-munich"))
@@ -131,8 +136,16 @@ async fn resolve_supersedes_contradicting_residence() {
         .expect("extract new")
         .facts[0];
 
+    // Supersede is detected from the neighbor's CONTENT, not any cache.
     let resolution = r
-        .resolve(candidate, &[("mem-berlin".to_string(), 0.9)])
+        .resolve(
+            candidate,
+            &[neighbor(
+                "mem-berlin",
+                0.9,
+                "Alice moved to Berlin in 2021.",
+            )],
+        )
         .await
         .expect("resolve");
     match resolution {
@@ -144,16 +157,20 @@ async fn resolve_supersedes_contradicting_residence() {
 #[tokio::test]
 async fn resolve_noop_on_duplicate_and_insert_on_unrelated() {
     let r = reasoner();
-    r.extract("Alice moved to Berlin in 2021.", &ctx("mem-berlin"))
-        .await
-        .expect("extract old");
     let dup = &r
         .extract("Alice moved to Berlin in 2021.", &ctx("mem-dup"))
         .await
         .expect("extract dup")
         .facts[0];
     match r
-        .resolve(dup, &[("mem-berlin".to_string(), 0.99)])
+        .resolve(
+            dup,
+            &[neighbor(
+                "mem-berlin",
+                0.99,
+                "Alice moved to Berlin in 2021.",
+            )],
+        )
         .await
         .expect("resolve dup")
     {
@@ -167,7 +184,14 @@ async fn resolve_noop_on_duplicate_and_insert_on_unrelated() {
         .expect("extract unrelated")
         .facts[0];
     match r
-        .resolve(unrelated, &[("mem-berlin".to_string(), 0.2)])
+        .resolve(
+            unrelated,
+            &[neighbor(
+                "mem-berlin",
+                0.2,
+                "Alice moved to Berlin in 2021.",
+            )],
+        )
         .await
         .expect("resolve unrelated")
     {
@@ -179,9 +203,6 @@ async fn resolve_noop_on_duplicate_and_insert_on_unrelated() {
 #[tokio::test]
 async fn resolve_updates_in_place_when_same_fact_gains_detail() {
     let r = reasoner();
-    r.extract("Alice moved to Berlin.", &ctx("mem-berlin"))
-        .await
-        .expect("extract old");
     let detailed = &r
         .extract(
             "Alice moved to Berlin in 2021 after finishing school.",
@@ -191,13 +212,62 @@ async fn resolve_updates_in_place_when_same_fact_gains_detail() {
         .expect("extract detailed")
         .facts[0];
     match r
-        .resolve(detailed, &[("mem-berlin".to_string(), 0.9)])
+        .resolve(
+            detailed,
+            &[neighbor("mem-berlin", 0.9, "Alice moved to Berlin.")],
+        )
         .await
         .expect("resolve detailed")
     {
         ConflictResolution::UpdateInPlace { .. } => {}
         other => panic!("expected UpdateInPlace, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn resolve_inserts_on_high_similarity_without_relation_evidence() {
+    let r = reasoner();
+    let candidate = &r
+        .extract("Alice moved to Munich.", &ctx("mem-munich"))
+        .await
+        .expect("extract candidate")
+        .facts[0];
+    // Neighbor text has no comparable extracted relation: must NOT be a blind
+    // UpdateInPlace/Supersede — falls back to Insert.
+    match r
+        .resolve(
+            candidate,
+            &[neighbor(
+                "mem-vague",
+                0.9,
+                "Some unrelated note about weather.",
+            )],
+        )
+        .await
+        .expect("resolve")
+    {
+        ConflictResolution::Insert => {}
+        other => panic!("expected Insert, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn extract_gap_guard_rejects_intervening_entity_relation() {
+    let r = reasoner();
+    let fact = &r
+        .extract("Alice met Bob who moved to Berlin.", &ctx("k"))
+        .await
+        .expect("extract")
+        .facts[0];
+    // Must not spuriously link Alice to Berlin across the intervening Bob.
+    assert!(
+        !fact
+            .relations
+            .iter()
+            .any(|rel| rel.subject == "Alice" && rel.object == "Berlin"),
+        "gap-guard should reject Alice-Berlin across intervening entity: {:?}",
+        fact.relations
+    );
 }
 
 #[tokio::test]

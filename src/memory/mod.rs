@@ -39,7 +39,7 @@ pub use meta_learning::{
 };
 pub use reasoning::{
     ConflictResolution, Entity, EntityKind, Extraction, ExtractionContext, Fact, Insight,
-    MemoryReasoner, Relation,
+    MemoryReasoner, NeighborFact, Relation,
 };
 pub use retrieval::MemoryRetriever;
 pub use state::AgentState;

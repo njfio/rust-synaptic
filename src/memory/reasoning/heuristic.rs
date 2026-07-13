@@ -6,14 +6,13 @@
 //! over cosine similarity plus extracted relations, and synthesis is an
 //! extractive representative-sentence template.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::error::Result;
 use crate::memory::embeddings::provider::EmbeddingProvider;
 use crate::memory::reasoning::{
     ConflictResolution, Entity, EntityKind, Extraction, ExtractionContext, Fact, Insight,
-    MemoryReasoner, Relation,
+    MemoryReasoner, NeighborFact, Relation,
 };
 use crate::memory::types::MemoryEntry;
 
@@ -212,21 +211,33 @@ struct Token {
 
 /// Deterministic rule-based [`MemoryReasoner`].
 ///
-/// Keeps a cache of facts previously extracted per `source_key` so that
-/// [`MemoryReasoner::resolve`] can compare a candidate's relations against
-/// the relations of the neighbor memories it is measured against.
+/// Stateless with respect to reasoning: [`MemoryReasoner::resolve`] compares a
+/// candidate against the neighbor content supplied in each [`NeighborFact`],
+/// re-extracting neighbor relations on demand rather than caching them.
 pub struct HeuristicReasoner {
     embedder: Arc<dyn EmbeddingProvider>,
-    known_facts: RwLock<HashMap<String, Vec<Fact>>>,
 }
 
 impl HeuristicReasoner {
     /// Create a reasoner over the given embedding provider.
     pub fn new(embedder: Arc<dyn EmbeddingProvider>) -> Self {
-        Self {
-            embedder,
-            known_facts: RwLock::new(HashMap::new()),
+        Self { embedder }
+    }
+
+    /// Pure, synchronous extraction shared by `extract` and `resolve`.
+    fn extract_facts(text: &str) -> Vec<Fact> {
+        let mut facts = Vec::new();
+        for (start, end) in Self::split_sentences(text) {
+            let sentence = &text[start..end];
+            let entities = Self::extract_entities(sentence, start);
+            let relations = Self::extract_relations(text, &entities);
+            facts.push(Fact {
+                text: sentence.to_string(),
+                entities,
+                relations,
+            });
         }
+        facts
     }
 
     /// Split `text` into sentences, returning `(start, end)` byte spans.
@@ -542,6 +553,18 @@ impl HeuristicReasoner {
                 if object.span.0 <= subject.span.1 {
                     continue;
                 }
+                // Gap-guard: reject if any other extracted entity lies strictly
+                // between subject and object (e.g. "Alice met Bob who moved to
+                // Berlin" must not yield (Alice, lives_in, Berlin)).
+                let intervening = entities.iter().any(|e| {
+                    e.span != subject.span
+                        && e.span != object.span
+                        && e.span.0 >= subject.span.1
+                        && e.span.1 <= object.span.0
+                });
+                if intervening {
+                    continue;
+                }
                 let gap = &text[subject.span.1..object.span.0];
                 if let Some(predicate) = Self::normalize_predicate(gap) {
                     relations.push(Relation {
@@ -554,114 +577,78 @@ impl HeuristicReasoner {
         }
         relations
     }
-
-    /// Look up cached facts for a memory id, tolerating lock poisoning.
-    fn facts_for(&self, id: &str) -> Option<Vec<Fact>> {
-        let guard = self
-            .known_facts
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        guard.get(id).cloned()
-    }
 }
 
 #[async_trait::async_trait]
 impl MemoryReasoner for HeuristicReasoner {
-    async fn extract(&self, text: &str, ctx: &ExtractionContext) -> Result<Extraction> {
-        let mut facts = Vec::new();
-        for (start, end) in Self::split_sentences(text) {
-            let sentence = &text[start..end];
-            let entities = Self::extract_entities(sentence, start);
-            let relations = Self::extract_relations(text, &entities);
-            facts.push(Fact {
-                text: sentence.to_string(),
-                entities,
-                relations,
-            });
-        }
-        {
-            let mut guard = self
-                .known_facts
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            guard.insert(ctx.source_key.clone(), facts.clone());
-        }
-        Ok(Extraction { facts })
+    async fn extract(&self, text: &str, _ctx: &ExtractionContext) -> Result<Extraction> {
+        Ok(Extraction {
+            facts: Self::extract_facts(text),
+        })
     }
 
     async fn resolve(
         &self,
         candidate: &Fact,
-        neighbors: &[(String, f64)],
+        neighbors: &[NeighborFact],
     ) -> Result<ConflictResolution> {
         // Deterministic best neighbor: highest similarity, ties broken by id.
-        let best = neighbors
-            .iter()
-            .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0)));
-        let Some((best_id, best_sim)) = best else {
+        let Some(best) = neighbors.iter().max_by(|a, b| {
+            a.similarity
+                .total_cmp(&b.similarity)
+                .then_with(|| b.id.cmp(&a.id))
+        }) else {
             return Ok(ConflictResolution::Insert);
         };
-        let best_sim = *best_sim;
+        let best_sim = best.similarity;
         if best_sim < SUPERSEDE_THRESHOLD {
             return Ok(ConflictResolution::Insert);
         }
 
-        match self.facts_for(best_id) {
-            Some(known) => {
-                if best_sim >= DEDUP_THRESHOLD && known.iter().any(|f| f.text == candidate.text) {
-                    return Ok(ConflictResolution::NoOp {
-                        reason: format!("exact duplicate of {best_id} at similarity {best_sim:.2}"),
-                    });
-                }
-                for known_fact in &known {
-                    for kr in &known_fact.relations {
-                        for cr in &candidate.relations {
-                            if kr.subject == cr.subject && kr.predicate == cr.predicate {
-                                if kr.object != cr.object {
-                                    return Ok(ConflictResolution::Supersede {
-                                        old_id: best_id.clone(),
-                                        reason: format!(
-                                            "contradicts ({}, {}, {}) with new object {}",
-                                            kr.subject, kr.predicate, kr.object, cr.object
-                                        ),
-                                    });
-                                }
-                                if candidate.text.len() > known_fact.text.len() {
-                                    return Ok(ConflictResolution::UpdateInPlace {
-                                        reason: format!(
-                                            "same fact ({}, {}, {}) with more detail",
-                                            cr.subject, cr.predicate, cr.object
-                                        ),
-                                    });
-                                }
-                                return Ok(ConflictResolution::NoOp {
-                                    reason: format!(
-                                        "restates ({}, {}, {}) already in {best_id}",
-                                        cr.subject, cr.predicate, cr.object
-                                    ),
-                                });
-                            }
+        // Exact-text duplicate at high similarity: no action.
+        if best_sim >= DEDUP_THRESHOLD && best.text == candidate.text {
+            return Ok(ConflictResolution::NoOp {
+                reason: format!("exact duplicate of {} at similarity {best_sim:.2}", best.id),
+            });
+        }
+
+        // Re-extract the neighbor's content and compare real relations.
+        let neighbor_facts = Self::extract_facts(&best.text);
+        for known_fact in &neighbor_facts {
+            for kr in &known_fact.relations {
+                for cr in &candidate.relations {
+                    if kr.subject == cr.subject && kr.predicate == cr.predicate {
+                        if kr.object != cr.object {
+                            return Ok(ConflictResolution::Supersede {
+                                old_id: best.id.clone(),
+                                reason: format!(
+                                    "contradicts ({}, {}, {}) with new object {}",
+                                    kr.subject, kr.predicate, kr.object, cr.object
+                                ),
+                            });
                         }
+                        if candidate.text.len() > known_fact.text.len() {
+                            return Ok(ConflictResolution::UpdateInPlace {
+                                reason: format!(
+                                    "same fact ({}, {}, {}) with more detail",
+                                    cr.subject, cr.predicate, cr.object
+                                ),
+                            });
+                        }
+                        return Ok(ConflictResolution::NoOp {
+                            reason: format!(
+                                "restates ({}, {}, {}) already in {}",
+                                cr.subject, cr.predicate, cr.object, best.id
+                            ),
+                        });
                     }
-                }
-                Ok(ConflictResolution::Insert)
-            }
-            // Neighbor text/relations unknown to this reasoner: fall back to
-            // similarity-only thresholds (conservative: never Supersede blind).
-            None => {
-                if best_sim >= DEDUP_THRESHOLD {
-                    Ok(ConflictResolution::NoOp {
-                        reason: format!("near-duplicate of {best_id} at similarity {best_sim:.2}"),
-                    })
-                } else {
-                    Ok(ConflictResolution::UpdateInPlace {
-                        reason: format!(
-                            "high similarity {best_sim:.2} to {best_id} without extracted relations to compare"
-                        ),
-                    })
                 }
             }
         }
+
+        // No comparable extracted-relation evidence: default to Insert. Never
+        // Supersede or UpdateInPlace on similarity alone.
+        Ok(ConflictResolution::Insert)
     }
 
     async fn synthesize(&self, cluster: &[MemoryEntry]) -> Result<Option<Insight>> {
