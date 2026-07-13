@@ -16,7 +16,7 @@ mod tfhe_tests {
     use super::*;
     use chrono::Utc;
     use synaptic::security::{
-        EncryptedMemoryEntry, EncryptionMetadata, PrivacyLevel, SecureOperation,
+        EncryptedMemoryEntry, EncryptionMetadata, PrivacyLevel, SecureOperation, SecurityContext,
     };
 
     async fn manager_and_context() -> Result<(SecurityManager, SecurityContext), Box<dyn Error>> {
