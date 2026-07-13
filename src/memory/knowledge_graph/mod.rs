@@ -1120,7 +1120,9 @@ mod tests {
 
         let result = graph.get_node_for_memory("nonexistent").await;
         assert!(result.is_ok());
-        assert!(result.expect("result should be valid").is_none());
+        assert!(result
+            .expect("query on empty graph returns Ok(None), not an error")
+            .is_none());
     }
 
     #[tokio::test]
@@ -1130,7 +1132,9 @@ mod tests {
 
         let result = graph.get_memory_for_node(Uuid::new_v4()).await;
         assert!(result.is_ok());
-        assert!(result.expect("result should be valid").is_none());
+        assert!(result
+            .expect("query on empty graph returns Ok(None), not an error")
+            .is_none());
     }
 
     #[test]
@@ -1182,9 +1186,10 @@ mod tests {
         };
 
         // Test that it can be serialized and deserialized
-        let serialized = serde_json::to_string(&related_memory).expect("value should be available");
+        let serialized = serde_json::to_string(&related_memory)
+            .expect("RelatedMemory derives Serialize with no fallible fields");
         let deserialized: RelatedMemory =
-            serde_json::from_str(&serialized).expect("value should be available");
+            serde_json::from_str(&serialized).expect("round-trip of value serialized just above");
 
         assert_eq!(related_memory.memory_key, deserialized.memory_key);
         assert_eq!(related_memory.node_id, deserialized.node_id);
@@ -1204,9 +1209,10 @@ mod tests {
             reasoning: "High semantic overlap".to_string(),
         };
 
-        let serialized = serde_json::to_string(&inferred).expect("value should be available");
+        let serialized = serde_json::to_string(&inferred)
+            .expect("InferredRelationship derives Serialize with no fallible fields");
         let deserialized: InferredRelationship =
-            serde_json::from_str(&serialized).expect("value should be available");
+            serde_json::from_str(&serialized).expect("round-trip of value serialized just above");
 
         assert_eq!(inferred.from_node, deserialized.from_node);
         assert_eq!(inferred.to_node, deserialized.to_node);
