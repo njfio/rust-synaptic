@@ -145,9 +145,9 @@ Write path change: after storage+state write, run `reasoner.extract` on the valu
 ### Task 2.1: Bi-temporal fields on Node/Edge
 **Files:** Modify `src/memory/knowledge_graph/types.rs` (`Node` `:114`, `Relationship` `:235`, `Edge` `:300`); Test `tests/bitemporal_types_tests.rs`.
 **Produces:** `Node`/`Edge` gain `valid_from: DateTime<Utc>`, `valid_to: Option<DateTime<Utc>>`, `ingested_at: DateTime<Utc>`, `expired_at: Option<DateTime<Utc>>`; constructors default `valid_from`/`ingested_at`=now, `valid_to`/`expired_at`=None; helper `fn is_valid_at(&self, t: DateTime<Utc>) -> bool` (valid_from ≤ t < valid_to.unwrap_or(∞) AND (expired_at.is_none() || t < expired_at)).
-- [ ] Step 1: failing test — new edge `is_valid_at(now)` true; after `expire_at(t)` set, `is_valid_at(t+1s)` false, `is_valid_at(t-1s)` true.
-- [ ] Steps 2-4: implement fields + `is_valid_at` + `expire_at`/`invalidate`; keep serde back-compat (`#[serde(default)]`). Fix all constructor call sites.
-- [ ] Step 5: commit — `feat(kg): bi-temporal validity fields on nodes and edges`.
+- [x] Step 1: failing test — new edge `is_valid_at(now)` true; after `expire_at(t)` set, `is_valid_at(t+1s)` false, `is_valid_at(t-1s)` true.
+- [x] Steps 2-4: implement fields + `is_valid_at` + `expire_at`/`invalidate`; serde back-compat via `#[serde(default = "default_bitemporal_start")]` (`DateTime::<Utc>::MIN_UTC` — legacy data reads as "always valid"). No external struct-literal call sites existed; all construction goes through `Node::new`/`Edge::new`. Used `Option::map_or` instead of `is_none_or` (crate MSRV 1.70).
+- [x] Step 5: commit — `feat(kg): bi-temporal validity fields on nodes and edges`.
 
 ### Task 2.2: Invalidation + point-in-time query
 **Files:** Modify `src/memory/knowledge_graph/graph.rs` (add `invalidate_edge`, `query_as_of`), `src/memory/knowledge_graph/mod.rs` (Supersede → real invalidation); Test `tests/bitemporal_query_tests.rs`.
