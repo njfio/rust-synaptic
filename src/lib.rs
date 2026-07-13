@@ -995,8 +995,11 @@ impl AgentMemory {
                     );
                     self.storage.store(&demoted).await?;
                     if self.state.peek_memory(&demoted.key).is_some() {
-                        self.state.remove_memory(&demoted.key);
-                        self.state.add_memory(demoted.clone());
+                        // Preserve real access metadata: relocating between
+                        // tiers is not an access, so do not bump
+                        // last_accessed/access_count (which would grant
+                        // artificial recency protection on later passes).
+                        self.state.insert_preserving_access(demoted.clone());
                     }
                     report.demoted.push(demoted.key);
                 }

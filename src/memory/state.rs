@@ -90,6 +90,28 @@ impl AgentState {
         self.mark_modified();
     }
 
+    /// Insert a memory entry AS-IS, preserving its access metadata.
+    ///
+    /// Unlike [`Self::add_memory`], this does not call `mark_accessed()` or
+    /// touch access-pattern stats, so `last_accessed`/`access_count` are stored
+    /// exactly as given. Used by tier transitions (e.g. forgetting demotion)
+    /// that relocate an entry between tiers without it being "accessed". If the
+    /// key already lives in the other tier, that stale copy is removed so the
+    /// entry exists in exactly one tier.
+    pub fn insert_preserving_access(&mut self, entry: MemoryEntry) {
+        match entry.memory_type {
+            MemoryType::ShortTerm => {
+                self.long_term_memories.remove(&entry.key);
+                self.short_term_memories.insert(entry.key.clone(), entry);
+            }
+            MemoryType::LongTerm => {
+                self.short_term_memories.remove(&entry.key);
+                self.long_term_memories.insert(entry.key.clone(), entry);
+            }
+        }
+        self.mark_modified();
+    }
+
     /// Get a memory by key from either short-term or long-term storage
     pub fn get_memory(&mut self, key: &str) -> Option<MemoryEntry> {
         // Mark the STORED entry as accessed (bumps its metadata.access_count) so
@@ -331,6 +353,40 @@ mod tests {
             metadata: MemoryMetadata::new(),
             embedding: None,
         }
+    }
+
+    #[test]
+    fn test_insert_preserving_access_does_not_bump_metadata() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        let mut entry = create_test_memory_entry("k", MemoryType::LongTerm);
+        entry.metadata.access_count = 7;
+        let accessed_at = chrono::Utc::now() - chrono::Duration::hours(30);
+        entry.metadata.last_accessed = accessed_at;
+
+        state.insert_preserving_access(entry);
+
+        let stored = state.peek_memory("k").expect("entry must be stored");
+        assert_eq!(
+            stored.metadata.access_count, 7,
+            "must not bump access_count"
+        );
+        assert_eq!(
+            stored.metadata.last_accessed, accessed_at,
+            "must not bump last_accessed"
+        );
+        assert_eq!(stored.memory_type, MemoryType::LongTerm);
+    }
+
+    #[test]
+    fn test_insert_preserving_access_relocates_tier() {
+        let mut state = AgentState::new(Uuid::new_v4());
+        state.insert_preserving_access(create_test_memory_entry("k", MemoryType::LongTerm));
+        assert_eq!(state.long_term_memory_count(), 1);
+
+        // Re-inserting as ShortTerm must remove the stale long-term copy.
+        state.insert_preserving_access(create_test_memory_entry("k", MemoryType::ShortTerm));
+        assert_eq!(state.long_term_memory_count(), 0);
+        assert_eq!(state.short_term_memory_count(), 1);
     }
 
     #[test]

@@ -173,6 +173,51 @@ async fn forget_demotes_long_term_memories_instead_of_evicting() {
 }
 
 #[tokio::test]
+async fn demotion_preserves_access_metadata() {
+    let mut memory = memory_system().await;
+
+    // Long-term, below floor, with a definite last_accessed and access_count.
+    let mut long_term = aged_entry("faded_lt", 0.1, 72);
+    long_term.memory_type = MemoryType::LongTerm;
+    let accessed_at = Utc::now() - Duration::hours(50);
+    long_term.metadata.last_accessed = accessed_at;
+    long_term.metadata.access_count = 3;
+    memory
+        .storage()
+        .store(&long_term)
+        .await
+        .expect("storing long-term entry must succeed");
+
+    let policy = ForgettingPolicy {
+        retention_floor: 0.02,
+        ..ForgettingPolicy::default()
+    };
+    let report = memory
+        .forget(policy)
+        .await
+        .expect("forget must succeed on a healthy store");
+    assert!(report.demoted.contains(&"faded_lt".to_string()));
+
+    // Read the RAW storage copy (Storage::retrieve does not mark access, unlike
+    // AgentMemory::retrieve) so the assertion sees exactly what demotion wrote.
+    let after = memory
+        .storage()
+        .retrieve("faded_lt")
+        .await
+        .expect("retrieve must not error")
+        .expect("demoted memory must still exist");
+    assert_eq!(
+        after.metadata.access_count, 3,
+        "demotion must not bump access_count"
+    );
+    assert_eq!(
+        after.metadata.last_accessed, accessed_at,
+        "demotion must not bump last_accessed"
+    );
+    assert_eq!(after.memory_type, MemoryType::ShortTerm);
+}
+
+#[tokio::test]
 async fn retained_strength_is_deterministic_and_ordered() {
     let policy = ForgettingPolicy::default();
     let fresh = aged_entry("fresh", 0.5, 1);
