@@ -153,11 +153,61 @@ Honest findings from the growth run:
 
 ## QA end-to-end accuracy
 
-**Not run** — requires an LLM endpoint. To run it: build with
-`--features llm-reasoning` and set `SYNAPTIC_EVAL_LLM_URL` (and
-`SYNAPTIC_EVAL_LLM_MODEL`, optional `SYNAPTIC_EVAL_LLM_KEY`) to an
-OpenAI-compatible endpoint, then rerun the command above. The harness
-reports `QaResult::NotRun` rather than fabricating an accuracy number.
+**End-to-end QA accuracy — measured on a stratified N-question LoCoMo subset,
+judge = codex CLI (gpt-5.6-sol), 2026-07-13. NOT the full 1986-question set;
+NOT directly comparable to published full-set numbers.**
+
+This is a **subset** result (N = 150 of 1,986 questions), stratified evenly
+across the six QTypes (30 each, evenly spaced within each type,
+deterministic — no RNG). It measures the full recall → answer → grade
+pipeline: for each question, up to `k=10` memories are recalled from an
+`AgentMemory` ingested with the question's conversation, the `codex` CLI is
+asked to answer using **only** the recalled snippets, and `codex` then grades
+that answer against the gold answer (YES/NO). Every number below comes from a
+real codex verdict in this run; all 150 questions completed with **0 judge
+failures**. Accuracy is over completed (graded) questions only.
+
+| Metric | Value |
+|---|---|
+| Overall | **25 / 150 = 16.7%** |
+| SingleHop | 8 / 30 = 26.7% |
+| MultiHop | 2 / 30 = 6.7% |
+| Temporal | 9 / 30 = 30.0% |
+| OpenDomain | 5 / 30 = 16.7% |
+| Abstention | 1 / 30 = 3.3% |
+| KnowledgeUpdate | (not present in LoCoMo) |
+
+- **N = 150** selected, **150 completed (graded)**, **0 judge failures**, `k = 10`.
+- **Judge**: `codex` CLI 0.144.0, model `gpt-5.6-sol` (user's subscription,
+  non-interactive `codex exec`). Not feature-gated — `CodexCliJudge` shells
+  out; there is no new crate dependency.
+- **Honesty**: this is a subset, not the full set, and is not comparable to
+  published full-LoCoMo numbers. Low accuracy reflects the strict
+  answer-from-recalled-snippets-only constraint plus TF-IDF recall quality on
+  this hard long-context benchmark; nothing here is estimated or extrapolated.
+  If a run has judge failures, accuracy is reported over completed questions
+  with the failure count, never patched with a guessed verdict.
+
+### Command
+
+```bash
+cargo run --release -p synaptic-eval --bin run_qa -- --subset 150
+```
+
+Flags: `--subset N` (default 150), `--k K` (default 10), `--concurrency C`
+(default 4), `--data PATH` (default `tools/eval/data/locomo10.json`). The
+codex binary path and per-call timeout are configurable via
+`SYNAPTIC_EVAL_CODEX_BIN` (default `codex`) and
+`SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS` (default 120). The binary prints progress
+to stderr (`question i/N`) so the long run (~150 codex answer+grade pairs) is
+observable. Requires a locally installed, logged-in `codex` CLI; if it is
+unavailable the binary exits without fabricating a number.
+
+An OpenAI-compatible HTTP judge (`LlmJudge`) also exists behind the
+`llm-reasoning` feature via `SYNAPTIC_EVAL_LLM_URL` /
+`SYNAPTIC_EVAL_LLM_MODEL` (optional `SYNAPTIC_EVAL_LLM_KEY`); without a judge
+configured the gated `run_eval` path reports `QaResult::NotRun` rather than
+fabricating an accuracy number.
 
 ## LongMemEval-S
 
