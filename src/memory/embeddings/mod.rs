@@ -140,26 +140,22 @@ impl RetrievalEmbeddingConfig {
     /// The auto-selection rule used by `MemoryConfig::default()`:
     ///
     /// 1. An explicit `SYNAPTIC_RETRIEVAL_EMBEDDER` env selection wins
-    ///    ([`Self::from_env`]).
-    /// 2. Otherwise, when built with the `ml-models` feature AND the local
-    ///    model directory exists (default `models/all-MiniLM-L6-v2`, or
-    ///    `SYNAPTIC_EMBED_MODEL_DIR`), the bundled candle MiniLM model is
-    ///    preferred (with TF-IDF fallback armed).
-    /// 3. Otherwise TF-IDF — so a plain `cargo build` without the feature,
-    ///    or without fetched weights, stays lean and fully offline.
+    ///    ([`Self::from_env`]): `candle` selects the bundled MiniLM model,
+    ///    `ollama` an Ollama server, `tfidf` the lexical default.
+    /// 2. Otherwise TF-IDF.
+    ///
+    /// The bundled candle MiniLM model is **opt-in**, not auto-selected merely
+    /// because its weights are present. It raises retrieval recall
+    /// substantially (see `docs/evaluation.md`), but candle BERT inference on
+    /// CPU is currently un-batched and slow (~28 s per query at eval scale in
+    /// measurement), so silently defaulting to it would make search unusably
+    /// slow. Enable it explicitly (`SYNAPTIC_RETRIEVAL_EMBEDDER=candle`, or set
+    /// `retrieval_embedding_provider` in [`MemoryConfig`]) once you have a GPU
+    /// or the batch-embedding optimization; TF-IDF stays the safe default so a
+    /// plain build is lean, offline, and fast.
     pub fn auto() -> Self {
         if let Some(explicit) = Self::from_env() {
             return explicit;
-        }
-        #[cfg(feature = "ml-models")]
-        {
-            let model_dir = Self::default_candle_model_dir();
-            if model_dir.join("model.safetensors").is_file() {
-                return Self::Candle {
-                    model_dir,
-                    dimension: 384,
-                };
-            }
         }
         Self::TfIdf
     }
