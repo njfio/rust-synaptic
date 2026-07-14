@@ -61,6 +61,19 @@ pub enum RetrievalEmbeddingConfig {
         /// Expected embedding dimension (768 for nomic-embed-text).
         dimension: usize,
     },
+    /// A bundled offline candle transformer model (all-MiniLM-L6-v2 by
+    /// default: 384-dim, mean-pooled, L2-normalized). Requires the
+    /// `ml-models` feature AND the model files fetched locally via
+    /// `scripts/fetch_embedding_model.sh` (default dir:
+    /// `models/all-MiniLM-L6-v2/`). Missing feature, missing dir, or load
+    /// failure falls back to TF-IDF with a warn — never a hard failure.
+    Candle {
+        /// Directory containing `config.json`, `tokenizer.json`,
+        /// `model.safetensors`.
+        model_dir: std::path::PathBuf,
+        /// Expected embedding dimension (384 for all-MiniLM-L6-v2).
+        dimension: usize,
+    },
     /// Any user-supplied provider implementation (also used by tests to
     /// inject mock semantic providers). Wrapped with the TF-IDF fallback.
     Custom(std::sync::Arc<dyn EmbeddingProvider>),
@@ -78,6 +91,14 @@ impl std::fmt::Debug for RetrievalEmbeddingConfig {
                 .debug_struct("RetrievalEmbeddingConfig::Ollama")
                 .field("endpoint", endpoint)
                 .field("model", model)
+                .field("dimension", dimension)
+                .finish(),
+            Self::Candle {
+                model_dir,
+                dimension,
+            } => f
+                .debug_struct("RetrievalEmbeddingConfig::Candle")
+                .field("model_dir", model_dir)
                 .field("dimension", dimension)
                 .finish(),
             Self::Custom(provider) => f
@@ -98,13 +119,70 @@ impl RetrievalEmbeddingConfig {
         }
     }
 
+    /// The default local model directory for the bundled candle embedder
+    /// (all-MiniLM-L6-v2, fetched via `scripts/fetch_embedding_model.sh`).
+    /// Honors `SYNAPTIC_EMBED_MODEL_DIR` when set.
+    pub fn default_candle_model_dir() -> std::path::PathBuf {
+        std::env::var("SYNAPTIC_EMBED_MODEL_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("models/all-MiniLM-L6-v2"))
+    }
+
+    /// Candle with the default local model directory (all-MiniLM-L6-v2,
+    /// 384-d).
+    pub fn candle_default() -> Self {
+        Self::Candle {
+            model_dir: Self::default_candle_model_dir(),
+            dimension: 384,
+        }
+    }
+
+    /// The auto-selection rule used by `MemoryConfig::default()`:
+    ///
+    /// 1. An explicit `SYNAPTIC_RETRIEVAL_EMBEDDER` env selection wins
+    ///    ([`Self::from_env`]).
+    /// 2. Otherwise, when built with the `ml-models` feature AND the local
+    ///    model directory exists (default `models/all-MiniLM-L6-v2`, or
+    ///    `SYNAPTIC_EMBED_MODEL_DIR`), the bundled candle MiniLM model is
+    ///    preferred (with TF-IDF fallback armed).
+    /// 3. Otherwise TF-IDF — so a plain `cargo build` without the feature,
+    ///    or without fetched weights, stays lean and fully offline.
+    pub fn auto() -> Self {
+        if let Some(explicit) = Self::from_env() {
+            return explicit;
+        }
+        #[cfg(feature = "ml-models")]
+        {
+            let model_dir = Self::default_candle_model_dir();
+            if model_dir.join("model.safetensors").is_file() {
+                return Self::Candle {
+                    model_dir,
+                    dimension: 384,
+                };
+            }
+        }
+        Self::TfIdf
+    }
+
     /// Read the provider selection from the environment, for measurement
     /// runs without code changes: `SYNAPTIC_RETRIEVAL_EMBEDDER=ollama`
     /// selects Ollama (endpoint/model/dimension overridable via
     /// `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_DIM`);
+    /// `candle` selects the bundled local MiniLM model (dir overridable via
+    /// `SYNAPTIC_EMBED_MODEL_DIR`, dimension via `SYNAPTIC_EMBED_DIM`);
     /// `tfidf` selects TF-IDF explicitly; unset/unknown returns `None`.
     pub fn from_env() -> Option<Self> {
         match std::env::var("SYNAPTIC_RETRIEVAL_EMBEDDER").ok()?.as_str() {
+            "candle" => {
+                let dimension = std::env::var("SYNAPTIC_EMBED_DIM")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(384);
+                Some(Self::Candle {
+                    model_dir: Self::default_candle_model_dir(),
+                    dimension,
+                })
+            }
             "ollama" => {
                 let endpoint = std::env::var("OLLAMA_ENDPOINT")
                     .unwrap_or_else(|_| "http://localhost:11434".to_string());
@@ -194,6 +272,51 @@ pub fn build_retrieval_provider(
                     model = %model,
                     dimension = dimension,
                     "Ollama retrieval embedding requires the 'llm-integration' feature; falling back to TF-IDF"
+                );
+                (Arc::clone(&tfidf) as _, tfidf)
+            }
+        }
+        RetrievalEmbeddingConfig::Candle {
+            model_dir,
+            dimension,
+        } => {
+            #[cfg(feature = "ml-models")]
+            {
+                match providers::CandleEmbeddingProvider::new(model_dir) {
+                    Ok(candle) => {
+                        if candle.embedding_dimension() != *dimension {
+                            tracing::warn!(
+                                model_dir = %model_dir.display(),
+                                expected = dimension,
+                                actual = candle.embedding_dimension(),
+                                "candle embedding dimension differs from configured dimension; using the model's actual dimension"
+                            );
+                        }
+                        tracing::info!(
+                            model_dir = %model_dir.display(),
+                            dimension = candle.embedding_dimension(),
+                            "retrieval embedding provider: candle local model (TF-IDF fallback armed)"
+                        );
+                        let wrapped =
+                            FallbackEmbeddingProvider::new(Arc::new(candle), Arc::clone(&tfidf));
+                        (Arc::new(wrapped) as _, tfidf)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            model_dir = %model_dir.display(),
+                            error = %e,
+                            "failed to load candle embedding model; falling back to TF-IDF"
+                        );
+                        (Arc::clone(&tfidf) as _, tfidf)
+                    }
+                }
+            }
+            #[cfg(not(feature = "ml-models"))]
+            {
+                tracing::warn!(
+                    model_dir = %model_dir.display(),
+                    dimension = dimension,
+                    "candle retrieval embedding requires the 'ml-models' feature; falling back to TF-IDF"
                 );
                 (Arc::clone(&tfidf) as _, tfidf)
             }

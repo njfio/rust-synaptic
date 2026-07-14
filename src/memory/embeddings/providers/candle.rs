@@ -22,9 +22,12 @@ use tokenizers::Tokenizer;
 
 /// Embedding provider backed by a local candle BERT model.
 ///
-/// Holds the loaded model and tokenizer; `embed` runs a real forward pass
-/// and mean-pools the final hidden states into a fixed-dimension vector
-/// (`hidden_size`, 768 for bert-base).
+/// Holds the loaded model and tokenizer; `embed` runs a real forward pass,
+/// attention-mask mean-pools the final hidden states (the
+/// sentence-transformers pooling used by all-MiniLM-L6-v2) and L2-normalizes
+/// the result into a fixed-dimension vector (`hidden_size`, 384 for
+/// all-MiniLM-L6-v2). `embed_for_scoring` uses the trait default: it
+/// delegates to `embed` (semantic embeddings have no corpus-IDF distinction).
 pub struct CandleEmbeddingProvider {
     model: BertModel,
     tokenizer: Tokenizer,
@@ -141,11 +144,18 @@ impl CandleEmbeddingProvider {
             .model
             .forward(&input_ids, &token_type_ids, Some(&attention_mask))?;
 
-        let (_, n_tokens, _) = hidden.dims3()?;
-        let pooled = (hidden.sum(1)? / (n_tokens as f64))?
-            .to_dtype(DType::F32)?
-            .squeeze(0)?;
-        Ok(pooled.to_vec1::<f32>()?)
+        // Sentence-transformers pooling for MiniLM: attention-masked mean of
+        // the final hidden states, then L2 normalization.
+        let mask_f = attention_mask
+            .to_dtype(hidden.dtype())?
+            .unsqueeze(2)?
+            .broadcast_as(hidden.shape())?;
+        let summed = (hidden * &mask_f)?.sum(1)?;
+        let counts = mask_f.sum(1)?.clamp(1e-9, f64::INFINITY)?;
+        let pooled = (summed / counts)?.to_dtype(DType::F32)?.squeeze(0)?;
+        let mut vector = pooled.to_vec1::<f32>()?;
+        crate::memory::embeddings::provider::normalize_vector(&mut vector);
+        Ok(vector)
     }
 }
 
