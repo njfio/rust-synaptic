@@ -151,6 +151,50 @@ Honest findings from the growth run:
   should not be over-read; both confirm multi-second search at these store
   sizes, consistent with the latency table above.
 
+## Performance fixes — before / after (2026-07-13)
+
+After the initial evaluation surfaced the multi-second search and superlinear
+store growth above, three rounds of performance work were done on the
+`feature/agent-memory-v2-followups` branch:
+
+- **P1** (`fed757d`..`242fd96`): incremental `total_size` counter (removed a
+  per-store full-corpus rescan), bounded + deterministic KG/neighbor candidate
+  scans, shrunk the KG write-lock critical section.
+- **P2** (`879956f`..`bb5c842`): read-only query-time embedding (no per-query
+  vocabulary rebuild under a global write lock), a content-hash embedding cache
+  shared across the dense retriever and reranker, lowercase memoization, and
+  dropping the knowledge-graph read lock before storage awaits.
+- **P4** (`a88ab12`, `10c8252`): a character-n-gram **inverted index** in
+  storage so keyword search is candidate-bounded instead of a full scan
+  (results proven byte-identical to the full-scan implementation by an in-test
+  reference), plus token-indexed KG candidate selection.
+
+Retrieval **quality is unchanged** — P2 and P4 are correctness-preserving
+(ranking-parity tests pin identical top-k ordering; P4 returns byte-identical
+search results), so the retrieval/ablation numbers above still hold.
+
+Measured before/after (same harness, same machine, single-shot probe):
+
+| metric | before | after (P1+P2+P4) | change |
+|---|---|---|---|
+| probe search over 1k-entry store | 26.6 s | **3.65–3.70 s** | **~7× faster** |
+| store p50 @ 1k | 9.6 ms | 8.4 ms | ~comparable |
+
+**What is NOT fixed (honest):** the **store path is still superlinear at
+scale.** After the fixes, filling 1k→10k still did not complete within a
+40-minute clean run (comparable to the original ~75 min), so the 10k/100k
+store-latency points were **not re-measured** and 100k remains impractical.
+Root cause identified but not addressed by P1/P2/P4: the default
+`advanced_management` write pipeline (summarizer / search-engine / lifecycle /
+optimizer sub-systems, enabled by `enable_advanced_management = true`) performs
+O(n)-per-store work that dominates once the store is large — the original
+profiler mapped only the storage/KG/embedding/reasoning paths, which are now
+index-backed. **Next performance target:** index or bound the
+`advanced_management` per-store subsystems (or make them opt-in), then re-run
+the 10k/100k growth measurement. The search-latency win above is real and
+measured; the store-growth superlinearity is only partially reduced and is
+tracked as open.
+
 ## QA end-to-end accuracy
 
 **End-to-end QA accuracy — measured on a stratified N-question LoCoMo subset,
