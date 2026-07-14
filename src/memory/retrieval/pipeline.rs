@@ -146,6 +146,25 @@ pub struct PipelineConfig {
     /// importance) score. Defaults to 0.6 / 0.2 / 0.2.
     #[serde(default)]
     pub composite_weights: CompositeWeights,
+    /// Enable the deterministic query-understanding stage (temporal-
+    /// constraint extraction + multi-part splitting). Default `true`; set
+    /// to `false` for ablation baselines. Simple queries (no temporal
+    /// expression, single part) are a no-op passthrough either way.
+    #[serde(default = "default_enable_query_understanding")]
+    pub enable_query_understanding: bool,
+    /// Multiplicative boost applied to a memory's fused score when it
+    /// matches an extracted temporal constraint:
+    /// `score *= 1.0 + temporal_boost`. Default `0.3`.
+    #[serde(default = "default_temporal_boost")]
+    pub temporal_boost: f64,
+}
+
+fn default_enable_query_understanding() -> bool {
+    true
+}
+
+fn default_temporal_boost() -> f64 {
+    0.3
 }
 
 impl Default for PipelineConfig {
@@ -165,6 +184,8 @@ impl Default for PipelineConfig {
             enable_caching: true,
             cache_ttl_seconds: 300,
             composite_weights: CompositeWeights::default(),
+            enable_query_understanding: default_enable_query_understanding(),
+            temporal_boost: default_temporal_boost(),
         }
     }
 }
@@ -327,6 +348,14 @@ impl HybridRetriever {
     }
 
     /// Search using all available pipelines and fuse results
+    ///
+    /// A deterministic query-understanding stage
+    /// (see [`crate::memory::retrieval::QueryPlan`]) runs first when
+    /// `config.enable_query_understanding` is set (the default):
+    /// multi-part questions are split into sub-queries whose fused results
+    /// are unioned (dedup, best score wins), and an extracted temporal
+    /// constraint multiplicatively boosts matching memories' fused scores
+    /// before composite scoring. Simple queries are a no-op passthrough.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
         tracing::debug!(
             query = %query,
@@ -344,7 +373,102 @@ impl HybridRetriever {
             }
         }
 
-        // Collect results from all pipelines
+        // Query understanding: temporal-constraint extraction + multi-part
+        // splitting. Disabled (or a simple query) degenerates to the
+        // original single-query path.
+        let plan = if self.config.enable_query_understanding {
+            super::query_understanding::QueryPlan::analyze(query)
+        } else {
+            super::query_understanding::QueryPlan::passthrough(query)
+        };
+
+        let fused = if plan.is_passthrough() {
+            self.collect_and_fuse(query, limit).await?
+        } else {
+            tracing::debug!(
+                sub_queries = plan.sub_queries.len(),
+                temporal = plan.temporal.is_some(),
+                "Query understanding applied"
+            );
+
+            // Run each sub-query through the full retrieval + fusion path
+            // and union the results, keeping each memory's best fused score.
+            let mut best: HashMap<String, (MemoryFragment, f64)> = HashMap::new();
+            for sub_query in &plan.sub_queries {
+                for (memory, score) in self.collect_and_fuse(sub_query, limit).await? {
+                    match best.entry(memory.entry.key.clone()) {
+                        std::collections::hash_map::Entry::Occupied(mut e) => {
+                            if score > e.get().1 {
+                                e.get_mut().1 = score;
+                            }
+                        }
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            e.insert((memory, score));
+                        }
+                    }
+                }
+            }
+            let mut unioned: Vec<(MemoryFragment, f64)> = best.into_values().collect();
+
+            // Temporal boost: memories matching the extracted constraint
+            // (created within the range, or content mentioning a
+            // constrained year) get a multiplicative bump on their fused
+            // score BEFORE composite normalization.
+            if let Some(ref temporal) = plan.temporal {
+                let boost = 1.0 + self.config.temporal_boost.max(0.0);
+                for (memory, score) in &mut unioned {
+                    if temporal.matches(&memory.entry) {
+                        *score *= boost;
+                    }
+                }
+            }
+
+            // Deterministic ordering: score descending, then key ascending.
+            unioned.sort_by(|a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.entry.key.cmp(&b.0.entry.key))
+            });
+            unioned.truncate(limit);
+            unioned
+        };
+
+        // Apply the composite relevance × recency × importance score
+        // (see `CompositeWeights`).
+        let composite = self.apply_composite_scoring(fused).await?;
+
+        // Optional reranking stage over the top-K: reorders by cross-features
+        // computed against the query; preserves scores and candidates.
+        let fused_results: Vec<MemoryFragment> = match self.reranker {
+            Some(ref reranker) => {
+                let reranked = reranker.rerank(query, composite).await?;
+                tracing::debug!(reranker = reranker.name(), "Rerank stage applied");
+                reranked.into_iter().map(|s| s.memory).collect()
+            }
+            None => composite.into_iter().map(|s| s.memory).collect(),
+        };
+
+        tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
+
+        // Cache results
+        if let Some(ref cache) = self.cache {
+            let cache_key = format!("{}:{}", query, limit);
+            cache.write().await.insert(cache_key, fused_results.clone());
+        }
+
+        Ok(fused_results)
+    }
+
+    /// Run one query through every available pipeline and fuse the results.
+    ///
+    /// This is the single-query core of `search`, factored out so the
+    /// query-understanding stage can run it once per sub-query and union
+    /// the fused outputs.
+    async fn collect_and_fuse(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<(MemoryFragment, f64)>> {
         let mut all_results: Vec<Vec<ScoredMemory>> = Vec::new();
 
         for pipeline in &self.pipelines {
@@ -376,31 +500,7 @@ impl HybridRetriever {
             }
         }
 
-        // Fuse results, then apply the composite
-        // relevance × recency × importance score (see `CompositeWeights`).
-        let fused = self.fuse_results(all_results, limit)?;
-        let composite = self.apply_composite_scoring(fused).await?;
-
-        // Optional reranking stage over the top-K: reorders by cross-features
-        // computed against the query; preserves scores and candidates.
-        let fused_results: Vec<MemoryFragment> = match self.reranker {
-            Some(ref reranker) => {
-                let reranked = reranker.rerank(query, composite).await?;
-                tracing::debug!(reranker = reranker.name(), "Rerank stage applied");
-                reranked.into_iter().map(|s| s.memory).collect()
-            }
-            None => composite.into_iter().map(|s| s.memory).collect(),
-        };
-
-        tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
-
-        // Cache results
-        if let Some(ref cache) = self.cache {
-            let cache_key = format!("{}:{}", query, limit);
-            cache.write().await.insert(cache_key, fused_results.clone());
-        }
-
-        Ok(fused_results)
+        self.fuse_results(all_results, limit)
     }
 
     /// Fuse results from multiple pipelines using the configured strategy.

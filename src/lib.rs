@@ -312,7 +312,10 @@ impl AgentMemory {
                 knowledge_graph.clone(),
             );
             let temporal = memory::retrieval::TemporalRetriever::new(Arc::clone(&storage));
-            let pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
+            let mut pipeline_config = memory::retrieval::PipelineConfig::semantic_focus();
+            // Query understanding (temporal-constraint extraction +
+            // multi-part splitting) is toggleable for ablation baselines.
+            pipeline_config.enable_query_understanding = config.enable_query_understanding;
             // Deterministic heuristic reranker over the top-K: cross-features
             // (term overlap, embedding agreement, graph proximity, recency)
             // reorder the fused + composite-scored results.
@@ -1558,6 +1561,11 @@ pub struct MemoryConfig {
     /// Requires `enable_knowledge_graph` (it is inert without a graph); set
     /// to `false` for single-hop ablation baselines.
     pub enable_multihop_retrieval: bool,
+    /// Enable the deterministic query-understanding stage in the retrieval
+    /// pipeline (temporal-constraint extraction + multi-part question
+    /// splitting with result union). Default: `true`. Simple queries are a
+    /// no-op passthrough; set to `false` for ablation baselines.
+    pub enable_query_understanding: bool,
     pub enable_temporal_tracking: bool,
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
@@ -1612,6 +1620,7 @@ impl Default for MemoryConfig {
             similarity_threshold: 0.7,
             enable_knowledge_graph: true,
             enable_multihop_retrieval: true,
+            enable_query_understanding: true,
             enable_temporal_tracking: true,
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
