@@ -296,11 +296,14 @@ impl AgentMemory {
             }
             #[cfg(not(feature = "test-utils"))]
             let _ = tfidf_stats;
-            let dense_vector = memory::retrieval::DenseVectorRetriever::new(
-                Arc::clone(&storage),
-                Arc::clone(&provider),
+            let dense_vector: Arc<dyn memory::retrieval::RetrievalPipeline> =
+                Arc::new(memory::retrieval::DenseVectorRetriever::new(
+                    Arc::clone(&storage),
+                    Arc::clone(&provider),
+                ));
+            let keyword: Arc<dyn memory::retrieval::RetrievalPipeline> = Arc::new(
+                memory::retrieval::KeywordRetriever::new(Arc::clone(&storage)),
             );
-            let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
             // Graph and temporal signals share the same storage; the graph
             // retriever additionally shares the live knowledge-graph handle
             // (it reports itself unavailable when the graph is disabled).
@@ -317,12 +320,26 @@ impl AgentMemory {
                 Some(Arc::clone(&provider)),
                 knowledge_graph.clone(),
             );
-            let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
-                .add_pipeline(Arc::new(dense_vector))
-                .add_pipeline(Arc::new(keyword))
+            let mut hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
+                .add_pipeline(Arc::clone(&dense_vector))
+                .add_pipeline(Arc::clone(&keyword))
                 .add_pipeline(Arc::new(graph))
                 .add_pipeline(Arc::new(temporal))
                 .with_reranker(Arc::new(reranker));
+            // Multi-hop graph expansion (HippoRAG-style): seeds with the
+            // dense + keyword retrievers' top hits and expands along KG
+            // relation edges so 2-hop-reachable answers surface. Toggleable
+            // via `enable_multihop_retrieval` for single-hop ablations;
+            // inert without a knowledge graph.
+            if config.enable_multihop_retrieval && knowledge_graph.is_some() {
+                let multihop = memory::retrieval::MultiHopGraphRetriever::new(
+                    Arc::clone(&storage),
+                    knowledge_graph.clone(),
+                    vec![Arc::clone(&dense_vector), Arc::clone(&keyword)],
+                    memory::retrieval::MultiHopConfig::default(),
+                );
+                hybrid = hybrid.add_pipeline(Arc::new(multihop));
+            }
             (Some(Arc::new(hybrid)), Some(provider))
         } else {
             (None, None)
@@ -1536,6 +1553,11 @@ pub struct MemoryConfig {
     pub max_long_term_memories: usize,
     pub similarity_threshold: f64,
     pub enable_knowledge_graph: bool,
+    /// Enable the multi-hop graph-expansion retrieval stage (HippoRAG-style
+    /// seed → expand → score over the knowledge graph). Default: `true`.
+    /// Requires `enable_knowledge_graph` (it is inert without a graph); set
+    /// to `false` for single-hop ablation baselines.
+    pub enable_multihop_retrieval: bool,
     pub enable_temporal_tracking: bool,
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
@@ -1589,6 +1611,7 @@ impl Default for MemoryConfig {
             max_long_term_memories: 10000,
             similarity_threshold: 0.7,
             enable_knowledge_graph: true,
+            enable_multihop_retrieval: true,
             enable_temporal_tracking: true,
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]

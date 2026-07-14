@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod dense_vector;
 pub mod indexed;
+pub mod multihop;
 pub mod pipeline;
 pub mod rerank;
 pub mod strategies;
@@ -25,6 +26,9 @@ pub use rerank::{HeuristicRerankWeights, HeuristicReranker, Reranker};
 
 // Re-export concrete strategies
 pub use strategies::{GraphRetriever, KeywordRetriever, TemporalRetriever};
+
+// Re-export the multi-hop graph-expansion retriever
+pub use multihop::{MultiHopConfig, MultiHopGraphRetriever};
 
 // Re-export dense vector retriever
 pub use dense_vector::DenseVectorRetriever;
