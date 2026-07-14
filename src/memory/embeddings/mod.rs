@@ -24,13 +24,186 @@ pub use provider::{
 };
 
 // Re-export concrete providers
-pub use providers::{TfIdfConfig, TfIdfProvider};
+pub use providers::{FallbackEmbeddingProvider, TfIdfConfig, TfIdfProvider};
 
 // Re-export multi-provider system
 pub use multi_provider::{MultiProvider, MultiProviderBuilder, MultiProviderConfig};
 
 // Re-export configuration
 pub use config::{EmbeddingProviderConfig, GlobalConfig, ProviderConfig, ProviderType};
+
+/// Selects the embedding provider used by the RETRIEVAL pipeline (dense
+/// retriever + reranker + the store-time corpus feed).
+///
+/// The default is [`RetrievalEmbeddingConfig::TfIdf`]: offline, no extra
+/// dependency, no network — `cargo build` / `cargo test --lib` need nothing.
+/// Semantic providers are opt-in; if the configured semantic provider cannot
+/// be constructed or fails at first use, the pipeline FALLS BACK to TF-IDF
+/// with a `tracing::warn` (see [`FallbackEmbeddingProvider`]) — it never
+/// hard-fails and never fabricates embeddings.
+///
+/// Note: semantic providers ignore the TF-IDF document-vs-scoring (IDF)
+/// distinction — their `embed_for_scoring` delegates to `embed`, which is
+/// already read-only (no corpus-relative statistics).
+#[derive(Clone, Default)]
+pub enum RetrievalEmbeddingConfig {
+    /// Offline TF-IDF (hashed TF with live corpus IDF). The default.
+    #[default]
+    TfIdf,
+    /// A local Ollama embedding model (e.g. `nomic-embed-text`, 768-dim).
+    /// Requires the `llm-integration` feature (reqwest client); without it,
+    /// selection warns and falls back to TF-IDF at construction.
+    Ollama {
+        /// Ollama server endpoint, e.g. `http://localhost:11434`.
+        endpoint: String,
+        /// Embedding model name, e.g. `nomic-embed-text`.
+        model: String,
+        /// Expected embedding dimension (768 for nomic-embed-text).
+        dimension: usize,
+    },
+    /// Any user-supplied provider implementation (also used by tests to
+    /// inject mock semantic providers). Wrapped with the TF-IDF fallback.
+    Custom(std::sync::Arc<dyn EmbeddingProvider>),
+}
+
+impl std::fmt::Debug for RetrievalEmbeddingConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TfIdf => write!(f, "RetrievalEmbeddingConfig::TfIdf"),
+            Self::Ollama {
+                endpoint,
+                model,
+                dimension,
+            } => f
+                .debug_struct("RetrievalEmbeddingConfig::Ollama")
+                .field("endpoint", endpoint)
+                .field("model", model)
+                .field("dimension", dimension)
+                .finish(),
+            Self::Custom(provider) => f
+                .debug_struct("RetrievalEmbeddingConfig::Custom")
+                .field("provider", &provider.name())
+                .finish(),
+        }
+    }
+}
+
+impl RetrievalEmbeddingConfig {
+    /// Ollama with the default local endpoint and `nomic-embed-text` (768-d).
+    pub fn ollama_default() -> Self {
+        Self::Ollama {
+            endpoint: "http://localhost:11434".to_string(),
+            model: "nomic-embed-text".to_string(),
+            dimension: 768,
+        }
+    }
+
+    /// Read the provider selection from the environment, for measurement
+    /// runs without code changes: `SYNAPTIC_RETRIEVAL_EMBEDDER=ollama`
+    /// selects Ollama (endpoint/model/dimension overridable via
+    /// `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_DIM`);
+    /// `tfidf` selects TF-IDF explicitly; unset/unknown returns `None`.
+    pub fn from_env() -> Option<Self> {
+        match std::env::var("SYNAPTIC_RETRIEVAL_EMBEDDER").ok()?.as_str() {
+            "ollama" => {
+                let endpoint = std::env::var("OLLAMA_ENDPOINT")
+                    .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                let model = std::env::var("OLLAMA_MODEL")
+                    .unwrap_or_else(|_| "nomic-embed-text".to_string());
+                let dimension = std::env::var("OLLAMA_EMBEDDING_DIM")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(768);
+                Some(Self::Ollama {
+                    endpoint,
+                    model,
+                    dimension,
+                })
+            }
+            "tfidf" => Some(Self::TfIdf),
+            other => {
+                tracing::warn!(
+                    value = other,
+                    "unknown SYNAPTIC_RETRIEVAL_EMBEDDER value; using the TF-IDF default"
+                );
+                None
+            }
+        }
+    }
+}
+
+/// Build the shared retrieval embedding provider from its configuration.
+///
+/// Returns `(provider, tfidf)` where `provider` is the `Arc<dyn
+/// EmbeddingProvider>` shared by the dense retriever, the reranker and the
+/// store-time corpus feed, and `tfidf` is the concrete TF-IDF instance
+/// backing it (either AS the provider, or as the fallback inside a
+/// [`FallbackEmbeddingProvider`]) — retained for corpus-statistics
+/// introspection.
+///
+/// Never fails: an unbuildable semantic provider (feature off, client
+/// construction error) degrades to TF-IDF with a `tracing::warn`; a
+/// reachable-at-construction but failing-at-use provider degrades at first
+/// use via the fallback wrapper.
+pub fn build_retrieval_provider(
+    config: &RetrievalEmbeddingConfig,
+) -> (
+    std::sync::Arc<dyn EmbeddingProvider>,
+    std::sync::Arc<TfIdfProvider>,
+) {
+    use std::sync::Arc;
+    let tfidf = Arc::new(TfIdfProvider::default());
+    match config {
+        RetrievalEmbeddingConfig::TfIdf => (Arc::clone(&tfidf) as _, tfidf),
+        RetrievalEmbeddingConfig::Ollama {
+            endpoint,
+            model,
+            dimension,
+        } => {
+            #[cfg(feature = "llm-integration")]
+            {
+                let ollama_config = providers::OllamaConfig::new(model.clone(), *dimension)
+                    .with_endpoint(endpoint.clone());
+                match providers::OllamaProvider::new(ollama_config) {
+                    Ok(ollama) => {
+                        tracing::info!(
+                            endpoint = %endpoint,
+                            model = %model,
+                            dimension = dimension,
+                            "retrieval embedding provider: Ollama (TF-IDF fallback armed)"
+                        );
+                        let wrapped =
+                            FallbackEmbeddingProvider::new(Arc::new(ollama), Arc::clone(&tfidf));
+                        (Arc::new(wrapped) as _, tfidf)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            endpoint = %endpoint,
+                            model = %model,
+                            error = %e,
+                            "failed to construct Ollama embedding provider; falling back to TF-IDF"
+                        );
+                        (Arc::clone(&tfidf) as _, tfidf)
+                    }
+                }
+            }
+            #[cfg(not(feature = "llm-integration"))]
+            {
+                tracing::warn!(
+                    endpoint = %endpoint,
+                    model = %model,
+                    dimension = dimension,
+                    "Ollama retrieval embedding requires the 'llm-integration' feature; falling back to TF-IDF"
+                );
+                (Arc::clone(&tfidf) as _, tfidf)
+            }
+        }
+        RetrievalEmbeddingConfig::Custom(provider) => {
+            let wrapped = FallbackEmbeddingProvider::new(Arc::clone(provider), Arc::clone(&tfidf));
+            (Arc::new(wrapped) as _, tfidf)
+        }
+    }
+}
 
 /// Configuration for embedding system
 #[derive(Debug, Clone, Serialize, Deserialize)]

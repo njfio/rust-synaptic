@@ -1,5 +1,6 @@
 //! Concrete embedding provider implementations
 
+pub mod fallback;
 pub mod tfidf;
 
 #[cfg(feature = "llm-integration")]
@@ -15,6 +16,7 @@ pub mod cohere;
 pub mod candle;
 
 // Re-export providers
+pub use fallback::FallbackEmbeddingProvider;
 pub use tfidf::{TfIdfConfig, TfIdfProvider};
 
 #[cfg(feature = "llm-integration")]

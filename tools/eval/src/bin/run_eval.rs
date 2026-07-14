@@ -95,9 +95,26 @@ async fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let grow_100k = args.iter().any(|a| a == "--growth-100k");
     let growth_only = args.iter().any(|a| a == "--growth-only");
+    // `--retrieval-only` skips the ablation ladder, growth, and QA (fast
+    // retrieval-quality signal). `--max-conversations N` truncates to the first
+    // N conversations (a labelled subset for a quick, cheaper measurement).
+    let retrieval_only = args.iter().any(|a| a == "--retrieval-only");
+    let max_conversations: Option<usize> = args
+        .iter()
+        .position(|a| a == "--max-conversations")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok());
+    // `--max-questions N` caps EACH conversation to its first N questions (a
+    // quick labelled subset; questions within a conversation run sequentially
+    // so this bounds wall-clock directly).
+    let max_questions: Option<usize> = args
+        .iter()
+        .position(|a| a == "--max-questions")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok());
     let dataset_path = args
         .iter()
-        .find(|a| !a.starts_with("--"))
+        .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
         .cloned()
         .unwrap_or_else(|| DEFAULT_DATASET.to_string());
     let path = Path::new(&dataset_path);
@@ -110,7 +127,15 @@ async fn main() -> Result<(), String> {
             .map_err(|e| e.to_string())
     };
 
-    let conversations = load(path)?;
+    let mut conversations = load(path)?;
+    if let Some(n) = max_conversations {
+        conversations.truncate(n);
+    }
+    if let Some(q) = max_questions {
+        for c in &mut conversations {
+            c.questions.truncate(q);
+        }
+    }
     let n_questions: usize = conversations.iter().map(|c| c.questions.len()).sum();
     let n_turns: usize = conversations
         .iter()
@@ -168,6 +193,10 @@ async fn main() -> Result<(), String> {
         "recall_latency",
         &LatencySummary::from_durations(&recall_durations),
     ))?;
+
+    if retrieval_only {
+        return Ok(());
+    }
 
     // 2. Capability ablation ladder, one concurrent task per
     //    (config, conversation) pair; per-question rows are merged per config

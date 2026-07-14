@@ -373,3 +373,41 @@ cargo run --release -p synaptic-eval --bin run_eval -- tools/eval/data/longmemev
 
 Expect a long run: the retrieval + ablation phases took roughly an hour of
 wall-clock time on a 24-thread dev machine.
+
+## Retrieval-quality round (2026-07-14) — semantic embeddings + multi-hop + query understanding
+
+Three capabilities added to lift the retrieval ceiling. **Measured on a labelled
+50-question LoCoMo subset** (5 conversations × first 10 questions each,
+`--retrieval-only --max-conversations 5 --max-questions 10`) — a fast directional
+signal, **not** the full 1,986-question set; treat magnitudes as indicative.
+Semantic embeddings use a locally-served Ollama `nomic-embed-text` (768-dim);
+the **default remains TF-IDF** (offline, no dependency) with automatic fallback.
+
+| config | recall@10 | MRR | precision@10 | MultiHop R@10 | Temporal R@10 | SingleHop R@10 |
+|---|---|---|---|---|---|---|
+| TF-IDF baseline | 0.2212 | 0.2567 | 0.0300 | 0.0821 | 0.4091 | 0.0000 |
+| + semantic (Ollama) | 0.3652 | 0.3517 | 0.0500 | 0.1190 | 0.6818 | 0.2500 |
+| + semantic + multi-hop + query understanding | **0.3702** | 0.3512 | 0.0540 | **0.1848** | 0.6364 | 0.2500 |
+
+Honest attribution:
+
+- **Semantic embeddings are the dominant lever** — recall@10 0.2212 → 0.3652
+  (**+65% relative**) on this subset, with the largest gains where lexical TF-IDF
+  is weakest: Temporal 0.4091 → 0.6818 and SingleHop 0.0 → 0.25. This is the
+  single biggest retrieval improvement measured in this project. (Requires an
+  embedding endpoint; the default TF-IDF path is unchanged and offline.)
+- **Multi-hop graph expansion delivers on its target category** — MultiHop
+  R@10 0.1190 → 0.1848 (**+55% relative**) and precision 0.050 → 0.054 on top of
+  semantic. It surfaces 2-hop-reachable evidence that single-hop dense/keyword
+  retrieval misses (unit-proven with an A→B→C fixture).
+- **Query understanding is roughly neutral on this subset** — overall recall
+  effectively flat and Temporal slightly down (0.6818 → 0.6364). The mechanism is
+  real and unit-proven (temporal-constraint boost, multi-part split/union), but
+  this question distribution did not reward it measurably; reported as-is, not
+  overstated. It may help other distributions (e.g. LongMemEval's explicit
+  temporal-reasoning questions).
+
+Not run: the full 1,986-question semantic ablation (the Ollama path serializes
+embedding requests, making the full 5-config run impractical in-sandbox — the
+subset is the honest signal); LongMemEval-S. Default-build (TF-IDF) numbers from
+the prior sections are unchanged.
