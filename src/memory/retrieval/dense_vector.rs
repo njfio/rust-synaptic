@@ -4,9 +4,8 @@
 
 use super::pipeline::{PipelineConfig, RetrievalPipeline, RetrievalSignal, ScoredMemory};
 use crate::error::Result;
-use crate::memory::embeddings::{Embedding, EmbeddingProvider};
+use crate::memory::embeddings::EmbeddingProvider;
 use crate::memory::storage::Storage;
-use crate::memory::types::MemoryFragment;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -48,25 +47,6 @@ impl DenseVectorRetriever {
         self.similarity_threshold = threshold;
         self
     }
-
-    /// Compute similarity score for a fragment against query embedding
-    async fn compute_similarity_score(
-        &self,
-        fragment: &MemoryFragment,
-        query_embedding: &Embedding,
-    ) -> Result<f64> {
-        // Generate embedding for the fragment via the read-only,
-        // content-hash-cached scoring path (no vocabulary mutation).
-        let fragment_embedding = self
-            .provider
-            .embed_for_scoring(&fragment.entry.value, None)
-            .await?;
-
-        // Compute cosine similarity
-        let similarity = query_embedding.cosine_similarity(&fragment_embedding);
-
-        Ok(similarity)
-    }
 }
 
 #[async_trait]
@@ -97,13 +77,21 @@ impl RetrievalPipeline for DenseVectorRetriever {
             "DenseVectorRetriever: retrieved candidates"
         );
 
+        // Embed ALL candidates through ONE batched call on the read-only,
+        // content-hash-cached scoring path (no vocabulary mutation). For a
+        // true batched provider (candle BERT) this is a single model forward
+        // pass over the whole candidate set instead of one per candidate.
+        let contents: Vec<&str> = fragments
+            .iter()
+            .map(|fragment| fragment.entry.value.as_str())
+            .collect();
+        let fragment_embeddings = self.provider.embed_for_scoring_batch(&contents).await?;
+
         // Score each fragment by semantic similarity
         let mut scored_results = Vec::new();
 
-        for fragment in fragments {
-            let similarity = self
-                .compute_similarity_score(&fragment, &query_embedding)
-                .await?;
+        for (fragment, fragment_embedding) in fragments.into_iter().zip(fragment_embeddings) {
+            let similarity = query_embedding.cosine_similarity(&fragment_embedding);
 
             if similarity >= self.similarity_threshold {
                 let scored = ScoredMemory::new(fragment, similarity, RetrievalSignal::DenseVector)
