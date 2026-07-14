@@ -113,3 +113,39 @@ async fn summarization_is_debounced_not_per_store() {
          debounced (sublinear), not re-run on every store"
     );
 }
+
+/// A cluster grown well past the bounded candidate cap must keep
+/// re-summarizing as it grows, not get permanently stuck once the observed
+/// related-count saturates at `RELATED_CANDIDATE_LIMIT - 1`. The watermark
+/// clamp guarantees the re-fire bar stays reachable at saturation.
+#[tokio::test]
+async fn large_saturated_cluster_keeps_resummarizing() {
+    let storage = Arc::new(MemoryStorage::new());
+    let mut mgr = manager(); // default threshold = 10, candidate cap = 64
+
+    // Store enough topical memories that the related-count pins to the
+    // candidate cap for the tail of the run.
+    let mut runs_at_midpoint = 0usize;
+    for i in 0..150usize {
+        let entry = MemoryEntry::new(
+            format!("saturate_key_{i:03}"),
+            format!("rust memory graph engine design note note variant{i}"),
+            MemoryType::LongTerm,
+        );
+        storage.store(&entry).await.unwrap();
+        mgr.add_memory(&*storage, entry, None).await.unwrap();
+        if i == 100 {
+            runs_at_midpoint = mgr.auto_summarization_run_count();
+        }
+    }
+
+    let final_runs = mgr.auto_summarization_run_count();
+    // If saturation stuck the cluster (the pre-fix bug), the run count would
+    // plateau at ~6 well before store 100 and never advance. The clamp keeps
+    // it advancing across the saturated tail (stores 100..150).
+    assert!(
+        final_runs > runs_at_midpoint,
+        "large saturated cluster stopped re-summarizing: {runs_at_midpoint} \
+         runs at store 100, {final_runs} at store 150 — clamp failed"
+    );
+}

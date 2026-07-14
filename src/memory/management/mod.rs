@@ -62,6 +62,12 @@ const RELATED_QUERY_MAX_TERMS: usize = 8;
 /// creations observed by this manager, never the full corpus.
 const TEMPORAL_RECENT_CAP: usize = 128;
 
+/// Maximum number of debounce watermarks retained for a long-lived manager.
+/// Bounds `summarization_watermarks` memory: when full, the oldest-inserted
+/// watermark is evicted (an evicted cluster simply re-summarizes on its next
+/// qualifying store, which is the correct conservative behavior).
+const WATERMARK_MAP_CAP: usize = 4096;
+
 /// State backing the approximate-nearest-neighbor similarity index used by
 /// [`MemoryManager::count_similarity_related_memories`]. Lazily created once
 /// the first embedding's dimension is known, and kept in sync with storage
@@ -703,6 +709,9 @@ pub struct AdvancedMemoryManager {
     /// it has grown by another `summarization_threshold` memories, so full
     /// summarization is never re-run on every store.
     summarization_watermarks: std::collections::HashMap<String, usize>,
+    /// Insertion order of watermark keys, used to evict the oldest when
+    /// `summarization_watermarks` reaches `WATERMARK_MAP_CAP`.
+    watermark_order: std::collections::VecDeque<String>,
     /// Bounded ring of recent memory creations `(key, created_at)` observed
     /// by this manager, used by the temporal-clustering trigger instead of a
     /// full-corpus scan. Pruned to the clustering window and capped at
@@ -1197,6 +1206,7 @@ impl AdvancedMemoryManager {
             analytics: MemoryAnalytics::new(),
             temporal_manager: TemporalMemoryManager::new(temporal_config),
             summarization_watermarks: std::collections::HashMap::new(),
+            watermark_order: std::collections::VecDeque::new(),
             recent_creations: std::collections::VecDeque::new(),
             #[cfg(feature = "test-utils")]
             trigger_candidates_examined_max: std::sync::atomic::AtomicUsize::new(0),
@@ -1260,6 +1270,25 @@ impl AdvancedMemoryManager {
         match self.summarization_watermarks.get(cluster_key) {
             None => true,
             Some(watermark) => cluster_size >= watermark + self.config.summarization_threshold,
+        }
+    }
+
+    /// Record a debounce watermark for `cluster_key`, keeping the watermark
+    /// map bounded to `WATERMARK_MAP_CAP` by evicting the oldest-inserted key
+    /// when a new key would exceed the cap.
+    fn set_watermark(&mut self, cluster_key: String, watermark: usize) {
+        if self
+            .summarization_watermarks
+            .insert(cluster_key.clone(), watermark)
+            .is_none()
+        {
+            // Newly inserted key: track its order and evict if over cap.
+            self.watermark_order.push_back(cluster_key);
+            while self.watermark_order.len() > WATERMARK_MAP_CAP {
+                if let Some(oldest) = self.watermark_order.pop_front() {
+                    self.summarization_watermarks.remove(&oldest);
+                }
+            }
         }
     }
 
@@ -1726,6 +1755,16 @@ impl AdvancedMemoryManager {
     /// candidates instead of O(n). A fired trigger is debounced per cluster:
     /// it re-fires only after the cluster has grown by another
     /// `summarization_threshold` related memories.
+    ///
+    /// Saturation boundary: because the candidate set is capped at
+    /// `RELATED_CANDIDATE_LIMIT`, the observed `related_count` saturates at
+    /// `RELATED_CANDIDATE_LIMIT - 1`. The stored debounce watermark is
+    /// therefore clamped (see `execute_automatic_summarization`) to
+    /// `(RELATED_CANDIDATE_LIMIT - 1) - summarization_threshold`, so the
+    /// re-fire bar `watermark + threshold` stays reachable at saturation.
+    /// This keeps arbitrarily large, still-growing clusters re-summarizing on
+    /// a bounded cadence rather than getting permanently stuck once the count
+    /// pins to the candidate cap.
     async fn check_related_memory_threshold(
         &self,
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
@@ -1743,8 +1782,16 @@ impl AdvancedMemoryManager {
         // Build a bounded search query from the memory's significant words
         // and tags; the inverted keyword index returns candidate entries
         // without scanning the corpus.
-        let mut query_terms: Vec<&str> = memory_words
-            .iter()
+        //
+        // Term selection is deterministic: significant words are sorted by
+        // length descending (longer words are rarer/more selective), ties
+        // broken lexicographically, then the top `RELATED_QUERY_MAX_TERMS`
+        // are taken. Iterating the `HashSet` directly would pick an arbitrary
+        // subset and cause run-to-run recall variance.
+        let mut sorted_words: Vec<&String> = memory_words.iter().collect();
+        sorted_words.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        let mut query_terms: Vec<&str> = sorted_words
+            .into_iter()
             .take(RELATED_QUERY_MAX_TERMS)
             .map(|w| w.as_str())
             .collect();
@@ -1813,6 +1860,10 @@ impl AdvancedMemoryManager {
             );
             metadata.insert("debounce_key".to_string(), cluster_key);
             metadata.insert("debounce_count".to_string(), related_count.to_string());
+            metadata.insert(
+                "debounce_cap".to_string(),
+                RELATED_CANDIDATE_LIMIT.to_string(),
+            );
 
             let mut related_memory_keys = vec![memory.key.clone()];
             related_memory_keys.extend(related_keys);
@@ -1935,6 +1986,12 @@ impl AdvancedMemoryManager {
             let mut metadata = std::collections::HashMap::new();
             metadata.insert("debounce_key".to_string(), cluster_key);
             metadata.insert("debounce_count".to_string(), cluster_size.to_string());
+            // Temporal cluster size saturates at the recent-creations window
+            // cap (+1 for the memory itself); clamp the watermark accordingly.
+            metadata.insert(
+                "debounce_cap".to_string(),
+                (TEMPORAL_RECENT_CAP + 1).to_string(),
+            );
             metadata.insert("cluster_size".to_string(), cluster_size.to_string());
             metadata.insert("time_window_hours".to_string(), "2".to_string());
             metadata.insert(
@@ -2132,7 +2189,19 @@ impl AdvancedMemoryManager {
                 .get("debounce_count")
                 .and_then(|c| c.parse::<usize>().ok()),
         ) {
-            self.summarization_watermarks.insert(key.clone(), count);
+            // Clamp the watermark so the re-fire bar (`watermark + threshold`)
+            // stays reachable even when the observed count is pinned to the
+            // candidate/window cap. Without this, a large growing cluster
+            // would summarize a handful of times then be suppressed forever.
+            let cap = trigger
+                .metadata
+                .get("debounce_cap")
+                .and_then(|c| c.parse::<usize>().ok())
+                .unwrap_or(count + 1);
+            let max_watermark =
+                (cap.saturating_sub(1)).saturating_sub(self.config.summarization_threshold.max(1));
+            let watermark = count.min(max_watermark);
+            self.set_watermark(key.clone(), watermark);
         }
 
         // Generate a unique key for the summary
