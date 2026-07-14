@@ -450,3 +450,35 @@ Honest findings:
 Not measured: batched-candle latency; the full 1,986-question set with candle
 (un-batched CPU inference makes it impractical in-sandbox — the subset is the
 honest signal).
+
+## Batched candidate embedding (2026-07-14) — candle latency ~4× lower
+
+The bundled candle MiniLM's ~28.5 s/query came from embedding the query and every
+candidate one at a time (one BERT forward each). This batches all cache-missing
+candidates into a **single padded forward pass** per query (attention-masked so a
+padded-batch vector is bit-identical to the solo embedding — proven by an
+identity test within 1e-5). Same 50-question LoCoMo subset:
+
+| candle MiniLM (in-process, offline) | before batching | after batching |
+|---|---|---|
+| recall@10 | 0.3300 | **0.3300 (identical)** |
+| Temporal R@10 | 0.6364 | 0.6364 |
+| search latency p50 | ~28.5 s | **~7.0 s** (~4× faster) |
+| search latency p95 | ~30.5 s | ~24.9 s |
+| store latency p50 | ~158 ms | ~152 ms (unchanged) |
+
+Honest findings:
+
+- **Recall is unchanged** — batching is a pure latency optimization; the identity
+  test (padded batch == individual embeds) guarantees vectors, hence rankings,
+  are preserved. Confirmed: 0.3300 both times, per-category identical.
+- **Search latency dropped ~4×** (28.5 s → 7.0 s p50) by collapsing N per-candidate
+  forward passes into one batched pass (cache misses only).
+- **Still not a fast default.** 7.0 s p50 / 24.9 s p95 on CPU is a real improvement
+  but remains too slow to silently default to; candle BERT on CPU is the floor
+  (store embedding is still ~152 ms/turn, one forward each). Reaching sub-second
+  needs **GPU** or a **smaller/quantized model** — out of scope here. The bundled
+  candle model therefore stays **opt-in**, now meaningfully faster; **TF-IDF
+  remains the default**, Ollama (~3.8 s) the balanced server option.
+
+Not measured: GPU / quantized-model latency; batched store-side embedding.
