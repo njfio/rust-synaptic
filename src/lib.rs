@@ -1571,12 +1571,15 @@ pub struct MemoryConfig {
     #[cfg(feature = "embeddings")]
     pub enable_embeddings: bool,
     /// Embedding provider for the retrieval pipeline (dense retriever,
-    /// reranker, store-time corpus feed). Default: TF-IDF (offline, no
-    /// network). Semantic providers (e.g. Ollama `nomic-embed-text`) are
-    /// opt-in and fall back to TF-IDF with a warn when unreachable. The
-    /// default also honors `SYNAPTIC_RETRIEVAL_EMBEDDER=ollama` (see
-    /// [`memory::embeddings::RetrievalEmbeddingConfig::from_env`]) so
-    /// measurement runs can select Ollama without code changes.
+    /// reranker, store-time corpus feed). Default selection (see
+    /// [`memory::embeddings::RetrievalEmbeddingConfig::auto`]): an explicit
+    /// `SYNAPTIC_RETRIEVAL_EMBEDDER` env selection (`tfidf`/`ollama`/`candle`)
+    /// wins; else, with the `ml-models` feature built AND the bundled MiniLM
+    /// model fetched locally (`scripts/fetch_embedding_model.sh`, default dir
+    /// `models/all-MiniLM-L6-v2`, override via `SYNAPTIC_EMBED_MODEL_DIR`),
+    /// the offline candle model is used; else TF-IDF (offline, no network,
+    /// no model download). All semantic providers fall back to TF-IDF with a
+    /// warn on any failure.
     #[cfg(feature = "embeddings")]
     pub retrieval_embedding_provider: memory::embeddings::RetrievalEmbeddingConfig,
     #[cfg(feature = "distributed-experimental")]
@@ -1626,8 +1629,7 @@ impl Default for MemoryConfig {
             #[cfg(feature = "embeddings")]
             enable_embeddings: true,
             #[cfg(feature = "embeddings")]
-            retrieval_embedding_provider: memory::embeddings::RetrievalEmbeddingConfig::from_env()
-                .unwrap_or_default(),
+            retrieval_embedding_provider: memory::embeddings::RetrievalEmbeddingConfig::auto(),
             #[cfg(feature = "distributed-experimental")]
             enable_distributed: false,
             #[cfg(feature = "distributed-experimental")]

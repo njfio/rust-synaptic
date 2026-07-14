@@ -219,6 +219,77 @@ async fn selectable_through_multi_provider() {
     }
 }
 
+/// A missing model directory selected via `RetrievalEmbeddingConfig::Candle`
+/// must fall back to TF-IDF (no panic, no error, still embeds).
+#[tokio::test]
+async fn missing_model_dir_falls_back_to_tfidf() {
+    use synaptic::memory::embeddings::{build_retrieval_provider, RetrievalEmbeddingConfig};
+
+    let config = RetrievalEmbeddingConfig::Candle {
+        model_dir: std::path::PathBuf::from("/nonexistent/synaptic-model-dir"),
+        dimension: 384,
+    };
+    let (provider, _tfidf) = build_retrieval_provider(&config);
+    let embedding = provider
+        .embed("fallback still embeds via tfidf", None)
+        .await
+        .expect("fallback provider must embed without error");
+    assert!(!embedding.vector.is_empty());
+}
+
+/// THE proof gate for real MiniLM inference: with the fetched
+/// all-MiniLM-L6-v2 weights (run `scripts/fetch_embedding_model.sh` first),
+/// semantically related sentences must be markedly more similar than
+/// unrelated ones. Random or wrongly-mapped weights cannot pass this.
+///
+/// Ignored by default because it needs the ~90MB downloaded model:
+///   cargo test --features ml-models --test candle_embedding_provider_tests -- --ignored
+#[tokio::test]
+#[ignore = "requires models/all-MiniLM-L6-v2 fetched via scripts/fetch_embedding_model.sh"]
+async fn real_minilm_related_sentences_beat_unrelated() {
+    let model_dir = std::env::var("SYNAPTIC_EMBED_MODEL_DIR")
+        .unwrap_or_else(|_| "models/all-MiniLM-L6-v2".to_string());
+    let provider = CandleEmbeddingProvider::new(std::path::Path::new(&model_dir))
+        .expect("fetched all-MiniLM-L6-v2 model must load");
+    assert_eq!(provider.embedding_dimension(), 384);
+
+    let anchor = provider
+        .embed("The cat sat quietly on the warm windowsill.", None)
+        .await
+        .unwrap();
+    let related = provider
+        .embed("A kitten was resting peacefully by the sunny window.", None)
+        .await
+        .unwrap();
+    let unrelated = provider
+        .embed(
+            "Quarterly revenue projections exceeded analyst estimates.",
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Mean-pooled output is L2-normalized: dot product == cosine.
+    fn cosine(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
+    }
+    let norm: f32 = anchor.vector.iter().map(|v| v * v).sum::<f32>().sqrt();
+    assert!((norm - 1.0).abs() < 1e-3, "embedding must be L2-normalized");
+
+    let sim_related = cosine(&anchor.vector, &related.vector);
+    let sim_unrelated = cosine(&anchor.vector, &unrelated.vector);
+    println!("cosine(related) = {sim_related}, cosine(unrelated) = {sim_unrelated}");
+
+    assert!(
+        sim_related > sim_unrelated + 0.2,
+        "real semantic inference must separate related ({sim_related}) from unrelated ({sim_unrelated}) by a clear margin"
+    );
+    assert!(
+        sim_related > 0.5,
+        "related sentences should be strongly similar, got {sim_related}"
+    );
+}
+
 /// Empty tokenization fails with an error rather than a fabricated vector.
 #[tokio::test]
 async fn embed_empty_text_fails_closed() {
