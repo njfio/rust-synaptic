@@ -47,6 +47,27 @@ const MIN_INDEX_SIZE_FOR_ANN: usize = 100;
 /// neighborhood of a single memory, not every indexed vector.
 const ANN_SEARCH_K: usize = 200;
 
+/// Maximum number of index-backed search candidates examined per store by the
+/// related-memory summarization trigger. Bounding the candidate set (instead
+/// of scanning every stored entry) is what keeps trigger evaluation O(bounded)
+/// per store rather than O(n).
+const RELATED_CANDIDATE_LIMIT: usize = 64;
+
+/// Maximum number of significant query terms taken from a new memory when
+/// building the related-candidate search query.
+const RELATED_QUERY_MAX_TERMS: usize = 8;
+
+/// Maximum number of recent creations tracked for the temporal-clustering
+/// trigger. The cluster check scans only this capped, time-pruned window of
+/// creations observed by this manager, never the full corpus.
+const TEMPORAL_RECENT_CAP: usize = 128;
+
+/// Maximum number of debounce watermarks retained for a long-lived manager.
+/// Bounds `summarization_watermarks` memory: when full, the oldest-inserted
+/// watermark is evicted (an evicted cluster simply re-summarizes on its next
+/// qualifying store, which is the correct conservative behavior).
+const WATERMARK_MAP_CAP: usize = 4096;
+
 /// State backing the approximate-nearest-neighbor similarity index used by
 /// [`MemoryManager::count_similarity_related_memories`]. Lazily created once
 /// the first embedding's dimension is known, and kept in sync with storage
@@ -683,6 +704,28 @@ pub struct AdvancedMemoryManager {
     analytics: MemoryAnalytics,
     /// Temporal manager for tracking changes and evolution over time
     temporal_manager: TemporalMemoryManager,
+    /// Debounce watermarks for auto-summarization: cluster key -> cluster
+    /// size at the last executed summarization. A cluster re-fires only after
+    /// it has grown by another `summarization_threshold` memories, so full
+    /// summarization is never re-run on every store.
+    summarization_watermarks: std::collections::HashMap<String, usize>,
+    /// Insertion order of watermark keys, used to evict the oldest when
+    /// `summarization_watermarks` reaches `WATERMARK_MAP_CAP`.
+    watermark_order: std::collections::VecDeque<String>,
+    /// Bounded ring of recent memory creations `(key, created_at)` observed
+    /// by this manager, used by the temporal-clustering trigger instead of a
+    /// full-corpus scan. Pruned to the clustering window and capped at
+    /// `TEMPORAL_RECENT_CAP`.
+    recent_creations: std::collections::VecDeque<(String, chrono::DateTime<chrono::Utc>)>,
+    /// Test-only op-count proxy: max candidates examined by any single
+    /// summarization trigger check. Bounded-candidate triggers keep this at
+    /// most `RELATED_CANDIDATE_LIMIT.max(TEMPORAL_RECENT_CAP)`, not O(n).
+    #[cfg(feature = "test-utils")]
+    trigger_candidates_examined_max: std::sync::atomic::AtomicUsize,
+    /// Test-only counter of executed automatic summarizations (actual
+    /// summarizer runs), used to prove debouncing.
+    #[cfg(feature = "test-utils")]
+    auto_summarization_runs: std::sync::atomic::AtomicUsize,
     /// Configuration parameters for memory management behavior
     config: MemoryManagementConfig,
 }
@@ -1162,7 +1205,90 @@ impl AdvancedMemoryManager {
             optimizer: MemoryOptimizer::new(),
             analytics: MemoryAnalytics::new(),
             temporal_manager: TemporalMemoryManager::new(temporal_config),
+            summarization_watermarks: std::collections::HashMap::new(),
+            watermark_order: std::collections::VecDeque::new(),
+            recent_creations: std::collections::VecDeque::new(),
+            #[cfg(feature = "test-utils")]
+            trigger_candidates_examined_max: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(feature = "test-utils")]
+            auto_summarization_runs: std::sync::atomic::AtomicUsize::new(0),
             config,
+        }
+    }
+
+    /// Test-only op-count proxy: maximum number of candidates examined by any
+    /// single summarization trigger check since construction. Stays bounded
+    /// by fixed caps, not the store size.
+    #[cfg(feature = "test-utils")]
+    pub fn max_trigger_candidates_examined(&self) -> usize {
+        self.trigger_candidates_examined_max
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Test-only counter of executed automatic summarizations. Debouncing
+    /// keeps this sublinear in the number of stores.
+    #[cfg(feature = "test-utils")]
+    pub fn auto_summarization_run_count(&self) -> usize {
+        self.auto_summarization_runs
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Record an examined-candidate count for the test-only op proxy.
+    #[cfg(feature = "test-utils")]
+    fn record_trigger_candidates(&self, examined: usize) {
+        self.trigger_candidates_examined_max
+            .fetch_max(examined, std::sync::atomic::Ordering::Relaxed);
+    }
+    #[cfg(not(feature = "test-utils"))]
+    fn record_trigger_candidates(&self, _examined: usize) {}
+
+    /// Track a newly added memory in the bounded recent-creations window used
+    /// by the temporal-clustering trigger. O(1) amortized per store.
+    fn note_recent_creation(&mut self, memory: &MemoryEntry) {
+        let created = memory.created_at();
+        self.recent_creations
+            .push_back((memory.key.clone(), created));
+        // Prune entries that fell out of the clustering window relative to
+        // the newest creation, then enforce the hard cap.
+        let window = chrono::Duration::hours(2);
+        while let Some((_, front_time)) = self.recent_creations.front() {
+            if created - *front_time > window {
+                self.recent_creations.pop_front();
+            } else {
+                break;
+            }
+        }
+        while self.recent_creations.len() > TEMPORAL_RECENT_CAP {
+            self.recent_creations.pop_front();
+        }
+    }
+
+    /// Debounce check: a cluster identified by `cluster_key` may summarize
+    /// when it has never been summarized, or when it has grown by at least
+    /// `summarization_threshold` memories since its last summarization.
+    fn debounce_allows_summarization(&self, cluster_key: &str, cluster_size: usize) -> bool {
+        match self.summarization_watermarks.get(cluster_key) {
+            None => true,
+            Some(watermark) => cluster_size >= watermark + self.config.summarization_threshold,
+        }
+    }
+
+    /// Record a debounce watermark for `cluster_key`, keeping the watermark
+    /// map bounded to `WATERMARK_MAP_CAP` by evicting the oldest-inserted key
+    /// when a new key would exceed the cap.
+    fn set_watermark(&mut self, cluster_key: String, watermark: usize) {
+        if self
+            .summarization_watermarks
+            .insert(cluster_key.clone(), watermark)
+            .is_none()
+        {
+            // Newly inserted key: track its order and evict if over cap.
+            self.watermark_order.push_back(cluster_key);
+            while self.watermark_order.len() > WATERMARK_MAP_CAP {
+                if let Some(oldest) = self.watermark_order.pop_front() {
+                    self.summarization_watermarks.remove(&oldest);
+                }
+            }
         }
     }
 
@@ -1202,6 +1328,7 @@ impl AdvancedMemoryManager {
 
         // Check if summarization is needed
         if self.config.enable_auto_summarization {
+            self.note_recent_creation(&memory);
             let summarization_result = self
                 .evaluate_summarization_triggers(storage, &memory, knowledge_graph.as_deref())
                 .await?;
@@ -1600,10 +1727,7 @@ impl AdvancedMemoryManager {
         }
 
         // Strategy 5: Temporal clustering analysis
-        if let Some(trigger) = self
-            .check_temporal_clustering_trigger(storage, memory)
-            .await?
-        {
+        if let Some(trigger) = self.check_temporal_clustering_trigger(memory).await? {
             return Ok(Some(trigger));
         }
 
@@ -1624,6 +1748,23 @@ impl AdvancedMemoryManager {
     /// contents. This is a lexical-overlap heuristic (no embeddings are
     /// required at this call site), but it is computed from real storage
     /// data rather than an assumed count.
+    ///
+    /// Candidates are found via the storage backend's inverted-index-backed
+    /// `search` (bounded to `RELATED_CANDIDATE_LIMIT` results) rather than a
+    /// full `get_all_entries` scan, so each store examines O(bounded)
+    /// candidates instead of O(n). A fired trigger is debounced per cluster:
+    /// it re-fires only after the cluster has grown by another
+    /// `summarization_threshold` related memories.
+    ///
+    /// Saturation boundary: because the candidate set is capped at
+    /// `RELATED_CANDIDATE_LIMIT`, the observed `related_count` saturates at
+    /// `RELATED_CANDIDATE_LIMIT - 1`. The stored debounce watermark is
+    /// therefore clamped (see `execute_automatic_summarization`) to
+    /// `(RELATED_CANDIDATE_LIMIT - 1) - summarization_threshold`, so the
+    /// re-fire bar `watermark + threshold` stays reachable at saturation.
+    /// This keeps arbitrarily large, still-growing clusters re-summarizing on
+    /// a bounded cadence rather than getting permanently stuck once the count
+    /// pins to the candidate cap.
     async fn check_related_memory_threshold(
         &self,
         storage: &(dyn crate::memory::storage::Storage + Send + Sync),
@@ -1638,8 +1779,40 @@ impl AdvancedMemoryManager {
             .collect();
         let memory_tags: std::collections::HashSet<&String> = memory.metadata.tags.iter().collect();
 
+        // Build a bounded search query from the memory's significant words
+        // and tags; the inverted keyword index returns candidate entries
+        // without scanning the corpus.
+        //
+        // Term selection is deterministic: significant words are sorted by
+        // length descending (longer words are rarer/more selective), ties
+        // broken lexicographically, then the top `RELATED_QUERY_MAX_TERMS`
+        // are taken. Iterating the `HashSet` directly would pick an arbitrary
+        // subset and cause run-to-run recall variance.
+        let mut sorted_words: Vec<&String> = memory_words.iter().collect();
+        sorted_words.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        let mut query_terms: Vec<&str> = sorted_words
+            .into_iter()
+            .take(RELATED_QUERY_MAX_TERMS)
+            .map(|w| w.as_str())
+            .collect();
+        query_terms.extend(
+            memory
+                .metadata
+                .tags
+                .iter()
+                .take(RELATED_QUERY_MAX_TERMS)
+                .map(|t| t.as_str()),
+        );
+        if query_terms.is_empty() {
+            return Ok(None);
+        }
+        let query = query_terms.join(" ");
+        let candidates = storage.search(&query, RELATED_CANDIDATE_LIMIT).await?;
+        self.record_trigger_candidates(candidates.len());
+
         let mut related_keys = Vec::new();
-        for entry in storage.get_all_entries().await? {
+        for fragment in &candidates {
+            let entry = &fragment.entry;
             if entry.key == memory.key {
                 continue;
             }
@@ -1663,6 +1836,18 @@ impl AdvancedMemoryManager {
 
         let related_count = related_keys.len();
         if related_count >= self.config.summarization_threshold {
+            // Debounce per cluster, identified by its stable representative
+            // (lexicographically smallest member key).
+            let cluster_rep = related_keys
+                .iter()
+                .chain(std::iter::once(&memory.key))
+                .min()
+                .expect("cluster contains at least the new memory's key")
+                .clone();
+            let cluster_key = format!("related:{cluster_rep}");
+            if !self.debounce_allows_summarization(&cluster_key, related_count) {
+                return Ok(None);
+            }
             let confidence = (related_count as f64
                 / (self.config.summarization_threshold as f64 * 2.0))
                 .min(1.0);
@@ -1672,6 +1857,12 @@ impl AdvancedMemoryManager {
             metadata.insert(
                 "threshold".to_string(),
                 self.config.summarization_threshold.to_string(),
+            );
+            metadata.insert("debounce_key".to_string(), cluster_key);
+            metadata.insert("debounce_count".to_string(), related_count.to_string());
+            metadata.insert(
+                "debounce_cap".to_string(),
+                RELATED_CANDIDATE_LIMIT.to_string(),
             );
 
             let mut related_memory_keys = vec![memory.key.clone()];
@@ -1752,35 +1943,55 @@ impl AdvancedMemoryManager {
 
     /// Check if temporal clustering suggests summarization.
     ///
-    /// The cluster is measured from real stored entries: every entry (this
-    /// memory included) whose creation time falls within a 2-hour window
-    /// around this memory's creation time counts toward the cluster.
+    /// The cluster is measured from the manager's bounded recent-creations
+    /// window (capped at `TEMPORAL_RECENT_CAP`, pruned to the clustering
+    /// window): every tracked creation (this memory included) whose creation
+    /// time falls within a 2-hour window around this memory's creation time
+    /// counts toward the cluster. This bounds the per-store check to the
+    /// recent window instead of a full-corpus scan; only creations observed
+    /// via `add_memory` participate, which is exactly the store-time
+    /// clustering this trigger detects. A fired trigger is debounced per
+    /// 2-hour bucket: it re-fires only after the cluster grows by another
+    /// `summarization_threshold` memories.
     async fn check_temporal_clustering_trigger(
         &self,
-        storage: &(dyn crate::memory::storage::Storage + Send + Sync),
         memory: &MemoryEntry,
     ) -> Result<Option<SummarizationTrigger>> {
         let memory_time = memory.created_at();
         let time_window = chrono::Duration::hours(2); // 2-hour clustering window
         let cluster_threshold = 5; // Minimum memories in cluster to trigger summarization
 
-        // Count stored entries created within the window around this memory
-        // (the memory itself is part of its own cluster).
+        // Count tracked recent creations within the window around this
+        // memory (the memory itself is part of its own cluster).
+        self.record_trigger_candidates(self.recent_creations.len());
         let mut cluster_size = 1;
-        for entry in storage.get_all_entries().await? {
-            if entry.key == memory.key {
+        for (key, created) in &self.recent_creations {
+            if key == &memory.key {
                 continue;
             }
-            let delta = entry.created_at() - memory_time;
+            let delta = *created - memory_time;
             if delta.abs() <= time_window {
                 cluster_size += 1;
             }
         }
 
         if cluster_size >= cluster_threshold {
+            let bucket = memory_time.timestamp().div_euclid(7200);
+            let cluster_key = format!("temporal:{bucket}");
+            if !self.debounce_allows_summarization(&cluster_key, cluster_size) {
+                return Ok(None);
+            }
             let confidence = (cluster_size as f64 / (cluster_threshold as f64 * 2.0)).min(1.0);
 
             let mut metadata = std::collections::HashMap::new();
+            metadata.insert("debounce_key".to_string(), cluster_key);
+            metadata.insert("debounce_count".to_string(), cluster_size.to_string());
+            // Temporal cluster size saturates at the recent-creations window
+            // cap (+1 for the memory itself); clamp the watermark accordingly.
+            metadata.insert(
+                "debounce_cap".to_string(),
+                (TEMPORAL_RECENT_CAP + 1).to_string(),
+            );
             metadata.insert("cluster_size".to_string(), cluster_size.to_string());
             metadata.insert("time_window_hours".to_string(), "2".to_string());
             metadata.insert(
@@ -1956,6 +2167,9 @@ impl AdvancedMemoryManager {
                 },
             }
         } else {
+            #[cfg(feature = "test-utils")]
+            self.auto_summarization_runs
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.summarizer
                 .summarize_memories(
                     storage,
@@ -1964,6 +2178,31 @@ impl AdvancedMemoryManager {
                 )
                 .await?
         };
+
+        // Record the debounce watermark for this cluster so subsequent stores
+        // do not re-run full summarization until the cluster has grown by
+        // another `summarization_threshold` memories.
+        if let (Some(key), Some(count)) = (
+            trigger.metadata.get("debounce_key"),
+            trigger
+                .metadata
+                .get("debounce_count")
+                .and_then(|c| c.parse::<usize>().ok()),
+        ) {
+            // Clamp the watermark so the re-fire bar (`watermark + threshold`)
+            // stays reachable even when the observed count is pinned to the
+            // candidate/window cap. Without this, a large growing cluster
+            // would summarize a handful of times then be suppressed forever.
+            let cap = trigger
+                .metadata
+                .get("debounce_cap")
+                .and_then(|c| c.parse::<usize>().ok())
+                .unwrap_or(count + 1);
+            let max_watermark =
+                (cap.saturating_sub(1)).saturating_sub(self.config.summarization_threshold.max(1));
+            let watermark = count.min(max_watermark);
+            self.set_watermark(key.clone(), watermark);
+        }
 
         // Generate a unique key for the summary
         let summary_key = format!(

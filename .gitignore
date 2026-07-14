@@ -125,3 +125,4 @@ redis_data/
 
 # Evaluation datasets (fetched by tools/eval/fetch_datasets.sh, not committed)
 tools/eval/data/
+.omx/
