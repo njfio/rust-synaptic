@@ -221,26 +221,44 @@ impl Reranker for HeuristicReranker {
         // lock, released before any embedding awaits below.
         let proximities = self.graph_proximities(&candidates, &all_keys).await;
 
+        // Embed ALL candidate contents in ONE batched call on the read-only,
+        // content-hash-cached scoring path: cache hits reuse the embeddings
+        // the dense retriever computed when the provider instance is shared,
+        // and the misses go through a single batched forward pass instead of
+        // one per candidate.
+        let candidate_embeddings = match query_embedding {
+            Some(_) => {
+                let provider = self
+                    .embedding_provider
+                    .as_ref()
+                    .expect("query_embedding is Some only when a provider is configured");
+                let contents: Vec<&str> = candidates
+                    .iter()
+                    .map(|c| c.memory.entry.value.as_str())
+                    .collect();
+                Some(provider.embed_for_scoring_batch(&contents).await?)
+            }
+            None => None,
+        };
+
         let mut ranked: Vec<(f64, ScoredMemory)> = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
+        for (index, candidate) in candidates.into_iter().enumerate() {
             let content = &candidate.memory.entry.value;
             let key = &candidate.memory.entry.key;
 
             let overlap = Self::term_overlap(&query_terms, content);
 
-            let agreement = match query_embedding {
-                Some(ref qe) => {
-                    let provider = self
-                        .embedding_provider
-                        .as_ref()
-                        .expect("query_embedding is Some only when a provider is configured");
-                    // Read-only, content-hash-cached scoring path: reuses the
-                    // embedding computed by the dense retriever when the
-                    // provider instance is shared.
-                    let ce = provider.embed_for_scoring(content, None).await?;
-                    qe.cosine_similarity(&ce).clamp(0.0, 1.0)
+            let agreement = match (&query_embedding, &candidate_embeddings) {
+                (Some(qe), Some(embeddings)) => {
+                    let ce = embeddings.get(index).ok_or_else(|| {
+                        crate::error::MemoryError::processing_error(
+                            "reranker batch returned fewer embeddings than candidates \
+                             (invariant violation)",
+                        )
+                    })?;
+                    qe.cosine_similarity(ce).clamp(0.0, 1.0)
                 }
-                None => 0.0,
+                _ => 0.0,
             };
 
             let proximity = proximities.get(key).copied().unwrap_or(0.0);

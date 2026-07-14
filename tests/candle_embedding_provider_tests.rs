@@ -300,3 +300,68 @@ async fn embed_empty_text_fails_closed() {
         "no tokens must be an error, not a fake vector"
     );
 }
+
+/// Padded-batch identity: `embed_for_scoring_batch` over texts of DIFFERENT
+/// token lengths must return, for each text, the same vector as embedding
+/// that text alone — proving the attention mask zeroes padding out of both
+/// the forward pass and the mean-pool.
+#[tokio::test]
+async fn scoring_batch_matches_individual_embeds_despite_padding() {
+    let provider = build_provider();
+    // Deliberately different lengths so shorter texts are padded to the
+    // batch max in the single batched forward pass.
+    let texts = [
+        "database",
+        "postgres tuning guide for connection pooling",
+        "summer picnic volleyball",
+    ];
+
+    let batched = provider.embed_for_scoring_batch(&texts).await.unwrap();
+    assert_eq!(batched.len(), texts.len());
+
+    for (i, text) in texts.iter().enumerate() {
+        let single = provider.embed(text, None).await.unwrap();
+        assert_eq!(batched[i].vector.len(), HIDDEN);
+        for (d, (x, y)) in batched[i]
+            .vector
+            .iter()
+            .zip(single.vector.iter())
+            .enumerate()
+        {
+            assert!(
+                (x - y).abs() < 1e-5,
+                "text {} dim {}: padded-batch {} vs solo {} — padding leaked into the embedding",
+                i,
+                d,
+                x,
+                y
+            );
+        }
+    }
+}
+
+/// The scoring cache serves repeats without changing results, and mixed
+/// hit/miss batches stay correct (only misses are recomputed).
+#[tokio::test]
+async fn scoring_batch_cache_hits_return_identical_vectors() {
+    let provider = build_provider();
+    let first = provider
+        .embed_for_scoring_batch(&["postgres tuning guide", "summer picnic"])
+        .await
+        .unwrap();
+    // Second batch: one cached text, one new text.
+    let second = provider
+        .embed_for_scoring_batch(&["postgres tuning guide", "database connection"])
+        .await
+        .unwrap();
+    for (x, y) in first[0].vector.iter().zip(second[0].vector.iter()) {
+        assert!((x - y).abs() < 1e-6, "cache hit must be byte-stable");
+    }
+    let solo = provider.embed("database connection", None).await.unwrap();
+    for (x, y) in second[1].vector.iter().zip(solo.vector.iter()) {
+        assert!(
+            (x - y).abs() < 1e-5,
+            "mixed-batch miss must match solo embed"
+        );
+    }
+}

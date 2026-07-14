@@ -43,6 +43,27 @@ pub trait EmbeddingProvider: Send + Sync {
         self.embed(text, options).await
     }
 
+    /// Generate scoring embeddings for multiple texts in one batch.
+    ///
+    /// Query-time counterpart of [`EmbeddingProvider::embed_batch`]: like
+    /// [`EmbeddingProvider::embed_for_scoring`] it must be read-only with
+    /// respect to provider state, and each returned embedding must be
+    /// IDENTICAL to what `embed_for_scoring` would return for that text
+    /// alone — batching is a performance optimization, never a semantics
+    /// change. Results are returned in input order.
+    ///
+    /// The default implementation maps `embed_for_scoring` sequentially, so
+    /// existing providers keep working unchanged; providers with a real
+    /// batched forward pass (e.g. the candle BERT provider) override this to
+    /// run one model invocation for the whole set.
+    async fn embed_for_scoring_batch(&self, texts: &[&str]) -> Result<Vec<Embedding>> {
+        let mut embeddings = Vec::with_capacity(texts.len());
+        for text in texts {
+            embeddings.push(self.embed_for_scoring(text, None).await?);
+        }
+        Ok(embeddings)
+    }
+
     /// Generate embeddings for multiple texts (batch operation)
     ///
     /// # Arguments

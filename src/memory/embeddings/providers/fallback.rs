@@ -106,6 +106,21 @@ impl EmbeddingProvider for FallbackEmbeddingProvider {
         self.fallback.embed_for_scoring(text, options).await
     }
 
+    /// Batched scoring path: forwarded to the primary while it is healthy so
+    /// a true batched provider (e.g. candle BERT) runs ONE forward pass for
+    /// the whole candidate set; on primary failure the flag is set (sticky,
+    /// warn) and this and all subsequent calls are served by the TF-IDF
+    /// fallback's batch path — never a panic, never a hard failure.
+    async fn embed_for_scoring_batch(&self, texts: &[&str]) -> Result<Vec<Embedding>> {
+        if self.primary_active() {
+            match self.primary.embed_for_scoring_batch(texts).await {
+                Ok(embeddings) => return Ok(embeddings),
+                Err(e) => self.mark_primary_failed("embed_for_scoring_batch", &e),
+            }
+        }
+        self.fallback.embed_for_scoring_batch(texts).await
+    }
+
     fn embedding_dimension(&self) -> usize {
         if self.primary_active() {
             self.primary.embedding_dimension()
