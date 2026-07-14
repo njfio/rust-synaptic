@@ -74,6 +74,20 @@ pub enum RetrievalEmbeddingConfig {
         /// Expected embedding dimension (384 for all-MiniLM-L6-v2).
         dimension: usize,
     },
+    /// A model2vec static embedding table (potion-base-8M by default:
+    /// 256-dim, token-row lookup + mean-pool, NO transformer forward pass —
+    /// CPU-instant while staying genuinely semantic). Requires the
+    /// `static-embeddings` feature AND the model files fetched locally via
+    /// `scripts/fetch_embedding_model.sh --potion` (default dir:
+    /// `models/potion-base-8M/`). Missing feature, missing dir, or load
+    /// failure falls back to TF-IDF with a warn — never a hard failure.
+    Static {
+        /// Directory containing `config.json`, `tokenizer.json`,
+        /// `model.safetensors` (a model2vec static model).
+        model_dir: std::path::PathBuf,
+        /// Expected embedding dimension (256 for potion-base-8M).
+        dimension: usize,
+    },
     /// Any user-supplied provider implementation (also used by tests to
     /// inject mock semantic providers). Wrapped with the TF-IDF fallback.
     Custom(std::sync::Arc<dyn EmbeddingProvider>),
@@ -98,6 +112,14 @@ impl std::fmt::Debug for RetrievalEmbeddingConfig {
                 dimension,
             } => f
                 .debug_struct("RetrievalEmbeddingConfig::Candle")
+                .field("model_dir", model_dir)
+                .field("dimension", dimension)
+                .finish(),
+            Self::Static {
+                model_dir,
+                dimension,
+            } => f
+                .debug_struct("RetrievalEmbeddingConfig::Static")
                 .field("model_dir", model_dir)
                 .field("dimension", dimension)
                 .finish(),
@@ -137,12 +159,38 @@ impl RetrievalEmbeddingConfig {
         }
     }
 
+    /// The default local model directory for the model2vec static embedder
+    /// (potion-base-8M, fetched via `scripts/fetch_embedding_model.sh
+    /// --potion`). Honors `SYNAPTIC_STATIC_MODEL_DIR` when set.
+    pub fn default_static_model_dir() -> std::path::PathBuf {
+        std::env::var("SYNAPTIC_STATIC_MODEL_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("models/potion-base-8M"))
+    }
+
+    /// Static model2vec embeddings with the default local model directory
+    /// (potion-base-8M, 256-d).
+    pub fn static_default() -> Self {
+        Self::Static {
+            model_dir: Self::default_static_model_dir(),
+            dimension: 256,
+        }
+    }
+
     /// The auto-selection rule used by `MemoryConfig::default()`:
     ///
     /// 1. An explicit `SYNAPTIC_RETRIEVAL_EMBEDDER` env selection wins
-    ///    ([`Self::from_env`]): `candle` selects the bundled MiniLM model,
-    ///    `ollama` an Ollama server, `tfidf` the lexical default.
-    /// 2. Otherwise TF-IDF.
+    ///    ([`Self::from_env`]): `static` selects the model2vec static table,
+    ///    `candle` the bundled MiniLM model, `ollama` an Ollama server,
+    ///    `tfidf` the lexical default.
+    /// 2. With the `static-embeddings` feature built AND the potion model
+    ///    directory present (`models/potion-base-8M/` or
+    ///    `SYNAPTIC_STATIC_MODEL_DIR`), the Static provider is preferred: it
+    ///    is genuinely semantic AND CPU-instant (token-row lookup +
+    ///    mean-pool; no transformer forward pass), so unlike candle there is
+    ///    no latency reason to keep it opt-in. Plain `cargo build` (feature
+    ///    off) is unchanged.
+    /// 3. Otherwise TF-IDF.
     ///
     /// The bundled candle MiniLM model is **opt-in**, not auto-selected merely
     /// because its weights are present. It raises retrieval recall
@@ -157,6 +205,16 @@ impl RetrievalEmbeddingConfig {
         if let Some(explicit) = Self::from_env() {
             return explicit;
         }
+        #[cfg(feature = "static-embeddings")]
+        {
+            let model_dir = Self::default_static_model_dir();
+            if model_dir.join("model.safetensors").is_file() {
+                return Self::Static {
+                    model_dir,
+                    dimension: 256,
+                };
+            }
+        }
         Self::TfIdf
     }
 
@@ -166,9 +224,12 @@ impl RetrievalEmbeddingConfig {
     /// `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_DIM`);
     /// `candle` selects the bundled local MiniLM model (dir overridable via
     /// `SYNAPTIC_EMBED_MODEL_DIR`, dimension via `SYNAPTIC_EMBED_DIM`);
-    /// `tfidf` selects TF-IDF explicitly; unset/unknown returns `None`.
+    /// `static` selects the model2vec static table (dir overridable via
+    /// `SYNAPTIC_STATIC_MODEL_DIR`); `tfidf` selects TF-IDF explicitly;
+    /// unset/unknown returns `None`.
     pub fn from_env() -> Option<Self> {
         match std::env::var("SYNAPTIC_RETRIEVAL_EMBEDDER").ok()?.as_str() {
+            "static" => Some(Self::static_default()),
             "candle" => {
                 let dimension = std::env::var("SYNAPTIC_EMBED_DIM")
                     .ok()
@@ -313,6 +374,53 @@ pub fn build_retrieval_provider(
                     model_dir = %model_dir.display(),
                     dimension = dimension,
                     "candle retrieval embedding requires the 'ml-models' feature; falling back to TF-IDF"
+                );
+                (Arc::clone(&tfidf) as _, tfidf)
+            }
+        }
+        RetrievalEmbeddingConfig::Static {
+            model_dir,
+            dimension,
+        } => {
+            #[cfg(feature = "static-embeddings")]
+            {
+                match providers::StaticEmbeddingProvider::new(model_dir) {
+                    Ok(static_provider) => {
+                        if static_provider.embedding_dimension() != *dimension {
+                            tracing::warn!(
+                                model_dir = %model_dir.display(),
+                                expected = dimension,
+                                actual = static_provider.embedding_dimension(),
+                                "static embedding dimension differs from configured dimension; using the model's actual dimension"
+                            );
+                        }
+                        tracing::info!(
+                            model_dir = %model_dir.display(),
+                            dimension = static_provider.embedding_dimension(),
+                            "retrieval embedding provider: model2vec static table (TF-IDF fallback armed)"
+                        );
+                        let wrapped = FallbackEmbeddingProvider::new(
+                            Arc::new(static_provider),
+                            Arc::clone(&tfidf),
+                        );
+                        (Arc::new(wrapped) as _, tfidf)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            model_dir = %model_dir.display(),
+                            error = %e,
+                            "failed to load model2vec static embedding model; falling back to TF-IDF"
+                        );
+                        (Arc::clone(&tfidf) as _, tfidf)
+                    }
+                }
+            }
+            #[cfg(not(feature = "static-embeddings"))]
+            {
+                tracing::warn!(
+                    model_dir = %model_dir.display(),
+                    dimension = dimension,
+                    "static retrieval embedding requires the 'static-embeddings' feature; falling back to TF-IDF"
                 );
                 (Arc::clone(&tfidf) as _, tfidf)
             }

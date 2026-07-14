@@ -15,6 +15,9 @@ pub mod cohere;
 #[cfg(feature = "ml-models")]
 pub mod candle;
 
+#[cfg(feature = "static-embeddings")]
+pub mod static_embed;
+
 // Re-export providers
 pub use fallback::FallbackEmbeddingProvider;
 pub use tfidf::{TfIdfConfig, TfIdfProvider};
@@ -30,3 +33,6 @@ pub use cohere::{CohereConfig, CohereInputType, CohereModel, CohereProvider};
 
 #[cfg(feature = "ml-models")]
 pub use candle::CandleEmbeddingProvider;
+
+#[cfg(feature = "static-embeddings")]
+pub use static_embed::StaticEmbeddingProvider;

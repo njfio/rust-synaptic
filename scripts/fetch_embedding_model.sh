@@ -1,37 +1,62 @@
 #!/usr/bin/env bash
-# Fetch the bundled offline embedding model (sentence-transformers/all-MiniLM-L6-v2)
-# into a local, gitignored cache directory for the `ml-models` candle provider.
+# Fetch the bundled offline embedding model(s) into local, gitignored cache
+# directories under models/.
 #
-# Default destination: models/all-MiniLM-L6-v2/ (relative to the repo root).
-# Override with:  ./scripts/fetch_embedding_model.sh <dest-dir>
+# Usage:
+#   ./scripts/fetch_embedding_model.sh                 # MiniLM (candle, ml-models)
+#   ./scripts/fetch_embedding_model.sh --potion        # potion-base-8M (static-embeddings)
+#   ./scripts/fetch_embedding_model.sh --all           # both
+#   ./scripts/fetch_embedding_model.sh [--potion] <dest-dir>   # override destination
 #
-# After fetching, the model is used fully offline, but it is OPT-IN (candle CPU
-# inference is slow, ~28s/query un-batched — see docs/evaluation.md), so it is
-# NOT auto-selected merely because this directory exists. Enable it explicitly:
-#   cargo build --features ml-models
-#   SYNAPTIC_RETRIEVAL_EMBEDDER=candle SYNAPTIC_EMBED_MODEL_DIR=models/all-MiniLM-L6-v2 ...
-# (or set retrieval_embedding_provider in MemoryConfig). TF-IDF stays the default.
+# Models:
+# - sentence-transformers/all-MiniLM-L6-v2 (~87 MB) for the `ml-models` candle
+#   provider. OPT-IN (candle CPU inference is slow — see docs/evaluation.md):
+#     cargo build --features ml-models
+#     SYNAPTIC_RETRIEVAL_EMBEDDER=candle SYNAPTIC_EMBED_MODEL_DIR=models/all-MiniLM-L6-v2 ...
+# - minishlab/potion-base-8M (~30 MB) for the `static-embeddings` model2vec
+#   provider: a static embedding TABLE (token-row lookup + mean-pool, no
+#   transformer forward pass) — CPU-instant AND genuinely semantic. Because it
+#   is fast, it is the preferred default: with `--features static-embeddings`
+#   built and models/potion-base-8M/ present, RetrievalEmbeddingConfig::auto()
+#   selects it. A plain `cargo build` (feature off) stays TF-IDF. Override the
+#   dir with SYNAPTIC_STATIC_MODEL_DIR, or force selection with
+#   SYNAPTIC_RETRIEVAL_EMBEDDER=static.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="${1:-$REPO_ROOT/models/all-MiniLM-L6-v2}"
-BASE_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main"
 FILES=(config.json tokenizer.json model.safetensors)
 
-mkdir -p "$DEST"
+fetch() {
+  local base_url="$1" dest="$2"
+  mkdir -p "$dest"
+  for f in "${FILES[@]}"; do
+    if [[ -s "$dest/$f" ]]; then
+      echo "already present: $dest/$f"
+      continue
+    fi
+    echo "downloading $f ..."
+    if ! curl -fSL --retry 3 -o "$dest/$f.tmp" "$base_url/$f"; then
+      rm -f "$dest/$f.tmp"
+      echo "ERROR: failed to download $base_url/$f" >&2
+      exit 1
+    fi
+    mv "$dest/$f.tmp" "$dest/$f"
+  done
+  echo "model ready at: $dest"
+}
 
-for f in "${FILES[@]}"; do
-  if [[ -s "$DEST/$f" ]]; then
-    echo "already present: $DEST/$f"
-    continue
-  fi
-  echo "downloading $f ..."
-  if ! curl -fSL --retry 3 -o "$DEST/$f.tmp" "$BASE_URL/$f"; then
-    rm -f "$DEST/$f.tmp"
-    echo "ERROR: failed to download $BASE_URL/$f" >&2
-    exit 1
-  fi
-  mv "$DEST/$f.tmp" "$DEST/$f"
-done
+MINILM_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main"
+POTION_URL="https://huggingface.co/minishlab/potion-base-8M/resolve/main"
 
-echo "model ready at: $DEST"
+case "${1:-}" in
+  --potion)
+    fetch "$POTION_URL" "${2:-$REPO_ROOT/models/potion-base-8M}"
+    ;;
+  --all)
+    fetch "$MINILM_URL" "$REPO_ROOT/models/all-MiniLM-L6-v2"
+    fetch "$POTION_URL" "$REPO_ROOT/models/potion-base-8M"
+    ;;
+  *)
+    fetch "$MINILM_URL" "${1:-$REPO_ROOT/models/all-MiniLM-L6-v2}"
+    ;;
+esac
