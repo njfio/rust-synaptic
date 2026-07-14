@@ -411,3 +411,42 @@ Not run: the full 1,986-question semantic ablation (the Ollama path serializes
 embedding requests, making the full 5-config run impractical in-sandbox — the
 subset is the honest signal); LongMemEval-S. Default-build (TF-IDF) numbers from
 the prior sections are unchanged.
+
+## Bundled offline embedding model (2026-07-14) — in-process MiniLM, no server
+
+The RQ1 semantic win required an external Ollama server. This bundles a real
+semantic model **in-process and fully offline**: all-MiniLM-L6-v2 (384-dim)
+loaded via candle from a locally-fetched cache (`scripts/fetch_embedding_model.sh`
+→ gitignored `models/`), with real attention-masked mean-pooled inference
+(verified: cosine(related)=0.605 vs cosine(unrelated)=−0.046 — genuinely
+semantic, not random weights).
+
+**Three-way comparison, same labelled 50-question LoCoMo subset** (retrieval-only):
+
+| provider | recall@10 | MRR | Temporal R@10 | MultiHop R@10 | search latency p50 |
+|---|---|---|---|---|---|
+| TF-IDF (default, offline, no dep) | 0.2212 | 0.2567 | 0.4091 | 0.0821 | ~instant |
+| **candle MiniLM (bundled, in-process, offline)** | **0.3300** | 0.2709 | **0.6364** | 0.1053 | **~28.5 s** |
+| Ollama nomic-embed-text (external server) | 0.3652 | 0.3517 | 0.6818 | 0.1190 | ~3.8 s |
+
+Honest findings:
+
+- **The bundled in-process model delivers the semantic win with no server** —
+  recall@10 0.2212 → 0.3300 (**+49% relative**), Temporal 0.4091 → 0.6364
+  (**+56%**). Slightly below the larger 768-dim Ollama model but the same class
+  of improvement, and it runs fully offline in-process (after a one-time weight
+  fetch). This is the requested "bundle an offline model" delivered and measured.
+- **The hard tradeoff is latency.** candle BERT inference on CPU is currently
+  **un-batched** — the eval embeds the query plus every candidate one at a time —
+  giving **~28.5 s per query** and ~158 ms per store at eval scale. That is far
+  too slow to be a silent default, so the bundled model is **opt-in**
+  (`SYNAPTIC_RETRIEVAL_EMBEDDER=candle` or `MemoryConfig.retrieval_embedding_provider`);
+  **TF-IDF remains the fast, lean, offline default**, and semantic recall is
+  available on demand. The optimization path is clear: **batch candidate
+  embeddings in one forward pass** (and/or GPU), which should cut per-query
+  latency by roughly an order of magnitude and make the bundled model a viable
+  default — tracked as the next step, not yet done.
+
+Not measured: batched-candle latency; the full 1,986-question set with candle
+(un-batched CPU inference makes it impractical in-sandbox — the subset is the
+honest signal).
