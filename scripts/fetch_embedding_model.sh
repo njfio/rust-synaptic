@@ -5,11 +5,12 @@
 # Default destination: models/all-MiniLM-L6-v2/ (relative to the repo root).
 # Override with:  ./scripts/fetch_embedding_model.sh <dest-dir>
 #
-# After fetching, the model is used fully offline:
+# After fetching, the model is used fully offline, but it is OPT-IN (candle CPU
+# inference is slow, ~28s/query un-batched — see docs/evaluation.md), so it is
+# NOT auto-selected merely because this directory exists. Enable it explicitly:
 #   cargo build --features ml-models
 #   SYNAPTIC_RETRIEVAL_EMBEDDER=candle SYNAPTIC_EMBED_MODEL_DIR=models/all-MiniLM-L6-v2 ...
-# (or just leave the dir in place: with ml-models built, the default provider
-#  selection prefers the candle model when this directory exists.)
+# (or set retrieval_embedding_provider in MemoryConfig). TF-IDF stays the default.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
