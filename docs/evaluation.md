@@ -151,13 +151,107 @@ Honest findings from the growth run:
   should not be over-read; both confirm multi-second search at these store
   sizes, consistent with the latency table above.
 
+## Performance fixes — before / after (2026-07-13)
+
+After the initial evaluation surfaced the multi-second search and superlinear
+store growth above, three rounds of performance work were done on the
+`feature/agent-memory-v2-followups` branch:
+
+- **P1** (`fed757d`..`242fd96`): incremental `total_size` counter (removed a
+  per-store full-corpus rescan), bounded + deterministic KG/neighbor candidate
+  scans, shrunk the KG write-lock critical section.
+- **P2** (`879956f`..`bb5c842`): read-only query-time embedding (no per-query
+  vocabulary rebuild under a global write lock), a content-hash embedding cache
+  shared across the dense retriever and reranker, lowercase memoization, and
+  dropping the knowledge-graph read lock before storage awaits.
+- **P4** (`a88ab12`, `10c8252`): a character-n-gram **inverted index** in
+  storage so keyword search is candidate-bounded instead of a full scan
+  (results proven byte-identical to the full-scan implementation by an in-test
+  reference), plus token-indexed KG candidate selection.
+
+Retrieval **quality is unchanged** — P2 and P4 are correctness-preserving
+(ranking-parity tests pin identical top-k ordering; P4 returns byte-identical
+search results), so the retrieval/ablation numbers above still hold.
+
+Measured before/after (same harness, same machine, single-shot probe):
+
+| metric | before | after (P1+P2+P4) | change |
+|---|---|---|---|
+| probe search over 1k-entry store | 26.6 s | **3.65–3.70 s** | **~7× faster** |
+| store p50 @ 1k | 9.6 ms | 8.4 ms | ~comparable |
+
+**What is NOT fixed (honest):** the **store path is still superlinear at
+scale.** After the fixes, filling 1k→10k still did not complete within a
+40-minute clean run (comparable to the original ~75 min), so the 10k/100k
+store-latency points were **not re-measured** and 100k remains impractical.
+Root cause identified but not addressed by P1/P2/P4: the default
+`advanced_management` write pipeline (summarizer / search-engine / lifecycle /
+optimizer sub-systems, enabled by `enable_advanced_management = true`) performs
+O(n)-per-store work that dominates once the store is large — the original
+profiler mapped only the storage/KG/embedding/reasoning paths, which are now
+index-backed. **Next performance target:** index or bound the
+`advanced_management` per-store subsystems (or make them opt-in), then re-run
+the 10k/100k growth measurement. The search-latency win above is real and
+measured; the store-growth superlinearity is only partially reduced and is
+tracked as open.
+
 ## QA end-to-end accuracy
 
-**Not run** — requires an LLM endpoint. To run it: build with
-`--features llm-reasoning` and set `SYNAPTIC_EVAL_LLM_URL` (and
-`SYNAPTIC_EVAL_LLM_MODEL`, optional `SYNAPTIC_EVAL_LLM_KEY`) to an
-OpenAI-compatible endpoint, then rerun the command above. The harness
-reports `QaResult::NotRun` rather than fabricating an accuracy number.
+**End-to-end QA accuracy — measured on a stratified N-question LoCoMo subset,
+judge = codex CLI (gpt-5.6-sol), 2026-07-13. NOT the full 1986-question set;
+NOT directly comparable to published full-set numbers.**
+
+This is a **subset** result (N = 150 of 1,986 questions), stratified evenly
+across the six QTypes (30 each, evenly spaced within each type,
+deterministic — no RNG). It measures the full recall → answer → grade
+pipeline: for each question, up to `k=10` memories are recalled from an
+`AgentMemory` ingested with the question's conversation, the `codex` CLI is
+asked to answer using **only** the recalled snippets, and `codex` then grades
+that answer against the gold answer (YES/NO). Every number below comes from a
+real codex verdict in this run; all 150 questions completed with **0 judge
+failures**. Accuracy is over completed (graded) questions only.
+
+| Metric | Value |
+|---|---|
+| Overall | **25 / 150 = 16.7%** |
+| SingleHop | 8 / 30 = 26.7% |
+| MultiHop | 2 / 30 = 6.7% |
+| Temporal | 9 / 30 = 30.0% |
+| OpenDomain | 5 / 30 = 16.7% |
+| Abstention | 1 / 30 = 3.3% |
+| KnowledgeUpdate | (not present in LoCoMo) |
+
+- **N = 150** selected, **150 completed (graded)**, **0 judge failures**, `k = 10`.
+- **Judge**: `codex` CLI 0.144.0, model `gpt-5.6-sol` (user's subscription,
+  non-interactive `codex exec`). Not feature-gated — `CodexCliJudge` shells
+  out; there is no new crate dependency.
+- **Honesty**: this is a subset, not the full set, and is not comparable to
+  published full-LoCoMo numbers. Low accuracy reflects the strict
+  answer-from-recalled-snippets-only constraint plus TF-IDF recall quality on
+  this hard long-context benchmark; nothing here is estimated or extrapolated.
+  If a run has judge failures, accuracy is reported over completed questions
+  with the failure count, never patched with a guessed verdict.
+
+### Command
+
+```bash
+cargo run --release -p synaptic-eval --bin run_qa -- --subset 150
+```
+
+Flags: `--subset N` (default 150), `--k K` (default 10), `--concurrency C`
+(default 4), `--data PATH` (default `tools/eval/data/locomo10.json`). The
+codex binary path and per-call timeout are configurable via
+`SYNAPTIC_EVAL_CODEX_BIN` (default `codex`) and
+`SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS` (default 120). The binary prints progress
+to stderr (`question i/N`) so the long run (~150 codex answer+grade pairs) is
+observable. Requires a locally installed, logged-in `codex` CLI; if it is
+unavailable the binary exits without fabricating a number.
+
+An OpenAI-compatible HTTP judge (`LlmJudge`) also exists behind the
+`llm-reasoning` feature via `SYNAPTIC_EVAL_LLM_URL` /
+`SYNAPTIC_EVAL_LLM_MODEL` (optional `SYNAPTIC_EVAL_LLM_KEY`); without a judge
+configured the gated `run_eval` path reports `QaResult::NotRun` rather than
+fabricating an accuracy number.
 
 ## LongMemEval-S
 

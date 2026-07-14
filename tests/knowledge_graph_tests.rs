@@ -256,3 +256,79 @@ async fn test_knowledge_graph_enabled_vs_disabled() -> Result<(), Box<dyn Error>
 
     Ok(())
 }
+
+/// Determinism regression (P1 W2/W3): past the per-store scan cap, the
+/// candidate set `find_similar_node` examines must be a DETERMINISTIC,
+/// relevance-ordered subset — not an arbitrary `HashMap`/`DashMap`
+/// iteration-order prefix (whose order is per-instance seed-randomized).
+///
+/// Two independently-built graphs (same memories, same insertion order) must
+/// yield the identical candidate ordering, and a content-relevant node placed
+/// well past the cap must survive into the examined window.
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn kg_similar_candidate_scan_is_deterministic_past_cap() -> Result<(), Box<dyn Error>> {
+    use synaptic::memory::knowledge_graph::{GraphConfig, MemoryKnowledgeGraph};
+    use synaptic::memory::types::{MemoryEntry, MemoryType};
+
+    async fn build() -> Result<MemoryKnowledgeGraph, Box<dyn Error>> {
+        let mut kg = MemoryKnowledgeGraph::new(GraphConfig::default());
+        // 400 filler memories (> the 256 cap) with unrelated content.
+        for i in 0..400 {
+            let e = MemoryEntry::new(
+                format!("filler_{i}"),
+                format!("unrelated filler content number {i} about weather and traffic"),
+                MemoryType::LongTerm,
+            );
+            kg.add_or_update_memory_node(&e).await?;
+        }
+        // One highly relevant memory sharing distinctive tokens with the probe.
+        let relevant = MemoryEntry::new(
+            "relevant_node".to_string(),
+            "quantum entanglement photon superposition experiment".to_string(),
+            MemoryType::LongTerm,
+        );
+        kg.add_or_update_memory_node(&relevant).await?;
+        Ok(kg)
+    }
+
+    let probe = MemoryEntry::new(
+        "probe".to_string(),
+        "quantum entanglement photon superposition".to_string(),
+        MemoryType::LongTerm,
+    );
+
+    let kg_a = build().await?;
+    let kg_b = build().await?;
+
+    let ids_a = kg_a.debug_similar_candidate_ids(&probe);
+    let ids_b = kg_b.debug_similar_candidate_ids(&probe);
+
+    // Same node ids in the same order despite independent, seed-randomized maps.
+    let node_a = kg_a.get_node_for_memory("relevant_node").await?.unwrap();
+    let node_b = kg_b.get_node_for_memory("relevant_node").await?.unwrap();
+
+    // The candidate windows are bounded by the cap.
+    assert!(ids_a.len() <= 256);
+    assert_eq!(ids_a.len(), ids_b.len(), "candidate window size must match");
+
+    // The content-relevant node (inserted last, i.e. entry #400) must survive
+    // the cap in BOTH graphs by relevance ordering, and be examined first.
+    assert!(
+        ids_a.contains(&node_a),
+        "relevant node must survive the scan cap deterministically"
+    );
+    assert!(ids_b.contains(&node_b));
+    assert_eq!(
+        ids_a.first().copied(),
+        Some(node_a),
+        "the most content-relevant node must be examined first"
+    );
+    assert_eq!(
+        ids_b.first().copied(),
+        Some(node_b),
+        "ordering must be reproducible run-to-run"
+    );
+
+    Ok(())
+}

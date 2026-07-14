@@ -9,6 +9,7 @@ use super::super::provider::{
 };
 use crate::error::Result;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
@@ -17,10 +18,47 @@ use std::sync::{Arc, RwLock};
 ///
 /// This provider uses Term Frequency-Inverse Document Frequency to create
 /// semantic embeddings without requiring external APIs or models.
+///
+/// Two embedding paths exist:
+/// - [`EmbeddingProvider::embed`] — the document (store-time) path: updates
+///   the vocabulary incrementally (O(tokens), no full IDF-table rebuild) and
+///   then computes the vector against the updated statistics.
+/// - [`EmbeddingProvider::embed_for_scoring`] — the query-time path: computes
+///   the vector against the EXISTING statistics without taking a write lock
+///   or mutating any state, and caches the result by content hash so a given
+///   content string is embedded at most once (shared across the dense
+///   retriever and the reranker when they hold the same provider).
+///
+/// The scoring cache is invalidated whenever `embed` mutates the vocabulary
+/// (so a cached vector never reflects stale IDF state), and its size is
+/// capped ([`SCORING_CACHE_CAP`]) to bound memory.
+///
+/// KNOWN PRE-EXISTING RETRIEVAL GAP (out of P2 perf scope, tracked as a
+/// follow-up): in the shipped hybrid pipeline the provider instance shared by
+/// the dense retriever and reranker only ever has `embed_for_scoring` called
+/// on it — never `embed` — so its vocabulary stays empty and every term's IDF
+/// falls back to `1.0`. Dense retrieval is therefore currently hashed-TF
+/// cosine with no real IDF weighting. This ties to the carry-forward gap
+/// where the corpus is not fed into the scoring provider, partly explains the
+/// weak recall, and should be addressed in a future task (NOT here).
 pub struct TfIdfProvider {
     config: TfIdfConfig,
     state: Arc<RwLock<TfIdfState>>,
+    /// Content-hash-keyed cache of scoring vectors (query-time path only).
+    /// Invalidated on vocabulary mutation; bounded by [`SCORING_CACHE_CAP`].
+    scoring_cache: DashMap<String, Vec<f32>>,
+    /// Test-only op counters for the scoring path.
+    #[cfg(feature = "test-utils")]
+    scoring_embeds_computed: std::sync::atomic::AtomicUsize,
+    #[cfg(feature = "test-utils")]
+    scoring_cache_hits: std::sync::atomic::AtomicUsize,
 }
+
+/// Upper bound on the number of entries retained in the scoring cache. When
+/// an insertion would exceed this cap the cache is cleared wholesale (a crude
+/// but O(1)-amortized eviction — correctness is unaffected, only cache hit
+/// rate). Sized generously so a single search's candidate set always fits.
+const SCORING_CACHE_CAP: usize = 8192;
 
 /// Configuration for TF-IDF embeddings
 #[derive(Debug, Clone)]
@@ -47,9 +85,12 @@ impl Default for TfIdfConfig {
 }
 
 /// Internal state for TF-IDF embeddings
+///
+/// IDF is derived lazily from `(vocabulary doc-frequency, document_count)`
+/// at embed time — there is no materialized IDF table to rebuild, so
+/// ingesting a document is O(tokens), not O(vocabulary).
 struct TfIdfState {
     vocabulary: HashMap<String, usize>,
-    idf_scores: HashMap<String, f64>,
     document_count: usize,
 }
 
@@ -57,11 +98,12 @@ impl TfIdfState {
     fn new() -> Self {
         Self {
             vocabulary: HashMap::new(),
-            idf_scores: HashMap::new(),
             document_count: 0,
         }
     }
 
+    /// Incremental vocabulary update: O(tokens in `text`). No IDF-table
+    /// rebuild — IDF is computed lazily via [`Self::idf`].
     fn update_vocabulary(&mut self, text: &str, min_word_length: usize) {
         let tokens = Self::tokenize(text, min_word_length);
         let unique_tokens: std::collections::HashSet<_> = tokens.into_iter().collect();
@@ -69,22 +111,19 @@ impl TfIdfState {
         self.document_count += 1;
 
         for token in unique_tokens {
-            *self.vocabulary.entry(token.clone()).or_insert(0) += 1;
+            *self.vocabulary.entry(token).or_insert(0) += 1;
         }
-
-        // Recalculate IDF scores
-        self.calculate_idf_scores();
     }
 
-    fn calculate_idf_scores(&mut self) {
-        if self.document_count == 0 {
-            return;
-        }
-
-        self.idf_scores.clear();
-        for (term, doc_freq) in &self.vocabulary {
-            let idf = ((self.document_count as f64) / (*doc_freq as f64 + 1.0)).ln();
-            self.idf_scores.insert(term.clone(), idf);
+    /// Lazy IDF for a single term, identical in value to the previous
+    /// materialized table: `ln(N / (df + 1))` for known terms, `1.0` for
+    /// terms outside the vocabulary (the old table-miss default).
+    fn idf(&self, token: &str) -> f64 {
+        match self.vocabulary.get(token) {
+            Some(doc_freq) if self.document_count > 0 => {
+                ((self.document_count as f64) / (*doc_freq as f64 + 1.0)).ln()
+            }
+            _ => 1.0,
         }
     }
 
@@ -137,19 +176,40 @@ impl TfIdfProvider {
         Self {
             config,
             state: Arc::new(RwLock::new(TfIdfState::new())),
+            scoring_cache: DashMap::new(),
+            #[cfg(feature = "test-utils")]
+            scoring_embeds_computed: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(feature = "test-utils")]
+            scoring_cache_hits: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
-    /// Embed text using TF-IDF
+    /// Embed text using TF-IDF (document path: updates vocabulary first)
     fn embed_text_sync(&self, text: &str) -> Result<Vec<f32>> {
-        // Update vocabulary (this modifies state)
+        // Incremental vocabulary update (O(tokens), no IDF-table rebuild)
         {
-            let mut state = self.state.write().expect("write() should succeed");
+            let mut state = self
+                .state
+                .write()
+                .expect("TfIdfProvider state lock is never poisoned: no panics while held");
             state.update_vocabulary(text, self.config.min_word_length);
         }
+        // Vocabulary/IDF state just changed: any cached scoring vector is now
+        // computed against stale statistics, so drop the whole scoring cache.
+        // (Under the shipped wiring the scoring provider is never fed via
+        // `embed`, so this rarely fires; it keeps mixed embed/scoring callers
+        // correct.)
+        self.scoring_cache.clear();
+        self.embed_text_readonly(text)
+    }
 
-        // Generate embedding (read-only)
-        let state = self.state.read().expect("read() should succeed");
+    /// Compute the TF-IDF vector for `text` against the EXISTING statistics.
+    /// Read-only: takes only a read lock and never mutates vocabulary.
+    fn embed_text_readonly(&self, text: &str) -> Result<Vec<f32>> {
+        let state = self
+            .state
+            .read()
+            .expect("TfIdfProvider state lock is never poisoned: no panics while held");
         let tokens = TfIdfState::tokenize(text, self.config.min_word_length);
         let tf_scores = TfIdfState::calculate_tf(&tokens);
 
@@ -157,7 +217,7 @@ impl TfIdfProvider {
         let mut embedding = vec![0.0f32; self.config.embedding_dim];
 
         for (token, tf) in tf_scores {
-            let idf = state.idf_scores.get(&token).unwrap_or(&1.0);
+            let idf = state.idf(&token);
             let tfidf = (tf * idf) as f32;
 
             // Hash token to embedding dimension
@@ -172,36 +232,98 @@ impl TfIdfProvider {
 
         Ok(embedding)
     }
-}
 
-#[async_trait]
-impl EmbeddingProvider for TfIdfProvider {
-    async fn embed(&self, text: &str, options: Option<&EmbedOptions>) -> Result<Embedding> {
-        let content_hash = compute_content_hash(text);
-
-        // Generate embedding
-        let mut vector = self.embed_text_sync(text)?;
-
-        // Apply options if provided
+    /// Wrap a raw vector into an [`Embedding`] with standard metadata.
+    fn build_embedding(
+        &self,
+        mut vector: Vec<f32>,
+        content_hash: String,
+        options: Option<&EmbedOptions>,
+    ) -> Embedding {
         if let Some(opts) = options {
             if opts.normalize {
                 normalize_vector(&mut vector);
             }
         }
 
-        // Create embedding with metadata
         let mut embedding = Embedding::new(vector, self.model_id())
             .with_content_hash(content_hash)
             .with_version("1.0".to_string());
 
-        // Add custom metadata if provided
         if let Some(opts) = options {
             for (key, value) in &opts.metadata {
                 embedding.metadata.insert(key.clone(), value.clone());
             }
         }
 
-        Ok(embedding)
+        embedding
+    }
+
+    /// Number of terms currently in the vocabulary (test-utils).
+    #[cfg(feature = "test-utils")]
+    pub fn vocabulary_size(&self) -> usize {
+        self.state
+            .read()
+            .expect("TfIdfProvider state lock is never poisoned: no panics while held")
+            .vocabulary
+            .len()
+    }
+
+    /// Number of scoring embeddings actually computed (cache misses)
+    /// since construction (test-utils).
+    #[cfg(feature = "test-utils")]
+    pub fn scoring_embeds_computed(&self) -> usize {
+        self.scoring_embeds_computed
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Number of scoring embeddings served from the content-hash cache
+    /// since construction (test-utils).
+    #[cfg(feature = "test-utils")]
+    pub fn scoring_cache_hits(&self) -> usize {
+        self.scoring_cache_hits
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for TfIdfProvider {
+    async fn embed(&self, text: &str, options: Option<&EmbedOptions>) -> Result<Embedding> {
+        let content_hash = compute_content_hash(text);
+        let vector = self.embed_text_sync(text)?;
+        Ok(self.build_embedding(vector, content_hash, options))
+    }
+
+    /// Query-time scoring path: read-only against the existing IDF
+    /// statistics, cached by content hash so each distinct content is
+    /// embedded at most once across the dense retriever and the reranker.
+    async fn embed_for_scoring(
+        &self,
+        text: &str,
+        options: Option<&EmbedOptions>,
+    ) -> Result<Embedding> {
+        let content_hash = compute_content_hash(text);
+
+        if let Some(cached) = self.scoring_cache.get(&content_hash) {
+            #[cfg(feature = "test-utils")]
+            self.scoring_cache_hits
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let vector = cached.clone();
+            return Ok(self.build_embedding(vector, content_hash, options));
+        }
+
+        let vector = self.embed_text_readonly(text)?;
+        #[cfg(feature = "test-utils")]
+        self.scoring_embeds_computed
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Bound cache growth: clear wholesale before crossing the cap. Crude
+        // but O(1)-amortized; only affects hit rate, never correctness.
+        if self.scoring_cache.len() >= SCORING_CACHE_CAP {
+            self.scoring_cache.clear();
+        }
+        self.scoring_cache
+            .insert(content_hash.clone(), vector.clone());
+        Ok(self.build_embedding(vector, content_hash, options))
     }
 
     async fn embed_batch(
@@ -257,6 +379,48 @@ mod tests {
         assert_eq!(provider.embedding_dimension(), 384);
         assert_eq!(provider.name(), "TfIdfProvider");
         assert!(provider.is_available());
+    }
+
+    #[tokio::test]
+    async fn scoring_cache_invalidated_on_vocab_mutation() {
+        // A scoring vector cached against one vocabulary state must NOT be
+        // served stale after `embed` mutates the vocabulary/IDF state.
+        let provider = TfIdfProvider::default();
+        let text = "alpha beta gamma delta";
+
+        // Seed some vocabulary, then cache a scoring vector for `text`.
+        provider
+            .embed("alpha beta gamma delta", None)
+            .await
+            .expect("seed embed");
+        let before = provider
+            .embed_for_scoring(text, None)
+            .await
+            .expect("scoring embed")
+            .vector;
+
+        // Mutate the vocabulary via the document path so that `alpha`'s
+        // document frequency rises while `beta`/`gamma`/`delta` stay at 1.
+        // This changes the RELATIVE IDF weighting among the query's tokens
+        // (a change that survives normalization), so the scoring vector must
+        // differ from the cached one.
+        for _ in 0..25 {
+            provider
+                .embed("alpha epsilon zeta eta", None)
+                .await
+                .expect("mutating embed");
+        }
+
+        let after = provider
+            .embed_for_scoring(text, None)
+            .await
+            .expect("scoring embed after mutation")
+            .vector;
+
+        assert_ne!(
+            before, after,
+            "scoring cache must reflect the mutated vocabulary, not a stale hit"
+        );
     }
 
     #[tokio::test]

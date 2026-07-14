@@ -399,16 +399,27 @@ impl RetrievalPipeline for GraphRetriever {
                 .map(|s| s.memory.entry.key.clone())
                 .collect();
 
-            let kg_guard = kg.read().await;
-            for (seed_key, seed_score) in seeds {
-                let related = match kg_guard.find_related_memories(&seed_key, 2, None).await {
-                    Ok(related) => related,
-                    Err(e) => {
-                        // Seed may simply not be a graph node yet.
-                        tracing::debug!(seed = %seed_key, error = %e, "graph expansion skipped for seed");
-                        continue;
-                    }
-                };
+            // Phase 1: collect related keys under the graph read lock, then
+            // DROP the guard before any storage awaits — the lock must never
+            // be held across `storage.retrieve`.
+            let mut expansions: Vec<(String, f64, Vec<_>)> = Vec::with_capacity(seeds.len());
+            {
+                let kg_guard = kg.read().await;
+                for (seed_key, seed_score) in seeds {
+                    let related = match kg_guard.find_related_memories(&seed_key, 2, None).await {
+                        Ok(related) => related,
+                        Err(e) => {
+                            // Seed may simply not be a graph node yet.
+                            tracing::debug!(seed = %seed_key, error = %e, "graph expansion skipped for seed");
+                            continue;
+                        }
+                    };
+                    expansions.push((seed_key, seed_score, related));
+                }
+            }
+
+            // Phase 2: fetch expansion candidates from storage, lock-free.
+            for (seed_key, seed_score, related) in expansions {
                 for rel in related {
                     if !seen.insert(rel.memory_key.clone()) {
                         continue;

@@ -45,6 +45,20 @@ pub struct ExtractedRelation {
     pub superseded: bool,
 }
 
+/// Planned knowledge-graph mutation for a stored memory, computed under a
+/// read lock by [`MemoryKnowledgeGraph::plan_memory_node_update`] and applied
+/// under a (short) write lock by
+/// [`MemoryKnowledgeGraph::apply_memory_node_plan`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryNodePlan {
+    /// The memory already has a backing node: update it in place.
+    UpdateExisting(Uuid),
+    /// A sufficiently similar node exists: merge the memory into it.
+    MergeWith(Uuid),
+    /// No existing or similar node: create a new one.
+    CreateNew,
+}
+
 /// Edge property key recording which memory a relation was extracted from.
 const PROP_SOURCE_MEMORY: &str = "source_memory";
 /// Edge property key carrying the normalized predicate.
@@ -199,9 +213,11 @@ impl MemoryKnowledgeGraph {
         let Some(node_id) = self.memory_to_node.get(memory_key) else {
             return Ok(false);
         };
-        if let Some(mut node) = self.graph.nodes.get_mut(node_id) {
+        if let Some(mut node) = self.graph.nodes.get(node_id).map(|n| n.clone()) {
             node.description = Some(content.to_string());
             node.last_modified = Some(chrono::Utc::now());
+            // Route through put_node so token/recency indexes stay coherent.
+            self.graph.put_node(node);
             Ok(true)
         } else {
             Ok(false)
@@ -224,9 +240,11 @@ impl MemoryKnowledgeGraph {
         let merged = self
             .merge_content(&existing.description.unwrap_or_default(), new_content)
             .await?;
-        if let Some(mut node) = self.graph.nodes.get_mut(&node_id) {
+        if let Some(mut node) = self.graph.nodes.get(&node_id).map(|n| n.clone()) {
             node.description = Some(merged);
             node.last_modified = Some(chrono::Utc::now());
+            // Route through put_node so token/recency indexes stay coherent.
+            self.graph.put_node(node);
         }
         Ok(true)
     }
@@ -305,6 +323,48 @@ impl MemoryKnowledgeGraph {
     /// Legacy method for backward compatibility
     pub async fn add_memory_node(&mut self, memory: &MemoryEntry) -> Result<Uuid> {
         self.add_or_update_memory_node(memory).await
+    }
+
+    /// Plan the KG mutation for a stored memory WITHOUT mutating the graph.
+    /// This carries the O(n) similarity scan (bounded by
+    /// [`Self::KG_SCAN_LIMIT`]) so callers can run it under a read lock and
+    /// keep the write lock ([`Self::apply_memory_node_plan`]) short.
+    pub async fn plan_memory_node_update(&self, memory: &MemoryEntry) -> Result<MemoryNodePlan> {
+        if let Some(existing_node_id) = self.memory_to_node.get(&memory.key) {
+            return Ok(MemoryNodePlan::UpdateExisting(*existing_node_id));
+        }
+        if let Some(similar_node_id) = self.find_similar_node(memory).await? {
+            return Ok(MemoryNodePlan::MergeWith(similar_node_id));
+        }
+        Ok(MemoryNodePlan::CreateNew)
+    }
+
+    /// Apply a plan produced by [`Self::plan_memory_node_update`]. The plan
+    /// is revalidated against the current graph (it may be stale if the graph
+    /// changed between the read and write locks); a stale plan degrades to
+    /// creating a new node. Returns the node id and whether relationship
+    /// detection ([`Self::detect_relationship_edges`]) still needs to run for
+    /// a freshly created node.
+    pub async fn apply_memory_node_plan(
+        &mut self,
+        plan: MemoryNodePlan,
+        memory: &MemoryEntry,
+    ) -> Result<(Uuid, bool)> {
+        // Revalidate: if the memory got a node since planning, update it.
+        if let Some(existing_node_id) = self.memory_to_node.get(&memory.key).copied() {
+            let node_id = self.update_existing_node(existing_node_id, memory).await?;
+            return Ok((node_id, false));
+        }
+        if let MemoryNodePlan::MergeWith(similar_node_id) = plan {
+            if self.graph.get_node(similar_node_id).await?.is_some() {
+                let node_id = self
+                    .merge_with_existing_node(similar_node_id, memory)
+                    .await?;
+                return Ok((node_id, false));
+            }
+        }
+        let node_id = self.create_node_without_detection(memory).await?;
+        Ok((node_id, true))
     }
 
     /// Create a relationship between two memory entries
@@ -492,12 +552,150 @@ impl MemoryKnowledgeGraph {
         self.graph.get_connected_nodes(node_id).await
     }
 
+    /// Cap on the nodes examined by per-store similarity/relationship
+    /// scans. Bounds the write-path cost per store: at most this many
+    /// deterministically-ordered candidates are examined.
+    const KG_SCAN_LIMIT: usize = 256;
+
+    /// Recency key for deterministic ordering: newest first. Uses
+    /// `last_modified`, falling back to `created_at`.
+    fn node_recency(node: &Node) -> chrono::DateTime<chrono::Utc> {
+        graph::node_recency(node)
+    }
+
+    /// Lowercased alphanumeric token set used for content-relevance scoring.
+    fn scan_tokens(text: &str) -> std::collections::HashSet<String> {
+        graph::scan_tokens(text)
+    }
+
+    /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
+    /// DETERMINISTICALLY by content relevance to `query_text` (token-overlap
+    /// desc), then recency (newest first), then node id, and capped at
+    /// [`Self::KG_SCAN_LIMIT`]. Unlike iterating an unordered `HashMap`/
+    /// `DashMap`, this keeps the examined candidate set reproducible run-to-run
+    /// AND biased toward the memories most likely to match.
+    async fn relevance_ordered_candidates(
+        &self,
+        exclude_key: &str,
+        query_text: &str,
+    ) -> Result<Vec<(Uuid, Node)>> {
+        let query_tokens = Self::scan_tokens(query_text);
+        // Candidate ids sharing >= 1 indexed token with the query; cost is
+        // bounded by the touched posting-list sizes, not the node count.
+        let overlap_candidates = self.graph.token_overlap_counts(&query_tokens);
+        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> = Vec::new();
+        for node_id in overlap_candidates.keys() {
+            let Some(mem_key) = self.node_to_memory.get(node_id) else {
+                continue; // entity node: not a memory-backed candidate
+            };
+            if mem_key == exclude_key {
+                continue;
+            }
+            if let Some(node) = self.graph.get_node(*node_id).await? {
+                // Recompute overlap against the DESCRIPTION ONLY (the index
+                // covers description-or-label, so index candidacy is a
+                // superset; a label-only match scores 0 here and is picked
+                // up by the recency fill below, matching the historical
+                // full-scan scoring exactly).
+                let overlap = node
+                    .description
+                    .as_deref()
+                    .map(|d| {
+                        let toks = Self::scan_tokens(d);
+                        query_tokens.intersection(&toks).count()
+                    })
+                    .unwrap_or(0);
+                if overlap == 0 {
+                    continue;
+                }
+                let recency = Self::node_recency(&node);
+                scored.push((overlap, recency, *node_id, node));
+            }
+        }
+        // Overlap desc, then recency desc, then id asc (fully deterministic).
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        scored.truncate(Self::KG_SCAN_LIMIT);
+        // Zero-overlap nodes sort strictly after all positive-overlap nodes
+        // under the historical comparator, among themselves by recency desc
+        // then id asc — exactly the recency index order. Fill any remaining
+        // window slots from it (early-stopping; residual bound is
+        // O(limit + non-memory/skipped nodes interleaved), not a full sort).
+        if scored.len() < Self::KG_SCAN_LIMIT {
+            let taken: std::collections::HashSet<Uuid> =
+                scored.iter().map(|(_, _, id, _)| *id).collect();
+            let fill_ids =
+                self.graph
+                    .recency_ordered_ids(Self::KG_SCAN_LIMIT - scored.len(), |id| {
+                        !taken.contains(&id)
+                            && self
+                                .node_to_memory
+                                .get(&id)
+                                .is_some_and(|mem_key| mem_key != exclude_key)
+                    });
+            for id in fill_ids {
+                if let Some(node) = self.graph.get_node(id).await? {
+                    let recency = Self::node_recency(&node);
+                    scored.push((0, recency, id, node));
+                }
+            }
+        }
+        Ok(scored
+            .into_iter()
+            .map(|(_, _, id, node)| (id, node))
+            .collect())
+    }
+
+    /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
+    /// DETERMINISTICALLY by recency (newest first) then node id — an explicit
+    /// "most-recent-N nodes" window — capped at [`Self::KG_SCAN_LIMIT`]. Used
+    /// for temporal detection, which is about creation time rather than
+    /// content.
+    async fn recency_ordered_candidates(&self, exclude_key: &str) -> Result<Vec<(Uuid, Node)>> {
+        // The recency index already yields (recency desc, id asc) order:
+        // early-stop after KG_SCAN_LIMIT memory-backed nodes instead of
+        // sorting all of them. Residual bound: O(limit + non-memory nodes
+        // interleaved among the newest), not O(n log n).
+        let ids = self.graph.recency_ordered_ids(Self::KG_SCAN_LIMIT, |id| {
+            self.node_to_memory
+                .get(&id)
+                .is_some_and(|mem_key| mem_key != exclude_key)
+        });
+        let mut nodes = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(node) = self.graph.get_node(id).await? {
+                nodes.push((id, node));
+            }
+        }
+        Ok(nodes)
+    }
+
     /// Auto-detect relationships based on content similarity and metadata
     async fn auto_detect_relationships(
         &mut self,
         node_id: Uuid,
         memory: &MemoryEntry,
     ) -> Result<()> {
+        let edges = self.detect_relationship_edges(node_id, memory).await?;
+        self.add_detected_edges(edges).await
+    }
+
+    /// Read-only relationship detection for a node backing `memory`: computes
+    /// tag-, temporal- and semantic-relationship edges WITHOUT mutating the
+    /// graph, so callers can run it under a read lock and apply the returned
+    /// edges under a short write lock ([`Self::add_detected_edges`]).
+    /// Temporal/semantic candidate scans are capped at
+    /// [`Self::KG_SCAN_LIMIT`] nodes.
+    pub async fn detect_relationship_edges(
+        &self,
+        node_id: Uuid,
+        memory: &MemoryEntry,
+    ) -> Result<Vec<Edge>> {
+        let mut edges = Vec::new();
+
         // Find similar memories based on tags
         for tag in &memory.metadata.tags {
             let similar_memories = self.get_memories_by_concept(tag).await?;
@@ -505,7 +703,7 @@ impl MemoryKnowledgeGraph {
                 if similar_memory_key != memory.key {
                     if let Some(similar_node_id) = self.memory_to_node.get(&similar_memory_key) {
                         // Create a "related_to" relationship
-                        let edge = Edge::new(
+                        edges.push(Edge::new(
                             node_id,
                             *similar_node_id,
                             RelationshipType::RelatedTo,
@@ -513,91 +711,70 @@ impl MemoryKnowledgeGraph {
                                 ("reason".to_string(), "shared_tag".to_string()),
                                 ("tag".to_string(), tag.clone()),
                             ])),
-                        );
-                        let _ = self.graph.add_edge(edge).await;
+                        ));
                     }
                 }
             }
         }
 
-        // Detect temporal relationships
-        self.detect_temporal_relationships(node_id, memory).await?;
-
-        // Detect semantic relationships (if embeddings are available)
-        if memory.embedding.is_some() {
-            self.detect_semantic_relationships(node_id, memory).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Detect temporal relationships between memories
-    async fn detect_temporal_relationships(
-        &mut self,
-        node_id: Uuid,
-        memory: &MemoryEntry,
-    ) -> Result<()> {
-        // Find memories created around the same time
+        // Detect temporal relationships over a deterministic most-recent-N
+        // candidate window (creation-time based, so recency ordering is the
+        // relevant one).
         let time_window = chrono::Duration::hours(1);
         let memory_time = memory.created_at();
-
-        for (other_memory_key, other_node_id) in &self.memory_to_node {
-            if other_memory_key != &memory.key {
-                if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
-                    if let Some(other_time) = other_node.created_at {
-                        let time_diff = (memory_time - other_time).abs();
-                        if time_diff <= time_window {
-                            let edge = Edge::new(
-                                node_id,
-                                *other_node_id,
-                                RelationshipType::TemporallyRelated,
-                                Some(HashMap::from([(
-                                    "time_diff_minutes".to_string(),
-                                    time_diff.num_minutes().to_string(),
-                                )])),
-                            );
-                            let _ = self.graph.add_edge(edge).await;
-                        }
-                    }
+        for (other_node_id, other_node) in self.recency_ordered_candidates(&memory.key).await? {
+            if let Some(other_time) = other_node.created_at {
+                let time_diff = (memory_time - other_time).abs();
+                if time_diff <= time_window {
+                    edges.push(Edge::new(
+                        node_id,
+                        other_node_id,
+                        RelationshipType::TemporallyRelated,
+                        Some(HashMap::from([(
+                            "time_diff_minutes".to_string(),
+                            time_diff.num_minutes().to_string(),
+                        )])),
+                    ));
                 }
             }
         }
 
-        Ok(())
-    }
-
-    /// Detect semantic relationships using embeddings
-    async fn detect_semantic_relationships(
-        &mut self,
-        node_id: Uuid,
-        memory: &MemoryEntry,
-    ) -> Result<()> {
+        // Detect semantic relationships (if embeddings are available) over a
+        // deterministic content-relevance-ordered candidate window.
         if let Some(embedding) = &memory.embedding {
             let similarity_threshold = self.config.semantic_similarity_threshold;
-
-            for (other_memory_key, other_node_id) in &self.memory_to_node {
-                if other_memory_key != &memory.key {
-                    if let Some(other_node) = self.graph.get_node(*other_node_id).await? {
-                        if let Some(other_embedding) = &other_node.embedding {
-                            let similarity = cosine_similarity(embedding, other_embedding);
-                            if similarity >= similarity_threshold {
-                                let edge = Edge::new(
-                                    node_id,
-                                    *other_node_id,
-                                    RelationshipType::SemanticallyRelated,
-                                    Some(HashMap::from([(
-                                        "similarity_score".to_string(),
-                                        similarity.to_string(),
-                                    )])),
-                                );
-                                let _ = self.graph.add_edge(edge).await;
-                            }
-                        }
+            for (other_node_id, other_node) in self
+                .relevance_ordered_candidates(&memory.key, &memory.value)
+                .await?
+            {
+                if let Some(other_embedding) = &other_node.embedding {
+                    let similarity = cosine_similarity(embedding, other_embedding);
+                    if similarity >= similarity_threshold {
+                        edges.push(Edge::new(
+                            node_id,
+                            other_node_id,
+                            RelationshipType::SemanticallyRelated,
+                            Some(HashMap::from([(
+                                "similarity_score".to_string(),
+                                similarity.to_string(),
+                            )])),
+                        ));
                     }
                 }
             }
         }
 
+        Ok(edges)
+    }
+
+    /// Apply edges computed by [`Self::detect_relationship_edges`]. Kept
+    /// separate so the O(n) detection can run outside the write lock and only
+    /// this mutation needs `&mut self`. Individual edge failures are ignored
+    /// (best-effort), matching the prior auto-detection behavior.
+    pub async fn add_detected_edges(&mut self, edges: Vec<Edge>) -> Result<()> {
+        for edge in edges {
+            let _ = self.graph.add_edge(edge).await;
+        }
         Ok(())
     }
 
@@ -635,7 +812,7 @@ impl MemoryKnowledgeGraph {
             }
 
             // Store the updated node back
-            self.graph.nodes.insert(node_id, node);
+            self.graph.put_node(node);
 
             // Update relationships based on content changes
             self.update_relationships_for_changed_node(node_id, &old_content, &new_content)
@@ -657,31 +834,92 @@ impl MemoryKnowledgeGraph {
         let similarity_threshold = self.config.semantic_similarity_threshold;
         let mut best_match: Option<(Uuid, f64)> = None;
 
-        for node_ref in self.graph.nodes.iter() {
-            let node = node_ref.value();
-
+        for (node_id, node) in self.relevance_ordered_graph_nodes(&memory.value) {
             // Skip if this is already mapped to a different memory
-            if let Some(existing_memory_key) = self.node_to_memory.get(&node.id) {
+            if let Some(existing_memory_key) = self.node_to_memory.get(&node_id) {
                 if existing_memory_key != &memory.key {
                     continue;
                 }
             }
 
             // Calculate similarity
-            let similarity = self.calculate_node_memory_similarity(node, memory).await?;
+            let similarity = self.calculate_node_memory_similarity(&node, memory).await?;
 
             if similarity >= similarity_threshold {
                 if let Some((_, best_similarity)) = best_match {
                     if similarity > best_similarity {
-                        best_match = Some((node.id, similarity));
+                        best_match = Some((node_id, similarity));
                     }
                 } else {
-                    best_match = Some((node.id, similarity));
+                    best_match = Some((node_id, similarity));
                 }
             }
         }
 
         Ok(best_match.map(|(node_id, _)| node_id))
+    }
+
+    /// All graph nodes ordered DETERMINISTICALLY by content relevance to
+    /// `query_text` (token-overlap of the node's description/label desc), then
+    /// recency (newest first), then id, capped at [`Self::KG_SCAN_LIMIT`].
+    /// Includes non-memory (entity) nodes, so `find_similar_node` keeps its
+    /// original candidate universe but examines a reproducible, relevant
+    /// subset instead of an arbitrary map-iteration-order prefix.
+    fn relevance_ordered_graph_nodes(&self, query_text: &str) -> Vec<(Uuid, Node)> {
+        let query_tokens = Self::scan_tokens(query_text);
+        // Positive-overlap candidates via the token index (posting-list
+        // union), NOT a score of every node. The index is built over the same
+        // description-or-label text this method historically scored, so the
+        // accumulated posting counts equal the historical intersection
+        // counts exactly.
+        let overlap_candidates = self.graph.token_overlap_counts(&query_tokens);
+        let mut scored: Vec<(usize, chrono::DateTime<chrono::Utc>, Uuid, Node)> =
+            Vec::with_capacity(overlap_candidates.len().min(Self::KG_SCAN_LIMIT));
+        for (node_id, overlap) in &overlap_candidates {
+            if let Some(node) = self.graph.nodes.get(node_id).map(|n| n.clone()) {
+                let recency = Self::node_recency(&node);
+                scored.push((*overlap, recency, *node_id, node));
+            }
+        }
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        scored.truncate(Self::KG_SCAN_LIMIT);
+        // Zero-overlap nodes order strictly after all positive-overlap ones
+        // under the historical comparator and among themselves by recency
+        // desc then id asc — exactly the recency index order. Fill remaining
+        // window slots from it with early stop.
+        if scored.len() < Self::KG_SCAN_LIMIT {
+            let fill_ids = self
+                .graph
+                .recency_ordered_ids(Self::KG_SCAN_LIMIT - scored.len(), |id| {
+                    !overlap_candidates.contains_key(&id)
+                });
+            for id in fill_ids {
+                if let Some(node) = self.graph.nodes.get(&id).map(|n| n.clone()) {
+                    let recency = Self::node_recency(&node);
+                    scored.push((0, recency, id, node));
+                }
+            }
+        }
+        scored
+            .into_iter()
+            .map(|(_, _, id, node)| (id, node))
+            .collect()
+    }
+
+    /// Test-only: the deterministic candidate node ordering
+    /// `find_similar_node` will scan for `memory`, as (node_id) in order.
+    /// Exposed so tests can prove the candidate set is reproducible and
+    /// relevance-ordered past [`Self::KG_SCAN_LIMIT`].
+    #[cfg(feature = "test-utils")]
+    pub fn debug_similar_candidate_ids(&self, memory: &MemoryEntry) -> Vec<Uuid> {
+        self.relevance_ordered_graph_nodes(&memory.value)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
     }
 
     /// Merge memory with an existing similar node
@@ -732,7 +970,7 @@ impl MemoryKnowledgeGraph {
             }
 
             // Store updated node
-            self.graph.nodes.insert(node_id, node);
+            self.graph.put_node(node);
 
             // Update mappings
             self.memory_to_node.insert(memory.key.clone(), node_id);
@@ -744,15 +982,23 @@ impl MemoryKnowledgeGraph {
 
     /// Create a completely new node
     async fn create_new_node(&mut self, memory: &MemoryEntry) -> Result<Uuid> {
+        let node_id = self.create_node_without_detection(memory).await?;
+
+        // Auto-detect relationships with existing nodes
+        self.auto_detect_relationships(node_id, memory).await?;
+
+        Ok(node_id)
+    }
+
+    /// Create a new node and mappings WITHOUT relationship auto-detection,
+    /// so detection can run separately outside the write lock.
+    async fn create_node_without_detection(&mut self, memory: &MemoryEntry) -> Result<Uuid> {
         let node = Node::from_memory(memory);
         let node_id = self.graph.add_node(node).await?;
 
         // Update mappings
         self.memory_to_node.insert(memory.key.clone(), node_id);
         self.node_to_memory.insert(node_id, memory.key.clone());
-
-        // Auto-detect relationships with existing nodes
-        self.auto_detect_relationships(node_id, memory).await?;
 
         tracing::info!(
             node_id = %node_id,

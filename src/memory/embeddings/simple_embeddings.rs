@@ -8,10 +8,12 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 /// Simple embedder using TF-IDF
+///
+/// IDF is derived lazily from the vocabulary document frequencies at embed
+/// time; ingesting a document is O(tokens), with no full IDF-table rebuild.
 pub struct SimpleEmbedder {
     embedding_dim: usize,
     vocabulary: HashMap<String, usize>,
-    idf_scores: HashMap<String, f64>,
     document_count: usize,
 }
 
@@ -21,16 +23,20 @@ impl SimpleEmbedder {
         Self {
             embedding_dim,
             vocabulary: HashMap::new(),
-            idf_scores: HashMap::new(),
             document_count: 0,
         }
     }
 
-    /// Embed text into a vector
+    /// Embed text into a vector (document path: updates vocabulary first)
     pub fn embed_text(&mut self, text: &str) -> Result<Vec<f64>> {
         // Update vocabulary with this text
         self.update_vocabulary(text);
+        self.embed_text_readonly(text)
+    }
 
+    /// Embed text against the EXISTING vocabulary statistics without
+    /// mutating them (read-only query/scoring path).
+    pub fn embed_text_readonly(&self, text: &str) -> Result<Vec<f64>> {
         let tokens = self.tokenize(text);
         let tf_scores = self.calculate_tf(&tokens);
 
@@ -38,7 +44,7 @@ impl SimpleEmbedder {
         let mut embedding = vec![0.0; self.embedding_dim];
 
         for (token, tf) in tf_scores {
-            let idf = self.idf_scores.get(&token).unwrap_or(&1.0);
+            let idf = self.idf(&token);
             let tfidf = tf * idf;
 
             // Hash token to embedding dimension
@@ -52,7 +58,8 @@ impl SimpleEmbedder {
         Ok(embedding)
     }
 
-    /// Update vocabulary and IDF scores with new text
+    /// Update vocabulary document frequencies with new text.
+    /// Incremental: O(tokens in `text`), no IDF-table rebuild.
     pub fn update_vocabulary(&mut self, text: &str) {
         let tokens = self.tokenize(text);
         let unique_tokens: std::collections::HashSet<_> = tokens.into_iter().collect();
@@ -60,11 +67,19 @@ impl SimpleEmbedder {
         self.document_count += 1;
 
         for token in unique_tokens {
-            *self.vocabulary.entry(token.clone()).or_insert(0) += 1;
+            *self.vocabulary.entry(token).or_insert(0) += 1;
         }
+    }
 
-        // Recalculate IDF scores
-        self.calculate_idf_scores();
+    /// Lazy IDF for a single term, identical in value to the previously
+    /// materialized table: `ln(N / df)` for known terms, `1.0` for unknown.
+    fn idf(&self, token: &str) -> f64 {
+        match self.vocabulary.get(token) {
+            Some(doc_freq) if self.document_count > 0 => {
+                (self.document_count as f64 / *doc_freq as f64).ln()
+            }
+            _ => 1.0,
+        }
     }
 
     /// Tokenize text into words
@@ -97,16 +112,6 @@ impl SimpleEmbedder {
         }
 
         tf_scores
-    }
-
-    /// Calculate IDF scores for all vocabulary
-    fn calculate_idf_scores(&mut self) {
-        self.idf_scores.clear();
-
-        for (token, doc_freq) in &self.vocabulary {
-            let idf = (self.document_count as f64 / *doc_freq as f64).ln();
-            self.idf_scores.insert(token.clone(), idf);
-        }
     }
 
     /// Hash a token to an embedding dimension index

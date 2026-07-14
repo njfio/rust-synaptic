@@ -136,6 +136,11 @@ pub struct AgentMemory {
     /// relevance × recency × importance scoring. `None` falls back to
     /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
+    /// Test-only op-count proxy: max number of candidate memories examined by
+    /// a single `neighbor_facts` call. Bounded write path keeps this <= the
+    /// candidate cap regardless of store size.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    neighbor_examined_max: std::sync::atomic::AtomicUsize,
 }
 
 impl AgentMemory {
@@ -210,11 +215,27 @@ impl AgentMemory {
 
         // Default reasoner for the intelligent write path: the deterministic
         // heuristic reasoner over the active (TF-IDF) embedding provider.
+        // With the `llm-reasoning` feature enabled AND an endpoint configured
+        // via SYNAPTIC_LLM_URL/SYNAPTIC_LLM_MODEL (or the SYNAPTIC_EVAL_LLM_*
+        // fallbacks), an LlmReasoner is used instead; it fails open to its own
+        // inner HeuristicReasoner on any LLM error, so the write path never
+        // hard-fails or fabricates. Feature off or unconfigured: heuristic.
         #[cfg(feature = "embeddings")]
-        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> =
-            Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
-                memory::embeddings::TfIdfProvider::default(),
-            )));
+        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> = {
+            let heuristic: Arc<dyn memory::reasoning::MemoryReasoner> =
+                Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
+                    memory::embeddings::TfIdfProvider::default(),
+                )));
+            #[cfg(feature = "llm-reasoning")]
+            {
+                match memory::reasoning::LlmReasoner::from_env() {
+                    Some(llm) => Arc::new(llm),
+                    None => heuristic,
+                }
+            }
+            #[cfg(not(feature = "llm-reasoning"))]
+            heuristic
+        };
 
         // Reflection engine: clusters memories accumulated since the last
         // reflection by TF-IDF embedding similarity and synthesizes insights
@@ -238,9 +259,15 @@ impl AgentMemory {
         // term matches), so multi-word queries yield candidates directly and
         // no widening wrapper is needed.
         let retrieval_pipeline = if config.enable_embeddings {
-            let provider = Arc::new(memory::embeddings::TfIdfProvider::default());
-            let dense_vector =
-                memory::retrieval::DenseVectorRetriever::new(Arc::clone(&storage), provider);
+            // ONE shared provider instance for the dense retriever AND the
+            // reranker: its content-hash scoring cache means each candidate
+            // content is embedded at most once per query across both stages.
+            let provider: Arc<dyn memory::embeddings::provider::EmbeddingProvider> =
+                Arc::new(memory::embeddings::TfIdfProvider::default());
+            let dense_vector = memory::retrieval::DenseVectorRetriever::new(
+                Arc::clone(&storage),
+                Arc::clone(&provider),
+            );
             let keyword = memory::retrieval::KeywordRetriever::new(Arc::clone(&storage));
             // Graph and temporal signals share the same storage; the graph
             // retriever additionally shares the live knowledge-graph handle
@@ -255,7 +282,7 @@ impl AgentMemory {
             // (term overlap, embedding agreement, graph proximity, recency)
             // reorder the fused + composite-scored results.
             let reranker = memory::retrieval::HeuristicReranker::new(
-                Some(Arc::new(memory::embeddings::TfIdfProvider::default())),
+                Some(Arc::clone(&provider)),
                 knowledge_graph.clone(),
             );
             let hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
@@ -370,6 +397,8 @@ impl AgentMemory {
             cross_platform_manager,
             promotion_manager,
             retrieval_pipeline,
+            #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+            neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -500,9 +529,32 @@ impl AgentMemory {
             }
         }
 
-        // Add or update in knowledge graph if enabled (intelligent merging)
+        // Add or update in knowledge graph if enabled (intelligent merging).
+        // The O(n) similarity/relationship computation runs under READ locks;
+        // the write lock is held only for the actual node/edge mutations so
+        // concurrent readers are not blocked behind full-graph scans.
         if let Some(ref kg) = self.knowledge_graph {
-            if let Err(e) = kg.write().await.add_or_update_memory_node(&entry).await {
+            let kg_result: Result<()> = async {
+                let plan = kg.read().await.plan_memory_node_update(&entry).await?;
+                let (node_id, needs_detection) = kg
+                    .write()
+                    .await
+                    .apply_memory_node_plan(plan, &entry)
+                    .await?;
+                if needs_detection {
+                    let edges = kg
+                        .read()
+                        .await
+                        .detect_relationship_edges(node_id, &entry)
+                        .await?;
+                    if !edges.is_empty() {
+                        kg.write().await.add_detected_edges(edges).await?;
+                    }
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(e) = kg_result {
                 tracing::warn!(error = %e, "knowledge graph update degraded during store");
                 degradations.knowledge_graph = Some(e.to_string());
             }
@@ -570,7 +622,7 @@ impl AgentMemory {
             return Ok(());
         }
         for fact in &extraction.facts {
-            let neighbors = self.neighbor_facts(&entry.key, &fact.text, 5);
+            let neighbors = self.neighbor_facts(&entry.key, fact, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
             // The reasoner picks its target among the neighbors we supplied;
             // for id-less outcomes (UpdateInPlace/Append) the target is the
@@ -582,17 +634,34 @@ impl AgentMemory {
         Ok(())
     }
 
-    /// Build the top-`k` neighbor list for a candidate fact from existing
-    /// memories (short- and long-term state), excluding the entry being
-    /// stored. Similarity is a deterministic token-set cosine; ties break by
-    /// key so resolution is reproducible.
+    /// Build the top-`k` neighbor list for a candidate `fact`, excluding the
+    /// entry being stored.
+    ///
+    /// Candidate source (changed from the previous full state scan): the bulk
+    /// of candidates come from the storage's tokenized search over the fact
+    /// text (top [`Self::NEIGHBOR_CANDIDATE_LIMIT`] by term overlap), so the
+    /// per-fact cost is bounded (O(K)) instead of tokenizing every stored
+    /// short/long-term memory (O(n)).
+    ///
+    /// Bounded-recall tradeoff and its mitigation: a pure top-K keyword search
+    /// can miss a genuinely contradicting memory when the two share only their
+    /// subject (e.g. "Alice lives in Berlin" vs. "Alice lives in Munich" share
+    /// just "alice"/"lives"/"in") while >=K unrelated memories share more
+    /// terms — which would wrongly downgrade a Supersede to an Insert. To make
+    /// same-subject contradictions robust we (a) drop trivial (<3 char) tokens
+    /// from the search query so distinctive terms dominate ranking, and (b)
+    /// UNION the keyword hits with an exact per-subject lookup: for every
+    /// relation subject in the fact we run a targeted search so a memory about
+    /// the same subject is always in the candidate set. The final similarity
+    /// ranking over the union is unchanged (deterministic token-set cosine,
+    /// ties broken by key).
     #[cfg(feature = "embeddings")]
-    fn neighbor_facts(
+    async fn neighbor_facts(
         &self,
         current_key: &str,
-        fact_text: &str,
+        fact: &memory::reasoning::Fact,
         k: usize,
-    ) -> Vec<memory::reasoning::NeighborFact> {
+    ) -> Result<Vec<memory::reasoning::NeighborFact>> {
         fn tokens(text: &str) -> std::collections::HashSet<String> {
             text.to_lowercase()
                 .split(|c: char| !c.is_alphanumeric())
@@ -600,18 +669,64 @@ impl AgentMemory {
                 .map(str::to_string)
                 .collect()
         }
-        let candidate_tokens = tokens(fact_text);
+        let candidate_tokens = tokens(&fact.text);
         if candidate_tokens.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        let mut neighbors: Vec<memory::reasoning::NeighborFact> = self
-            .state
-            .get_short_term_memories()
+
+        // (a) Build a keyword query from distinctive (>=3 char) tokens so a
+        // handful of long, discriminating terms outrank many short stopword
+        // matches. Fall back to the raw text if nothing survives the filter.
+        let distinctive: Vec<&str> = fact
+            .text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() >= 3)
+            .collect();
+        let query = if distinctive.is_empty() {
+            fact.text.clone()
+        } else {
+            distinctive.join(" ")
+        };
+
+        // Collect a bounded, deduplicated candidate set: the keyword hits ...
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut candidates: Vec<memory::types::MemoryFragment> = Vec::new();
+        // +1 head-room: the search may return the entry being stored itself.
+        for fragment in self
+            .storage
+            .search(&query, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
+            .await?
+        {
+            if seen.insert(fragment.entry.key.clone()) {
+                candidates.push(fragment);
+            }
+        }
+        // (b) ... unioned with a targeted lookup per relation subject so a
+        // same-subject memory can never be squeezed out of the candidate set.
+        for relation in &fact.relations {
+            if relation.subject.trim().is_empty() {
+                continue;
+            }
+            for fragment in self
+                .storage
+                .search(&relation.subject, Self::NEIGHBOR_CANDIDATE_LIMIT + 1)
+                .await?
+            {
+                if seen.insert(fragment.entry.key.clone()) {
+                    candidates.push(fragment);
+                }
+            }
+        }
+
+        #[cfg(feature = "test-utils")]
+        let examined = std::sync::atomic::AtomicUsize::new(0);
+        let mut neighbors: Vec<memory::reasoning::NeighborFact> = candidates
             .iter()
-            .chain(self.state.get_long_term_memories().iter())
-            .filter(|(key, _)| key.as_str() != current_key)
-            .filter_map(|(key, mem)| {
-                let mem_tokens = tokens(&mem.value);
+            .filter(|fragment| fragment.entry.key != current_key)
+            .filter_map(|fragment| {
+                #[cfg(feature = "test-utils")]
+                examined.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let mem_tokens = tokens(&fragment.entry.value);
                 if mem_tokens.is_empty() {
                     return None;
                 }
@@ -620,9 +735,9 @@ impl AgentMemory {
                     / ((candidate_tokens.len() as f64).sqrt() * (mem_tokens.len() as f64).sqrt());
                 if similarity > 0.0 {
                     Some(memory::reasoning::NeighborFact {
-                        id: key.clone(),
+                        id: fragment.entry.key.clone(),
                         similarity,
-                        text: mem.value.clone(),
+                        text: fragment.entry.value.clone(),
                     })
                 } else {
                     None
@@ -635,7 +750,28 @@ impl AgentMemory {
                 .then_with(|| a.id.cmp(&b.id))
         });
         neighbors.truncate(k);
-        neighbors
+        #[cfg(feature = "test-utils")]
+        self.neighbor_examined_max.fetch_max(
+            examined.load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        Ok(neighbors)
+    }
+
+    /// Upper bound on the keyword-hit candidates `neighbor_facts` pulls per
+    /// search. Keeps the intelligent write path O(K) per fact instead of O(n)
+    /// over the whole store; the storage's tokenized search ranks candidates
+    /// by term overlap so the strongest conflict candidates are retained. The
+    /// per-subject union searches add at most a small constant multiple.
+    #[cfg(feature = "embeddings")]
+    const NEIGHBOR_CANDIDATE_LIMIT: usize = 20;
+
+    /// Test-only op-count proxy: the maximum number of candidate memories a
+    /// single `neighbor_facts` call has examined so far.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    pub fn max_neighbor_candidates_examined(&self) -> usize {
+        self.neighbor_examined_max
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Apply a conflict resolution outcome to the knowledge graph.

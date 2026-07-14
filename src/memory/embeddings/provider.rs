@@ -25,6 +25,24 @@ pub trait EmbeddingProvider: Send + Sync {
     /// * Embedding vector with metadata
     async fn embed(&self, text: &str, options: Option<&EmbedOptions>) -> Result<Embedding>;
 
+    /// Generate an embedding for query-time SCORING.
+    ///
+    /// Unlike [`EmbeddingProvider::embed`] (the document/store-time path,
+    /// which may update provider-internal statistics such as a TF-IDF
+    /// vocabulary), this path must be read-only with respect to provider
+    /// state: calling it any number of times must not mutate the model.
+    /// Providers with an internal cache may serve repeated contents from it.
+    ///
+    /// The default implementation delegates to `embed` for stateless
+    /// providers (API-backed models), whose `embed` is already read-only.
+    async fn embed_for_scoring(
+        &self,
+        text: &str,
+        options: Option<&EmbedOptions>,
+    ) -> Result<Embedding> {
+        self.embed(text, options).await
+    }
+
     /// Generate embeddings for multiple texts (batch operation)
     ///
     /// # Arguments

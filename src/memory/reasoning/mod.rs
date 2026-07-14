@@ -7,8 +7,12 @@
 //! across clusters of related memories.
 
 pub mod heuristic;
+#[cfg(feature = "llm-reasoning")]
+pub mod llm;
 
 pub use heuristic::HeuristicReasoner;
+#[cfg(feature = "llm-reasoning")]
+pub use llm::LlmReasoner;
 
 use crate::error::Result;
 use crate::memory::types::MemoryEntry;

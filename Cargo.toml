@@ -301,6 +301,10 @@ ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 # Optional candle cross-encoder reranker (reuses the ml-models candle stack)
 reranker-model = ["ml-models"]
 llm-integration = ["reqwest", "base64"]
+# Optional LLM-backed MemoryReasoner (write-path extraction/resolution/
+# synthesis via an OpenAI-compatible or Ollama endpoint). Fails open to the
+# heuristic reasoner on any misconfiguration or call failure.
+llm-reasoning = ["reqwest", "embeddings"]
 visualization = ["plotters", "plotters-backend", "image", "base64"]
 external-integrations = ["sql-storage", "ml-models", "llm-integration", "visualization"]
 
