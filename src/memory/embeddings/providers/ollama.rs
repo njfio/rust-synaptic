@@ -271,6 +271,18 @@ impl EmbeddingProvider for OllamaProvider {
         ))
     }
 
+    /// Scoring-path embeds are identical to document-path embeds for a real
+    /// semantic model: Ollama embeddings carry no corpus-relative (IDF)
+    /// statistics, so the TF-IDF read-only/IDF distinction does not apply.
+    /// Delegates to `embed`, which is already read-only per call.
+    async fn embed_for_scoring(
+        &self,
+        text: &str,
+        options: Option<&EmbedOptions>,
+    ) -> Result<Embedding> {
+        self.embed(text, options).await
+    }
+
     #[cfg(feature = "llm-integration")]
     async fn embed_batch(
         &self,

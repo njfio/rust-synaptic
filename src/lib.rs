@@ -136,14 +136,23 @@ pub struct AgentMemory {
     /// relevance × recency × importance scoring. `None` falls back to
     /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
-    /// The concrete TF-IDF scoring provider shared (same `Arc`) by the dense
-    /// retriever and the reranker inside `retrieval_pipeline`. Retained here
-    /// so the store path can feed each stored memory's content into it via
-    /// the document (`embed`) path, keeping the corpus IDF statistics live.
-    /// Without this feed the vocabulary stays empty, `idf()` returns its 1.0
-    /// fallback, and dense retrieval degenerates to hashed-TF cosine.
+    /// The embedding provider shared (same `Arc`) by the dense retriever and
+    /// the reranker inside `retrieval_pipeline`, selected via
+    /// `MemoryConfig::retrieval_embedding_provider` (default: TF-IDF;
+    /// optional semantic providers such as Ollama `nomic-embed-text` with a
+    /// TF-IDF fallback). Retained here so the store path can feed each stored
+    /// memory's content into it via the document (`embed`) path: for TF-IDF
+    /// this keeps the corpus IDF statistics live (without the feed the
+    /// vocabulary stays empty, `idf()` returns its 1.0 fallback, and dense
+    /// retrieval degenerates to hashed-TF cosine); for semantic providers the
+    /// same feed warms the TF-IDF fallback corpus inside the wrapper.
     #[cfg(feature = "embeddings")]
-    retrieval_scoring_provider: Option<Arc<memory::embeddings::TfIdfProvider>>,
+    retrieval_scoring_provider: Option<Arc<dyn memory::embeddings::provider::EmbeddingProvider>>,
+    /// The concrete TF-IDF instance backing `retrieval_scoring_provider`
+    /// (either as the provider itself or as the semantic provider's
+    /// fallback). Test-only corpus-statistics introspection.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    retrieval_tfidf_stats: Option<Arc<memory::embeddings::TfIdfProvider>>,
     /// Test-only op-count proxy: max number of candidate memories examined by
     /// a single `neighbor_facts` call. Bounded write path keeps this <= the
     /// candidate cap regardless of store size.
@@ -266,15 +275,27 @@ impl AgentMemory {
         // `storage.search`, which performs tokenized OR-matching (any query
         // term matches), so multi-word queries yield candidates directly and
         // no widening wrapper is needed.
+        #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+        let mut retrieval_tfidf_stats: Option<Arc<memory::embeddings::TfIdfProvider>> = None;
         let (retrieval_pipeline, retrieval_scoring_provider) = if config.enable_embeddings {
             // ONE shared provider instance for the dense retriever AND the
             // reranker: its content-hash scoring cache means each candidate
             // content is embedded at most once per query across both stages.
-            // The concrete Arc is ALSO retained on AgentMemory so the store
-            // path can feed corpus content into it (real IDF weighting).
-            let scoring_provider = Arc::new(memory::embeddings::TfIdfProvider::default());
-            let provider: Arc<dyn memory::embeddings::provider::EmbeddingProvider> =
-                Arc::clone(&scoring_provider) as _;
+            // The dyn Arc is ALSO retained on AgentMemory so the store path
+            // can feed corpus content into it (real IDF weighting for the
+            // TF-IDF default; fallback-corpus warming for semantic
+            // providers). The provider is selected via
+            // `config.retrieval_embedding_provider` (TF-IDF default; Ollama
+            // or a custom semantic provider opt-in, with a TF-IDF fallback
+            // that never lets the pipeline hard-fail).
+            let (provider, tfidf_stats) =
+                memory::embeddings::build_retrieval_provider(&config.retrieval_embedding_provider);
+            #[cfg(feature = "test-utils")]
+            {
+                retrieval_tfidf_stats = Some(tfidf_stats);
+            }
+            #[cfg(not(feature = "test-utils"))]
+            let _ = tfidf_stats;
             let dense_vector = memory::retrieval::DenseVectorRetriever::new(
                 Arc::clone(&storage),
                 Arc::clone(&provider),
@@ -302,7 +323,7 @@ impl AgentMemory {
                 .add_pipeline(Arc::new(graph))
                 .add_pipeline(Arc::new(temporal))
                 .with_reranker(Arc::new(reranker));
-            (Some(Arc::new(hybrid)), Some(scoring_provider))
+            (Some(Arc::new(hybrid)), Some(provider))
         } else {
             (None, None)
         };
@@ -411,6 +432,8 @@ impl AgentMemory {
             #[cfg(feature = "embeddings")]
             retrieval_scoring_provider,
             #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+            retrieval_tfidf_stats,
+            #[cfg(all(feature = "embeddings", feature = "test-utils"))]
             neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
         };
 
@@ -455,7 +478,7 @@ impl AgentMemory {
     /// proves the corpus is being fed into the dense-scoring IDF statistics.
     #[cfg(all(feature = "embeddings", feature = "test-utils"))]
     pub fn retrieval_scoring_vocabulary_size(&self) -> Option<usize> {
-        self.retrieval_scoring_provider
+        self.retrieval_tfidf_stats
             .as_ref()
             .map(|p| p.vocabulary_size())
     }
@@ -616,7 +639,6 @@ impl AgentMemory {
         // never the write.
         #[cfg(feature = "embeddings")]
         if let Some(ref provider) = self.retrieval_scoring_provider {
-            use memory::embeddings::provider::EmbeddingProvider;
             if let Err(e) = provider.embed(&entry.value, None).await {
                 tracing::warn!(error = %e, "retrieval IDF corpus ingest degraded during store");
             }
@@ -1518,6 +1540,15 @@ pub struct MemoryConfig {
     pub enable_advanced_management: bool,
     #[cfg(feature = "embeddings")]
     pub enable_embeddings: bool,
+    /// Embedding provider for the retrieval pipeline (dense retriever,
+    /// reranker, store-time corpus feed). Default: TF-IDF (offline, no
+    /// network). Semantic providers (e.g. Ollama `nomic-embed-text`) are
+    /// opt-in and fall back to TF-IDF with a warn when unreachable. The
+    /// default also honors `SYNAPTIC_RETRIEVAL_EMBEDDER=ollama` (see
+    /// [`memory::embeddings::RetrievalEmbeddingConfig::from_env`]) so
+    /// measurement runs can select Ollama without code changes.
+    #[cfg(feature = "embeddings")]
+    pub retrieval_embedding_provider: memory::embeddings::RetrievalEmbeddingConfig,
     #[cfg(feature = "distributed-experimental")]
     pub enable_distributed: bool,
     #[cfg(feature = "distributed-experimental")]
@@ -1562,6 +1593,9 @@ impl Default for MemoryConfig {
             enable_advanced_management: true,
             #[cfg(feature = "embeddings")]
             enable_embeddings: true,
+            #[cfg(feature = "embeddings")]
+            retrieval_embedding_provider: memory::embeddings::RetrievalEmbeddingConfig::from_env()
+                .unwrap_or_default(),
             #[cfg(feature = "distributed-experimental")]
             enable_distributed: false,
             #[cfg(feature = "distributed-experimental")]
