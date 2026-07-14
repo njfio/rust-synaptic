@@ -195,6 +195,106 @@ the 10k/100k growth measurement. The search-latency win above is real and
 measured; the store-growth superlinearity is only partially reduced and is
 tracked as open.
 
+## v3 quality/perf fixes (2026-07-14)
+
+Two fixes were made on `feature/agent-memory-v3-quality` and re-measured with
+real runs (same dataset, same machine class as above; run date 2026-07-14):
+
+- **A — bounded/debounced auto-summarization** (`736ef3f` + `7b8b031`): the
+  `advanced_management` store-path triggers no longer do O(n)-per-store
+  full-corpus scans (index-backed candidate search, bounded recent-creation
+  window, per-cluster debounce watermarks). This targets the store-growth
+  superlinearity flagged as open in the 2026-07-13 section.
+- **B — real dense IDF** (`a321772`): the shared `TfIdfProvider` used by the
+  dense retriever and reranker is now fed the corpus at store time, so IDF is
+  real instead of the uniform 1.0 fallback (dense scoring was previously
+  degenerate hashed-TF cosine).
+
+### Store growth after A (real run, `run_eval --growth-only --growth-100k`)
+
+| target | store p50 | store p95 | store p99 | probe search |
+|---|---|---|---|---|
+| 1,000 | 8.46 ms | 24.53 ms | 43.47 ms | 3.86 s |
+| 10,000 | 44.90 ms | 574.45 ms | 1,025.01 ms | 5.66 s |
+| 100,000 | in progress — not run to completion in-sandbox (fill was still running at 40 min; now tractable, on the order of hours, vs "days" before) |
+
+Before/after (vs the 2026-07-13 growth table above):
+
+| metric | before | after A | change |
+|---|---|---|---|
+| store p50 @ 1k | 9.62 ms | 8.46 ms | ~comparable |
+| store p50 @ 10k | 451.67 ms | **44.90 ms** | **~10× faster** |
+| growth slope 1k→10k | ~47×/decade | ~5.3×/decade | superlinearity substantially reduced |
+
+Honest reading: the 10k store path is ~10× faster and the 1k→10k slope fell
+from ~47× to ~5.3× per decade of data; the store path is still superlinear
+(5.3× for 10× data is not linear), and the 100k point was **not run to
+completion** — it is marked in-progress, not extrapolated.
+
+### Retrieval quality after B (real run, full 1,986-question LoCoMo)
+
+Same command and full dataset as the 2026-07-13 retrieval table, so the
+comparison is apples-to-apples:
+
+| metric | before (uniform IDF) | after B (real IDF) | change |
+|---|---|---|---|
+| mean recall@10 | 0.3202 | **0.3318** | +0.0116 |
+| MRR | 0.2871 | **0.2959** | +0.0088 |
+| mean precision@10 | 0.0362 | 0.0375 | +0.0013 |
+
+Per question type (after B):
+
+| QType | n | P@10 | R@10 | MRR |
+|---|---|---|---|---|
+| SingleHop | 841 | 0.0423 | 0.4033 | 0.3480 |
+| Temporal | 321 | 0.0408 | 0.3634 | 0.3076 |
+| Abstention | 446 | 0.0386 | 0.3789 | 0.3148 |
+| MultiHop | 282 | 0.0248 | 0.0847 | 0.1539 |
+| OpenDomain | 96 | 0.0156 | 0.1060 | 0.1296 |
+
+Honest reading: real IDF helped, but modestly — about +1.2 points of
+recall@10 and +0.9 points of MRR overall. Every QType improved slightly
+(MultiHop and OpenDomain remain weak, R@10 ≤ 0.106). This is an incremental
+correctness fix to dense scoring, not a step change. Latencies in this run
+were measured under heavy concurrent load (a QA run shared the machine) and
+are not directly comparable to the 2026-07-13 latency table; the quality
+metrics are unaffected by load.
+
+Ablation after B (same cumulative ladder as the 2026-07-13 table, real run):
+
+| config | recall@10 | Δrecall | precision@10 | Δprecision | MRR | ΔMRR |
+|---|---|---|---|---|---|---|
+| baseline | 0.2615 | — | 0.0292 | — | 0.1742 | — |
+| +composite | 0.2615 | +0.0000 | 0.0292 | +0.0000 | 0.1742 | +0.0000 |
+| +reranker | 0.2615 | +0.0000 | 0.0292 | +0.0000 | 0.2311 | +0.0570 |
+| +graph_temporal | 0.2901 | +0.0286 | 0.0327 | +0.0036 | 0.2425 | +0.0683 |
+| +all | 0.2901 | +0.0286 | 0.0327 | +0.0036 | 0.2415 | +0.0673 |
+
+The ablation baseline itself rose (0.1958 → 0.2615 recall@10) because real
+IDF improves the raw dense+keyword pipeline directly; the incremental gain
+from graph/temporal shrank (+0.0737 → +0.0286 recall) — some of what
+graph/temporal used to recover is now found by properly-weighted dense
+scoring. The reranker's MRR-only effect grew (+0.0148 → +0.0570).
+
+### QA end-to-end accuracy after A+B (same 150-question stratified subset)
+
+Re-run of the identical stratified subset and judge as the section below
+(`run_qa --subset 150`, codex CLI judge, 150/150 graded, 0 judge failures):
+
+| Metric | before | after A+B |
+|---|---|---|
+| Overall | 25/150 = 16.7% | **25/150 = 16.7%** |
+| SingleHop | 8/30 = 26.7% | 9/30 = 30.0% |
+| MultiHop | 2/30 = 6.7% | 2/30 = 6.7% |
+| Temporal | 9/30 = 30.0% | 8/30 = 26.7% |
+| OpenDomain | 5/30 = 16.7% | 4/30 = 13.3% |
+| Abstention | 1/30 = 3.3% | 2/30 = 6.7% |
+
+Honest reading: end-to-end QA accuracy is **unchanged overall** (25/150 both
+times; per-type movement of ±1 question is judge/selection noise at n=30 per
+type). The small retrieval recall gain from B did not translate into more
+graded-correct answers on this subset.
+
 ## QA end-to-end accuracy
 
 **End-to-end QA accuracy — measured on a stratified N-question LoCoMo subset,
