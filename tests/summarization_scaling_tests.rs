@@ -123,10 +123,15 @@ async fn large_saturated_cluster_keeps_resummarizing() {
     let storage = Arc::new(MemoryStorage::new());
     let mut mgr = manager(); // default threshold = 10, candidate cap = 64
 
-    // Store enough topical memories that the related-count pins to the
-    // candidate cap for the tail of the run.
+    // Store enough topical memories that BOTH the related-count (candidate cap
+    // 64) AND the temporal window (cap ~129) pin to their caps for the tail of
+    // the run. 400 stores is past both caps, so neither trigger path can mask a
+    // saturation stall in the other — the run count can only keep advancing if
+    // the watermark clamp is present. (At 150 stores the temporal path is not
+    // yet saturated and masks the pre-fix related-path stall, so the boundary
+    // must be measured well past both caps — see the v3 final-sweep finding.)
     let mut runs_at_midpoint = 0usize;
-    for i in 0..150usize {
+    for i in 0..400usize {
         let entry = MemoryEntry::new(
             format!("saturate_key_{i:03}"),
             format!("rust memory graph engine design note note variant{i}"),
@@ -134,18 +139,19 @@ async fn large_saturated_cluster_keeps_resummarizing() {
         );
         storage.store(&entry).await.unwrap();
         mgr.add_memory(&*storage, entry, None).await.unwrap();
-        if i == 100 {
+        if i == 300 {
             runs_at_midpoint = mgr.auto_summarization_run_count();
         }
     }
 
     let final_runs = mgr.auto_summarization_run_count();
-    // If saturation stuck the cluster (the pre-fix bug), the run count would
-    // plateau at ~6 well before store 100 and never advance. The clamp keeps
-    // it advancing across the saturated tail (stores 100..150).
+    // If saturation stuck the cluster (the pre-fix bug), the run count plateaus
+    // once both caps are saturated and never advances through the tail. The
+    // clamp keeps the re-fire bar reachable so it advances across stores
+    // 300..400 (both paths saturated there).
     assert!(
         final_runs > runs_at_midpoint,
         "large saturated cluster stopped re-summarizing: {runs_at_midpoint} \
-         runs at store 100, {final_runs} at store 150 — clamp failed"
+         runs at store 300, {final_runs} at store 400 — clamp failed"
     );
 }
