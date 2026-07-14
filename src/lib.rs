@@ -136,6 +136,14 @@ pub struct AgentMemory {
     /// relevance × recency × importance scoring. `None` falls back to
     /// `storage.search`.
     retrieval_pipeline: Option<Arc<memory::retrieval::HybridRetriever>>,
+    /// The concrete TF-IDF scoring provider shared (same `Arc`) by the dense
+    /// retriever and the reranker inside `retrieval_pipeline`. Retained here
+    /// so the store path can feed each stored memory's content into it via
+    /// the document (`embed`) path, keeping the corpus IDF statistics live.
+    /// Without this feed the vocabulary stays empty, `idf()` returns its 1.0
+    /// fallback, and dense retrieval degenerates to hashed-TF cosine.
+    #[cfg(feature = "embeddings")]
+    retrieval_scoring_provider: Option<Arc<memory::embeddings::TfIdfProvider>>,
     /// Test-only op-count proxy: max number of candidate memories examined by
     /// a single `neighbor_facts` call. Bounded write path keeps this <= the
     /// candidate cap regardless of store size.
@@ -258,12 +266,15 @@ impl AgentMemory {
         // `storage.search`, which performs tokenized OR-matching (any query
         // term matches), so multi-word queries yield candidates directly and
         // no widening wrapper is needed.
-        let retrieval_pipeline = if config.enable_embeddings {
+        let (retrieval_pipeline, retrieval_scoring_provider) = if config.enable_embeddings {
             // ONE shared provider instance for the dense retriever AND the
             // reranker: its content-hash scoring cache means each candidate
             // content is embedded at most once per query across both stages.
+            // The concrete Arc is ALSO retained on AgentMemory so the store
+            // path can feed corpus content into it (real IDF weighting).
+            let scoring_provider = Arc::new(memory::embeddings::TfIdfProvider::default());
             let provider: Arc<dyn memory::embeddings::provider::EmbeddingProvider> =
-                Arc::new(memory::embeddings::TfIdfProvider::default());
+                Arc::clone(&scoring_provider) as _;
             let dense_vector = memory::retrieval::DenseVectorRetriever::new(
                 Arc::clone(&storage),
                 Arc::clone(&provider),
@@ -291,9 +302,9 @@ impl AgentMemory {
                 .add_pipeline(Arc::new(graph))
                 .add_pipeline(Arc::new(temporal))
                 .with_reranker(Arc::new(reranker));
-            Some(Arc::new(hybrid))
+            (Some(Arc::new(hybrid)), Some(scoring_provider))
         } else {
-            None
+            (None, None)
         };
         tracing::debug!(
             enabled = retrieval_pipeline.is_some(),
@@ -397,6 +408,8 @@ impl AgentMemory {
             cross_platform_manager,
             promotion_manager,
             retrieval_pipeline,
+            #[cfg(feature = "embeddings")]
+            retrieval_scoring_provider,
             #[cfg(all(feature = "embeddings", feature = "test-utils"))]
             neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
         };
@@ -435,6 +448,16 @@ impl AgentMemory {
         storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     ) {
         self.storage = storage;
+    }
+
+    /// Vocabulary size of the retrieval scoring provider (test-utils).
+    /// `None` when embeddings/retrieval are disabled. Non-zero after stores
+    /// proves the corpus is being fed into the dense-scoring IDF statistics.
+    #[cfg(all(feature = "embeddings", feature = "test-utils"))]
+    pub fn retrieval_scoring_vocabulary_size(&self) -> Option<usize> {
+        self.retrieval_scoring_provider
+            .as_ref()
+            .map(|p| p.vocabulary_size())
     }
 
     /// Shared handle to the knowledge graph, if enabled. Used by the MCP
@@ -581,6 +604,21 @@ impl AgentMemory {
             if let Err(e) = em.add_memory(entry.clone()) {
                 tracing::warn!(error = %e, "embedding generation degraded during store");
                 degradations.embeddings = Some(e.to_string());
+            }
+        }
+
+        // Feed the stored content into the retrieval scoring provider via the
+        // document (`embed`) path so the corpus IDF statistics the dense
+        // retriever and reranker score against stay live. O(tokens) per
+        // store; the provider's scoring cache self-invalidates on this
+        // ingest, so query-time vectors never reflect stale IDF. Best-effort
+        // like the other subsystems: a failure degrades ranking quality only,
+        // never the write.
+        #[cfg(feature = "embeddings")]
+        if let Some(ref provider) = self.retrieval_scoring_provider {
+            use memory::embeddings::provider::EmbeddingProvider;
+            if let Err(e) = provider.embed(&entry.value, None).await {
+                tracing::warn!(error = %e, "retrieval IDF corpus ingest degraded during store");
             }
         }
 

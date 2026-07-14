@@ -33,14 +33,11 @@ use std::sync::{Arc, RwLock};
 /// (so a cached vector never reflects stale IDF state), and its size is
 /// capped ([`SCORING_CACHE_CAP`]) to bound memory.
 ///
-/// KNOWN PRE-EXISTING RETRIEVAL GAP (out of P2 perf scope, tracked as a
-/// follow-up): in the shipped hybrid pipeline the provider instance shared by
-/// the dense retriever and reranker only ever has `embed_for_scoring` called
-/// on it — never `embed` — so its vocabulary stays empty and every term's IDF
-/// falls back to `1.0`. Dense retrieval is therefore currently hashed-TF
-/// cosine with no real IDF weighting. This ties to the carry-forward gap
-/// where the corpus is not fed into the scoring provider, partly explains the
-/// weak recall, and should be addressed in a future task (NOT here).
+/// In the shipped hybrid pipeline `AgentMemory` retains the provider instance
+/// shared by the dense retriever and reranker and feeds every stored memory's
+/// content into it via `embed`, so the corpus IDF statistics stay live and
+/// query-time scoring performs real IDF weighting (previously the provider
+/// was never fed and IDF degenerated to the uniform `1.0` fallback).
 pub struct TfIdfProvider {
     config: TfIdfConfig,
     state: Arc<RwLock<TfIdfState>>,
@@ -196,9 +193,9 @@ impl TfIdfProvider {
         }
         // Vocabulary/IDF state just changed: any cached scoring vector is now
         // computed against stale statistics, so drop the whole scoring cache.
-        // (Under the shipped wiring the scoring provider is never fed via
-        // `embed`, so this rarely fires; it keeps mixed embed/scoring callers
-        // correct.)
+        // (Under the shipped wiring this fires on every store — the store
+        // path feeds each memory into the scoring provider via `embed` — so
+        // scoring vectors always reflect the current corpus IDF.)
         self.scoring_cache.clear();
         self.embed_text_readonly(text)
     }

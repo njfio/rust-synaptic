@@ -15,15 +15,11 @@ use std::sync::Arc;
 /// This retriever generates embeddings for the query and memories,
 /// then ranks results by cosine similarity in the embedding space.
 ///
-/// KNOWN PRE-EXISTING RETRIEVAL GAP (tracked as a follow-up; NOT a P2 perf
-/// concern): the scoring provider wired into the shipped hybrid pipeline only
-/// ever has `embed_for_scoring` called on it — never `embed` — so its TF-IDF
-/// vocabulary stays empty and every term's IDF falls back to `1.0`. Dense
-/// retrieval is therefore currently hashed-TF cosine with no real IDF
-/// weighting. This ties to the carry-forward gap where the corpus is not fed
-/// into the scoring provider, partly explains the weak recall, and should be
-/// addressed in a future task (feeding the corpus / sharing the store-time
-/// vocabulary), not here.
+/// In the shipped hybrid pipeline the scoring provider this retriever holds
+/// is the same `Arc` that `AgentMemory` retains and feeds every stored
+/// memory's content into (via `embed`), so cosine similarity here is computed
+/// against live corpus IDF statistics — real IDF weighting, not the former
+/// degenerate hashed-TF-with-uniform-IDF behaviour.
 pub struct DenseVectorRetriever {
     storage: Arc<dyn Storage + Send + Sync>,
     provider: Arc<dyn EmbeddingProvider>,
