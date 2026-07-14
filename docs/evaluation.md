@@ -446,6 +446,13 @@ Honest findings:
   embeddings in one forward pass** (and/or GPU), which should cut per-query
   latency by roughly an order of magnitude and make the bundled model a viable
   default — tracked as the next step, not yet done.
+- **GPU (opt-in, not measured here):** the candle provider now selects its
+  device via `Device::cuda_if_available(0)`. With the CUDA toolkit installed,
+  `cargo build --features cuda` runs MiniLM inference on the GPU, which is
+  expected to cut the multi-second CPU per-query latency dramatically. GPU
+  latency was **NOT measured** in this environment (no CUDA toolkit, no sudo
+  to install one), so no GPU number is claimed — the CPU path is what is
+  verified.
 
 Not measured: batched-candle latency; the full 1,986-question set with candle
 (un-batched CPU inference makes it impractical in-sandbox — the subset is the

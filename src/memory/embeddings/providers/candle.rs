@@ -8,6 +8,13 @@
 //! Construction fails closed: if the model directory is missing the
 //! tokenizer, config, or safetensors weights, `new` returns an error — there
 //! is no fake fallback provider.
+//!
+//! GPU: build with `cargo build --features cuda` (requires the NVIDIA CUDA
+//! toolkit installed) to run inference on the GPU via
+//! `Device::cuda_if_available(0)`; without that feature (or without a GPU)
+//! the provider runs on CPU. GPU latency has NOT been measured by the
+//! project maintainers' CI environment (no CUDA toolkit available), so no
+//! GPU performance number is claimed.
 
 use crate::error::{MemoryError, Result};
 use crate::memory::embeddings::provider::{
@@ -57,8 +64,18 @@ impl CandleEmbeddingProvider {
     ///
     /// Fails closed: any missing or unreadable file is an error; no
     /// placeholder provider is ever constructed.
+    ///
+    /// Device selection: resolves the compute device once via
+    /// [`Device::cuda_if_available`] — a CUDA GPU when this crate is built
+    /// with the `cuda` feature (requires the CUDA toolkit) and a GPU is
+    /// present, otherwise CPU. Without the `cuda` feature this is always
+    /// CPU; `cuda_if_available` exists regardless of how candle was built.
+    /// Pooled output tensors are copied back to host `Vec<f32>` either way.
     pub fn new(model_dir: &Path) -> Result<Self> {
-        let device = Device::Cpu;
+        // Never fails when cuda is not compiled in (returns Device::Cpu);
+        // with the cuda feature, falls back to CPU if no GPU 0 is usable.
+        let device = Device::cuda_if_available(0).unwrap_or(Device::Cpu);
+        tracing::info!("candle embedding on {device:?}");
         Self::from_dir_on_device(model_dir, device)
     }
 

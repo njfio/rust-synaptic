@@ -301,6 +301,11 @@ observability = ["dep:prometheus", "dep:opentelemetry", "dep:opentelemetry_otlp"
 ml-models = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
 # Optional candle cross-encoder reranker (reuses the ml-models candle stack)
 reranker-model = ["ml-models"]
+# GPU (opt-in): candle CUDA backend for the embedding provider. Requires the
+# NVIDIA CUDA toolkit installed at build time (nvcc); does NOT affect the
+# default or ml-models CPU builds. Device is picked at runtime via
+# Device::cuda_if_available(0), falling back to CPU when no GPU is usable.
+cuda = ["ml-models", "candle-core/cuda", "candle-nn/cuda"]
 # Fast CPU-instant model2vec static embeddings (token-row lookup + mean-pool,
 # NO transformer forward pass, no candle). See providers/static_embed.rs.
 static-embeddings = ["tokenizers", "dep:safetensors"]
