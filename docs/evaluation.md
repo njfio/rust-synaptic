@@ -764,3 +764,43 @@ Per-QType (40-question run):
   here are labelled subsets. The judge is capped at k=10 recalled memories with a
   strict "use only these" prompt, so this measures retrieval-grounded QA, not the
   judge's own knowledge.
+
+## QA loss diagnostic: retrieval-bound vs judge-bound (2026-07-15)
+
+To answer "why is QA accuracy low," the QA harness now records, per question,
+whether the gold evidence was in the top-`k` recalled set (`gold_retrieved` =
+recall@k > 0, using the same `normalize_retrieved` as the retrieval eval), and
+cross-tabulates it against the judge's correct/wrong verdict:
+
+- **A** gold retrieved & correct · **B** gold retrieved & wrong (judge-bound)
+- **C** gold missed & correct · **D** gold missed & wrong (retrieval-bound)
+
+**40-question subset (codex judge, static retrieval):**
+
+| | correct | wrong |
+|---|---|---|
+| gold in top-10 | A = 7 | **B = 10 (judge-bound)** |
+| gold missed | C = 3 | **D = 20 (retrieval-bound)** |
+
+graded=40, correct=10 (0.25), **gold-retrieved rate = 0.425**; of the 30 wrong
+answers, **retrieval-bound = 0.667, judge-bound = 0.333**.
+
+**Findings:**
+1. **Retrieval is the bigger bottleneck (~2/3 of failures).** For 57.5% of these
+   (hard-skewed) questions the gold evidence never entered the top-10 — consistent
+   with MultiHop/OpenDomain recall being 0.16–0.25. This is the deep problem the two
+   abandoned graph-expansion rounds could not move.
+2. **The answer step is a real secondary bottleneck (~1/3), and more tractable.**
+   When the evidence WAS retrieved (17 questions), the judge answered correctly only
+   7/17 ≈ 41%. That headroom is unrelated to retrieval — a stronger reranker (lift
+   gold from rank 8–10 to 1–3) or answer model could recover part of it.
+3. **B under-counts retrieval loss.** `gold_retrieved` is true if ANY evidence turn
+   is in the top-10, but multi-evidence (MultiHop) questions need several. So part
+   of the "judge-bound" B bucket is really partial-retrieval failure — the true
+   retrieval-bound share is ≥ 2/3.
+4. **C = 3** questions were answered correctly WITHOUT the labeled evidence retrieved
+   — either the answer was derivable from other retrieved turns or minor label
+   incompleteness; small but worth noting.
+
+Instrumentation only; no fabricated numbers. Same subset caveats as the QA section
+above (first-N sampling skews toward hard categories).
