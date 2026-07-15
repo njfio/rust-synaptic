@@ -107,6 +107,12 @@ async fn main() -> Result<(), String> {
     // retrieval-quality signal). `--max-conversations N` truncates to the first
     // N conversations (a labelled subset for a quick, cheaper measurement).
     let retrieval_only = args.iter().any(|a| a == "--retrieval-only");
+    // `--qa-only` runs ONLY the LLM-gated end-to-end QA phase (no retrieval
+    // metrics, no ablation ladder, no memory-growth phase). This isolates the
+    // slow judge calls so a bounded QA sample fits a short wall-clock budget;
+    // the growth phase in particular (10k sequential stores) would otherwise
+    // dominate the run before QA starts.
+    let qa_only = args.iter().any(|a| a == "--qa-only");
     let max_conversations: Option<usize> = args
         .iter()
         .position(|a| a == "--max-conversations")
@@ -163,6 +169,9 @@ async fn main() -> Result<(), String> {
 
     // 1. Retrieval quality + latency (default AgentMemory pipeline), one
     //    concurrent task per conversation (independent haystacks).
+    if qa_only {
+        return run_qa_only(&conversations, &mut w).await;
+    }
     if growth_only {
         return run_growth_and_qa(&conversations, grow_100k, &mut w).await;
     }
@@ -264,6 +273,36 @@ async fn main() -> Result<(), String> {
     w(ablation::to_markdown(&table))?;
 
     run_growth_and_qa(&conversations, grow_100k, &mut w).await
+}
+
+/// Run ONLY the LLM-gated end-to-end QA phase (`--qa-only`): skips retrieval
+/// metrics, the ablation ladder, and the memory-growth phase so a bounded QA
+/// sample fits a short wall-clock budget. Numbers come from real judge
+/// verdicts; without a configured judge this reports not-run, never a number.
+async fn run_qa_only(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== QA end-to-end accuracy (LLM-gated, --qa-only) ==".to_string())?;
+    match qa::run_qa_gated(conversations, K)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        qa::QaResult::NotRun { reason } => w(format!("QA: {reason}"))?,
+        qa::QaResult::Ran(r) => {
+            w(format!(
+                "QA: graded={} correct={} accuracy={:.4}",
+                r.questions, r.correct, r.accuracy
+            ))?;
+            for (qtype, b) in &r.by_qtype {
+                w(format!(
+                    "  {qtype}: graded={} correct={} accuracy={:.4}",
+                    b.questions, b.correct, b.accuracy
+                ))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Memory-growth measurement and gated QA (phases 3 and 4).
