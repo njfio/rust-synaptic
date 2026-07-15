@@ -44,6 +44,7 @@
 
 use crate::dataset::{EvalConversation, QType};
 use crate::runner::ingest;
+use futures::stream::{self, StreamExt};
 use std::collections::BTreeMap;
 use synaptic::{AgentMemory, MemoryConfig};
 
@@ -134,14 +135,80 @@ fn qtype_key(qtype: QType) -> String {
     format!("{qtype:?}")
 }
 
+/// Environment variable bounding how many judge (`answer`+`grade`) pipelines
+/// run concurrently within a conversation. Parsed as `usize`, clamped to at
+/// least 1; defaults to 4 when unset or unparseable.
+pub const ENV_QA_CONCURRENCY: &str = "SYNAPTIC_EVAL_QA_CONCURRENCY";
+
+/// Read [`ENV_QA_CONCURRENCY`], defaulting to 4 and clamping to at least 1.
+fn qa_concurrency() -> usize {
+    std::env::var(ENV_QA_CONCURRENCY)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(4)
+        .max(1)
+}
+
+/// One question with its recalled memories, ready for the judge pipeline.
+struct PendingQuestion {
+    question_id: String,
+    qtype: String,
+    question_text: String,
+    gold_answer: String,
+    recalled: Vec<String>,
+}
+
+/// Run `judge.answer` then `judge.grade` for one pending question.
+async fn judge_one(judge: &dyn Judge, item: PendingQuestion) -> Result<QaQuestionRecord, QaError> {
+    let predicted = judge.answer(&item.question_text, &item.recalled).await?;
+    let correct = judge
+        .grade(&item.question_text, &item.gold_answer, &predicted)
+        .await?;
+    Ok(QaQuestionRecord {
+        question_id: item.question_id,
+        qtype: item.qtype,
+        predicted,
+        correct,
+    })
+}
+
+/// Run the `judge.answer` + `judge.grade` pipeline for `pending` with bounded
+/// concurrency (limit `concurrency`, clamped to at least 1). Fail closed: as
+/// soon as any task returns `Err`, that error is returned; the underlying
+/// stream is not driven any further, so no partial report is produced.
+async fn judge_questions(
+    judge: &dyn Judge,
+    pending: Vec<PendingQuestion>,
+    concurrency: usize,
+) -> Result<Vec<QaQuestionRecord>, QaError> {
+    let concurrency = concurrency.max(1);
+    let mut records = Vec::with_capacity(pending.len());
+    let mut results = stream::iter(pending)
+        .map(|item| judge_one(judge, item))
+        .buffer_unordered(concurrency);
+    while let Some(result) = results.next().await {
+        records.push(result?);
+    }
+    Ok(records)
+}
+
 /// Run end-to-end QA over `conversations` with `judge`: per question, recall
 /// up to `k` memories, generate an answer, grade it against the gold answer,
 /// and aggregate accuracy. Any judge failure aborts the run (fail closed).
+///
+/// The `judge.answer` + `judge.grade` calls for a conversation's questions
+/// run with bounded concurrency (see [`ENV_QA_CONCURRENCY`]); recall
+/// (`memory.search`) stays sequential since it needs `&memory` and is fast.
+/// Results are independent of the concurrency level: `per_question` is
+/// sorted by `question_id` before returning, and the aggregate counts are
+/// order-independent, so two runs over the same inputs produce identical
+/// reports.
 pub async fn run_qa(
     conversations: &[EvalConversation],
     judge: &dyn Judge,
     k: usize,
 ) -> Result<QaReport, QaError> {
+    let concurrency = qa_concurrency();
     let mut per_question: Vec<QaQuestionRecord> = Vec::new();
     let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
 
@@ -153,6 +220,7 @@ pub async fn run_qa(
             .await
             .map_err(|e| QaError::Memory(e.to_string()))?;
 
+        let mut pending: Vec<PendingQuestion> = Vec::with_capacity(conversation.questions.len());
         for question in &conversation.questions {
             let recalled: Vec<String> = memory
                 .search(&question.text, k)
@@ -161,27 +229,27 @@ pub async fn run_qa(
                 .into_iter()
                 .map(|f| f.entry.value)
                 .collect();
-            let predicted = judge.answer(&question.text, &recalled).await?;
-            let correct = judge
-                .grade(&question.text, &question.gold_answer, &predicted)
-                .await?;
+            pending.push(PendingQuestion {
+                question_id: question.id.clone(),
+                qtype: qtype_key(question.qtype),
+                question_text: question.text.clone(),
+                gold_answer: question.gold_answer.clone(),
+                recalled,
+            });
+        }
 
+        let records = judge_questions(judge, pending, concurrency).await?;
+        for record in records {
             let bucket = by_qtype
-                .entry(qtype_key(question.qtype))
+                .entry(record.qtype.clone())
                 .or_insert(QTypeAccuracy {
                     questions: 0,
                     correct: 0,
                     accuracy: 0.0,
                 });
             bucket.questions += 1;
-            bucket.correct += usize::from(correct);
-
-            per_question.push(QaQuestionRecord {
-                question_id: question.id.clone(),
-                qtype: qtype_key(question.qtype),
-                predicted,
-                correct,
-            });
+            bucket.correct += usize::from(record.correct);
+            per_question.push(record);
         }
     }
 
@@ -192,6 +260,7 @@ pub async fn run_qa(
             bucket.correct as f64 / bucket.questions as f64
         };
     }
+    per_question.sort_by(|a, b| a.question_id.cmp(&b.question_id));
     let questions = per_question.len();
     let correct = per_question.iter().filter(|q| q.correct).count();
     Ok(QaReport {
@@ -701,6 +770,131 @@ mod run_qa_tests {
         assert_eq!(bucket.questions, 2);
         assert_eq!(bucket.correct, 1);
         assert!((bucket.accuracy - 0.5).abs() < f64::EPSILON);
+    }
+
+    fn fixture_with_n_questions(n: usize) -> Vec<EvalConversation> {
+        let questions = (0..n)
+            .map(|i| EvalQuestion {
+                id: format!("q{i:02}"),
+                text: format!("Question number {i}?"),
+                qtype: QType::SingleHop,
+                evidence_ids: vec![],
+                gold_answer: format!("answer {i}"),
+            })
+            .collect();
+        vec![EvalConversation {
+            id: "conv1".to_string(),
+            sessions: vec![Session {
+                id: "s1".to_string(),
+                timestamp: None,
+                turns: vec![],
+            }],
+            questions,
+        }]
+    }
+
+    /// Guards process-wide env var races between tests that touch
+    /// `ENV_QA_CONCURRENCY` — only one such test should run its critical
+    /// section at a time.
+    static CONCURRENCY_ENV_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn run_qa_with_bounded_concurrency_matches_sequential_semantics() {
+        let _guard = CONCURRENCY_ENV_GUARD.lock().await;
+        std::env::set_var(ENV_QA_CONCURRENCY, "3");
+
+        let conversations = fixture_with_n_questions(6);
+
+        let judge_a = FakeJudge::new();
+        let report_a = run_qa(&conversations, &judge_a, 5)
+            .await
+            .expect("run_qa should succeed with concurrency > 1");
+
+        let judge_b = FakeJudge::new();
+        let report_b = run_qa(&conversations, &judge_b, 5)
+            .await
+            .expect("run_qa should succeed with concurrency > 1 (second run)");
+
+        std::env::remove_var(ENV_QA_CONCURRENCY);
+        drop(_guard);
+
+        // Same aggregate accuracy/counts as the sequential expectation:
+        // alternating correct/incorrect over 6 questions -> 3 correct.
+        assert_eq!(report_a.questions, 6);
+        assert_eq!(report_a.correct, 3);
+        assert!((report_a.accuracy - 0.5).abs() < f64::EPSILON);
+        let bucket = report_a
+            .by_qtype
+            .get(&qtype_key(QType::SingleHop))
+            .expect("SingleHop bucket present");
+        assert_eq!(bucket.questions, 6);
+        assert_eq!(bucket.correct, 3);
+
+        // Identical aggregates across two independent runs.
+        assert_eq!(report_a.questions, report_b.questions);
+        assert_eq!(report_a.correct, report_b.correct);
+        assert_eq!(report_a.accuracy, report_b.accuracy);
+
+        // per_question is sorted by question_id, deterministically, in both
+        // runs — proving concurrency doesn't scramble output order.
+        let ids_a: Vec<&str> = report_a
+            .per_question
+            .iter()
+            .map(|q| q.question_id.as_str())
+            .collect();
+        let ids_b: Vec<&str> = report_b
+            .per_question
+            .iter()
+            .map(|q| q.question_id.as_str())
+            .collect();
+        assert_eq!(ids_a, ids_b);
+        let mut sorted_ids = ids_a.clone();
+        sorted_ids.sort();
+        assert_eq!(ids_a, sorted_ids, "per_question must be sorted by id");
+    }
+
+    /// Judge whose `grade` fails on one specific question, to prove
+    /// concurrent `run_qa` still fails closed (returns `Err`, no partial
+    /// report) rather than swallowing the error or reporting it as
+    /// incorrect.
+    struct FailingJudge;
+
+    #[async_trait::async_trait]
+    impl Judge for FailingJudge {
+        async fn answer(&self, _question: &str, _recalled: &[String]) -> Result<String, QaError> {
+            Ok("fake answer".to_string())
+        }
+
+        async fn grade(
+            &self,
+            question: &str,
+            _gold: &str,
+            _predicted: &str,
+        ) -> Result<bool, QaError> {
+            if question.contains("number 3") {
+                Err(QaError::Judge("simulated grading failure".to_string()))
+            } else {
+                Ok(true)
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn run_qa_fails_closed_on_judge_error_under_concurrency() {
+        let _guard = CONCURRENCY_ENV_GUARD.lock().await;
+        std::env::set_var(ENV_QA_CONCURRENCY, "4");
+
+        let conversations = fixture_with_n_questions(6);
+        let judge = FailingJudge;
+        let result = run_qa(&conversations, &judge, 5).await;
+
+        std::env::remove_var(ENV_QA_CONCURRENCY);
+        drop(_guard);
+
+        assert!(
+            result.is_err(),
+            "a single failing judge call must fail the whole run"
+        );
     }
 
     #[cfg(not(feature = "llm-reasoning"))]
