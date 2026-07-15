@@ -717,3 +717,50 @@ a different lever than graph expansion — e.g. answer-aware reranking — or it
 bounded by what retrieval alone can achieve without the answer. Both branches were
 abandoned; `main` stays at the fast baseline (recall 0.5237, latency 0.60 s).
 Recorded so neither graph-expansion approach is re-attempted for MultiHop.
+
+## First end-to-end QA accuracy (real judge, 2026-07-15)
+
+Until now QA accuracy was reported as "not run" — the harness had a real judge
+(`CodexCliJudge`, shelling the logged-in `codex` CLI) and an `LlmJudge` (OpenAI-
+compatible endpoint), but `run_qa_gated` never selected the codex path. This round
+wired judge selection (`SYNAPTIC_EVAL_JUDGE=codex`), added bounded-concurrency
+judging (`SYNAPTIC_EVAL_QA_CONCURRENCY`, default 4) so a sample fits a short
+wall-clock budget, and a `--qa-only` flag (skips retrieval/ablation/growth). The
+judge answers each question using ONLY the top-`k=10` recalled memories (no world
+knowledge), then grades its own answer against the gold answer. Every number below
+is a real judge verdict — nothing fabricated; an empty/unconfigured run reports
+not-run.
+
+**Measured (static-embedding retrieval, codex judge, concurrency 4):**
+
+| sample | graded | correct | accuracy |
+|---|---|---|---|
+| 20 questions (first 4 q × 5 conversations) | 20 | 5 | 0.2500 |
+| 40 questions (first 4 q × 10 conversations) | 40 | 9 | 0.2250 |
+
+Per-QType (40-question run):
+
+| QType | graded | correct | accuracy |
+|---|---|---|---|
+| SingleHop | 1 | 1 | 1.0000 |
+| Temporal | 16 | 5 | 0.3125 |
+| MultiHop | 19 | 3 | 0.1579 |
+| OpenDomain | 4 | 0 | 0.0000 |
+
+**Honest caveats — read before citing the headline:**
+- **The subset is skewed HARD.** `--max-questions N` takes the *first* N questions
+  per conversation, which over-samples MultiHop/Temporal (35 of 40) and
+  under-samples the dominant, easiest category SingleHop (1 here vs 841 / 42% of the
+  full 1,986-question set). So **0.225 is a pessimistic, hard-weighted estimate**; a
+  representative sample would weight SingleHop far more heavily and score higher. The
+  per-QType numbers are the reliable signal, not the aggregate.
+- **QA accuracy tracks the retrieval ceiling by category.** Categories that retrieve
+  well (SingleHop R@10 0.61, Temporal 0.63) answer well; MultiHop (0.16) and
+  OpenDomain (0.00) are hard end-to-end exactly as they are hard to retrieve
+  (R@10 0.25 / 0.20) — the retrieval ceiling propagates to answers, consistent with
+  the two abandoned MultiHop rounds above.
+- **Not a full-set run.** A representative full 1,986-question QA pass is bounded by
+  sequential judge latency (hours of `codex` calls) and is not yet run; the numbers
+  here are labelled subsets. The judge is capped at k=10 recalled memories with a
+  strict "use only these" prompt, so this measures retrieval-grounded QA, not the
+  judge's own knowledge.
