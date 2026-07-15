@@ -47,31 +47,6 @@ pub trait RetrievalPipeline: Send + Sync {
     fn is_available(&self) -> bool {
         true
     }
-
-    /// Whether this pipeline can reuse the results other pipelines already
-    /// produced for the same query (see [`Self::search_with_prior`]). The
-    /// hybrid retriever runs such pipelines after the independent ones and
-    /// hands them the earlier results, so they don't repeat work (e.g. the
-    /// multi-hop retriever reuses the dense/keyword results as seeds
-    /// instead of re-running those retrievers).
-    fn consumes_prior_results(&self) -> bool {
-        false
-    }
-
-    /// Search, optionally reusing `prior`: the `(pipeline name, results)`
-    /// pairs already computed by other pipelines for this exact query.
-    /// The default implementation ignores `prior` and delegates to
-    /// [`Self::search`].
-    async fn search_with_prior(
-        &self,
-        query: &str,
-        limit: usize,
-        config: Option<&PipelineConfig>,
-        prior: &[(&str, &[ScoredMemory])],
-    ) -> Result<Vec<ScoredMemory>> {
-        let _ = prior;
-        self.search(query, limit, config).await
-    }
 }
 
 /// Types of retrieval signals
@@ -494,30 +469,28 @@ impl HybridRetriever {
         query: &str,
         limit: usize,
     ) -> Result<Vec<(MemoryFragment, f64)>> {
-        // Phase 1: independent pipelines run CONCURRENTLY. Results are
-        // re-assembled in pipeline registration order, so fusion input is
-        // deterministic regardless of completion order.
-        let mut independent = Vec::new();
-        let mut dependent = Vec::new();
-        for pipeline in &self.pipelines {
-            if !pipeline.is_available() {
-                tracing::debug!(pipeline = pipeline.name(), "Skipping unavailable pipeline");
-                continue;
-            }
-            if pipeline.consumes_prior_results() {
-                dependent.push(pipeline);
-            } else {
-                independent.push(pipeline);
-            }
-        }
+        // Available pipelines run CONCURRENTLY. `join_all` yields results in
+        // input order, so they are re-assembled in pipeline registration
+        // order and fusion input is deterministic regardless of completion
+        // order.
+        let searches = self
+            .pipelines
+            .iter()
+            .filter(|pipeline| {
+                let available = pipeline.is_available();
+                if !available {
+                    tracing::debug!(pipeline = pipeline.name(), "Skipping unavailable pipeline");
+                }
+                available
+            })
+            .map(|pipeline| async move {
+                let outcome = pipeline
+                    .search(query, self.config.max_per_signal, Some(&self.config))
+                    .await;
+                (pipeline.name(), outcome)
+            });
 
-        let searches = independent.iter().map(|pipeline| async move {
-            let outcome = pipeline
-                .search(query, self.config.max_per_signal, Some(&self.config))
-                .await;
-            (pipeline.name(), outcome)
-        });
-        let mut named_results: Vec<(&str, Vec<ScoredMemory>)> = Vec::new();
+        let mut all_results: Vec<Vec<ScoredMemory>> = Vec::new();
         for (name, outcome) in futures::future::join_all(searches).await {
             match outcome {
                 Ok(results) => {
@@ -526,7 +499,7 @@ impl HybridRetriever {
                         result_count = results.len(),
                         "Pipeline search completed"
                     );
-                    named_results.push((name, results));
+                    all_results.push(results);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -539,46 +512,6 @@ impl HybridRetriever {
             }
         }
 
-        // Phase 2: pipelines that consume the earlier results (e.g. the
-        // multi-hop retriever reusing dense/keyword seeds) run afterwards
-        // with those results in hand.
-        for pipeline in dependent {
-            let prior: Vec<(&str, &[ScoredMemory])> = named_results
-                .iter()
-                .map(|(name, results)| (*name, results.as_slice()))
-                .collect();
-            match pipeline
-                .search_with_prior(
-                    query,
-                    self.config.max_per_signal,
-                    Some(&self.config),
-                    &prior,
-                )
-                .await
-            {
-                Ok(results) => {
-                    tracing::debug!(
-                        pipeline = pipeline.name(),
-                        result_count = results.len(),
-                        "Pipeline search completed"
-                    );
-                    named_results.push((pipeline.name(), results));
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        pipeline = pipeline.name(),
-                        error = %e,
-                        "Pipeline search failed"
-                    );
-                    // Continue with other pipelines
-                }
-            }
-        }
-
-        let all_results: Vec<Vec<ScoredMemory>> = named_results
-            .into_iter()
-            .map(|(_, results)| results)
-            .collect();
         self.fuse_results(all_results, limit)
     }
 
