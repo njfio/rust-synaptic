@@ -679,3 +679,41 @@ dilute the candidate set. **Lifting MultiHop needs entity-linked edges
 The branch was abandoned; `main` stays at the fast baseline (recall 0.5237,
 latency 0.60 s), which strictly dominates every configuration measured here. This
 is recorded so the similarity-edge approach is not re-attempted.
+
+## Negative result: entity-coreference edges also do not lift MultiHop (2026-07-15)
+
+Following the abandoned similarity-edge round (above), we tried the mechanism that
+diagnosis suggested MultiHop actually needs: **entity-coreference edges**. The
+reasoner already extracts entities per turn (capitalized-span NER: Person/Place/
+Org/Term), so we added `Mentions` edges (memory-node → entity-node) and made the
+multi-hop retriever traverse *turn → entity → other turns mentioning that entity*,
+with full hub mitigation (IDF-weight by entity degree `w(d)=1/(1+ln(1+d))`,
+query-similarity frontier ranking, and a degree cap that treats common entities as
+coreference-stopwords). Both implementation tasks were reviewed MERGEABLE; the
+mechanism is correct and the hub mitigation held latency flat.
+
+**Full 1,986-question LoCoMo, coreference vs baseline:**
+
+| metric | baseline | coreference | delta |
+|---|---|---|---|
+| MultiHop R@10 | **0.2475** | 0.2417 | −0.0058 (did not rise) |
+| MultiHop MRR | 0.2981 | 0.3080 | +0.010 (ranking only) |
+| overall R@10 | **0.5237** | 0.5159 | −0.008 |
+| Temporal R@10 | 0.6072 | 0.6337 | +0.027 |
+| recall latency p50 | **0.60 s** | 0.63 s | flat |
+
+MultiHop recall did not rise; overall recall slipped slightly. The hub mitigation
+worked (latency flat, unlike the similarity round's 2× blowup), but the target
+metric didn't move.
+
+**The combined finding (the useful part):** **two fundamentally different
+graph-expansion mechanisms — content-similarity edges AND entity-coreference edges —
+both fail to lift MultiHop recall at scale.** This is strong evidence that the
+MultiHop ceiling is **not a retrieval-connectivity problem**. For LoCoMo MultiHop,
+the gold evidence turns are largely already lexically reachable (so they surface as
+retrieval *seeds*, which additive graph expansion excludes by design), and
+expanding the graph adds more noise than gold. Lifting MultiHop recall will require
+a different lever than graph expansion — e.g. answer-aware reranking — or it may be
+bounded by what retrieval alone can achieve without the answer. Both branches were
+abandoned; `main` stays at the fast baseline (recall 0.5237, latency 0.60 s).
+Recorded so neither graph-expansion approach is re-attempted for MultiHop.
