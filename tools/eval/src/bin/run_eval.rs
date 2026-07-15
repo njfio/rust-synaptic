@@ -113,6 +113,10 @@ async fn main() -> Result<(), String> {
     // the growth phase in particular (10k sequential stores) would otherwise
     // dominate the run before QA starts.
     let qa_only = args.iter().any(|a| a == "--qa-only");
+    // `--recall-curve` measures recall@{10,20,50} from a single limit-50 search
+    // per question. It answers whether below-rank-10 gold is in the candidate
+    // pool (reranking headroom) or absent (first-stage recall problem). No judge.
+    let recall_curve = args.iter().any(|a| a == "--recall-curve");
     let max_conversations: Option<usize> = args
         .iter()
         .position(|a| a == "--max-conversations")
@@ -169,6 +173,9 @@ async fn main() -> Result<(), String> {
 
     // 1. Retrieval quality + latency (default AgentMemory pipeline), one
     //    concurrent task per conversation (independent haystacks).
+    if recall_curve {
+        return run_recall_curve(&conversations, &mut w).await;
+    }
     if qa_only {
         return run_qa_only(&conversations, &mut w).await;
     }
@@ -273,6 +280,73 @@ async fn main() -> Result<(), String> {
     w(ablation::to_markdown(&table))?;
 
     run_growth_and_qa(&conversations, grow_100k, &mut w).await
+}
+
+/// Measure the recall@k curve (`--recall-curve`): one limit-50 search per
+/// question, then recall@10/@20/@50 computed from that single ranked list. A
+/// large gap between recall@10 and recall@50 means below-rank-10 gold IS in the
+/// candidate pool (a reranker over a wider pool could recover it); a flat curve
+/// means the gold isn't retrieved at all (a first-stage recall problem).
+async fn run_recall_curve(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    const KS: [usize; 3] = [10, 20, 50];
+    const KMAX: usize = 50;
+    // (n, sum_recall@10, sum_recall@20, sum_recall@50) per qtype + overall.
+    let mut overall = [0.0f64; 3];
+    let mut n_total = 0usize;
+    let mut by_qtype: std::collections::BTreeMap<String, (usize, [f64; 3])> =
+        std::collections::BTreeMap::new();
+
+    for conversation in conversations {
+        let mut memory = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        runner::ingest(conversation, &mut memory)
+            .await
+            .map_err(|e| e.to_string())?;
+        for question in &conversation.questions {
+            if question.evidence_ids.is_empty() {
+                continue; // no labeled gold → not a recall data point
+            }
+            let outcome = runner::run_question(question, &memory, KMAX)
+                .await
+                .map_err(|e| e.to_string())?;
+            let relevant: HashSet<String> = question.evidence_ids.iter().cloned().collect();
+            let entry = by_qtype
+                .entry(format!("{:?}", question.qtype))
+                .or_insert((0, [0.0; 3]));
+            entry.0 += 1;
+            n_total += 1;
+            for (i, &k) in KS.iter().enumerate() {
+                let r = recall_at_k(&outcome.retrieved_ids, &relevant, k);
+                overall[i] += r;
+                entry.1[i] += r;
+            }
+        }
+    }
+
+    w("== recall@k curve (single limit-50 search per question) ==".to_string())?;
+    if n_total == 0 {
+        w("no questions with labeled evidence".to_string())?;
+        return Ok(());
+    }
+    w(format!(
+        "overall n={n_total} recall@10={:.4} recall@20={:.4} recall@50={:.4}",
+        overall[0] / n_total as f64,
+        overall[1] / n_total as f64,
+        overall[2] / n_total as f64
+    ))?;
+    for (qtype, (n, sums)) in &by_qtype {
+        w(format!(
+            "  {qtype}: n={n} recall@10={:.4} recall@20={:.4} recall@50={:.4}",
+            sums[0] / *n as f64,
+            sums[1] / *n as f64,
+            sums[2] / *n as f64
+        ))?;
+    }
+    Ok(())
 }
 
 /// Run ONLY the LLM-gated end-to-end QA phase (`--qa-only`): skips retrieval

@@ -157,6 +157,19 @@ pub struct PipelineConfig {
     /// `score *= 1.0 + temporal_boost`. Default `0.3`.
     #[serde(default = "default_temporal_boost")]
     pub temporal_boost: f64,
+    /// Size of the candidate pool that survives fusion and is handed to
+    /// composite scoring and the reranker, BEFORE the final truncation to
+    /// the caller's requested `limit`. Without over-fetch, fusion would
+    /// truncate to `limit` first, so the reranker could only ever reorder
+    /// the final `limit` candidates and could never promote a gold result
+    /// sitting just outside the top-`limit` (e.g. rank 11-50). Default `50`
+    /// (matches `max_per_signal`, so the reranker sees everything each
+    /// signal returned). The effective pool used is
+    /// `rerank_pool_size.max(limit)`. Note: fusion cannot produce more
+    /// distinct candidates than the signals fetched, so a value above
+    /// `max_per_signal` is effectively capped by what each signal returns.
+    #[serde(default = "default_rerank_pool_size")]
+    pub rerank_pool_size: usize,
 }
 
 fn default_enable_query_understanding() -> bool {
@@ -165,6 +178,10 @@ fn default_enable_query_understanding() -> bool {
 
 fn default_temporal_boost() -> f64 {
     0.3
+}
+
+fn default_rerank_pool_size() -> usize {
+    50
 }
 
 impl Default for PipelineConfig {
@@ -186,6 +203,7 @@ impl Default for PipelineConfig {
             composite_weights: CompositeWeights::default(),
             enable_query_understanding: default_enable_query_understanding(),
             temporal_boost: default_temporal_boost(),
+            rerank_pool_size: default_rerank_pool_size(),
         }
     }
 }
@@ -286,6 +304,13 @@ impl PipelineConfig {
         self.composite_weights = weights;
         self
     }
+
+    /// Builder method to set the rerank over-fetch pool size (see
+    /// [`PipelineConfig::rerank_pool_size`]).
+    pub fn with_rerank_pool_size(mut self, rerank_pool_size: usize) -> Self {
+        self.rerank_pool_size = rerank_pool_size;
+        self
+    }
 }
 
 /// Strategies for fusing results from multiple signals
@@ -382,8 +407,15 @@ impl HybridRetriever {
             super::query_understanding::QueryPlan::passthrough(query)
         };
 
+        // Over-fetch pool: composite scoring and the reranker operate over
+        // up to `pool` candidates, not just `limit`, so the reranker can
+        // promote a gold result that fusion ranked just outside the final
+        // `limit`. The caller-facing result is truncated to `limit` only at
+        // the very end, after reranking.
+        let pool = self.config.rerank_pool_size.max(limit);
+
         let fused = if plan.is_passthrough() {
-            self.collect_and_fuse(query, limit).await?
+            self.collect_and_fuse(query, pool).await?
         } else {
             tracing::debug!(
                 sub_queries = plan.sub_queries.len(),
@@ -395,7 +427,7 @@ impl HybridRetriever {
             // and union the results, keeping each memory's best fused score.
             let mut best: HashMap<String, (MemoryFragment, f64)> = HashMap::new();
             for sub_query in &plan.sub_queries {
-                for (memory, score) in self.collect_and_fuse(sub_query, limit).await? {
+                for (memory, score) in self.collect_and_fuse(sub_query, pool).await? {
                     match best.entry(memory.entry.key.clone()) {
                         std::collections::hash_map::Entry::Occupied(mut e) => {
                             if score > e.get().1 {
@@ -429,7 +461,7 @@ impl HybridRetriever {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.0.entry.key.cmp(&b.0.entry.key))
             });
-            unioned.truncate(limit);
+            unioned.truncate(pool);
             unioned
         };
 
@@ -439,7 +471,7 @@ impl HybridRetriever {
 
         // Optional reranking stage over the top-K: reorders by cross-features
         // computed against the query; preserves scores and candidates.
-        let fused_results: Vec<MemoryFragment> = match self.reranker {
+        let mut fused_results: Vec<MemoryFragment> = match self.reranker {
             Some(ref reranker) => {
                 let reranked = reranker.rerank(query, composite).await?;
                 tracing::debug!(reranker = reranker.name(), "Rerank stage applied");
@@ -447,6 +479,11 @@ impl HybridRetriever {
             }
             None => composite.into_iter().map(|s| s.memory).collect(),
         };
+
+        // Final truncation to the caller's requested limit. This happens
+        // LAST, after over-fetch, composite scoring, and reranking have all
+        // had a chance to operate over the wider `pool`.
+        fused_results.truncate(limit);
 
         tracing::info!(final_count = fused_results.len(), "Hybrid search completed");
 
