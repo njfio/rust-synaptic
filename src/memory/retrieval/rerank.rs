@@ -44,12 +44,54 @@ pub struct HeuristicRerankWeights {
 }
 
 impl Default for HeuristicRerankWeights {
+    /// Weights chosen by a measured LoCoMo sweep (see docs/evaluation.md,
+    /// "reranker weighting"): embedding-dominant, with `graph_proximity`
+    /// dropped. `graph_proximity` rewards a candidate's closeness to the OTHER
+    /// candidates (query-agnostic), which mildly demoted query-relevant gold;
+    /// leaning on query↔candidate semantic agreement lifted full-set recall@10
+    /// 0.5565→0.5691 (MultiHop +9.6%, OpenDomain +12%). The peak is genuine
+    /// (embed 0.80 scored lower than 0.60). Tuned on one dataset — override per
+    /// deployment via `SYNAPTIC_RERANK_W_*`. `recency` is retained for real
+    /// deployments (it is inert in the eval, where all memories share an
+    /// ingest time).
     fn default() -> Self {
         Self {
-            term_overlap: 0.35,
-            embedding_agreement: 0.35,
-            graph_proximity: 0.15,
+            term_overlap: 0.25,
+            embedding_agreement: 0.60,
+            graph_proximity: 0.0,
             recency: 0.15,
+        }
+    }
+}
+
+impl HeuristicRerankWeights {
+    /// Environment variable overriding [`Self::term_overlap`].
+    pub const ENV_W_TERM: &'static str = "SYNAPTIC_RERANK_W_TERM";
+    /// Environment variable overriding [`Self::embedding_agreement`].
+    pub const ENV_W_EMBED: &'static str = "SYNAPTIC_RERANK_W_EMBED";
+    /// Environment variable overriding [`Self::graph_proximity`].
+    pub const ENV_W_GRAPH: &'static str = "SYNAPTIC_RERANK_W_GRAPH";
+    /// Environment variable overriding [`Self::recency`].
+    pub const ENV_W_RECENCY: &'static str = "SYNAPTIC_RERANK_W_RECENCY";
+
+    /// Build weights from environment variables, falling back to the
+    /// default for any field whose variable is absent, empty, or fails to
+    /// parse as an `f64`. Negative values are clamped to `0.0`. This lets an
+    /// experiment override a subset of the weights without recompiling.
+    pub fn from_env() -> Self {
+        let defaults = Self::default();
+        let read = |var: &str, default: f64| {
+            std::env::var(var)
+                .ok()
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map(|v| v.max(0.0))
+                .unwrap_or(default)
+        };
+        Self {
+            term_overlap: read(Self::ENV_W_TERM, defaults.term_overlap),
+            embedding_agreement: read(Self::ENV_W_EMBED, defaults.embedding_agreement),
+            graph_proximity: read(Self::ENV_W_GRAPH, defaults.graph_proximity),
+            recency: read(Self::ENV_W_RECENCY, defaults.recency),
         }
     }
 }
@@ -495,5 +537,64 @@ mod cross_encoder {
         fn name(&self) -> &str {
             "CrossEncoderReranker"
         }
+    }
+}
+
+#[cfg(test)]
+mod weights_env_tests {
+    use super::HeuristicRerankWeights;
+    use std::sync::Mutex;
+
+    /// Guards the process-global `SYNAPTIC_RERANK_W_*` env vars so tests
+    /// that set/unset them don't race with each other under parallel test
+    /// execution.
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+    fn clear_env() {
+        std::env::remove_var(HeuristicRerankWeights::ENV_W_TERM);
+        std::env::remove_var(HeuristicRerankWeights::ENV_W_EMBED);
+        std::env::remove_var(HeuristicRerankWeights::ENV_W_GRAPH);
+        std::env::remove_var(HeuristicRerankWeights::ENV_W_RECENCY);
+    }
+
+    #[test]
+    fn from_env_with_no_vars_matches_default() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+
+        let env_weights = HeuristicRerankWeights::from_env();
+        let default_weights = HeuristicRerankWeights::default();
+
+        assert_eq!(env_weights.term_overlap, default_weights.term_overlap);
+        assert_eq!(
+            env_weights.embedding_agreement,
+            default_weights.embedding_agreement
+        );
+        assert_eq!(env_weights.graph_proximity, default_weights.graph_proximity);
+        assert_eq!(env_weights.recency, default_weights.recency);
+    }
+
+    #[test]
+    fn from_env_overrides_only_set_vars_and_clamps_and_falls_back() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+
+        std::env::set_var(HeuristicRerankWeights::ENV_W_GRAPH, "0");
+        std::env::set_var(HeuristicRerankWeights::ENV_W_EMBED, "0.6");
+        std::env::set_var(HeuristicRerankWeights::ENV_W_TERM, "abc");
+        std::env::set_var(HeuristicRerankWeights::ENV_W_RECENCY, "-0.5");
+
+        let weights = HeuristicRerankWeights::from_env();
+        let default_weights = HeuristicRerankWeights::default();
+
+        // Overridden.
+        assert_eq!(weights.graph_proximity, 0.0);
+        assert_eq!(weights.embedding_agreement, 0.6);
+        // Invalid value falls back to the field's default.
+        assert_eq!(weights.term_overlap, default_weights.term_overlap);
+        // Negative value is clamped to 0.0, not the default.
+        assert_eq!(weights.recency, 0.0);
+
+        clear_env();
     }
 }
