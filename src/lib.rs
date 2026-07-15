@@ -322,7 +322,8 @@ impl AgentMemory {
             let reranker = memory::retrieval::HeuristicReranker::new(
                 Some(Arc::clone(&provider)),
                 knowledge_graph.clone(),
-            );
+            )
+            .with_weights(memory::retrieval::HeuristicRerankWeights::from_env());
             let mut hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::clone(&dense_vector))
                 .add_pipeline(Arc::clone(&keyword))
