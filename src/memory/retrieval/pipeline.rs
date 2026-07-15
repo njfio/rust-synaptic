@@ -165,7 +165,9 @@ pub struct PipelineConfig {
     /// sitting just outside the top-`limit` (e.g. rank 11-50). Default `50`
     /// (matches `max_per_signal`, so the reranker sees everything each
     /// signal returned). The effective pool used is
-    /// `rerank_pool_size.max(limit)`.
+    /// `rerank_pool_size.max(limit)`. Note: fusion cannot produce more
+    /// distinct candidates than the signals fetched, so a value above
+    /// `max_per_signal` is effectively capped by what each signal returns.
     #[serde(default = "default_rerank_pool_size")]
     pub rerank_pool_size: usize,
 }
