@@ -853,3 +853,37 @@ latency unchanged (~10 ms).
 **Remaining headroom:** the reranker captures recall@10 = 0.556 of the 0.702 pool
 ceiling. Closing more of that gap needs a stronger reranker (the pool is now available
 to it); the `--recall-curve` mode measures the ceiling any reranker can chase.
+
+## Reranker weighting: embedding-dominant default (2026-07-15)
+
+With the over-fetch pool now feeding the reranker (above), the reranker's blend
+weights determine how much of the 0.702 pool ceiling is captured. The
+`HeuristicReranker` blends term-overlap / embedding-agreement / graph-proximity /
+recency (was 0.35 / 0.35 / 0.15 / 0.15). Two observations drove a principled sweep
+(weights made env-configurable via `SYNAPTIC_RERANK_W_*`):
+- `recency` is **inert** in this eval (all memories share an ingest time → constant,
+  no effect on ordering); retained for real deployments.
+- `graph_proximity` is **query-agnostic** — it rewards a candidate's closeness to the
+  OTHER candidates, not to the query — so it can demote query-relevant gold.
+
+**Full-set sweep (recall@10 / MultiHop / OpenDomain):**
+
+| term/embed/graph | recall@10 | MultiHop | OpenDomain |
+|---|---|---|---|
+| 0.35/0.35/0.15 (old) | 0.5565 | 0.2737 | 0.2327 |
+| 0.425/0.425/0 (drop graph) | 0.5579 | 0.2835 | 0.2275 |
+| **0.25/0.60/0 (new default)** | **0.5691** | **0.3001** | **0.2614** |
+| 0.20/0.80/0 (too far) | 0.5668 | 0.2994 | 0.2458 |
+
+New default **0.25 / 0.60 / 0.0 / 0.15** lifts full-set recall@10 **0.5565 → 0.5691**
+(**MultiHop +9.6%, OpenDomain +12%**, the two hardest categories). The dominant lever
+is embedding weight (0.35→0.60); dropping graph adds a marginal +0.0014. The peak is
+genuine — embed 0.80 scored lower than 0.60, an inverted-U, not a boundary artifact.
+
+**Honesty caveat:** unlike the structural over-fetch win, these weights are tuned on a
+single dataset (LoCoMo) and may not transfer; they are the measured best here and are
+env-overridable per deployment (`SYNAPTIC_RERANK_W_TERM|EMBED|GRAPH|RECENCY`).
+
+**Cumulative retrieval gain this session:** recall@10 0.5237 (pre-over-fetch) → 0.5565
+(over-fetch) → **0.5691** (embedding-dominant rerank); MultiHop 0.2475 → 0.3001
+(**+21%**), reached entirely through ranking, not connectivity.
