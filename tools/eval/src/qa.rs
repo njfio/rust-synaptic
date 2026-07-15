@@ -43,7 +43,7 @@
 //! - `SYNAPTIC_EVAL_LLM_KEY` — bearer token (optional; omit for Ollama).
 
 use crate::dataset::{EvalConversation, QType};
-use crate::runner::ingest;
+use crate::runner::{ingest, normalize_retrieved};
 use futures::stream::{self, StreamExt};
 use std::collections::BTreeMap;
 use synaptic::{AgentMemory, MemoryConfig};
@@ -92,6 +92,97 @@ pub struct QaQuestionRecord {
     pub predicted: String,
     /// The judge's verdict against the gold answer.
     pub correct: bool,
+    /// Whether ANY of the question's `evidence_ids` appeared in the top-`k`
+    /// recalled set (normalized into evidence-id space the same way the
+    /// retrieval eval does, via [`normalize_retrieved`]). `false` for
+    /// questions with empty `evidence_ids` (e.g. some Abstention questions
+    /// have no labeled gold evidence) — those are excluded from the
+    /// recall/judge cross-tab denominator and counted separately as
+    /// `no_gold_labeled` (see [`QaRecallBreakdown`]).
+    pub gold_retrieved: bool,
+    /// Whether this question had any `evidence_ids` labeled at all. When
+    /// `false`, `gold_retrieved` is definitionally `false` and this question
+    /// is excluded from the A/B/C/D cross-tab.
+    pub has_gold: bool,
+}
+
+/// Cross-tab of gold-evidence recall vs. judge verdict, over the questions
+/// that have at least one labeled `evidence_id` (`has_gold == true`).
+/// Questions with no labeled evidence are counted in `no_gold_labeled` and
+/// excluded from `a`/`b`/`c`/`d` so they don't distort the ratio.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct QaRecallBreakdown {
+    /// gold_retrieved AND correct.
+    pub a: usize,
+    /// gold_retrieved AND wrong — JUDGE-bound loss.
+    pub b: usize,
+    /// NOT gold_retrieved AND correct.
+    pub c: usize,
+    /// NOT gold_retrieved AND wrong — RETRIEVAL-bound loss.
+    pub d: usize,
+    /// Questions excluded from a/b/c/d because they had no labeled
+    /// `evidence_ids`.
+    pub no_gold_labeled: usize,
+}
+
+impl QaRecallBreakdown {
+    /// Compute the cross-tab from a set of per-question records.
+    pub fn from_records(records: &[QaQuestionRecord]) -> Self {
+        let mut b = QaRecallBreakdown::default();
+        for r in records {
+            if !r.has_gold {
+                b.no_gold_labeled += 1;
+                continue;
+            }
+            match (r.gold_retrieved, r.correct) {
+                (true, true) => b.a += 1,
+                (true, false) => b.b += 1,
+                (false, true) => b.c += 1,
+                (false, false) => b.d += 1,
+            }
+        }
+        b
+    }
+
+    /// Total questions in the cross-tab (`a + b + c + d`), excluding
+    /// `no_gold_labeled`.
+    pub fn total(&self) -> usize {
+        self.a + self.b + self.c + self.d
+    }
+
+    /// `(a + b) / total` — fraction of graded (has-gold) questions whose
+    /// gold evidence was actually retrieved. `0.0` when `total() == 0`.
+    pub fn gold_retrieved_rate(&self) -> f64 {
+        let total = self.total();
+        if total == 0 {
+            0.0
+        } else {
+            (self.a + self.b) as f64 / total as f64
+        }
+    }
+
+    /// Of the wrong answers (`b + d`), the fraction attributable to missed
+    /// retrieval (`d`). `0.0` when there are no wrong answers.
+    pub fn retrieval_bound_fraction(&self) -> f64 {
+        let wrong = self.b + self.d;
+        if wrong == 0 {
+            0.0
+        } else {
+            self.d as f64 / wrong as f64
+        }
+    }
+
+    /// Of the wrong answers (`b + d`), the fraction attributable to the
+    /// judge failing despite having the gold evidence (`b`). `0.0` when
+    /// there are no wrong answers.
+    pub fn judge_bound_fraction(&self) -> f64 {
+        let wrong = self.b + self.d;
+        if wrong == 0 {
+            0.0
+        } else {
+            self.b as f64 / wrong as f64
+        }
+    }
 }
 
 /// Measured end-to-end QA accuracy report.
@@ -111,6 +202,9 @@ pub struct QaReport {
     pub by_qtype: BTreeMap<String, QTypeAccuracy>,
     /// Per-question records.
     pub per_question: Vec<QaQuestionRecord>,
+    /// Gold-retrieval-vs-judge-verdict cross-tab (see [`QaRecallBreakdown`]),
+    /// separating retrieval-bound loss from judge-bound loss.
+    pub recall_breakdown: QaRecallBreakdown,
 }
 
 /// Outcome of the gated QA evaluation: either a real measured report or an
@@ -156,6 +250,8 @@ struct PendingQuestion {
     question_text: String,
     gold_answer: String,
     recalled: Vec<String>,
+    gold_retrieved: bool,
+    has_gold: bool,
 }
 
 /// Run `judge.answer` then `judge.grade` for one pending question.
@@ -169,6 +265,8 @@ async fn judge_one(judge: &dyn Judge, item: PendingQuestion) -> Result<QaQuestio
         qtype: item.qtype,
         predicted,
         correct,
+        gold_retrieved: item.gold_retrieved,
+        has_gold: item.has_gold,
     })
 }
 
@@ -222,19 +320,32 @@ pub async fn run_qa(
 
         let mut pending: Vec<PendingQuestion> = Vec::with_capacity(conversation.questions.len());
         for question in &conversation.questions {
-            let recalled: Vec<String> = memory
-                .search(&question.text, k)
-                .await
-                .map_err(mem_err)?
-                .into_iter()
-                .map(|f| f.entry.value)
-                .collect();
+            let fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
+            let keys: Vec<String> = fragments.iter().map(|f| f.entry.key.clone()).collect();
+            let recalled: Vec<String> = fragments.into_iter().map(|f| f.entry.value).collect();
+
+            // Same normalization the retrieval eval uses (`runner::run_question`),
+            // so `gold_retrieved` is consistent with the recall@k numbers.
+            let retrieved_ids = normalize_retrieved(&keys);
+            let has_gold = !question.evidence_ids.is_empty();
+            // Questions with no labeled evidence (e.g. some Abstention
+            // questions) have no gold to retrieve; define gold_retrieved =
+            // false for them and exclude them from the cross-tab denominator
+            // via `has_gold` rather than letting them masquerade as misses.
+            let gold_retrieved = has_gold
+                && question
+                    .evidence_ids
+                    .iter()
+                    .any(|id| retrieved_ids.contains(id));
+
             pending.push(PendingQuestion {
                 question_id: question.id.clone(),
                 qtype: qtype_key(question.qtype),
                 question_text: question.text.clone(),
                 gold_answer: question.gold_answer.clone(),
                 recalled,
+                gold_retrieved,
+                has_gold,
             });
         }
 
@@ -263,6 +374,7 @@ pub async fn run_qa(
     per_question.sort_by(|a, b| a.question_id.cmp(&b.question_id));
     let questions = per_question.len();
     let correct = per_question.iter().filter(|q| q.correct).count();
+    let recall_breakdown = QaRecallBreakdown::from_records(&per_question);
     Ok(QaReport {
         k,
         questions,
@@ -274,6 +386,7 @@ pub async fn run_qa(
         },
         by_qtype,
         per_question,
+        recall_breakdown,
     })
 }
 
@@ -895,6 +1008,104 @@ mod run_qa_tests {
             result.is_err(),
             "a single failing judge call must fail the whole run"
         );
+    }
+
+    fn recall_fixture() -> Vec<EvalConversation> {
+        vec![EvalConversation {
+            id: "conv1".to_string(),
+            sessions: vec![Session {
+                id: "session_1".to_string(),
+                timestamp: None,
+                turns: vec![crate::dataset::Turn {
+                    speaker: "alice".to_string(),
+                    text: "The sky is a bright shade of blue today.".to_string(),
+                    timestamp: None,
+                }],
+            }],
+            questions: vec![
+                // Lexically close to the stored turn -> should be retrieved,
+                // and its evidence_ids ("D1:1") matches turn_memory_key for
+                // session_1's first (0-indexed) turn.
+                EvalQuestion {
+                    id: "q_hit".to_string(),
+                    text: "What color is the sky today?".to_string(),
+                    qtype: QType::SingleHop,
+                    evidence_ids: vec!["D1:1".to_string()],
+                    gold_answer: "blue".to_string(),
+                },
+                // evidence_ids reference an id that is never stored -> gold
+                // can never be retrieved, regardless of what search returns.
+                EvalQuestion {
+                    id: "q_miss".to_string(),
+                    text: "What color is the sky today?".to_string(),
+                    qtype: QType::SingleHop,
+                    evidence_ids: vec!["D1:99".to_string()],
+                    gold_answer: "blue".to_string(),
+                },
+                // No labeled evidence at all -> excluded from the cross-tab,
+                // counted in no_gold_labeled.
+                EvalQuestion {
+                    id: "q_nogold".to_string(),
+                    text: "Is there a dragon in this conversation?".to_string(),
+                    qtype: QType::Abstention,
+                    evidence_ids: vec![],
+                    gold_answer: "I don't know".to_string(),
+                },
+            ],
+        }]
+    }
+
+    #[tokio::test]
+    async fn run_qa_computes_gold_retrieved_and_cross_tab() {
+        let conversations = recall_fixture();
+        let judge = FakeJudge::new();
+        let report = run_qa(&conversations, &judge, 5)
+            .await
+            .expect("run_qa should succeed with a fake judge");
+
+        let by_id = |id: &str| {
+            report
+                .per_question
+                .iter()
+                .find(|q| q.question_id == id)
+                .unwrap_or_else(|| panic!("question {id} present in report"))
+        };
+
+        let hit = by_id("q_hit");
+        assert!(hit.has_gold);
+        assert!(
+            hit.gold_retrieved,
+            "gold evidence D1:1 has a clear lexical match and must be retrieved"
+        );
+
+        let miss = by_id("q_miss");
+        assert!(miss.has_gold);
+        assert!(
+            !miss.gold_retrieved,
+            "evidence id D1:99 was never stored, so it can never be retrieved"
+        );
+
+        let nogold = by_id("q_nogold");
+        assert!(!nogold.has_gold);
+        assert!(
+            !nogold.gold_retrieved,
+            "questions with no labeled evidence are defined as gold_retrieved = false"
+        );
+
+        // Cross-tab must match a hand-tally over per_question:
+        // - q_nogold is excluded (has_gold == false) -> no_gold_labeled == 1.
+        // - q_hit and q_miss are the only two in the a/b/c/d denominator.
+        let tab = report.recall_breakdown;
+        assert_eq!(tab.no_gold_labeled, 1);
+        assert_eq!(tab.total(), 2);
+        assert_eq!(tab.a + tab.b, usize::from(hit.gold_retrieved));
+        assert_eq!(tab.c + tab.d, usize::from(!miss.gold_retrieved));
+        let expected = QaRecallBreakdown::from_records(&report.per_question);
+        assert_eq!(tab.a, expected.a);
+        assert_eq!(tab.b, expected.b);
+        assert_eq!(tab.c, expected.c);
+        assert_eq!(tab.d, expected.d);
+        assert_eq!(tab.no_gold_labeled, expected.no_gold_labeled);
     }
 
     #[cfg(not(feature = "llm-reasoning"))]

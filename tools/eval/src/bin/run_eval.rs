@@ -300,8 +300,32 @@ async fn run_qa_only(
                     b.questions, b.correct, b.accuracy
                 ))?;
             }
+            write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
         }
     }
+    Ok(())
+}
+
+/// Print the gold-retrieval-vs-judge-verdict cross-tab: A/B/C/D counts, the
+/// gold-retrieved rate, and — of the wrong answers — the retrieval-bound vs
+/// judge-bound fractions. Separates RETRIEVAL-bound loss (gold evidence
+/// never recalled) from JUDGE-bound loss (evidence recalled, judge still
+/// wrong).
+fn write_recall_breakdown(
+    tab: &qa::QaRecallBreakdown,
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w(format!(
+        "  recall-vs-judge cross-tab: a(gold_retrieved&correct)={} b(gold_retrieved&wrong)={} \
+         c(no_gold&correct)={} d(no_gold&wrong)={} no_gold_labeled={}",
+        tab.a, tab.b, tab.c, tab.d, tab.no_gold_labeled
+    ))?;
+    w(format!(
+        "  gold_retrieved rate={:.4} (of wrong answers: retrieval_bound={:.4} judge_bound={:.4})",
+        tab.gold_retrieved_rate(),
+        tab.retrieval_bound_fraction(),
+        tab.judge_bound_fraction()
+    ))?;
     Ok(())
 }
 
@@ -354,6 +378,7 @@ async fn run_growth_and_qa(
                 "QA: graded={} correct={} accuracy={:.4}",
                 r.questions, r.correct, r.accuracy
             ))?;
+            write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
         }
     }
 
