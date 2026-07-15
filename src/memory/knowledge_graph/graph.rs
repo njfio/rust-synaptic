@@ -110,6 +110,34 @@ fn node_scan_text(node: &Node) -> &str {
     node.description.as_deref().unwrap_or(&node.label)
 }
 
+/// Test-only telemetry for graph traversals.
+///
+/// Counts graph-wide BFS passes so tests can assert that a retrieval query
+/// performs a small constant number of traversals instead of one per
+/// candidate. A batched multi-start pass ([`KnowledgeGraph::traverse_from_nodes`])
+/// counts as ONE traversal: its cost model is one shared materialization of
+/// the touched adjacency, not per-start graph passes.
+#[cfg(feature = "test-utils")]
+pub mod traversal_telemetry {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static GRAPH_TRAVERSALS: AtomicUsize = AtomicUsize::new(0);
+
+    /// Reset the traversal counter to zero.
+    pub fn reset() {
+        GRAPH_TRAVERSALS.store(0, Ordering::SeqCst);
+    }
+
+    /// Number of graph traversal passes since the last [`reset`].
+    pub fn traversals() -> usize {
+        GRAPH_TRAVERSALS.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn record() {
+        GRAPH_TRAVERSALS.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 /// Core knowledge graph structure
 pub struct KnowledgeGraph {
     /// All nodes in the graph
@@ -419,85 +447,109 @@ impl KnowledgeGraph {
         Ok(neighbors.into_iter().collect())
     }
 
-    /// Traverse the graph from a starting node
-    pub async fn traverse_from_node(
+    /// The traversable `(edge_id, next_node)` pairs from `node`, honoring the
+    /// options' direction and relationship-type filter, in exactly the order
+    /// the BFS in [`Self::traverse_from_node`] historically visited them (the
+    /// iteration order of the cloned/unioned adjacency edge-id sets).
+    fn neighbor_list(&self, node: Uuid, options: &TraversalOptions) -> Vec<(Uuid, Uuid)> {
+        let edge_ids = match options.direction {
+            TraversalDirection::Outgoing => self
+                .adjacency
+                .get(&node)
+                .map(|edges| edges.clone())
+                .unwrap_or_default(),
+            TraversalDirection::Incoming => self
+                .reverse_adjacency
+                .get(&node)
+                .map(|edges| edges.clone())
+                .unwrap_or_default(),
+            TraversalDirection::Both => {
+                let mut all_edges = self
+                    .adjacency
+                    .get(&node)
+                    .map(|edges| edges.clone())
+                    .unwrap_or_default();
+
+                if let Some(incoming) = self.reverse_adjacency.get(&node) {
+                    all_edges.extend(incoming.iter());
+                }
+                all_edges
+            }
+        };
+
+        let mut neighbors = Vec::with_capacity(edge_ids.len());
+        for edge_id in edge_ids {
+            if let Some(edge) = self.edges.get(&edge_id) {
+                // Check relationship type filter
+                if let Some(ref allowed_types) = options.relationship_types {
+                    if !allowed_types.contains(&edge.relationship.relationship_type) {
+                        continue;
+                    }
+                }
+                // Determine next node
+                let next_node = if edge.from_node == node {
+                    edge.to_node
+                } else {
+                    edge.from_node
+                };
+                neighbors.push((edge_id, next_node));
+            }
+        }
+        neighbors
+    }
+
+    /// BFS from one start node using an externally shared neighbor cache, so
+    /// batched multi-start traversals materialize each node's adjacency only
+    /// once. Behavior (reached set, first-found paths, ordering) is identical
+    /// to the historical per-edge-cloning implementation, but each retained
+    /// result clones its parent path exactly once and the queue carries path
+    /// indices instead of owned `GraphPath`s.
+    fn bfs_with_cache(
         &self,
         start_node: Uuid,
-        options: TraversalOptions,
-    ) -> Result<Vec<(Uuid, GraphPath)>> {
+        options: &TraversalOptions,
+        neighbor_cache: &mut HashMap<Uuid, Vec<(Uuid, Uuid)>>,
+    ) -> Vec<(Uuid, GraphPath)> {
         let mut visited = HashSet::new();
-        let mut results = Vec::new();
-        let mut queue = VecDeque::new();
+        let mut results: Vec<(Uuid, GraphPath)> = Vec::new();
+        // (node, index of its path in `results` — None for the start node, depth)
+        let mut queue: VecDeque<(Uuid, Option<usize>, usize)> = VecDeque::new();
 
-        // Initialize with start node
         let mut start_path = GraphPath::new();
         start_path.add_step(start_node, None);
-        queue.push_back((start_node, start_path, 0));
+        queue.push_back((start_node, None, 0));
         visited.insert(start_node);
 
-        while let Some((current_node, current_path, depth)) = queue.pop_front() {
+        while let Some((current_node, path_idx, depth)) = queue.pop_front() {
             if depth >= options.max_depth {
                 continue;
             }
 
-            // Get edges based on traversal direction
-            let edge_ids = match options.direction {
-                TraversalDirection::Outgoing => self
-                    .adjacency
-                    .get(&current_node)
-                    .map(|edges| edges.clone())
-                    .unwrap_or_default(),
-                TraversalDirection::Incoming => self
-                    .reverse_adjacency
-                    .get(&current_node)
-                    .map(|edges| edges.clone())
-                    .unwrap_or_default(),
-                TraversalDirection::Both => {
-                    let mut all_edges = self
-                        .adjacency
-                        .get(&current_node)
-                        .map(|edges| edges.clone())
-                        .unwrap_or_default();
+            let neighbors = neighbor_cache
+                .entry(current_node)
+                .or_insert_with(|| self.neighbor_list(current_node, options))
+                .clone();
 
-                    if let Some(incoming) = self.reverse_adjacency.get(&current_node) {
-                        all_edges.extend(incoming.iter());
-                    }
-                    all_edges
-                }
-            };
-
-            for edge_id in edge_ids {
-                if let Some(edge) = self.edges.get(&edge_id) {
-                    // Check relationship type filter
-                    if let Some(ref allowed_types) = options.relationship_types {
-                        if !allowed_types.contains(&edge.relationship.relationship_type) {
-                            continue;
-                        }
-                    }
-
-                    // Determine next node
-                    let next_node = if edge.from_node == current_node {
-                        edge.to_node
-                    } else {
-                        edge.from_node
+            for (edge_id, next_node) in neighbors {
+                if !visited.contains(&next_node) || options.allow_cycles {
+                    let mut new_path = match path_idx {
+                        Some(i) => results[i].1.clone(),
+                        None => start_path.clone(),
                     };
+                    new_path.add_step(next_node, Some(edge_id));
 
-                    if !visited.contains(&next_node) || options.allow_cycles {
-                        let mut new_path = current_path.clone();
-                        new_path.add_step(next_node, Some(edge_id));
+                    let result_idx = results.len();
+                    results.push((next_node, new_path));
 
-                        results.push((next_node, new_path.clone()));
-
-                        if !visited.contains(&next_node) {
-                            visited.insert(next_node);
-                            queue.push_back((next_node, new_path, depth + 1));
-                        }
+                    if !visited.contains(&next_node) {
+                        visited.insert(next_node);
+                        queue.push_back((next_node, Some(result_idx), depth + 1));
                     }
                 }
             }
         }
 
-        // Sort by path length if requested
+        // Sort by path length if requested (stable, so BFS order breaks ties)
         if options.sort_by_distance {
             results.sort_by_key(|(_, path)| path.length);
         }
@@ -507,7 +559,52 @@ impl KnowledgeGraph {
             results.truncate(limit);
         }
 
-        Ok(results)
+        results
+    }
+
+    /// Traverse the graph from a starting node.
+    ///
+    /// With `allow_cycles: false` (the default) the results are deduplicated
+    /// by node: each reachable node appears once, with its first-found BFS
+    /// path.
+    pub async fn traverse_from_node(
+        &self,
+        start_node: Uuid,
+        options: TraversalOptions,
+    ) -> Result<Vec<(Uuid, GraphPath)>> {
+        #[cfg(feature = "test-utils")]
+        traversal_telemetry::record();
+
+        let mut neighbor_cache = HashMap::new();
+        Ok(self.bfs_with_cache(start_node, &options, &mut neighbor_cache))
+    }
+
+    /// Traverse the graph from MANY start nodes in one batched pass.
+    ///
+    /// Semantically equivalent to calling [`Self::traverse_from_node`] once
+    /// per start (same reached-node sets, same first-found paths, same
+    /// ordering), but the per-node adjacency lists are materialized once and
+    /// shared across all starts, and the whole batch counts as a single
+    /// graph traversal. This is the primitive behind batched per-candidate
+    /// graph scoring in the retrieval pipeline.
+    pub fn traverse_from_nodes(
+        &self,
+        start_nodes: &[Uuid],
+        options: &TraversalOptions,
+    ) -> HashMap<Uuid, Vec<(Uuid, GraphPath)>> {
+        #[cfg(feature = "test-utils")]
+        traversal_telemetry::record();
+
+        let mut neighbor_cache: HashMap<Uuid, Vec<(Uuid, Uuid)>> = HashMap::new();
+        let mut out = HashMap::with_capacity(start_nodes.len());
+        for &start in start_nodes {
+            if out.contains_key(&start) {
+                continue;
+            }
+            let results = self.bfs_with_cache(start, options, &mut neighbor_cache);
+            out.insert(start, results);
+        }
+        out
     }
 
     /// Find shortest path between two nodes using BFS

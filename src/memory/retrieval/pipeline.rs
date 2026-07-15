@@ -469,21 +469,33 @@ impl HybridRetriever {
         query: &str,
         limit: usize,
     ) -> Result<Vec<(MemoryFragment, f64)>> {
+        // Available pipelines run CONCURRENTLY. `join_all` yields results in
+        // input order, so they are re-assembled in pipeline registration
+        // order and fusion input is deterministic regardless of completion
+        // order.
+        let searches = self
+            .pipelines
+            .iter()
+            .filter(|pipeline| {
+                let available = pipeline.is_available();
+                if !available {
+                    tracing::debug!(pipeline = pipeline.name(), "Skipping unavailable pipeline");
+                }
+                available
+            })
+            .map(|pipeline| async move {
+                let outcome = pipeline
+                    .search(query, self.config.max_per_signal, Some(&self.config))
+                    .await;
+                (pipeline.name(), outcome)
+            });
+
         let mut all_results: Vec<Vec<ScoredMemory>> = Vec::new();
-
-        for pipeline in &self.pipelines {
-            if !pipeline.is_available() {
-                tracing::debug!(pipeline = pipeline.name(), "Skipping unavailable pipeline");
-                continue;
-            }
-
-            match pipeline
-                .search(query, self.config.max_per_signal, Some(&self.config))
-                .await
-            {
+        for (name, outcome) in futures::future::join_all(searches).await {
+            match outcome {
                 Ok(results) => {
                     tracing::debug!(
-                        pipeline = pipeline.name(),
+                        pipeline = name,
                         result_count = results.len(),
                         "Pipeline search completed"
                     );
@@ -491,7 +503,7 @@ impl HybridRetriever {
                 }
                 Err(e) => {
                     tracing::warn!(
-                        pipeline = pipeline.name(),
+                        pipeline = name,
                         error = %e,
                         "Pipeline search failed"
                     );

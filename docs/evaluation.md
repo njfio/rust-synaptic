@@ -534,3 +534,48 @@ Honest findings:
   CPU; the `cuda` feature is available for GPU users, unmeasured here.
 
 Not measured: GPU latency (no CUDA toolkit); full 1,986-question set / LongMemEval.
+
+## Search-pipeline latency (2026-07-15)
+
+The store path is fast (static embeddings are instant), but per-query search
+latency sat at **~4.4 s p50** — pipeline overhead, not embedding. Profiling
+showed it was a **per-candidate 2-hop knowledge-graph BFS**: every candidate
+memory re-walked the graph under its own lock, re-cloning a `GraphPath` per edge,
+and the reranker/composite pass re-scanned the set. This round removed that
+overhead without changing what the pipeline returns.
+
+Fixes (branch `feature/pipeline-latency`):
+
+1. **Node-deduped KG traversal** — `traverse_from_node` carries result indices on
+   the queue and clones one parent path per *retained* result instead of per edge;
+   nodes are visited once. Same reachable set, far less allocation.
+2. **Single-lock batched graph scoring** — `GraphRetriever` takes the KG read lock
+   **once per query** and scores all candidates via
+   `find_related_memories_batch` / `graph_score_from_related`, replacing the
+   per-candidate lock+BFS.
+3. **Single-pass reranker proximity** — the heuristic reranker computes
+   term-proximity in one pass over each candidate.
+4. **Concurrent retriever fan-out** — the retrievers run under `join_all` and are
+   reassembled in registration order (deterministic), so the slowest retriever
+   bounds wall-clock instead of the sum.
+
+The initial version also reused the pipeline's seed hits for multi-hop expansion;
+that changed the BM25 IDF pool between limits and **regressed recall (0.3240 →
+0.2957)**, so it was reverted (`2a4741b`) — the batched expansion fetch was kept.
+The now-unused prior-results pipeline hooks were then pruned (`50dca6a`).
+
+**Measured on the static-embedding 50-question LoCoMo subset** (`--retrieval-only`,
+model2vec `potion-base-8M`):
+
+| metric | before | after |
+|---|---|---|
+| recall_latency p50 | ~4.4 s | **~0.46 s (~9.5× faster)** |
+| recall@10 | 0.3240 | **0.3240 (identical)** |
+| MRR | 0.3250 | 0.3250 (identical) |
+| MultiHop R@10 | 0.1949 | 0.1949 (identical) |
+| store latency p50 | ~9 ms | ~8.5 ms |
+
+Retrieval quality is preserved **exactly** — this is a pure latency/allocation win,
+not a quality/latency trade. Not measured: full 1,986-question set; latency on the
+Ollama/candle providers (the pipeline overhead is provider-independent, so the
+same absolute reduction applies on top of their embedding cost).

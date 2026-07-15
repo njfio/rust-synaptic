@@ -316,32 +316,30 @@ impl GraphRetriever {
         }
     }
 
-    /// Compute graph-based score
-    async fn compute_graph_score(&self, memory_key: &str, base_score: f64) -> Result<f64> {
-        if let Some(ref kg) = self.knowledge_graph {
-            let kg_guard = kg.read().await;
+    /// Graph-enhanced score from an already-computed related-memory set:
+    /// base score + relationship-count boost + average relationship strength.
+    /// `None` (the key is not a graph node) leaves the base score untouched,
+    /// matching the historical per-candidate lookup's error branch.
+    fn graph_score_from_related(
+        base_score: f64,
+        related: Option<&Vec<crate::memory::knowledge_graph::RelatedMemory>>,
+    ) -> f64 {
+        match related {
+            Some(related) => {
+                // More relationships = higher score
+                let relationship_boost = (related.len() as f64 / 10.0).min(0.5);
 
-            // Find related memories
-            match kg_guard.find_related_memories(memory_key, 2, None).await {
-                Ok(related) => {
-                    // More relationships = higher score
-                    let relationship_boost = (related.len() as f64 / 10.0).min(0.5);
+                // Average relationship strength
+                let avg_strength = if !related.is_empty() {
+                    related.iter().map(|r| r.relationship_strength).sum::<f64>()
+                        / related.len() as f64
+                } else {
+                    0.0
+                };
 
-                    // Average relationship strength
-                    let avg_strength = if !related.is_empty() {
-                        related.iter().map(|r| r.relationship_strength).sum::<f64>()
-                            / related.len() as f64
-                    } else {
-                        0.0
-                    };
-
-                    let graph_score = base_score + relationship_boost + (avg_strength * 0.3);
-                    Ok(graph_score.min(1.0))
-                }
-                Err(_) => Ok(base_score),
+                (base_score + relationship_boost + (avg_strength * 0.3)).min(1.0)
             }
-        } else {
-            Ok(base_score)
+            None => base_score,
         }
     }
 }
@@ -364,15 +362,34 @@ impl RetrievalPipeline for GraphRetriever {
         // Get base results from storage
         let fragments = self.storage.search(query, limit * 2).await?;
 
+        // Compute every candidate's related-memory set in ONE batched graph
+        // pass under a SINGLE short-lived read lock (dropped before any
+        // storage awaits below). This replaces the historical per-candidate
+        // lock + full 2-hop BFS, and the same map is reused for graph
+        // expansion, so a query costs O(1) traversals regardless of the
+        // candidate count.
+        let related_map: HashMap<String, Vec<crate::memory::knowledge_graph::RelatedMemory>> =
+            match self.knowledge_graph {
+                Some(ref kg) => {
+                    #[cfg(feature = "test-utils")]
+                    super::telemetry::record_kg_read_lock();
+                    let kg_guard = kg.read().await;
+                    let keys: Vec<String> = fragments.iter().map(|f| f.entry.key.clone()).collect();
+                    kg_guard.find_related_memories_batch(&keys, 2, None)
+                }
+                None => HashMap::new(),
+            };
+
         let mut scored_results = Vec::new();
 
         for fragment in fragments {
-            // Compute graph-enhanced score
+            // Compute graph-enhanced score from the batched related sets.
             let base_score = fragment.relevance_score;
-            let graph_score = self
-                .compute_graph_score(&fragment.entry.key, base_score)
-                .await
-                .unwrap_or(base_score);
+            let graph_score = if self.knowledge_graph.is_some() {
+                Self::graph_score_from_related(base_score, related_map.get(&fragment.entry.key))
+            } else {
+                base_score
+            };
 
             scored_results.push(
                 ScoredMemory::new(fragment, graph_score, RetrievalSignal::GraphRelationship)
@@ -383,8 +400,10 @@ impl RetrievalPipeline for GraphRetriever {
         // Expand candidates through the knowledge graph: memories connected
         // to the strongest direct matches are surfaced even when they share
         // no terms with the query, scored by propagating the seed's score
-        // through the relationship strength.
-        if let Some(ref kg) = self.knowledge_graph {
+        // through the relationship strength. The seeds are candidates, so
+        // their related sets are already in `related_map` — no further graph
+        // access (or lock) is needed.
+        if self.knowledge_graph.is_some() {
             const MAX_EXPANSION_SEEDS: usize = 5;
 
             let mut seeds: Vec<(String, f64)> = scored_results
@@ -399,49 +418,47 @@ impl RetrievalPipeline for GraphRetriever {
                 .map(|s| s.memory.entry.key.clone())
                 .collect();
 
-            // Phase 1: collect related keys under the graph read lock, then
-            // DROP the guard before any storage awaits — the lock must never
-            // be held across `storage.retrieve`.
-            let mut expansions: Vec<(String, f64, Vec<_>)> = Vec::with_capacity(seeds.len());
-            {
-                let kg_guard = kg.read().await;
-                for (seed_key, seed_score) in seeds {
-                    let related = match kg_guard.find_related_memories(&seed_key, 2, None).await {
-                        Ok(related) => related,
-                        Err(e) => {
-                            // Seed may simply not be a graph node yet.
-                            tracing::debug!(seed = %seed_key, error = %e, "graph expansion skipped for seed");
-                            continue;
-                        }
-                    };
-                    expansions.push((seed_key, seed_score, related));
-                }
-            }
-
-            // Phase 2: fetch expansion candidates from storage, lock-free.
-            for (seed_key, seed_score, related) in expansions {
+            // Collect the expansion candidates (key, propagated score, seed)
+            // first, then fetch them from storage concurrently in one batch
+            // instead of one serial await per key.
+            let mut pending: Vec<(String, f64, String)> = Vec::new();
+            for (seed_key, seed_score) in seeds {
+                let Some(related) = related_map.get(&seed_key) else {
+                    // Seed may simply not be a graph node yet.
+                    tracing::debug!(seed = %seed_key, "graph expansion skipped for seed");
+                    continue;
+                };
                 for rel in related {
                     if !seen.insert(rel.memory_key.clone()) {
                         continue;
                     }
-                    let entry = match self.storage.retrieve(&rel.memory_key).await {
-                        Ok(Some(entry)) => entry,
-                        Ok(None) => continue,
-                        Err(e) => {
-                            tracing::warn!(key = %rel.memory_key, error = %e, "graph expansion candidate fetch failed");
-                            continue;
-                        }
-                    };
                     let score =
                         (seed_score * rel.relationship_strength.clamp(0.0, 1.0)).clamp(0.0, 1.0);
-                    let fragment = MemoryFragment::new(entry, score);
-                    scored_results.push(
-                        ScoredMemory::new(fragment, score, RetrievalSignal::GraphRelationship)
-                            .with_explanation(format!(
-                                "Surfaced via graph relationship to '{seed_key}'"
-                            )),
-                    );
+                    pending.push((rel.memory_key.clone(), score, seed_key.clone()));
                 }
+            }
+
+            let fetched = futures::future::join_all(
+                pending.iter().map(|(key, _, _)| self.storage.retrieve(key)),
+            )
+            .await;
+
+            for ((key, score, seed_key), entry_result) in pending.into_iter().zip(fetched) {
+                let entry = match entry_result {
+                    Ok(Some(entry)) => entry,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        tracing::warn!(key = %key, error = %e, "graph expansion candidate fetch failed");
+                        continue;
+                    }
+                };
+                let fragment = MemoryFragment::new(entry, score);
+                scored_results.push(
+                    ScoredMemory::new(fragment, score, RetrievalSignal::GraphRelationship)
+                        .with_explanation(format!(
+                            "Surfaced via graph relationship to '{seed_key}'"
+                        )),
+                );
             }
         }
 

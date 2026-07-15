@@ -93,6 +93,16 @@ impl MultiHopGraphRetriever {
     /// Collect deterministic seeds: run each seed retriever, keep each
     /// memory's best score, order by (score desc, key asc), cap at
     /// `max_seeds`.
+    ///
+    /// NOTE (PL1): an earlier optimization reused the pipeline's already-
+    /// computed dense/keyword results as seeds. That was NOT exact — the
+    /// pipeline runs those retrievers with `limit = max_per_signal`, whose
+    /// larger BM25 IDF candidate pool yields different scores (and therefore a
+    /// different top-`max_seeds` seed set) than a direct `max_seeds`-limited
+    /// run. The differing seed set changed multi-hop results and regressed
+    /// recall, so the reuse was reverted: seeds are always collected fresh,
+    /// exactly as before PL1. (The batched expansion `storage.retrieve` below
+    /// is exact and was kept.)
     async fn collect_seeds(
         &self,
         query: &str,
@@ -263,12 +273,19 @@ impl RetrievalPipeline for MultiHopGraphRetriever {
             self.expand_seeds(&kg_guard, &seeds).await?
         };
 
+        // Fetch the reached memories from storage concurrently in one
+        // batch (the reached set is already capped at `max_expanded`)
+        // instead of one serial await per key.
+        let fetched =
+            futures::future::join_all(reached.iter().map(|(key, _)| self.storage.retrieve(key)))
+                .await;
+
         let mut results = Vec::with_capacity(reached.len().min(limit));
-        for (memory_key, state) in reached {
+        for ((memory_key, state), entry_result) in reached.into_iter().zip(fetched) {
             if results.len() >= limit {
                 break;
             }
-            let entry = match self.storage.retrieve(&memory_key).await {
+            let entry = match entry_result {
                 Ok(Some(entry)) => entry,
                 Ok(None) => continue,
                 Err(e) => {

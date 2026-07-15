@@ -13,6 +13,8 @@ pub mod pipeline;
 pub mod query_understanding;
 pub mod rerank;
 pub mod strategies;
+#[cfg(feature = "test-utils")]
+pub mod telemetry;
 
 // Re-export pipeline types
 pub use pipeline::{

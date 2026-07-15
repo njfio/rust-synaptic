@@ -455,6 +455,67 @@ impl MemoryKnowledgeGraph {
         Ok(related_memories)
     }
 
+    /// Batched variant of [`Self::find_related_memories`]: compute the
+    /// related-memory set for every key in ONE shared graph pass instead of
+    /// one full traversal per key.
+    ///
+    /// Per-key results are identical to the per-key variant (same related
+    /// sets, same relationship strengths, same strength-descending order).
+    /// Keys with no backing graph node are omitted from the returned map
+    /// (where the per-key variant returns a `NotFound` error).
+    pub fn find_related_memories_batch(
+        &self,
+        memory_keys: &[String],
+        max_depth: usize,
+        relationship_types: Option<Vec<RelationshipType>>,
+    ) -> HashMap<String, Vec<RelatedMemory>> {
+        let mut key_by_node: HashMap<Uuid, &String> = HashMap::new();
+        let mut starts: Vec<Uuid> = Vec::with_capacity(memory_keys.len());
+        for key in memory_keys {
+            if let Some(node_id) = self.memory_to_node.get(key) {
+                if key_by_node.insert(*node_id, key).is_none() {
+                    starts.push(*node_id);
+                }
+            }
+        }
+
+        let traversal_options = TraversalOptions {
+            max_depth,
+            relationship_types,
+            direction: query::TraversalDirection::Both,
+            ..Default::default()
+        };
+
+        let traversed = self.graph.traverse_from_nodes(&starts, &traversal_options);
+
+        let mut out: HashMap<String, Vec<RelatedMemory>> = HashMap::with_capacity(starts.len());
+        for (start_node, related_nodes) in traversed {
+            let Some(key) = key_by_node.get(&start_node) else {
+                continue;
+            };
+            let mut related_memories = Vec::with_capacity(related_nodes.len());
+            for (node_id, path) in related_nodes {
+                if let Some(memory_key) = self.node_to_memory.get(&node_id) {
+                    let relationship_strength = self.calculate_relationship_strength(&path);
+                    related_memories.push(RelatedMemory {
+                        memory_key: memory_key.clone(),
+                        node_id,
+                        path,
+                        relationship_strength,
+                    });
+                }
+            }
+            // Same ordering contract as the per-key variant.
+            related_memories.sort_by(|a, b| {
+                b.relationship_strength
+                    .partial_cmp(&a.relationship_strength)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            out.insert((*key).clone(), related_memories);
+        }
+        out
+    }
+
     /// Query the knowledge graph using graph patterns
     pub async fn query_graph(&self, query: GraphQuery) -> Result<Vec<QueryResult>> {
         self.graph.execute_query(query).await
