@@ -804,3 +804,52 @@ answers, **retrieval-bound = 0.667, judge-bound = 0.333**.
 
 Instrumentation only; no fabricated numbers. Same subset caveats as the QA section
 above (first-N sampling skews toward hard categories).
+
+## Reranking headroom + over-fetch win (2026-07-15)
+
+The QA loss diagnostic (above) showed ~1/3 of failures were judge-bound (gold
+retrieved but not answered). Investigating *why gold that's retrieved doesn't help*
+surfaced a structural bug and a large measured headroom.
+
+**Recall@k curve (full 1,986-q set, one limit-50 search per question):**
+
+| category | recall@10 | recall@20 | recall@50 |
+|---|---|---|---|
+| overall | 0.558 | 0.624 | **0.702** |
+| MultiHop | 0.274 | 0.353 | **0.472** |
+| OpenDomain | 0.243 | 0.313 | 0.376 |
+| SingleHop | 0.646 | 0.712 | 0.782 |
+| Temporal | 0.672 | 0.747 | 0.796 |
+
+The gold evidence is in the top-50 candidate pool far more often than it reaches the
+top-10 — a **+0.144 overall gap (MultiHop +0.199, +73% relative)**. That is a
+*ranking* problem, not a recall problem: the evidence is retrieved but ranked below
+the cutoff.
+
+**Root cause:** `fuse_results` truncated the fused pool to `limit` (=10) BEFORE
+composite scoring and the reranker ran, so the (already semantic) `HeuristicReranker`
+only reordered the final 10 — it could never pull a gold result from rank 11–50 into
+the top-10.
+
+**Fix (over-fetch):** fuse/composite/rerank over a wider pool
+(`rerank_pool_size`, default 50), truncate to the caller's `limit` LAST.
+
+**Measured full-set result (over-fetch vs baseline):**
+
+| category | baseline R@10 | over-fetch R@10 | delta |
+|---|---|---|---|
+| overall | 0.5237 | **0.5565** | +0.0328 (+6.3%) |
+| MultiHop | 0.2475 | 0.2737 | +0.0262 (+11%) |
+| Temporal | 0.6072 | 0.6716 | +0.0644 |
+| OpenDomain | 0.2026 | 0.2327 | +0.0301 |
+| SingleHop | 0.6147 | 0.6459 | +0.0312 |
+| MRR | 0.4058 | 0.4219 | +0.0161 |
+
+Every category improved — including MultiHop, which two graph-expansion rounds could
+NOT move: it was a ranking problem all along. Latency cost: recall p50 0.60 s → 0.76 s
+(+27%; the reranker now scores 50 candidates instead of 10), still sub-second; store
+latency unchanged (~10 ms).
+
+**Remaining headroom:** the reranker captures recall@10 = 0.556 of the 0.702 pool
+ceiling. Closing more of that gap needs a stronger reranker (the pool is now available
+to it); the `--recall-curve` mode measures the ceiling any reranker can chase.
