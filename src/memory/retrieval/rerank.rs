@@ -44,11 +44,21 @@ pub struct HeuristicRerankWeights {
 }
 
 impl Default for HeuristicRerankWeights {
+    /// Weights chosen by a measured LoCoMo sweep (see docs/evaluation.md,
+    /// "reranker weighting"): embedding-dominant, with `graph_proximity`
+    /// dropped. `graph_proximity` rewards a candidate's closeness to the OTHER
+    /// candidates (query-agnostic), which mildly demoted query-relevant gold;
+    /// leaning on query↔candidate semantic agreement lifted full-set recall@10
+    /// 0.5565→0.5691 (MultiHop +9.6%, OpenDomain +12%). The peak is genuine
+    /// (embed 0.80 scored lower than 0.60). Tuned on one dataset — override per
+    /// deployment via `SYNAPTIC_RERANK_W_*`. `recency` is retained for real
+    /// deployments (it is inert in the eval, where all memories share an
+    /// ingest time).
     fn default() -> Self {
         Self {
-            term_overlap: 0.35,
-            embedding_agreement: 0.35,
-            graph_proximity: 0.15,
+            term_overlap: 0.25,
+            embedding_agreement: 0.60,
+            graph_proximity: 0.0,
             recency: 0.15,
         }
     }
