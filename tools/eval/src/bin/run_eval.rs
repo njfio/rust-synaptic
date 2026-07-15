@@ -14,8 +14,16 @@
 //! under that concurrency and are reported as such.
 //!
 //! Every printed number comes from this process's real run. QA accuracy is
-//! gated: without the `llm-reasoning` feature and a configured endpoint it is
-//! reported as not-run, never fabricated.
+//! gated: without a selected, available judge it is reported as not-run,
+//! never fabricated. Select the judge via `SYNAPTIC_EVAL_JUDGE`:
+//!
+//! - `SYNAPTIC_EVAL_JUDGE=codex` — use a locally installed, logged-in
+//!   `codex` CLI (works in the default build, no feature flag needed).
+//!   `SYNAPTIC_EVAL_CODEX_BIN` overrides the binary (default `codex`);
+//!   `SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS` overrides the per-call timeout
+//!   (default 120s).
+//! - `SYNAPTIC_EVAL_JUDGE=llm` or unset — requires the `llm-reasoning`
+//!   feature and `SYNAPTIC_EVAL_LLM_URL` / `SYNAPTIC_EVAL_LLM_MODEL`.
 
 use std::collections::HashSet;
 use std::io::Write;

@@ -16,6 +16,21 @@
 //! - A judge failure mid-run (endpoint unreachable, malformed reply) aborts
 //!   the run with an error: fail closed, no partial numbers.
 //!
+//! ## Judge selection (`SYNAPTIC_EVAL_JUDGE`)
+//!
+//! [`run_qa_gated`] picks the judge based on `SYNAPTIC_EVAL_JUDGE`:
+//!
+//! - `codex` — use [`CodexCliJudge`], which shells out to a locally
+//!   installed, logged-in `codex` CLI (`codex exec`). No feature flag or
+//!   network crate required; works in the default build. Configure the
+//!   binary with `SYNAPTIC_EVAL_CODEX_BIN` (default `codex`) and the
+//!   per-call timeout with `SYNAPTIC_EVAL_CODEX_TIMEOUT_SECS` (default
+//!   120s). If the CLI is not runnable this returns [`QaResult::NotRun`]
+//!   rather than fabricating a number.
+//! - `llm` or unset — the existing behavior: with the `llm-reasoning`
+//!   feature enabled and an endpoint configured, uses [`LlmJudge`];
+//!   otherwise [`QaResult::NotRun`].
+//!
 //! ## Real judge configuration (`llm-reasoning` feature)
 //!
 //! [`LlmJudge`] talks to any OpenAI-compatible chat-completions endpoint
@@ -193,34 +208,75 @@ pub async fn run_qa(
     })
 }
 
-/// Gated QA evaluation. With the `llm-reasoning` feature enabled and an
-/// endpoint configured (see module docs for the env vars), runs [`run_qa`]
-/// with the real [`LlmJudge`]. Otherwise returns [`QaResult::NotRun`] with
-/// the reason — QA accuracy is never fabricated.
+/// Environment variable selecting which judge [`run_qa_gated`] uses:
+/// `codex` for [`CodexCliJudge`], `llm` (or unset) for [`LlmJudge`] /
+/// existing behavior.
+pub const ENV_JUDGE: &str = "SYNAPTIC_EVAL_JUDGE";
+
+/// If `SYNAPTIC_EVAL_JUDGE=codex`, run QA with [`CodexCliJudge`] and return
+/// `Some(result)` (a real report if the CLI is available, `NotRun`
+/// otherwise). Returns `None` when a different judge should be selected
+/// (env var unset or set to something else), so callers fall through to
+/// their existing behavior.
+async fn run_qa_with_codex_if_selected(
+    conversations: &[EvalConversation],
+    k: usize,
+) -> Option<Result<QaResult, QaError>> {
+    let selected = std::env::var(ENV_JUDGE).ok()?;
+    if selected.trim() != "codex" {
+        return None;
+    }
+    let judge = CodexCliJudge::from_env();
+    if !judge.is_available() {
+        return Some(Ok(QaResult::NotRun {
+            reason: format!(
+                "SYNAPTIC_EVAL_JUDGE=codex but codex CLI not runnable — \
+                 install/login the codex CLI or set {}",
+                CodexCliJudge::ENV_BIN
+            ),
+        }));
+    }
+    Some(run_qa(conversations, &judge, k).await.map(QaResult::Ran))
+}
+
+/// Gated QA evaluation. Honors `SYNAPTIC_EVAL_JUDGE=codex` (see module
+/// docs) first; otherwise, with the `llm-reasoning` feature enabled and an
+/// endpoint configured, runs [`run_qa`] with the real [`LlmJudge`].
+/// Otherwise returns [`QaResult::NotRun`] with the reason — QA accuracy is
+/// never fabricated.
 #[cfg(feature = "llm-reasoning")]
 pub async fn run_qa_gated(
     conversations: &[EvalConversation],
     k: usize,
 ) -> Result<QaResult, QaError> {
+    if let Some(result) = run_qa_with_codex_if_selected(conversations, k).await {
+        return result;
+    }
     match LlmJudge::from_env()? {
         Some(judge) => Ok(QaResult::Ran(run_qa(conversations, &judge, k).await?)),
         None => Ok(QaResult::NotRun {
             reason: "not run — requires endpoint: set SYNAPTIC_EVAL_LLM_URL (and \
-                     SYNAPTIC_EVAL_LLM_MODEL) to an OpenAI-compatible endpoint"
+                     SYNAPTIC_EVAL_LLM_MODEL) to an OpenAI-compatible endpoint, \
+                     or set SYNAPTIC_EVAL_JUDGE=codex with the codex CLI installed"
                 .to_string(),
         }),
     }
 }
 
-/// Gated QA evaluation (feature off): always [`QaResult::NotRun`].
+/// Gated QA evaluation (feature off). Honors `SYNAPTIC_EVAL_JUDGE=codex`
+/// (see module docs); otherwise always [`QaResult::NotRun`].
 #[cfg(not(feature = "llm-reasoning"))]
 pub async fn run_qa_gated(
-    _conversations: &[EvalConversation],
-    _k: usize,
+    conversations: &[EvalConversation],
+    k: usize,
 ) -> Result<QaResult, QaError> {
+    if let Some(result) = run_qa_with_codex_if_selected(conversations, k).await {
+        return result;
+    }
     Ok(QaResult::NotRun {
         reason: "not run — requires endpoint: build with feature `llm-reasoning` and \
-                 set SYNAPTIC_EVAL_LLM_URL / SYNAPTIC_EVAL_LLM_MODEL"
+                 set SYNAPTIC_EVAL_LLM_URL / SYNAPTIC_EVAL_LLM_MODEL, or set \
+                 SYNAPTIC_EVAL_JUDGE=codex with the codex CLI installed"
             .to_string(),
     })
 }
@@ -559,6 +615,109 @@ impl Judge for CodexCliJudge {
                 stdout.trim()
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod run_qa_tests {
+    use super::*;
+    use crate::dataset::{EvalConversation, EvalQuestion, QType, Session};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Deterministic judge for testing aggregation without a network or CLI.
+    /// Grades correct on odd calls, incorrect on even calls (0-indexed).
+    struct FakeJudge {
+        call: AtomicUsize,
+    }
+
+    impl FakeJudge {
+        fn new() -> Self {
+            Self {
+                call: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Judge for FakeJudge {
+        async fn answer(&self, _question: &str, _recalled: &[String]) -> Result<String, QaError> {
+            Ok("fake answer".to_string())
+        }
+
+        async fn grade(
+            &self,
+            _question: &str,
+            _gold: &str,
+            _predicted: &str,
+        ) -> Result<bool, QaError> {
+            let n = self.call.fetch_add(1, Ordering::SeqCst);
+            Ok(n % 2 == 0)
+        }
+    }
+
+    fn fixture() -> Vec<EvalConversation> {
+        vec![EvalConversation {
+            id: "conv1".to_string(),
+            sessions: vec![Session {
+                id: "s1".to_string(),
+                timestamp: None,
+                turns: vec![],
+            }],
+            questions: vec![
+                EvalQuestion {
+                    id: "q1".to_string(),
+                    text: "What color is the sky?".to_string(),
+                    qtype: QType::SingleHop,
+                    evidence_ids: vec![],
+                    gold_answer: "blue".to_string(),
+                },
+                EvalQuestion {
+                    id: "q2".to_string(),
+                    text: "What color is grass?".to_string(),
+                    qtype: QType::SingleHop,
+                    evidence_ids: vec![],
+                    gold_answer: "green".to_string(),
+                },
+            ],
+        }]
+    }
+
+    #[tokio::test]
+    async fn run_qa_aggregates_accuracy_over_fixture() {
+        let conversations = fixture();
+        let judge = FakeJudge::new();
+        let report = run_qa(&conversations, &judge, 5)
+            .await
+            .expect("run_qa should succeed with a fake judge");
+
+        assert_eq!(report.questions, 2);
+        assert_eq!(report.correct, 1);
+        assert!((report.accuracy - 0.5).abs() < f64::EPSILON);
+
+        let bucket = report
+            .by_qtype
+            .get(&qtype_key(QType::SingleHop))
+            .expect("SingleHop bucket present");
+        assert_eq!(bucket.questions, 2);
+        assert_eq!(bucket.correct, 1);
+        assert!((bucket.accuracy - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[cfg(not(feature = "llm-reasoning"))]
+    #[tokio::test]
+    async fn run_qa_gated_not_run_when_judge_env_unset() {
+        // Guard against test-order env races on this process-wide var.
+        std::env::remove_var(ENV_JUDGE);
+        let conversations = fixture();
+        let result = run_qa_gated(&conversations, 5)
+            .await
+            .expect("run_qa_gated should not error when no judge is configured");
+        match result {
+            QaResult::NotRun { reason } => {
+                assert!(reason.contains("SYNAPTIC_EVAL_JUDGE=codex"));
+            }
+            QaResult::Ran(_) => panic!("expected NotRun with no judge configured"),
+        }
     }
 }
 
