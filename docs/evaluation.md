@@ -639,3 +639,43 @@ stays low-ms; search cost grows sublinearly with corpus size.
 Not run in this pass: QA end-to-end accuracy (LLM-gated — needs an
 `llm-reasoning` endpoint; reported as not-run, never fabricated); the 100k growth
 target (`--growth-100k`); LongMemEval.
+
+## Negative result: semantic-edge densification does not lift MultiHop (2026-07-15)
+
+**Hypothesis (falsified):** MultiHop recall (R@10 = 0.2475 full-set) is low because
+the knowledge graph has near-zero semantic connectivity — the write path never set
+`MemoryEntry.embedding`, so `auto_detect_relationships` never created
+`SemanticallyRelated` edges, and the default similarity threshold (0.7) was
+mis-tuned for the static provider (measured related-cosine ≈ 0.51). We built the
+full fix on a branch: attach the scoring-provider embedding to each entry on write
+so the KG forms semantic edges, and tune the threshold by measured sweep.
+
+**A 200-question subset looked promising** (MultiHop R@10 0.1933 → 0.2412 at
+threshold 0.35). **The full 1,986-question set falsified it:**
+
+| full-set (1,986 q) | baseline | threshold 0.35 | threshold 0.45 |
+|---|---|---|---|
+| MultiHop R@10 | **0.2475** | 0.2440 | 0.2317 |
+| overall R@10 | **0.5237** | 0.5248 | 0.5180 |
+| Temporal R@10 | 0.6072 | 0.6290 | 0.6202 |
+| OpenDomain R@10 | 0.2026 | 0.2182 | 0.2217 |
+| recall latency p50 | **0.60 s** | 1.27 s | 1.11 s |
+| store latency p50 | **10.9 ms** | 19.1 ms | 17.5 ms |
+
+MultiHop is flat-to-down at every threshold, while query latency roughly **doubles**
+(more edges for the multi-hop retriever to traverse). Small incidental Temporal /
+OpenDomain gains do not justify a 2× latency regression, and none of it is the
+MultiHop lift the change targeted. The subset was an unrepresentative sample — the
+same lesson as the 0.324-subset vs 0.524-full-set gap documented above.
+
+**Why it fails (the useful finding):** cosine-similar *content* is not the
+*reasoning* connection multi-hop questions need. Multi-hop gold evidence is linked
+by entity coreference across turns (e.g. "Caroline" mentioned in one turn, her
+research described 40 turns later), not by surface similarity. Similarity edges
+connect turns that merely *read* alike, adding plausible-but-wrong neighbors that
+dilute the candidate set. **Lifting MultiHop needs entity-linked edges
+(coreference), not denser similarity edges** — a deeper change than edge density.
+
+The branch was abandoned; `main` stays at the fast baseline (recall 0.5237,
+latency 0.60 s), which strictly dominates every configuration measured here. This
+is recorded so the similarity-edge approach is not re-attempted.
