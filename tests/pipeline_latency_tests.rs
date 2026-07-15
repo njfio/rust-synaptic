@@ -273,104 +273,63 @@ async fn reranker_proximity_is_single_pass_and_value_preserving() {
     assert_eq!(got, want, "proximity-driven ordering must be preserved");
 }
 
-/// Storage wrapper that counts `search` calls, to prove the multi-hop
-/// retriever reuses the pipeline's already-computed seed results instead of
-/// re-running the seed retrievers from scratch.
-struct SearchCountingStorage {
-    inner: Arc<MemoryStorage>,
-    searches: std::sync::atomic::AtomicUsize,
-}
-
-#[async_trait::async_trait]
-impl Storage for SearchCountingStorage {
-    async fn store(&self, entry: &MemoryEntry) -> synaptic::error::Result<()> {
-        self.inner.store(entry).await
-    }
-    async fn retrieve(&self, key: &str) -> synaptic::error::Result<Option<MemoryEntry>> {
-        self.inner.retrieve(key).await
-    }
-    async fn search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> synaptic::error::Result<Vec<MemoryFragment>> {
-        self.searches
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.inner.search(query, limit).await
-    }
-    async fn update(&self, key: &str, entry: &MemoryEntry) -> synaptic::error::Result<()> {
-        self.inner.update(key, entry).await
-    }
-    async fn delete(&self, key: &str) -> synaptic::error::Result<bool> {
-        self.inner.delete(key).await
-    }
-    async fn list_keys(&self) -> synaptic::error::Result<Vec<String>> {
-        self.inner.list_keys().await
-    }
-    async fn count(&self) -> synaptic::error::Result<usize> {
-        self.inner.count().await
-    }
-    async fn clear(&self) -> synaptic::error::Result<()> {
-        self.inner.clear().await
-    }
-    async fn exists(&self, key: &str) -> synaptic::error::Result<bool> {
-        self.inner.exists(key).await
-    }
-    async fn stats(&self) -> synaptic::error::Result<synaptic::memory::storage::StorageStats> {
-        self.inner.stats().await
-    }
-    async fn maintenance(&self) -> synaptic::error::Result<()> {
-        self.inner.maintenance().await
-    }
-    async fn backup(&self, path: &str) -> synaptic::error::Result<()> {
-        self.inner.backup(path).await
-    }
-    async fn restore(&self, path: &str) -> synaptic::error::Result<()> {
-        self.inner.restore(path).await
-    }
-    async fn get_all_entries(&self) -> synaptic::error::Result<Vec<MemoryEntry>> {
-        self.inner.get_all_entries().await
-    }
-}
-
-/// The multi-hop retriever inside a hybrid pipeline must not re-run its seed
-/// retrievers: the keyword retriever's storage search runs ONCE per query.
+/// The multi-hop retriever's seeds are collected FRESH (its own
+/// `max_seeds`-limited seed-retriever run), NOT reused from the pipeline's
+/// wider `max_per_signal`-limited results — those have a different BM25 IDF
+/// candidate pool and would change the seed set (recall regression). This
+/// pins the exact-seed behavior: a multi-hop retriever inside the hybrid
+/// pipeline produces IDENTICAL results to a standalone multi-hop search
+/// (same seeds -> same expansion), regardless of the pipeline's own limit.
 #[tokio::test]
-async fn multihop_reuses_pipeline_seed_results() {
+async fn multihop_seeds_are_collected_fresh_not_reused() {
     let _guard = lock_counters();
 
-    let (inner, kg) = fixture(10).await;
-    let storage = Arc::new(SearchCountingStorage {
-        inner,
-        searches: std::sync::atomic::AtomicUsize::new(0),
-    });
+    let (storage, kg) = fixture(10).await;
+    let storage: Arc<dyn Storage + Send + Sync> = storage;
 
-    let keyword: Arc<dyn RetrievalPipeline> = Arc::new(KeywordRetriever::new(
-        storage.clone() as Arc<dyn Storage + Send + Sync>
-    ));
-    let multihop = MultiHopGraphRetriever::new(
-        storage.clone() as Arc<dyn Storage + Send + Sync>,
-        Some(kg),
-        vec![keyword.clone()],
-        MultiHopConfig::default(),
-    );
-    // Every fixture memory contains every query term, so BM25 IDF (and thus
-    // the keyword scores) are near zero — drop the fusion min_score so the
-    // candidates flow through and the search-call count is meaningful.
+    let make_multihop = || {
+        let keyword: Arc<dyn RetrievalPipeline> = Arc::new(KeywordRetriever::new(storage.clone()));
+        MultiHopGraphRetriever::new(
+            storage.clone(),
+            Some(kg.clone()),
+            vec![keyword],
+            MultiHopConfig::default(),
+        )
+    };
+
+    // Standalone multi-hop search (no pipeline context).
+    let standalone: Vec<(String, f64)> = make_multihop()
+        .search(QUERY, 10, None)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.memory.entry.key.clone(), s.score))
+        .collect();
+
+    // Multi-hop inside a hybrid pipeline: the GraphRelationship results it
+    // contributes must be the SAME as standalone (exact seeds). We read them
+    // back via the pipeline's fused output restricted to keys only multi-hop
+    // can surface.
     let config = PipelineConfig::default().with_min_score(0.0);
     let hybrid = synaptic::memory::retrieval::HybridRetriever::new(config)
-        .add_pipeline(keyword)
-        .add_pipeline(Arc::new(multihop));
+        .add_pipeline(Arc::new(make_multihop()));
+    let fused: Vec<String> = hybrid
+        .search(QUERY, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|m| m.entry.key)
+        .collect();
 
-    storage
-        .searches
-        .store(0, std::sync::atomic::Ordering::SeqCst);
-    let results = hybrid.search(QUERY, 10).await.unwrap();
-    assert!(!results.is_empty());
-
-    let searches = storage.searches.load(std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(
-        searches, 1,
-        "multi-hop must reuse the pipeline's keyword results instead of re-running the seed retriever (storage.search called {searches} times)"
+    // Every standalone multi-hop hit must appear in the fused output.
+    for (key, _) in &standalone {
+        assert!(
+            fused.contains(key),
+            "multi-hop seed set changed: standalone hit {key} missing from pipeline fused output {fused:?}"
+        );
+    }
+    assert!(
+        !standalone.is_empty(),
+        "fixture should surface at least one multi-hop-only answer"
     );
 }

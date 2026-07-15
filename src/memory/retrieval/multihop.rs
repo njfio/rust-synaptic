@@ -90,60 +90,38 @@ impl MultiHopGraphRetriever {
         }
     }
 
-    /// Collect deterministic seeds: for each seed retriever, REUSE the
-    /// results the pipeline already computed for this query (matched by
-    /// pipeline name in `prior`) when they cover at least `max_seeds` hits'
-    /// worth of ranking; otherwise run the retriever. Keep each memory's
-    /// best score, order by (score desc, key asc), cap at `max_seeds`.
+    /// Collect deterministic seeds: run each seed retriever, keep each
+    /// memory's best score, order by (score desc, key asc), cap at
+    /// `max_seeds`.
+    ///
+    /// NOTE (PL1): an earlier optimization reused the pipeline's already-
+    /// computed dense/keyword results as seeds. That was NOT exact — the
+    /// pipeline runs those retrievers with `limit = max_per_signal`, whose
+    /// larger BM25 IDF candidate pool yields different scores (and therefore a
+    /// different top-`max_seeds` seed set) than a direct `max_seeds`-limited
+    /// run. The differing seed set changed multi-hop results and regressed
+    /// recall, so the reuse was reverted: seeds are always collected fresh,
+    /// exactly as before PL1. (The batched expansion `storage.retrieve` below
+    /// is exact and was kept.)
     async fn collect_seeds(
         &self,
         query: &str,
         config: Option<&PipelineConfig>,
-        prior: &[(&str, &[ScoredMemory])],
     ) -> Result<Vec<(String, f64)>> {
-        // Prior results were computed with `limit = max_per_signal`; their
-        // top-`max_seeds` prefix matches what a direct `max_seeds`-limited
-        // run would return only when that limit is at least as large.
-        let reuse_prior = config
-            .map(|c| c.max_per_signal >= self.config.max_seeds)
-            .unwrap_or(false);
-
         let mut best: HashMap<String, f64> = HashMap::new();
         for retriever in &self.seed_retrievers {
             if !retriever.is_available() {
                 continue;
             }
-            let prior_hits: Option<&[ScoredMemory]> = if reuse_prior {
-                prior
-                    .iter()
-                    .find(|(name, _)| *name == retriever.name())
-                    .map(|(_, results)| *results)
-            } else {
-                None
-            };
-            let owned_hits;
-            let hits: &[ScoredMemory] = match prior_hits {
-                Some(hits) => {
-                    tracing::debug!(
+            let hits = match retriever.search(query, self.config.max_seeds, config).await {
+                Ok(hits) => hits,
+                Err(e) => {
+                    tracing::warn!(
                         seed_retriever = retriever.name(),
-                        "multi-hop seeds reused from pipeline results"
+                        error = %e,
+                        "multi-hop seed retrieval failed; continuing with other seeds"
                     );
-                    &hits[..hits.len().min(self.config.max_seeds)]
-                }
-                None => {
-                    owned_hits = match retriever.search(query, self.config.max_seeds, config).await
-                    {
-                        Ok(hits) => hits,
-                        Err(e) => {
-                            tracing::warn!(
-                                seed_retriever = retriever.name(),
-                                error = %e,
-                                "multi-hop seed retrieval failed; continuing with other seeds"
-                            );
-                            continue;
-                        }
-                    };
-                    &owned_hits
+                    continue;
                 }
             };
             for hit in hits {
@@ -270,21 +248,19 @@ impl MultiHopGraphRetriever {
     }
 }
 
-impl MultiHopGraphRetriever {
-    /// Shared search body: seed (reusing `prior` where possible), expand
-    /// under a single KG read guard, then batch-fetch the reached memories.
-    async fn search_impl(
+#[async_trait]
+impl RetrievalPipeline for MultiHopGraphRetriever {
+    async fn search(
         &self,
         query: &str,
         limit: usize,
         config: Option<&PipelineConfig>,
-        prior: &[(&str, &[ScoredMemory])],
     ) -> Result<Vec<ScoredMemory>> {
         let Some(ref kg) = self.knowledge_graph else {
             return Ok(Vec::new());
         };
 
-        let seeds = self.collect_seeds(query, config, prior).await?;
+        let seeds = self.collect_seeds(query, config).await?;
         if seeds.is_empty() {
             return Ok(Vec::new());
         }
@@ -337,32 +313,6 @@ impl MultiHopGraphRetriever {
             "MultiHopGraphRetriever: expansion completed"
         );
         Ok(results)
-    }
-}
-
-#[async_trait]
-impl RetrievalPipeline for MultiHopGraphRetriever {
-    async fn search(
-        &self,
-        query: &str,
-        limit: usize,
-        config: Option<&PipelineConfig>,
-    ) -> Result<Vec<ScoredMemory>> {
-        self.search_impl(query, limit, config, &[]).await
-    }
-
-    fn consumes_prior_results(&self) -> bool {
-        true
-    }
-
-    async fn search_with_prior(
-        &self,
-        query: &str,
-        limit: usize,
-        config: Option<&PipelineConfig>,
-        prior: &[(&str, &[ScoredMemory])],
-    ) -> Result<Vec<ScoredMemory>> {
-        self.search_impl(query, limit, config, prior).await
     }
 
     fn name(&self) -> &'static str {
