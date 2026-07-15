@@ -135,20 +135,27 @@ impl HeuristicReranker {
         let Some(ref kg) = self.knowledge_graph else {
             return proximities;
         };
+        #[cfg(feature = "test-utils")]
+        crate::memory::retrieval::telemetry::record_kg_read_lock();
         let kg_guard = kg.read().await;
+        // ONE batched graph pass for every candidate's 2-hop related set,
+        // instead of a full BFS per candidate.
+        let keys: Vec<String> = candidates
+            .iter()
+            .map(|c| c.memory.entry.key.clone())
+            .collect();
+        let related_map = kg_guard.find_related_memories_batch(&keys, 2, None);
+        drop(kg_guard);
         for candidate in candidates {
             let key = &candidate.memory.entry.key;
             let other_count = all_keys.len().saturating_sub(1);
             if other_count == 0 {
                 continue;
             }
-            let related = match kg_guard.find_related_memories(key, 2, None).await {
-                Ok(related) => related,
-                Err(e) => {
-                    // The candidate may simply not be a graph node yet.
-                    tracing::debug!(key = %key, error = %e, "graph proximity unavailable for candidate");
-                    continue;
-                }
+            let Some(related) = related_map.get(key) else {
+                // The candidate may simply not be a graph node yet.
+                tracing::debug!(key = %key, "graph proximity unavailable for candidate");
+                continue;
             };
             let hits = related
                 .iter()
