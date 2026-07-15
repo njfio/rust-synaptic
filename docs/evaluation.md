@@ -579,3 +579,63 @@ Retrieval quality is preserved **exactly** — this is a pure latency/allocation
 not a quality/latency trade. Not measured: full 1,986-question set; latency on the
 Ollama/candle providers (the pipeline overhead is provider-independent, so the
 same absolute reduction applies on top of their embedding cost).
+
+## Full-scale LoCoMo validation (2026-07-15)
+
+Every prior retrieval number came from a **50-question subset**. Now that the
+pipeline latency fix (above) made it tractable, here is the **complete
+1,986-question LoCoMo set** — all 10 conversations, 272 sessions, 5,882 ingested
+turns — run end-to-end with the default static-embedding pipeline (model2vec
+`potion-base-8M`), one concurrent task per conversation.
+
+**Headline: at full scale, recall@10 = 0.5237** (MRR 0.4058) — substantially
+**higher** than the 50-question subset's 0.324. The subset was pessimistic: it
+under-sampled the two largest, highest-recall categories. These full-set numbers
+supersede the subset as the representative figure.
+
+| QType | n | precision@10 | recall@10 | MRR |
+|---|---|---|---|---|
+| SingleHop | 841 | 0.0643 | **0.6147** | 0.4501 |
+| Temporal | 321 | 0.0679 | 0.6072 | **0.4935** |
+| Abstention | 446 | 0.0545 | 0.5359 | 0.3755 |
+| MultiHop | 282 | 0.0730 | 0.2475 | 0.3005 |
+| OpenDomain | 96 | 0.0333 | 0.2026 | 0.1740 |
+| **overall** | **1986** | **0.0624** | **0.5237** | **0.4058** |
+
+Latency at full scale (measured under per-conversation concurrency):
+
+| op | p50 | p95 | p99 |
+|---|---|---|---|
+| store (n=5882) | 10.9 ms | 20.9 ms | 29.8 ms |
+| recall (n=1986) | **0.60 s** | 0.86 s | 1.08 s |
+
+Recall p50 is 0.60 s here vs 0.46 s on the 50-question subset — larger per-query
+haystacks (full conversations ingested), still ~7× under the pre-fix 4.4 s.
+
+**Capability ablation** (full set). Note this ladder isolates the *capability
+deltas* on the baseline lexical embedder (TF-IDF), so its absolute numbers are
+lower than the static-provider default pipeline above; it answers "what does each
+stage add," not "what is the best config":
+
+| config | recall@10 | Δrecall | MRR | ΔMRR |
+|---|---|---|---|---|
+| baseline | 0.2610 | — | 0.1744 | — |
+| +composite | 0.2610 | +0.0000 | 0.1744 | +0.0000 |
+| +reranker | 0.2610 | +0.0000 | 0.2305 | **+0.0562** |
+| +graph_temporal | 0.2896 | **+0.0286** | 0.2422 | +0.0678 |
+| +all | 0.2896 | +0.0286 | 0.2412 | +0.0668 |
+
+Honest reading: the reranker earns its keep on ranking (**+0.056 MRR**) without
+moving recall (it reorders, doesn't retrieve); graph+temporal expansion adds real
+recall (**+0.029**). Composite scoring alone moves neither on this set. The
+static semantic embedder (default pipeline, 0.5237) is the dominant lever over
+the lexical baseline (0.2610) — a **+0.26 absolute recall** gap, the largest of
+any single choice measured.
+
+**Memory growth** (payload-byte proxy, not RSS): 1k stored → store p50 7.4 ms,
+probe_search 0.37 s; 10k stored → store p50 44 ms, probe_search 0.62 s. Store
+stays low-ms; search cost grows sublinearly with corpus size.
+
+Not run in this pass: QA end-to-end accuracy (LLM-gated — needs an
+`llm-reasoning` endpoint; reported as not-run, never fabricated); the 100k growth
+target (`--growth-100k`); LongMemEval.
