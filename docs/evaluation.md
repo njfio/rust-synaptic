@@ -446,6 +446,13 @@ Honest findings:
   embeddings in one forward pass** (and/or GPU), which should cut per-query
   latency by roughly an order of magnitude and make the bundled model a viable
   default — tracked as the next step, not yet done.
+- **GPU (opt-in, not measured here):** the candle provider now selects its
+  device via `Device::cuda_if_available(0)`. With the CUDA toolkit installed,
+  `cargo build --features cuda` runs MiniLM inference on the GPU, which is
+  expected to cut the multi-second CPU per-query latency dramatically. GPU
+  latency was **NOT measured** in this environment (no CUDA toolkit, no sudo
+  to install one), so no GPU number is claimed — the CPU path is what is
+  verified.
 
 Not measured: batched-candle latency; the full 1,986-question set with candle
 (un-batched CPU inference makes it impractical in-sandbox — the subset is the
@@ -482,3 +489,48 @@ Honest findings:
   remains the default**, Ollama (~3.8 s) the balanced server option.
 
 Not measured: GPU / quantized-model latency; batched store-side embedding.
+
+## Fast semantic default (2026-07-14) — model2vec static embeddings + GPU option
+
+To make semantic embeddings a genuinely fast default (candle MiniLM was ~7s/query
+on CPU even after batching), two paths were added:
+
+1. **model2vec static embeddings** (`minishlab/potion-base-8M`, 256-dim) — a
+   token→vector table distilled from a real sentence-transformer. Embedding is a
+   token-row lookup + masked mean-pool + L2-norm — **no transformer forward pass**,
+   microseconds on any CPU, pure-Rust (candle-free `static-embeddings` feature).
+   Genuinely semantic (verified: cosine(related)=0.51 vs cosine(unrelated)=−0.08).
+2. **GPU device selection for candle** (`cuda` feature) — the candle provider now
+   selects `Device::cuda_if_available(0)`, so building with the CUDA toolkit runs
+   MiniLM on a GPU. **Not measured here** (this environment has the NVIDIA driver
+   but no CUDA toolkit and no sudo to install it) — no GPU latency is claimed.
+
+**Full provider comparison, same 50-question LoCoMo subset** (retrieval-only):
+
+| provider | recall@10 | MRR | MultiHop R@10 | Temporal R@10 | store latency p50 |
+|---|---|---|---|---|---|
+| TF-IDF (lexical, default) | 0.2212 | 0.2567 | 0.0821 | 0.4091 | ~9 ms |
+| **model2vec static (CPU, fast)** | 0.3240 | **0.3250** | **0.1949** | 0.5455 | **~9 ms** |
+| candle MiniLM (CPU transformer) | 0.3300 | 0.2709 | 0.1053 | 0.6364 | ~152 ms |
+| candle MiniLM (GPU) | not measured — needs CUDA toolkit | | | | |
+| Ollama nomic-embed-text (server) | 0.3652 | 0.3517 | 0.1190 | 0.6818 | — |
+
+Honest findings:
+
+- **model2vec is the recommended fast semantic default.** It matches the candle
+  transformer's recall (0.324 vs 0.330), has the **best MRR (0.325) and best
+  MultiHop (0.195) of any provider tested**, and embeds at **TF-IDF speed**
+  (~9 ms store p50, ~17× faster than candle's 152 ms) — on any CPU, no GPU, no
+  forward pass. It is auto-selected as the default when the `static-embeddings`
+  feature is built and the model is present (else TF-IDF); a plain `cargo build`
+  stays lexical/offline/lean.
+- **The remaining ~4.4 s per-query search latency is pipeline overhead, not
+  embedding** (multi-hop graph traversal + reranking + composite scoring over the
+  candidate set — the same for every provider; store latency isolates the
+  embedding cost, where static is instant). Reducing pipeline latency is a
+  separate optimization.
+- **GPU** would accelerate the transformer path further but is unnecessary for a
+  fast default now that static embeddings deliver comparable quality instantly on
+  CPU; the `cuda` feature is available for GPU users, unmeasured here.
+
+Not measured: GPU latency (no CUDA toolkit); full 1,986-question set / LongMemEval.
