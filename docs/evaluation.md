@@ -1078,3 +1078,30 @@ The real remaining retrieval lever is multi-evidence completeness (e.g. query
 decomposition into sub-questions each retrieving their own evidence, or iterative
 retrieve-until-complete), not sharper single-turn ranking. Measure with
 `run_eval --completeness`.
+
+## Negative result: MMR diversity does not fix multi-evidence completeness (2026-07-16)
+
+Following the completeness finding (multi-evidence questions rarely retrieve their full
+evidence set), the first attempt was MMR (Maximal Marginal Relevance) diversity selection:
+after reranking, greedily pick the top-`limit` balancing relevance against dissimilarity to
+already-selected candidates (`SYNAPTIC_RERANK_MMR_LAMBDA`, default 1.0 = off), so the top-10
+spreads coverage instead of clustering near-duplicates of the single best turn.
+
+**Measured (static pipeline):** MMR engages (overall recall@10 0.525→0.500 at λ=0.3 on a
+20-q stream — diversity trades relevance) but does NOT help the target: MultiHop partial
+recall@10 is **exactly flat** across λ∈{1.0, 0.5, 0.3} (0.1920), i.e. it does not change
+which evidence lands in the top-10 for multi-evidence questions. (A full-set full@10-by-
+evidence-count sweep was attempted but the sequential completeness metric + MMR's per-query
+embedding/greedy-selection cost made it impractical in the run budget.)
+
+**Why MMR cannot work here (the structural reason):** MMR only REORDERS the candidate pool.
+But the completeness data shows the missing evidence is largely NOT IN THE POOL — full@50 is
+0.33 (2-ev), 0.19 (3-ev), and **0.00 (4+-ev)**. For 4+-evidence questions at least one
+evidence turn is never even in the top-50, so no reordering (MMR, cross-encoder, graph
+expansion) can surface it. The multi-evidence problem is **pool absence, not misranking**.
+
+**Consequence:** the completeness lever is not reranking/selection at all — it is GATHERING
+the missing evidence into the candidate set: iterative retrieve-until-complete, or query
+decomposition into sub-questions that each retrieve their own evidence and union the pools.
+That is a different retrieval loop (multi-query / set-cover), not a scoring change. The MMR
+branch was abandoned (off-by-default feature, no measured benefit; nothing merged).
