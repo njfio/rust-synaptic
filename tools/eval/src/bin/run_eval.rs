@@ -117,6 +117,12 @@ async fn main() -> Result<(), String> {
     // per question. It answers whether below-rank-10 gold is in the candidate
     // pool (reranking headroom) or absent (first-stage recall problem). No judge.
     let recall_curve = args.iter().any(|a| a == "--recall-curve");
+    // `--completeness` measures STRICT full-evidence recall (ALL evidence turns
+    // of a question in the top-k, not just any) vs the standard partial recall,
+    // broken down by how many evidence turns a question has. It quantifies how
+    // much of the "gold-retrieved-but-answer-wrong" QA bucket is really
+    // multi-evidence undersupply (retrieval completeness) rather than the judge.
+    let completeness = args.iter().any(|a| a == "--completeness");
     let max_conversations: Option<usize> = args
         .iter()
         .position(|a| a == "--max-conversations")
@@ -175,6 +181,9 @@ async fn main() -> Result<(), String> {
     //    concurrent task per conversation (independent haystacks).
     if recall_curve {
         return run_recall_curve(&conversations, &mut w).await;
+    }
+    if completeness {
+        return run_completeness(&conversations, &mut w).await;
     }
     if qa_only {
         return run_qa_only(&conversations, &mut w).await;
@@ -280,6 +289,86 @@ async fn main() -> Result<(), String> {
     w(ablation::to_markdown(&table))?;
 
     run_growth_and_qa(&conversations, grow_100k, &mut w).await
+}
+
+/// Measure STRICT full-evidence recall (`--completeness`): per question, does
+/// the top-k contain ALL of its evidence turns (full), and what fraction (partial)?
+/// Bucketed by evidence-count so multi-evidence undersupply is visible. One
+/// limit-50 search per question; no judge. `full@k` = every evidence id present
+/// in the first k; `partial@k` = mean fraction of evidence ids present.
+async fn run_completeness(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    const KMAX: usize = 50;
+    // bucket key by evidence count: 1, 2, 3, "4+". Value: (n, partial@10 sum,
+    // full@10 count, full@50 count).
+    let mut buckets: std::collections::BTreeMap<String, (usize, f64, usize, usize)> =
+        std::collections::BTreeMap::new();
+    let mut overall = (0usize, 0.0f64, 0usize, 0usize);
+
+    for conversation in conversations {
+        let mut memory = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        runner::ingest(conversation, &mut memory)
+            .await
+            .map_err(|e| e.to_string())?;
+        for question in &conversation.questions {
+            let n_ev = question.evidence_ids.len();
+            if n_ev == 0 {
+                continue;
+            }
+            let outcome = runner::run_question(question, &memory, KMAX)
+                .await
+                .map_err(|e| e.to_string())?;
+            let relevant: HashSet<&String> = question.evidence_ids.iter().collect();
+            let top10: HashSet<&String> = outcome.retrieved_ids.iter().take(10).collect();
+            let top50: HashSet<&String> = outcome.retrieved_ids.iter().take(50).collect();
+            let hits10 = relevant.iter().filter(|e| top10.contains(*e)).count();
+            let full10 = usize::from(hits10 == n_ev);
+            let full50 = usize::from(relevant.iter().all(|e| top50.contains(*e)));
+            let partial10 = hits10 as f64 / n_ev as f64;
+
+            let key = if n_ev >= 4 {
+                "4+".to_string()
+            } else {
+                n_ev.to_string()
+            };
+            let b = buckets.entry(key).or_insert((0, 0.0, 0, 0));
+            b.0 += 1;
+            b.1 += partial10;
+            b.2 += full10;
+            b.3 += full50;
+            overall.0 += 1;
+            overall.1 += partial10;
+            overall.2 += full10;
+            overall.3 += full50;
+        }
+    }
+
+    w("== evidence completeness (full = ALL evidence turns in top-k) ==".to_string())?;
+    if overall.0 == 0 {
+        w("no questions with labeled evidence".to_string())?;
+        return Ok(());
+    }
+    w("by evidence-count: n | partial_recall@10 | full@10 | full@50".to_string())?;
+    for (key, (n, psum, f10, f50)) in &buckets {
+        w(format!(
+            "  {key}-evidence: n={n} partial@10={:.4} full@10={:.4} full@50={:.4}",
+            psum / *n as f64,
+            *f10 as f64 / *n as f64,
+            *f50 as f64 / *n as f64
+        ))?;
+    }
+    w(format!(
+        "overall: n={} partial@10={:.4} full@10={:.4} full@50={:.4}",
+        overall.0,
+        overall.1 / overall.0 as f64,
+        overall.2 as f64 / overall.0 as f64,
+        overall.3 as f64 / overall.0 as f64
+    ))?;
+    Ok(())
 }
 
 /// Measure the recall@k curve (`--recall-curve`): one limit-50 search per

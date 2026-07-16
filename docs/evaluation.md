@@ -1039,3 +1039,42 @@ which DID track a recall gain), the picture is: first-stage recall gains convert
 until the judge becomes the binding constraint, which is where we now are. The next QA
 lever is answer-side (a stronger answer model, or feeding the judge more context breadth),
 not sharper retrieval ranking. Caveats: 40-q hard-skewed subset; codex judge nondeterministic.
+
+## Evidence completeness: the multi-evidence retrieval ceiling (2026-07-16)
+
+With a near-ceiling judge (gpt-5.6-sol), the "gold-retrieved-but-answer-wrong" QA
+bucket cannot be an answer-model weakness. Hypothesis: it is retrieval *completeness* —
+`gold_retrieved` counts a question as retrieved if ANY one of its evidence turns is in
+the top-k, but multi-hop questions need ALL of them. The new `--completeness` mode
+measures STRICT full-evidence recall (`full@k` = every evidence turn in the top-k),
+bucketed by how many evidence turns a question has. Full set, default pipeline:
+
+| evidence turns | n | partial@10 (any) | full@10 (all) | full@50 |
+|---|---|---|---|---|
+| 1 | 1559 | 0.637 | 0.637 | 0.758 |
+| 2 | 239 | 0.366 | 0.180 | 0.331 |
+| 3 | 83 | 0.337 | 0.060 | 0.193 |
+| 4+ | 101 | 0.214 | 0.000 | 0.000 |
+| overall | 1982 | 0.570 | 0.525 | 0.644 |
+
+**The finding:** single-evidence questions retrieve well (full@10 0.64), but strict
+completeness collapses with evidence count — 2-evidence 0.18, 3-evidence 0.06, and
+**4+-evidence questions NEVER have all their evidence in the top-10, nor even the
+top-50** (full@50 0.00). ~21% of questions (423) are multi-evidence and almost never
+get their complete evidence set.
+
+**Consequences:**
+1. The QA "judge-bound" failures are overwhelmingly retrieval-COMPLETENESS, not judge
+   quality. A strong judge cannot answer a 3-hop question given 1 of 3 required facts.
+   A better answer model would not help.
+2. It explains why the cross-encoder did not move QA: reranking ranks ONE best turn
+   high; multi-evidence questions need the whole evidence SET gathered — a different
+   objective (set-cover / iterative retrieval), which single-turn relevance ranking
+   (bi-encoder, cross-encoder, graph expansion) does not optimize.
+3. Methodology: standard recall@10 (0.558) OVERSTATES answerable retrieval — it gives
+   partial credit on multi-evidence questions where strict full@10 is 0.525.
+
+The real remaining retrieval lever is multi-evidence completeness (e.g. query
+decomposition into sub-questions each retrieving their own evidence, or iterative
+retrieve-until-complete), not sharper single-turn ranking. Measure with
+`run_eval --completeness`.
