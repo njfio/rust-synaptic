@@ -974,3 +974,35 @@ cross-encoder reranker for retrieval), not just first-stage recall.
 Temporal — the per-QType signal is the reliable read). The codex judge is nondeterministic
 run-to-run (~±0.03 observed); the +0.15 accuracy jump is far beyond that noise and
 attributable to retrieval (same judge, same questions). Not a full-set run.
+
+## Full-set cross-encoder on GPU (2026-07-16)
+
+The CPU cross-encoder measurement (#77) was subset-only (full set ~30–80 min on CPU).
+`CrossEncoderReranker` now selects `Device::cuda_if_available(0)` (falls back to CPU
+when candle is built without `cuda` or no GPU is present), so a GPU build runs the
+BERT forward passes on-device. On an RTX A3000 (12GB, cc 8.6) this made the FULL
+1,986-question run tractable: **5 min 35 s wall-clock** (vs ~30–80 min CPU), and
+recall is identical to the CPU path (GPU is pure speedup). Single-query latency:
+**0.37 s on GPU vs 2.58 s CPU** (~7×).
+
+**Full-set recall@10, all rerankers (static first-stage retrieval, same over-fetch pool):**
+
+| config | recall@10 | MRR | MultiHop | OpenDomain | SingleHop | Temporal |
+|---|---|---|---|---|---|---|
+| baseline (pre-session) | 0.5237 | 0.4058 | 0.2475 | 0.2026 | 0.6147 | 0.6072 |
+| + over-fetch (#75) | 0.5565 | 0.4219 | 0.2737 | 0.2327 | 0.6459 | 0.6716 |
+| + embedding rerank (#76, default) | 0.5691 | — | 0.2737 | 0.2327 | — | — |
+| **+ cross-encoder (GPU)** | **0.6104** | **0.5058** | **0.3739** | **0.2755** | **0.7307** | **0.7552** |
+
+The cross-encoder lifts full-set recall@10 to **0.6104** — from the 0.5237 session
+start (**+0.087, +17%**) and closing on the 0.702 recall@50 pool ceiling. **MultiHop
+0.2475 → 0.3739 (+51%)** — the category two graph-expansion rounds could not move at
+all, lifted by half through ranking alone. MRR 0.4058 → 0.5058.
+
+**Build note (GPU is opt-in):** requires building with `--features cuda` (enables
+candle's CUDA backend, `cudarc` 0.13.9 → CUDA **12.x**, max 12.8) plus the
+`reranker-model` feature and a fetched cross-encoder model. On very new userlands
+(this box: glibc 2.42) CUDA 12.8's `math_functions` headers need a small
+compatibility patch (`throw()` on `cospi`/`sinpi`/`rsqrt` declarations) and a
+sub-15 host compiler (clang used here); a matched-glibc toolkit or container avoids
+that. The default build is unchanged and stays CPU.

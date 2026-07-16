@@ -451,7 +451,12 @@ mod cross_encoder {
         /// Inference runs on CPU.
         pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
             let model_dir = model_dir.as_ref();
-            let device = Device::Cpu;
+            // Prefer the GPU when candle is built with CUDA and a device is
+            // usable; fall back to CPU otherwise. `cuda_if_available` returns
+            // CPU when the `cuda` feature is off or no GPU is present, so this
+            // is safe in every build configuration.
+            let device = Device::cuda_if_available(0).unwrap_or(Device::Cpu);
+            tracing::info!(device = ?device, "cross-encoder reranker device");
 
             let config_path = model_dir.join("config.json");
             let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
