@@ -5,8 +5,9 @@
 # Usage:
 #   ./scripts/fetch_embedding_model.sh                 # MiniLM (candle, ml-models)
 #   ./scripts/fetch_embedding_model.sh --potion        # potion-base-8M (static-embeddings)
-#   ./scripts/fetch_embedding_model.sh --all           # both
-#   ./scripts/fetch_embedding_model.sh [--potion] <dest-dir>   # override destination
+#   ./scripts/fetch_embedding_model.sh --cross-encoder # ms-marco-MiniLM-L6-v2 (reranker-model)
+#   ./scripts/fetch_embedding_model.sh --all           # all of the above
+#   ./scripts/fetch_embedding_model.sh [--potion|--cross-encoder] <dest-dir>   # override destination
 #
 # Models:
 # - sentence-transformers/all-MiniLM-L6-v2 (~87 MB) for the `ml-models` candle
@@ -21,6 +22,13 @@
 #   selects it. A plain `cargo build` (feature off) stays TF-IDF. Override the
 #   dir with SYNAPTIC_STATIC_MODEL_DIR, or force selection with
 #   SYNAPTIC_RETRIEVAL_EMBEDDER=static.
+# - cross-encoder/ms-marco-MiniLM-L-6-v2 (~87 MB) for the `reranker-model`
+#   candle cross-encoder reranker. OPT-IN:
+#     cargo build --features reranker-model
+#     SYNAPTIC_RERANKER=cross-encoder SYNAPTIC_RERANKER_MODEL_DIR=models/ms-marco-MiniLM-L6-v2 ...
+#   Unset or `SYNAPTIC_RERANKER=heuristic` (default) keeps the deterministic
+#   HeuristicReranker; a binary built without `reranker-model` also falls
+#   back to it (with a warning) if cross-encoder is requested.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,14 +55,19 @@ fetch() {
 
 MINILM_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main"
 POTION_URL="https://huggingface.co/minishlab/potion-base-8M/resolve/main"
+CROSS_ENCODER_URL="https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2/resolve/main"
 
 case "${1:-}" in
   --potion)
     fetch "$POTION_URL" "${2:-$REPO_ROOT/models/potion-base-8M}"
     ;;
+  --cross-encoder)
+    fetch "$CROSS_ENCODER_URL" "${2:-$REPO_ROOT/models/ms-marco-MiniLM-L6-v2}"
+    ;;
   --all)
     fetch "$MINILM_URL" "$REPO_ROOT/models/all-MiniLM-L6-v2"
     fetch "$POTION_URL" "$REPO_ROOT/models/potion-base-8M"
+    fetch "$CROSS_ENCODER_URL" "$REPO_ROOT/models/ms-marco-MiniLM-L6-v2"
     ;;
   *)
     fetch "$MINILM_URL" "${1:-$REPO_ROOT/models/all-MiniLM-L6-v2}"

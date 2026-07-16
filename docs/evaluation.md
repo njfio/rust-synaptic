@@ -887,3 +887,45 @@ env-overridable per deployment (`SYNAPTIC_RERANK_W_TERM|EMBED|GRAPH|RECENCY`).
 **Cumulative retrieval gain this session:** recall@10 0.5237 (pre-over-fetch) → 0.5565
 (over-fetch) → **0.5691** (embedding-dominant rerank); MultiHop 0.2475 → 0.3001
 (**+21%**), reached entirely through ranking, not connectivity.
+
+## Cross-encoder reranker (opt-in, 2026-07-15)
+
+The embedding-weight sweep peaked at recall@10 0.5691; closing more of the 0.702
+pool ceiling needs a stronger reranker *architecture*. A candle BERT cross-encoder
+(`CrossEncoderReranker`, `cross-encoder/ms-marco-MiniLM-L-6-v2`) already existed in
+the tree behind the `reranker-model` feature but was never wired or measured. This
+round makes it opt-in (`SYNAPTIC_RERANKER=cross-encoder`, model dir via
+`SYNAPTIC_RERANKER_MODEL_DIR`; the fast heuristic reranker stays the default; fetch
+with `scripts/fetch_embedding_model.sh --cross-encoder`). Unlike bi-encoder cosine
+(query and candidate embedded separately), a cross-encoder tokenizes the
+`(query, candidate)` pair jointly through BERT and reads a relevance logit — far more
+accurate, far more expensive.
+
+**Head-to-head, identical 100-question LoCoMo subset** (over-fetch pool of 50,
+static first-stage embeddings; only the reranker differs):
+
+| metric | heuristic (default) | cross-encoder | delta |
+|---|---|---|---|
+| recall@10 | 0.4330 | **0.5483** | +0.115 (+27%) |
+| MRR | 0.3775 | **0.5092** | +0.132 (+35%) |
+| MultiHop R@10 | 0.2756 | 0.3251 | +0.050 (+18%) |
+| OpenDomain R@10 | 0.2143 | 0.3571 | +0.143 (+67%) |
+| Temporal R@10 | 0.6628 | 0.8372 | +0.174 (+26%) |
+| recall latency p50 | 0.76 s | 6.34 s | 8.3× |
+
+Every category improves; the +0.132 MRR shows the cross-encoder ranks gold markedly
+higher (it recovers most of the recall@10→recall@50 pool gap). Cost is the catch:
+**6.3 s/query on CPU** (50 sequential BERT forward passes per query) — hence opt-in,
+not default.
+
+**Honest caveats:**
+- This is a **100-question subset** (first 10 q/conversation), skewed toward
+  MultiHop/Temporal — the absolute numbers are not the full-set figure (the heuristic
+  scores 0.433 here vs 0.5691 full-set because of the category mix). The **relative**
+  head-to-head is the reliable signal: same questions, same pool, only the reranker
+  changes.
+- **No full-set cross-encoder number:** at 6.3 s/query a full 1,986-q run is ~60–80
+  min of CPU, impractical in this environment. Batched inference (score N pairs per
+  forward pass) or a GPU (`cuda` feature) would make it tractable — future work.
+- Default retrieval is unchanged; this is strictly an opt-in quality/latency trade for
+  deployments that can afford it (or run on GPU).
