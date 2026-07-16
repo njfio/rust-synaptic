@@ -1171,3 +1171,13 @@ Overall partial recall@10 = 0.615 is the best of any configuration measured. Thi
 recommended maximum-quality config (both opt-in; PRF ~1.8x latency, cross-encoder needs a
 GPU build). Ran in 13m52s on the RTX A3000 (full set, concurrent, cross-encoder + PRF + the
 two-search completeness metric).
+
+**End-to-end QA with this best config (PRF + cross-encoder, 40-q subset, codex judge):
+0.325** — flat vs default rerank (0.375) and cross-encoder alone (0.350), all within the
+codex judge's ~±0.03 noise. The doubled multi-evidence completeness did NOT clearly move QA
+on this subset. Honest reason: completeness doubled but from a LOW BASE — 2-ev full@10 is
+0.276, so 72% of 2-evidence questions still lack their complete set in the top-10, and 4+ is
+~1%. QA needs ALL the evidence, so it still fails on most multi-evidence questions. The
+binding constraint is now the full@50 CEILING itself (2-ev 0.39, 3-ev 0.27, 4+ 0.04) — even
+the 50-pool rarely contains the whole evidence set. Raising QA requires raising that ceiling
+(more aggressive gathering: multi-round / entity-targeted PRF), not just better ranking.
