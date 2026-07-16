@@ -1181,3 +1181,25 @@ on this subset. Honest reason: completeness doubled but from a LOW BASE — 2-ev
 binding constraint is now the full@50 CEILING itself (2-ev 0.39, 3-ev 0.27, 4+ 0.04) — even
 the 50-pool rarely contains the whole evidence set. Raising QA requires raising that ceiling
 (more aggressive gathering: multi-round / entity-targeted PRF), not just better ranking.
+
+## Negative result: multi-round PRF drifts (single round is the sweet spot, 2026-07-16)
+
+PRF (#84) gathers multi-evidence into the pool in one round. Would MORE rounds (iterative,
+each expanding from the prior round's new hits) reach further and raise the full@50 ceiling?
+Built `prf_rounds` (cumulative term accumulation, early-stop on convergence; a controlled
+2-hop chain test confirms round 2 can reach a term-hop further). **Full-set measurement says
+no — round 2 is WORSE than round 1:**
+
+| multi-evidence full@50 | rounds=1 | rounds=2 |
+|---|---|---|
+| 2-evidence | 0.393 | 0.372 |
+| 3-evidence | 0.265 | 0.229 |
+| overall | 0.660 | 0.651 |
+
+**Query drift:** cumulatively appending expansion terms diffuses the query (the static
+embedder averages token vectors, so a longer bag-of-terms query drifts from intent), and
+the extra round retrieves less-relevant candidates that DISPLACE real evidence from the
+bounded 50-pool. The reach-further benefit is real in a controlled fixture but is outweighed
+by drift on real data; it's also slower (16:56 vs ~14 min). **Single-round PRF is the sweet
+spot** — multi-round abandoned (nothing merged). A non-cumulative multi-QUERY variant (each
+round a separate focused query, union the pools) might avoid drift, but is unbuilt/unmeasured.
