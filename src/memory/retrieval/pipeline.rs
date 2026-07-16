@@ -15,6 +15,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Lowercase alphanumeric tokenizer shared by the PRF expansion step.
+/// Splits on any non-alphanumeric boundary and preserves duplicates so
+/// callers can compute term frequency (mirrors the tokenizer used by
+/// [`crate::memory::retrieval::rerank::HeuristicReranker`], which needs only
+/// a term set).
+fn tokenize_terms(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_lowercase())
+        .collect()
+}
+
 /// Trait for pluggable retrieval strategies
 ///
 /// Implementors provide different retrieval mechanisms that can be
@@ -170,6 +182,31 @@ pub struct PipelineConfig {
     /// `max_per_signal` is effectively capped by what each signal returns.
     #[serde(default = "default_rerank_pool_size")]
     pub rerank_pool_size: usize,
+    /// Enable pseudo-relevance feedback (PRF): after the first retrieval,
+    /// mine salient terms from the top `prf_top_m` fused results, expand the
+    /// query with them, retrieve AGAIN with the expanded query, and union
+    /// the second retrieval's results into the candidate pool (best fused
+    /// score wins per memory). This targets multi-evidence questions whose
+    /// complementary evidence shares little vocabulary with the original
+    /// query but shares vocabulary with the evidence the query DOES surface
+    /// directly — a single query can miss it, but the expanded query can
+    /// pull it into the pool for the reranker to consider. Exactly one PRF
+    /// round runs (bounded, deterministic); it is skipped when no expansion
+    /// terms are found. Default `false` (see [`Self::ENV_PRF`] for an env
+    /// override).
+    #[serde(default = "default_prf_enabled")]
+    pub prf_enabled: bool,
+    /// Number of top fused results (by fused score, ties broken by
+    /// ascending key) mined for PRF expansion terms. Default `5`.
+    #[serde(default = "default_prf_top_m")]
+    pub prf_top_m: usize,
+    /// Number of expansion terms appended to the query for the PRF round,
+    /// chosen by term frequency across the `prf_top_m` seed results
+    /// (descending frequency, ties broken alphabetically). Terms already in
+    /// the original query, shorter than 3 characters, or purely numeric are
+    /// excluded as a crude stopword/noise guard. Default `10`.
+    #[serde(default = "default_prf_terms")]
+    pub prf_terms: usize,
 }
 
 fn default_enable_query_understanding() -> bool {
@@ -182,6 +219,24 @@ fn default_temporal_boost() -> f64 {
 
 fn default_rerank_pool_size() -> usize {
     50
+}
+
+fn default_prf_enabled() -> bool {
+    std::env::var(PipelineConfig::ENV_PRF)
+        .ok()
+        .map(|v| {
+            let v = v.trim().to_lowercase();
+            v == "1" || v == "true"
+        })
+        .unwrap_or(false)
+}
+
+fn default_prf_top_m() -> usize {
+    5
+}
+
+fn default_prf_terms() -> usize {
+    10
 }
 
 impl Default for PipelineConfig {
@@ -204,11 +259,36 @@ impl Default for PipelineConfig {
             enable_query_understanding: default_enable_query_understanding(),
             temporal_boost: default_temporal_boost(),
             rerank_pool_size: default_rerank_pool_size(),
+            prf_enabled: default_prf_enabled(),
+            prf_top_m: default_prf_top_m(),
+            prf_terms: default_prf_terms(),
         }
     }
 }
 
 impl PipelineConfig {
+    /// Environment variable that, when truthy (`1` or `true`, case
+    /// insensitive), enables PRF by default (see [`Self::prf_enabled`]).
+    pub const ENV_PRF: &'static str = "SYNAPTIC_RETRIEVAL_PRF";
+
+    /// Builder method to enable/disable pseudo-relevance feedback.
+    pub fn with_prf_enabled(mut self, enabled: bool) -> Self {
+        self.prf_enabled = enabled;
+        self
+    }
+
+    /// Builder method to set the number of top seed results mined for PRF
+    /// expansion terms.
+    pub fn with_prf_top_m(mut self, prf_top_m: usize) -> Self {
+        self.prf_top_m = prf_top_m;
+        self
+    }
+
+    /// Builder method to set the number of PRF expansion terms.
+    pub fn with_prf_terms(mut self, prf_terms: usize) -> Self {
+        self.prf_terms = prf_terms;
+        self
+    }
     /// Create a configuration optimized for semantic search
     pub fn semantic_focus() -> Self {
         let mut config = Self::default();
@@ -465,6 +545,13 @@ impl HybridRetriever {
             unioned
         };
 
+        // Pseudo-relevance feedback (PRF): mine salient terms from the top
+        // fused results, retrieve again with the expanded query, and union
+        // the second retrieval into the pool. Off by default; a no-op when
+        // disabled or when `fused` is empty, so behaviour is byte-identical
+        // to the pre-PRF pipeline unless explicitly enabled.
+        let fused = self.apply_prf(query, pool, fused).await?;
+
         // Apply the composite relevance × recency × importance score
         // (see `CompositeWeights`).
         let composite = self.apply_composite_scoring(fused).await?;
@@ -666,6 +753,98 @@ impl HybridRetriever {
             .take(limit)
             .map(|(memory, rrf, _raw)| (memory, rrf))
             .collect())
+    }
+
+    /// Pseudo-relevance feedback: one bounded expansion round.
+    ///
+    /// When `config.prf_enabled` is set and `fused` is non-empty, mines the
+    /// top `prf_top_m` fused results (by fused score, ties broken by
+    /// ascending key) for their most frequent terms (excluding terms already
+    /// in the original query, terms shorter than 3 characters, and purely
+    /// numeric terms), takes the top `prf_terms` by frequency (ties broken
+    /// alphabetically), and — if any expansion terms were found — retrieves
+    /// again with `"{query} {expansion_terms}"`, unioning the result into
+    /// `fused` with each memory's best (max) fused score. Returns `fused`
+    /// unchanged when PRF is disabled, `fused` is empty, or no expansion
+    /// terms are found.
+    async fn apply_prf(
+        &self,
+        query: &str,
+        pool: usize,
+        mut fused: Vec<(MemoryFragment, f64)>,
+    ) -> Result<Vec<(MemoryFragment, f64)>> {
+        if !self.config.prf_enabled || fused.is_empty() {
+            return Ok(fused);
+        }
+
+        // Deterministic top-M seed set: fused score descending, ties broken
+        // by ascending key.
+        let mut ranked: Vec<&(MemoryFragment, f64)> = fused.iter().collect();
+        ranked.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.entry.key.cmp(&b.0.entry.key))
+        });
+
+        let query_terms: std::collections::HashSet<String> =
+            tokenize_terms(query).into_iter().collect();
+
+        let mut term_freq: HashMap<String, usize> = HashMap::new();
+        for (memory, _) in ranked.into_iter().take(self.config.prf_top_m) {
+            for term in tokenize_terms(&memory.entry.value) {
+                if term.len() < 3
+                    || query_terms.contains(&term)
+                    || term.chars().all(|c| c.is_ascii_digit())
+                {
+                    continue;
+                }
+                *term_freq.entry(term).or_insert(0) += 1;
+            }
+        }
+
+        let mut ranked_terms: Vec<(String, usize)> = term_freq.into_iter().collect();
+        ranked_terms.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let expansion_terms: Vec<String> = ranked_terms
+            .into_iter()
+            .take(self.config.prf_terms)
+            .map(|(term, _)| term)
+            .collect();
+
+        if expansion_terms.is_empty() {
+            return Ok(fused);
+        }
+
+        let expanded_query = format!("{query} {}", expansion_terms.join(" "));
+        tracing::debug!(
+            expanded_query = %expanded_query,
+            expansion_terms = expansion_terms.len(),
+            "PRF expansion applied"
+        );
+
+        let expanded_fused = self.collect_and_fuse(&expanded_query, pool).await?;
+
+        let mut best: HashMap<String, (MemoryFragment, f64)> = HashMap::new();
+        for (memory, score) in fused.drain(..).chain(expanded_fused) {
+            match best.entry(memory.entry.key.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    if score > e.get().1 {
+                        e.get_mut().1 = score;
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert((memory, score));
+                }
+            }
+        }
+
+        let mut unioned: Vec<(MemoryFragment, f64)> = best.into_values().collect();
+        unioned.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.entry.key.cmp(&b.0.entry.key))
+        });
+        unioned.truncate(pool);
+        Ok(unioned)
     }
 
     /// Apply the composite relevance × recency × importance score after
