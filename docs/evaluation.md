@@ -1142,3 +1142,32 @@ gathers, the cross-encoder ranks). The two are complementary levers on the same 
 so PRF is OPT-IN (default off), like the cross-encoder — enable it for multi-evidence-heavy
 workloads. Measure with `run_eval --completeness` (now concurrent) and
 `SYNAPTIC_RETRIEVAL_PRF=1`.
+
+## PRF + cross-encoder: gather AND rank (2026-07-16)
+
+PRF (#84) gathers multi-evidence into the pool (full@50 up) but its full@10 gains lagged
+because the pooled evidence still had to RANK into the top-10 — the cross-encoder's job.
+Composing the two opt-in levers (PRF + GPU cross-encoder) converts pool coverage into
+top-10 coverage:
+
+**Full-set completeness, multi-evidence full@10:**
+
+| full@10 | baseline | PRF only | **PRF + cross-encoder** |
+|---|---|---|---|
+| 2-evidence | 0.180 | 0.188 | **0.276 (+53% vs baseline)** |
+| 3-evidence | 0.060 | 0.072 | **0.108 (+80%)** |
+| 4+-evidence | 0.000 | 0.000 | **0.0099** |
+| overall full@10 | 0.525 | 0.532 | **0.567** |
+| overall partial recall@10 | 0.570 | 0.578 | **0.615** |
+
+**The composition decomposes cleanly, confirming the two-lever model:**
+- full@50 (pool coverage) is IDENTICAL for PRF-only and PRF+cross-encoder (0.393 at 2-ev) —
+  the cross-encoder does not change what is in the pool; it only reorders it. **PRF sets the
+  ceiling (gather); the cross-encoder reaches it (rank).**
+- full@10 (top-10 coverage) roughly doubles for multi-evidence vs baseline — the
+  cross-encoder ranks the PRF-gathered evidence into the top-10.
+
+Overall partial recall@10 = 0.615 is the best of any configuration measured. This is the
+recommended maximum-quality config (both opt-in; PRF ~1.8x latency, cross-encoder needs a
+GPU build). Ran in 13m52s on the RTX A3000 (full set, concurrent, cross-encoder + PRF + the
+two-search completeness metric).
