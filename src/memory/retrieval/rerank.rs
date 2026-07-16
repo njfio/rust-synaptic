@@ -348,6 +348,65 @@ impl Reranker for HeuristicReranker {
     }
 }
 
+/// Environment variable selecting the pipeline reranker implementation.
+/// Recognised values: `heuristic` (default, also used when unset or
+/// unrecognised) and `cross-encoder` (requires the `reranker-model`
+/// feature; falls back to `heuristic` with a warning otherwise).
+pub const SYNAPTIC_RERANKER_ENV: &str = "SYNAPTIC_RERANKER";
+
+/// Environment variable giving the local model directory used by the
+/// cross-encoder reranker when selected via [`SYNAPTIC_RERANKER_ENV`].
+pub const SYNAPTIC_RERANKER_MODEL_DIR_ENV: &str = "SYNAPTIC_RERANKER_MODEL_DIR";
+
+/// Default local model directory for the cross-encoder reranker, relative
+/// to the process working directory.
+pub const DEFAULT_RERANKER_MODEL_DIR: &str = "models/ms-marco-MiniLM-L6-v2";
+
+/// Attempt to build a [`CrossEncoderReranker`] from the `reranker-model`
+/// directory named by [`SYNAPTIC_RERANKER_MODEL_DIR_ENV`] (or
+/// [`DEFAULT_RERANKER_MODEL_DIR`] if unset).
+///
+/// Returns `None` (with a `tracing::warn!`) when:
+/// - `SYNAPTIC_RERANKER` does not ask for `cross-encoder`, or
+/// - the `reranker-model` feature is not compiled in, or
+/// - the model fails to load (missing/malformed files).
+///
+/// This never panics: callers should fall back to [`HeuristicReranker`] on
+/// `None` so the pipeline always has a working reranker.
+pub fn select_cross_encoder_reranker() -> Option<Arc<dyn Reranker>> {
+    let selection = std::env::var(SYNAPTIC_RERANKER_ENV).unwrap_or_default();
+    if selection != "cross-encoder" {
+        return None;
+    }
+
+    #[cfg(feature = "reranker-model")]
+    {
+        let model_dir = std::env::var(SYNAPTIC_RERANKER_MODEL_DIR_ENV)
+            .unwrap_or_else(|_| DEFAULT_RERANKER_MODEL_DIR.to_string());
+        match CrossEncoderReranker::new(&model_dir) {
+            Ok(reranker) => Some(Arc::new(reranker) as Arc<dyn Reranker>),
+            Err(error) => {
+                tracing::warn!(
+                    model_dir = %model_dir,
+                    %error,
+                    "SYNAPTIC_RERANKER=cross-encoder requested but the model could not be \
+                     loaded; falling back to HeuristicReranker"
+                );
+                None
+            }
+        }
+    }
+
+    #[cfg(not(feature = "reranker-model"))]
+    {
+        tracing::warn!(
+            "SYNAPTIC_RERANKER=cross-encoder requested but this binary was built without the \
+             `reranker-model` feature; falling back to HeuristicReranker"
+        );
+        None
+    }
+}
+
 #[cfg(feature = "reranker-model")]
 pub use cross_encoder::CrossEncoderReranker;
 
@@ -596,5 +655,33 @@ mod weights_env_tests {
         assert_eq!(weights.recency, 0.0);
 
         clear_env();
+    }
+}
+
+#[cfg(test)]
+mod reranker_selection_tests {
+    use super::{select_cross_encoder_reranker, SYNAPTIC_RERANKER_ENV};
+    use std::sync::Mutex;
+
+    /// Guards `SYNAPTIC_RERANKER` so selection tests don't race with each
+    /// other (or with other suites) under parallel test execution.
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn unset_selects_heuristic_path() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(SYNAPTIC_RERANKER_ENV);
+
+        assert!(select_cross_encoder_reranker().is_none());
+    }
+
+    #[test]
+    fn explicit_heuristic_selects_heuristic_path() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(SYNAPTIC_RERANKER_ENV, "heuristic");
+
+        assert!(select_cross_encoder_reranker().is_none());
+
+        std::env::remove_var(SYNAPTIC_RERANKER_ENV);
     }
 }

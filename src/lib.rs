@@ -319,17 +319,28 @@ impl AgentMemory {
             // Deterministic heuristic reranker over the top-K: cross-features
             // (term overlap, embedding agreement, graph proximity, recency)
             // reorder the fused + composite-scored results.
-            let reranker = memory::retrieval::HeuristicReranker::new(
-                Some(Arc::clone(&provider)),
-                knowledge_graph.clone(),
-            )
-            .with_weights(memory::retrieval::HeuristicRerankWeights::from_env());
+            // Reranker selection: `SYNAPTIC_RERANKER=cross-encoder` opts into
+            // the candle BERT cross-encoder (feature `reranker-model`);
+            // anything else (including unset) keeps today's default
+            // heuristic reranker. The cross-encoder attempt fails closed —
+            // a missing/unloadable model or a binary built without the
+            // feature falls back to the heuristic reranker with a warning,
+            // so the pipeline is never left without a reranker.
+            let heuristic_reranker: Arc<dyn memory::retrieval::Reranker> = Arc::new(
+                memory::retrieval::HeuristicReranker::new(
+                    Some(Arc::clone(&provider)),
+                    knowledge_graph.clone(),
+                )
+                .with_weights(memory::retrieval::HeuristicRerankWeights::from_env()),
+            );
+            let reranker: Arc<dyn memory::retrieval::Reranker> =
+                memory::retrieval::select_cross_encoder_reranker().unwrap_or(heuristic_reranker);
             let mut hybrid = memory::retrieval::HybridRetriever::new(pipeline_config)
                 .add_pipeline(Arc::clone(&dense_vector))
                 .add_pipeline(Arc::clone(&keyword))
                 .add_pipeline(Arc::new(graph))
                 .add_pipeline(Arc::new(temporal))
-                .with_reranker(Arc::new(reranker));
+                .with_reranker(reranker);
             // Multi-hop graph expansion (HippoRAG-style): seeds with the
             // dense + keyword retrievers' top hits and expands along KG
             // relation edges so 2-hop-reachable answers surface. Toggleable
