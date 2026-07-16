@@ -1006,3 +1006,36 @@ candle's CUDA backend, `cudarc` 0.13.9 → CUDA **12.x**, max 12.8) plus the
 compatibility patch (`throw()` on `cospi`/`sinpi`/`rsqrt` declarations) and a
 sub-15 host compiler (clang used here); a matched-glibc toolkit or container avoids
 that. The default build is unchanged and stays CPU.
+
+## QA with the cross-encoder: retrieval up, end-to-end flat (2026-07-16)
+
+The cross-encoder lifts full-set retrieval recall@10 0.5691→0.6104. Does that convert
+to better answers? Re-ran the SAME 40-q QA subset with the SAME codex judge, swapping
+only the reranker (default embedding-heuristic → GPU cross-encoder):
+
+| metric | default rerank | cross-encoder |
+|---|---|---|
+| QA accuracy | 0.375 | 0.350 |
+| gold-retrieved rate | 0.525 | **0.600** |
+| gold retrieved & correct (A) | 9 | 11 |
+| gold retrieved & wrong (B, judge-bound) | 12 | 13 |
+| correct WITHOUT gold (C) | 6 | 3 |
+| gold missed & wrong (D, retrieval-bound) | 13 | 13 |
+| of wrong: retrieval-bound / judge-bound | 0.52 / 0.48 | 0.50 / 0.50 |
+
+**Finding (honest, partly counter to the prediction):** the cross-encoder measurably
+improved *retrieval of labeled gold* (gold-retrieved rate 0.525→0.600, deterministic;
+A rose 9→11), consistent with its full-set recall gain. But **end-to-end QA accuracy
+was flat** (0.375→0.350, within the codex judge's ~±0.03 run-to-run noise —
+statistically indistinguishable). The reason is visible in row C: correct answers that
+did NOT have the labeled gold in the top-10 dropped 6→3. The cross-encoder ranks the
+*labeled* evidence higher but tightens the top-10, squeezing out *serendipitous* context
+that was helping the judge answer some questions. Better labeled-gold ranking is not the
+same as better answer-supporting context.
+
+The bottleneck is now a clean **50/50 retrieval/judge split** — the answer step is the
+co-equal limiter. Combined with the earlier QA-at-improved-retrieval result (0.225→0.375,
+which DID track a recall gain), the picture is: first-stage recall gains convert to QA
+until the judge becomes the binding constraint, which is where we now are. The next QA
+lever is answer-side (a stronger answer model, or feeding the judge more context breadth),
+not sharper retrieval ranking. Caveats: 40-q hard-skewed subset; codex judge nondeterministic.
