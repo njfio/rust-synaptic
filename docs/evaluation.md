@@ -935,3 +935,42 @@ not default.
   full-set cross-encoder number is a GPU, not batching.
 - Default retrieval is unchanged; this is strictly an opt-in quality/latency trade for
   deployments that can afford it (or run on GPU).
+
+## QA re-measured at improved retrieval (2026-07-15)
+
+The first QA number (0.225, 40-q subset) was measured BEFORE the retrieval rounds
+(over-fetch #75 + embedding-dominant rerank #76) lifted default recall@10 0.5237→0.5691.
+The QA loss diagnostic said QA was ~2/3 retrieval-bound — so better retrieval should
+raise QA. Re-running the SAME 40-q subset with the SAME codex judge (only default
+retrieval changed):
+
+| metric | old retrieval (#73) | improved retrieval | delta |
+|---|---|---|---|
+| QA accuracy | 0.225 | **0.375** | +0.150 (+67%) |
+| MultiHop | 0.158 | 0.263 | +0.105 |
+| OpenDomain | 0.000 | 0.500 | +0.500 |
+| Temporal | 0.313 | 0.438 | +0.125 |
+| gold-retrieved rate | 0.425 | 0.525 | +0.100 |
+
+**Cross-tab shift (retrieval-bound vs judge-bound):**
+
+| | old | improved |
+|---|---|---|
+| gold retrieved & correct (A) | 7 | 9 |
+| gold retrieved & wrong / judge-bound (B) | 10 | 12 |
+| gold missed & correct (C) | 3 | 6 |
+| gold missed & wrong / retrieval-bound (D) | 20 | 13 |
+| of wrong: retrieval-bound | 0.667 | 0.520 |
+| of wrong: judge-bound | 0.333 | 0.480 |
+
+**This validates the whole diagnostic chain.** Better retrieval put gold in the top-10
+for 10% more questions (gold-retrieved rate 0.425→0.525), retrieval-bound failures fell
+20→13, and QA accuracy rose accordingly. As predicted, the bottleneck shifted toward the
+answer step: judge-bound now ≈ half of failures (was a third). The remaining QA headroom
+is now genuinely on the judge/answer side (a stronger answer model, or the opt-in
+cross-encoder reranker for retrieval), not just first-stage recall.
+
+**Caveats:** 40-q hard-skewed subset (first-N per conversation, over-weights MultiHop/
+Temporal — the per-QType signal is the reliable read). The codex judge is nondeterministic
+run-to-run (~±0.03 observed); the +0.15 accuracy jump is far beyond that noise and
+attributable to retrieval (same judge, same questions). Not a full-set run.
