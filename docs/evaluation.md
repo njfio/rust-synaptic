@@ -1105,3 +1105,40 @@ the missing evidence into the candidate set: iterative retrieve-until-complete, 
 decomposition into sub-questions that each retrieve their own evidence and union the pools.
 That is a different retrieval loop (multi-query / set-cover), not a scoring change. The MMR
 branch was abandoned (off-by-default feature, no measured benefit; nothing merged).
+
+## PRF pool augmentation: gathering missing multi-evidence (2026-07-16)
+
+The MMR negative result (#83) showed the multi-evidence problem is pool ABSENCE, not
+misranking — no reordering can surface evidence that first-stage retrieval never pooled.
+The fix must GATHER the missing evidence into the candidate set. Pseudo-relevance
+feedback (PRF, opt-in `SYNAPTIC_RETRIEVAL_PRF=1`; default off): after the first retrieval,
+mine the top-`prf_top_m` turns for salient terms not in the query, expand the query with
+them, retrieve once more, and union into the candidate pool — then the existing
+over-fetch reranker ranks the enlarged pool.
+
+**Full-set completeness, PRF on vs off** (the target metric is full@50 = whole evidence
+set in the pool):
+
+| evidence | full@50 off | full@50 PRF | Δ | full@10 off | full@10 PRF |
+|---|---|---|---|---|---|
+| 1 | 0.7575 | 0.7627 | +0.005 | 0.6369 | 0.6440 |
+| 2 | 0.3305 | 0.3933 | **+0.063 (+19%)** | 0.1799 | 0.1883 |
+| 3 | 0.1928 | 0.2651 | **+0.072 (+37%)** | 0.0602 | 0.0723 |
+| 4+ | 0.0000 | 0.0396 | **from ZERO** | 0.0000 | 0.0000 |
+| overall | 0.6438 | 0.6604 | +0.017 | 0.5252 | 0.5323 |
+
+**PRF is the first mechanism this session to attack pool absence, and it works.** It
+raises full@50 (pool coverage) for every multi-evidence bucket — the 4+-evidence bucket
+going 0.000→0.040 is the proof, since those complete evidence sets were provably never in
+the pool under any reranking (MMR, cross-encoder, graph expansion all could not touch
+them). PRF also strictly improves overall partial recall@10 (0.5702→0.5776) and full@10
+(0.5252→0.5323) — no regression.
+
+**Why the full@10 gains lag the full@50 gains:** PRF gets the evidence INTO the pool, but
+it still has to RANK into the top-10 — which is where a stronger reranker compounds (PRF
+gathers, the cross-encoder ranks). The two are complementary levers on the same problem.
+
+**Cost / status:** one extra retrieval round → ~1.8x recall latency (subset p50 0.77s→1.37s),
+so PRF is OPT-IN (default off), like the cross-encoder — enable it for multi-evidence-heavy
+workloads. Measure with `run_eval --completeness` (now concurrent) and
+`SYNAPTIC_RETRIEVAL_PRF=1`.
