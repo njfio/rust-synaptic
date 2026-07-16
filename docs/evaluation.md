@@ -924,8 +924,14 @@ not default.
   scores 0.433 here vs 0.5691 full-set because of the category mix). The **relative**
   head-to-head is the reliable signal: same questions, same pool, only the reranker
   changes.
-- **No full-set cross-encoder number:** at 6.3 s/query a full 1,986-q run is ~60–80
-  min of CPU, impractical in this environment. Batched inference (score N pairs per
-  forward pass) or a GPU (`cuda` feature) would make it tractable — future work.
+- **No full-set cross-encoder number:** at 6.3 s/query a full 1,986-q run is CPU-bound
+  and impractical in this environment (~30–80 min under the eval's concurrency).
+- **Batched inference was tried and does NOT help on CPU** (measured, then reverted):
+  scoring 16 pairs per padded BERT forward pass instead of 1-at-a-time preserved recall
+  exactly but was ~20% *slower* single-stream (p50 3.13 s vs 2.58 s on a 20-q stream) —
+  the short dialogue candidates get padded to the batch-max length (pure waste), and CPU
+  BLAS gains nothing from batching the way a GPU would. Batching would only pay off on
+  GPU (`cuda` feature), where batched matmuls parallelize for free. So the path to a
+  full-set cross-encoder number is a GPU, not batching.
 - Default retrieval is unchanged; this is strictly an opt-in quality/latency trade for
   deployments that can afford it (or run on GPU).
