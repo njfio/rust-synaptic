@@ -31,3 +31,22 @@ ollama pull qwen2.5:7b-instruct   # Mem0's extraction LLM (local)
 - Small subsets; the codex judge is nondeterministic (~±0.03).
 - Zep/Graphiti and Letta are not included (they need a server + graph DB / more
   setup); this is one real head-to-head, not a full field survey.
+
+## Using the codex OAuth login instead of an OpenAI API key
+
+`codex_openai_shim.py` is a tiny OpenAI-compatible server (`/v1/chat/completions`)
+that shells out to `codex exec`, so any OpenAI-compatible tool (including Mem0) can
+run on the codex-authenticated model (gpt-5.6-sol) WITHOUT an API key.
+`mem0_codex_eval.py` bundles the shim (on a thread) + the Mem0 eval, pointing Mem0's
+`openai` provider at the shim — so Mem0's fact-extraction runs on gpt-5.6-sol.
+
+**Verified working:** Mem0 fact-extraction ran on gpt-5.6-sol via the shim and produced
+cleaner, date-stamped facts than the local qwen-7B path.
+
+**Practical limit (measured):** each `codex exec` call is ~20-30s and Mem0 makes ~2 LLM
+calls per session-add, so ingesting even 2 LoCoMo conversations (~40 sessions) is
+~30-50 min and exceeds typical run windows — a full-scale codex-backed Mem0 comparison
+was not completed here. With a real OpenAI-compatible endpoint (fast), the same harness
+runs quickly. Qualitatively the frontier extractor produced clearly better facts than
+qwen-7B, consistent with Mem0's published numbers being higher with a GPT-4-class
+extractor — so the qwen-based 0.25 is a floor for Mem0, not its best case.
