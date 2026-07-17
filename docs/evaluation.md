@@ -1261,7 +1261,7 @@ fabrication), and measured both QA modes.
 |---|---|---|
 | single-shot | 47/50 (94%) | 3/50 (6%) |
 | agentic (as first built) | **0/50 (0%)** | **50/50 (100%)** |
-| agentic (after fix) | 38/50 (76%) | 12/50 (24%) |
+| agentic (after fix) | 38–39/50 (~78%) | 11–12/50 (~22%) |
 
 **Critical finding:** the agentic loop (which broke the QA ceiling, 0.375→0.500) as first
 built **confabulated on 100% of unanswerable questions** — a disqualifying flaw for a memory
@@ -1289,4 +1289,7 @@ questions that are unanswerable.
 **Takeaway:** for a memory system, faithfulness must be measured alongside recall — the
 agentic QA breakthrough was hiding a 100%-confabulation flaw that only the abstention metric
 revealed. Post-fix, the system both answers hard multi-evidence questions AND honestly
-declines when the evidence is absent.
+declines when the evidence is absent. (The `is_abstention` classifier was
+tightened to whole-word matching for the short markers `none`/`unknown` to avoid
+fragment false positives; the abstention rate was unchanged — ~78% — confirming
+the figure is not a matching artifact.)
