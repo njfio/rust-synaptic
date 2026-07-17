@@ -70,6 +70,48 @@ pub trait Judge: Send + Sync {
     async fn grade(&self, question: &str, gold: &str, predicted: &str) -> Result<bool, QaError>;
 }
 
+/// Phrases (matched case-insensitively as substrings of the predicted
+/// answer) that indicate the judge abstained — i.e. said "I don't know"
+/// rather than confabulating an answer. Kept as a documented, reviewable
+/// list rather than a heuristic classifier.
+///
+/// Known limitation: substring matching is intentionally simple and can
+/// false-positive on answers that happen to contain one of these phrases as
+/// a sub-string of a longer, confident answer (e.g. an answer mentioning an
+/// "unknown suspect" by name, or a movie titled "None the Wiser"). This is
+/// an accepted tradeoff for a reviewable, dependency-free classifier; the
+/// phrases were chosen to be as specific as practical while still catching
+/// real refusals phrased in different ways.
+pub const ABSTENTION_PHRASES: &[&str] = &[
+    "i don't know",
+    "i do not know",
+    "no information",
+    "not mentioned",
+    "not available",
+    "cannot determine",
+    "can't determine",
+    "no answer",
+    "not enough information",
+    "not specified",
+    "no relevant",
+    "isn't mentioned",
+    "doesn't say",
+    "does not say",
+    "unknown",
+    "none",
+];
+
+/// Classify `answer` as an abstention (a refusal / "I don't know" response)
+/// vs. a confident answer, by case-insensitive substring match against
+/// [`ABSTENTION_PHRASES`]. See that constant's docs for the known
+/// false-positive limitation of substring matching.
+pub fn is_abstention(answer: &str) -> bool {
+    let lower = answer.to_lowercase();
+    ABSTENTION_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}
+
 /// Accuracy over one question category.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QTypeAccuracy {
@@ -104,6 +146,9 @@ pub struct QaQuestionRecord {
     /// `false`, `gold_retrieved` is definitionally `false` and this question
     /// is excluded from the A/B/C/D cross-tab.
     pub has_gold: bool,
+    /// Whether `predicted` reads as a refusal / "I don't know" response
+    /// (see [`is_abstention`]), rather than a confident answer.
+    pub abstained: bool,
 }
 
 /// Cross-tab of gold-evidence recall vs. judge verdict, over the questions
@@ -185,6 +230,83 @@ impl QaRecallBreakdown {
     }
 }
 
+/// Faithfulness / confabulation-vs-abstention breakdown, computed from a set
+/// of per-question records. Groundedness matters as much as recall: when the
+/// system lacks the evidence, does it say "I don't know" (abstain) or
+/// confabulate a confident wrong answer?
+///
+/// Three disjoint views over the records:
+///
+/// 1. Abstention-category questions (`qtype == "Abstention"`, LoCoMo's
+///    unanswerable questions with gold answer "None") — the cleanest
+///    confabulation test, since there is definitionally no evidence to find.
+/// 2. Answerable (non-Abstention) questions where gold evidence was NOT
+///    retrieved (`gold_retrieved == false`) — did the system honestly abstain
+///    given missing evidence, or fabricate an answer?
+/// 3. Answerable questions where gold evidence WAS retrieved
+///    (`gold_retrieved == true`) but the system abstained anyway
+///    (`over_abstention`) — a missed answerable question, the opposite
+///    failure mode from confabulation.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct FaithfulnessBreakdown {
+    /// Abstention-category questions, total.
+    pub abstention_qtype_total: usize,
+    /// Abstention-category questions the system correctly abstained on.
+    pub abstention_qtype_abstained: usize,
+    /// Abstention-category questions the system confabulated an answer for
+    /// (unambiguous fabrication: there was no information to find).
+    pub abstention_qtype_confabulated: usize,
+    /// Answerable (non-Abstention) questions where gold evidence was not
+    /// retrieved, total.
+    pub evidence_missing_total: usize,
+    /// Of those, how many the system honestly abstained on (faithful).
+    pub evidence_missing_abstained: usize,
+    /// Of those, how many the system answered wrong without evidence — a
+    /// made-up wrong answer (confabulation).
+    pub evidence_missing_confabulated: usize,
+    /// Of those, how many the system answered correctly despite missing
+    /// evidence (e.g. from world knowledge or context elsewhere) — not
+    /// confabulation, tracked separately from the confabulated bucket.
+    pub evidence_missing_answered_correct: usize,
+    /// Answerable questions where gold evidence WAS retrieved but the system
+    /// abstained anyway — a missed answerable question.
+    pub over_abstention: usize,
+}
+
+impl FaithfulnessBreakdown {
+    /// Compute the breakdown from a set of per-question records ([`QaQuestionRecord`]s).
+    pub fn from_records(records: &[QaQuestionRecord]) -> Self {
+        let mut b = FaithfulnessBreakdown::default();
+        for r in records {
+            if r.qtype == "Abstention" {
+                b.abstention_qtype_total += 1;
+                if r.abstained {
+                    b.abstention_qtype_abstained += 1;
+                } else {
+                    b.abstention_qtype_confabulated += 1;
+                }
+                continue;
+            }
+
+            if r.gold_retrieved {
+                if r.abstained {
+                    b.over_abstention += 1;
+                }
+            } else {
+                b.evidence_missing_total += 1;
+                if r.abstained {
+                    b.evidence_missing_abstained += 1;
+                } else if r.correct {
+                    b.evidence_missing_answered_correct += 1;
+                } else {
+                    b.evidence_missing_confabulated += 1;
+                }
+            }
+        }
+        b
+    }
+}
+
 /// Measured end-to-end QA accuracy report.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QaReport {
@@ -205,6 +327,8 @@ pub struct QaReport {
     /// Gold-retrieval-vs-judge-verdict cross-tab (see [`QaRecallBreakdown`]),
     /// separating retrieval-bound loss from judge-bound loss.
     pub recall_breakdown: QaRecallBreakdown,
+    /// Confabulation-vs-abstention breakdown (see [`FaithfulnessBreakdown`]).
+    pub faithfulness: FaithfulnessBreakdown,
 }
 
 /// Outcome of the gated QA evaluation: either a real measured report or an
@@ -260,6 +384,7 @@ async fn judge_one(judge: &dyn Judge, item: PendingQuestion) -> Result<QaQuestio
     let correct = judge
         .grade(&item.question_text, &item.gold_answer, &predicted)
         .await?;
+    let abstained = is_abstention(&predicted);
     Ok(QaQuestionRecord {
         question_id: item.question_id,
         qtype: item.qtype,
@@ -267,6 +392,7 @@ async fn judge_one(judge: &dyn Judge, item: PendingQuestion) -> Result<QaQuestio
         correct,
         gold_retrieved: item.gold_retrieved,
         has_gold: item.has_gold,
+        abstained,
     })
 }
 
@@ -375,6 +501,7 @@ pub async fn run_qa(
     let questions = per_question.len();
     let correct = per_question.iter().filter(|q| q.correct).count();
     let recall_breakdown = QaRecallBreakdown::from_records(&per_question);
+    let faithfulness = FaithfulnessBreakdown::from_records(&per_question);
     Ok(QaReport {
         k,
         questions,
@@ -387,6 +514,7 @@ pub async fn run_qa(
         by_qtype,
         per_question,
         recall_breakdown,
+        faithfulness,
     })
 }
 
@@ -980,6 +1108,9 @@ pub struct AgenticQuestionRecord {
     pub gold_added_by_followup: bool,
     /// Whether this question had any `evidence_ids` labeled at all.
     pub has_gold: bool,
+    /// Whether `predicted` reads as a refusal / "I don't know" response
+    /// (see [`is_abstention`]), rather than a confident answer.
+    pub abstained: bool,
 }
 
 /// Measured agentic QA report.
@@ -1008,6 +1139,9 @@ pub struct AgenticReport {
     /// way as [`QaRecallBreakdown`] but over the final accumulated context
     /// rather than a single seed search.
     pub recall_breakdown: QaRecallBreakdown,
+    /// Confabulation-vs-abstention breakdown (see [`FaithfulnessBreakdown`]),
+    /// computed over the same records as `recall_breakdown`.
+    pub faithfulness: FaithfulnessBreakdown,
 }
 
 /// The two records produced by [`run_one_agentic_question`] for a single
@@ -1110,6 +1244,7 @@ async fn run_one_agentic_question(
     let gold_added = gold_added_by_followup(&question.evidence_ids, &initial_ids, &followup_keys);
 
     let qtype = qtype_key(question.qtype);
+    let abstained = is_abstention(&predicted);
 
     Ok(AgenticQuestionOutcome {
         per_question: AgenticQuestionRecord {
@@ -1122,6 +1257,7 @@ async fn run_one_agentic_question(
             gold_in_context,
             gold_added_by_followup: gold_added,
             has_gold,
+            abstained,
         },
         cross_tab: QaQuestionRecord {
             question_id: question.id.clone(),
@@ -1130,6 +1266,7 @@ async fn run_one_agentic_question(
             correct,
             gold_retrieved: gold_in_context,
             has_gold,
+            abstained,
         },
     })
 }
@@ -1225,6 +1362,7 @@ pub async fn run_agentic_qa(
             / questions as f64
     };
     let recall_breakdown = QaRecallBreakdown::from_records(&cross_tab_records);
+    let faithfulness = FaithfulnessBreakdown::from_records(&cross_tab_records);
 
     Ok(AgenticReport {
         k,
@@ -1241,6 +1379,7 @@ pub async fn run_agentic_qa(
         gold_added_by_followup_fraction,
         per_question,
         recall_breakdown,
+        faithfulness,
     })
 }
 
@@ -1761,5 +1900,94 @@ Working it out
         );
         assert_eq!(parse_grade_verdict("maybe"), None);
         assert_eq!(parse_grade_verdict(""), None);
+    }
+}
+
+#[cfg(test)]
+mod faithfulness_tests {
+    use super::*;
+
+    #[test]
+    fn is_abstention_matches_each_documented_phrase() {
+        for phrase in ABSTENTION_PHRASES {
+            let answer = format!("Well, {phrase}, sorry.");
+            assert!(
+                is_abstention(&answer),
+                "expected phrase {phrase:?} to be detected as abstention in {answer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_abstention_true_on_real_i_dont_know_answer() {
+        assert!(is_abstention("I don't know based on the given context."));
+    }
+
+    #[test]
+    fn is_abstention_false_on_normal_factual_answer() {
+        assert!(!is_abstention("Adoption agencies"));
+    }
+
+    fn record(
+        qtype: &str,
+        gold_retrieved: bool,
+        correct: bool,
+        abstained: bool,
+    ) -> QaQuestionRecord {
+        QaQuestionRecord {
+            question_id: "q".to_string(),
+            qtype: qtype.to_string(),
+            predicted: if abstained {
+                "I don't know".to_string()
+            } else {
+                "some confident answer".to_string()
+            },
+            correct,
+            gold_retrieved,
+            has_gold: qtype != "Abstention",
+            abstained,
+        }
+    }
+
+    #[test]
+    fn faithfulness_breakdown_aggregates_all_buckets() {
+        let records = vec![
+            // Abstention-category question that correctly abstained.
+            record("Abstention", false, false, true),
+            // Abstention-category question that confabulated an answer.
+            record("Abstention", false, false, false),
+            // Answerable question, evidence missing, honestly abstained.
+            record("SingleHop", false, false, true),
+            // Answerable question, evidence missing, answered wrong (confabulated).
+            record("SingleHop", false, false, false),
+            // Answerable question, evidence missing, answered correct (bucket C).
+            record("SingleHop", false, true, false),
+            // Answerable question, evidence present, but abstained anyway.
+            record("SingleHop", true, false, true),
+            // Answerable question, evidence present, answered correctly — not
+            // counted anywhere in the faithfulness breakdown.
+            record("SingleHop", true, true, false),
+        ];
+
+        let b = FaithfulnessBreakdown::from_records(&records);
+
+        assert_eq!(b.abstention_qtype_total, 2);
+        assert_eq!(b.abstention_qtype_abstained, 1);
+        assert_eq!(b.abstention_qtype_confabulated, 1);
+
+        assert_eq!(b.evidence_missing_total, 3);
+        assert_eq!(b.evidence_missing_abstained, 1);
+        assert_eq!(b.evidence_missing_confabulated, 1);
+        assert_eq!(b.evidence_missing_answered_correct, 1);
+
+        assert_eq!(b.over_abstention, 1);
+    }
+
+    #[test]
+    fn faithfulness_breakdown_empty_records_is_all_zero() {
+        let b = FaithfulnessBreakdown::from_records(&[]);
+        assert_eq!(b.abstention_qtype_total, 0);
+        assert_eq!(b.evidence_missing_total, 0);
+        assert_eq!(b.over_abstention, 0);
     }
 }

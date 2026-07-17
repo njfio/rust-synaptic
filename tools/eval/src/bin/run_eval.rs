@@ -497,6 +497,7 @@ async fn run_qa_only(
                 ))?;
             }
             write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
+            write_faithfulness_breakdown(&r.faithfulness, &mut *w)?;
         }
     }
     Ok(())
@@ -555,6 +556,33 @@ async fn run_agentic_qa_only(
         ))?;
     }
     write_recall_breakdown(&report.recall_breakdown, &mut *w)?;
+    write_faithfulness_breakdown(&report.faithfulness, &mut *w)?;
+    Ok(())
+}
+
+/// Print the confabulation-vs-abstention breakdown (see
+/// [`qa::FaithfulnessBreakdown`]): abstention-category abstain rate (the
+/// cleanest confabulation test), the evidence-missing faithful/confabulated/
+/// answered-correct split, and over-abstention on answerable questions.
+fn write_faithfulness_breakdown(
+    f: &qa::FaithfulnessBreakdown,
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w(format!(
+        "  faithfulness: abstention_qtype total={} abstained={} confabulated={}",
+        f.abstention_qtype_total, f.abstention_qtype_abstained, f.abstention_qtype_confabulated
+    ))?;
+    w(format!(
+        "  faithfulness: evidence_missing total={} abstained={} confabulated={} answered_correct={}",
+        f.evidence_missing_total,
+        f.evidence_missing_abstained,
+        f.evidence_missing_confabulated,
+        f.evidence_missing_answered_correct
+    ))?;
+    w(format!(
+        "  faithfulness: over_abstention={}",
+        f.over_abstention
+    ))?;
     Ok(())
 }
 
