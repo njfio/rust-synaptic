@@ -1203,3 +1203,45 @@ bounded 50-pool. The reach-further benefit is real in a controlled fixture but i
 by drift on real data; it's also slower (16:56 vs ~14 min). **Single-round PRF is the sweet
 spot** — multi-round abandoned (nothing merged). A non-cumulative multi-QUERY variant (each
 round a separate focused query, union the pools) might avoid drift, but is unbuilt/unmeasured.
+
+## Agentic answer-guided retrieval: breaking the QA ceiling (2026-07-16)
+
+QA sat at ~0.375 all along because multi-evidence questions need their COMPLETE evidence
+set, and single-shot retrieval — even excellent retrieval (cross-encoder, PRF) — is BLIND
+to what the answer needs. The fix is to let the strong judge (gpt-5.6-sol) DRIVE retrieval:
+`--agentic-qa` seeds a search, then loops (bounded, default 3 rounds) asking the model to
+either `ANSWER` from the current context or `SEARCH: <specific missing fact>`; each SEARCH
+retrieves and merges into the context; then the final answer is graded (same grader as
+`run_qa`; gold/evidence labels are NEVER in the model's prompt — used only to instrument).
+
+**Standard 40-question LoCoMo subset, all configs (same questions, codex judge):**
+
+| config | QA accuracy | gold-retrieved rate |
+|---|---|---|
+| single-shot, default rerank | 0.375 | 0.525 |
+| single-shot, cross-encoder | 0.350 | — |
+| single-shot, PRF + cross-encoder | 0.325 | — |
+| agentic (static + PRF) | 0.400 | 0.575 |
+| **agentic + PRF + GPU cross-encoder** | **0.500** | **0.650** |
+
+**0.500 vs the previous best 0.375 is +33%, decisively beyond the codex judge's ~±0.03
+run-to-run noise** — the first configuration all effort to break the 0.375 ceiling.
+
+**The instrumentation shows the mechanism, not just the score:**
+- gold-retrieved rate 0.525 → 0.650 (best measured) — the LLM's follow-up searches, ranked
+  by the cross-encoder, actually FIND the missing evidence.
+- `gold_added_by_followup` = 0.125 (vs 0.05 for agentic-static) — the cross-encoder makes
+  follow-up retrieval land gold that the seed search missed.
+- retrieval-bound failures (cross-tab d) fell 14 → 9; gold-and-correct (a) rose to 15.
+- mean rounds used 1.55; Temporal QA 0.875.
+
+**Why the agentic LOOP is the key** (not just better retrieval): single-shot PRF+cross-encoder
+was 0.325 — the SAME retrieval components, WITHOUT the loop, did not help. Adding the loop
+took it to 0.500. Blind term-expansion (PRF) guesses what's missing; the LLM KNOWS what's
+missing and searches for it specifically. Gathering (agentic follow-ups) + ranking
+(cross-encoder) together break the multi-evidence completeness ceiling that capped QA.
+
+**Cost / status:** opt-in eval mode; multiple codex calls per question (bounded concurrency
+via `SYNAPTIC_EVAL_QA_CONCURRENCY`), best retrieval per round needs the GPU cross-encoder
+build. Caveats: 40-q hard-skewed subset; codex judge nondeterministic (the +0.125 jump is
+far beyond its ~±0.03 noise). MultiHop (0.21) remains the hard tail even here.

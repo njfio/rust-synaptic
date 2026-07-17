@@ -113,6 +113,14 @@ async fn main() -> Result<(), String> {
     // the growth phase in particular (10k sequential stores) would otherwise
     // dominate the run before QA starts.
     let qa_only = args.iter().any(|a| a == "--qa-only");
+    // `--agentic-qa` runs ONLY the agentic answer-guided retrieval QA mode:
+    // the judge drives retrieval itself (retrieve -> answer-or-search ->
+    // retrieve -> ... -> answer -> grade) instead of a single retrieve-then-
+    // answer pass. Like `--qa-only`, skips retrieval metrics, ablation, and
+    // growth. Requires SYNAPTIC_EVAL_JUDGE=codex; NotRun otherwise (no LLM
+    // reasoning-feature judge is wired up for this mode since it needs
+    // free-form multi-turn completions, not the fixed answer/grade shape).
+    let agentic_qa = args.iter().any(|a| a == "--agentic-qa");
     // `--recall-curve` measures recall@{10,20,50} from a single limit-50 search
     // per question. It answers whether below-rank-10 gold is in the candidate
     // pool (reranking headroom) or absent (first-stage recall problem). No judge.
@@ -187,6 +195,9 @@ async fn main() -> Result<(), String> {
     }
     if qa_only {
         return run_qa_only(&conversations, &mut w).await;
+    }
+    if agentic_qa {
+        return run_agentic_qa_only(&conversations, &mut w).await;
     }
     if growth_only {
         return run_growth_and_qa(&conversations, grow_100k, &mut w).await;
@@ -488,6 +499,62 @@ async fn run_qa_only(
             write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
         }
     }
+    Ok(())
+}
+
+/// Run ONLY the agentic answer-guided retrieval QA mode (`--agentic-qa`):
+/// the judge drives retrieval itself instead of a single retrieve-then-
+/// answer pass. Requires `SYNAPTIC_EVAL_JUDGE=codex` with an available
+/// codex CLI — this mode needs free-form multi-line completions
+/// (`ANSWER:`/`SEARCH:`) that the fixed-shape `LlmJudge::answer`/`grade`
+/// endpoints don't support, so no `llm-reasoning` fallback is offered;
+/// without codex this reports not-run, never a fabricated number.
+/// `SYNAPTIC_EVAL_AGENTIC_ROUNDS` overrides the max rounds per question
+/// (default 3; see [`qa::agentic_max_rounds`]).
+async fn run_agentic_qa_only(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== Agentic answer-guided retrieval QA (--agentic-qa) ==".to_string())?;
+    let selected = std::env::var(qa::ENV_JUDGE).ok();
+    if selected.as_deref() != Some("codex") {
+        w(format!(
+            "QA: not run — --agentic-qa requires {}=codex with the codex CLI installed",
+            qa::ENV_JUDGE
+        ))?;
+        return Ok(());
+    }
+    let judge = qa::CodexCliJudge::from_env();
+    if !judge.is_available() {
+        w(format!(
+            "QA: not run — {}=codex but codex CLI not runnable — install/login \
+             the codex CLI or set {}",
+            qa::ENV_JUDGE,
+            qa::CodexCliJudge::ENV_BIN
+        ))?;
+        return Ok(());
+    }
+    let max_rounds = qa::agentic_max_rounds();
+    let report = qa::run_agentic_qa(conversations, &judge, K, max_rounds)
+        .await
+        .map_err(|e| e.to_string())?;
+    w(format!(
+        "QA: graded={} correct={} accuracy={:.4} max_rounds={} mean_rounds_used={:.2} \
+         gold_added_by_followup_fraction={:.4}",
+        report.questions,
+        report.correct,
+        report.accuracy,
+        report.max_rounds,
+        report.mean_rounds_used,
+        report.gold_added_by_followup_fraction
+    ))?;
+    for (qtype, b) in &report.by_qtype {
+        w(format!(
+            "  {qtype}: graded={} correct={} accuracy={:.4}",
+            b.questions, b.correct, b.accuracy
+        ))?;
+    }
+    write_recall_breakdown(&report.recall_breakdown, &mut *w)?;
     Ok(())
 }
 

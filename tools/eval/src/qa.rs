@@ -42,10 +42,10 @@
 //! - `SYNAPTIC_EVAL_LLM_MODEL` — model name (required when URL is set).
 //! - `SYNAPTIC_EVAL_LLM_KEY` — bearer token (optional; omit for Ollama).
 
-use crate::dataset::{EvalConversation, QType};
+use crate::dataset::{EvalConversation, EvalQuestion, QType};
 use crate::runner::{ingest, normalize_retrieved};
 use futures::stream::{self, StreamExt};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use synaptic::{AgentMemory, MemoryConfig};
 
 /// Errors from the QA pipeline or a judge.
@@ -758,6 +758,18 @@ impl CodexCliJudge {
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
+
+    /// Single free-form call to the codex CLI: run `prompt` and return the
+    /// model's raw text reply (parsed the same way as `answer`/`grade`, but
+    /// without imposing either shape). Used by the agentic answer-guided
+    /// retrieval loop ([`run_agentic_qa`]), which needs unstructured
+    /// `ANSWER:`/`SEARCH:` replies rather than the fixed answer/grade shapes
+    /// of the [`Judge`] trait.
+    pub async fn complete(&self, prompt: String) -> Result<String, QaError> {
+        let stdout = self.run_codex(prompt).await?;
+        parse_codex_stdout(&stdout)
+            .ok_or_else(|| QaError::Judge("codex exec produced no parseable output".to_string()))
+    }
 }
 
 #[async_trait::async_trait]
@@ -797,6 +809,569 @@ impl Judge for CodexCliJudge {
                 stdout.trim()
             ))
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Agentic answer-guided retrieval QA
+// ---------------------------------------------------------------------------
+//
+// Instead of a single retrieve-then-answer pass ([`run_qa`]), the judge
+// DRIVES retrieval: it reads whatever memories have been recalled so far and
+// either answers, or names one specific missing fact to search for next.
+// This targets multi-evidence questions where blind top-k retrieval alone
+// misses supporting evidence that a reasoning model would know to go look
+// for.
+//
+// Concurrency: conversations are processed sequentially (ingest dominates
+// there), but the per-question agentic pipelines within each conversation run
+// with bounded concurrency (`SYNAPTIC_EVAL_QA_CONCURRENCY`, default 4) via
+// `buffer_unordered`, matching `run_qa`. Each question can issue several
+// `codex exec` calls (one per round plus a grade call), so this bounding keeps
+// a bounded sample tractable. `--agentic-qa` is still meant for small, bounded
+// samples (see `--max-conversations` / `--max-questions`), not full sweeps.
+
+/// Env var overriding the max rounds of the agentic retrieval loop (default
+/// 3, i.e. up to 2 follow-up searches before a forced final answer).
+pub const ENV_AGENTIC_ROUNDS: &str = "SYNAPTIC_EVAL_AGENTIC_ROUNDS";
+
+/// Read [`ENV_AGENTIC_ROUNDS`], defaulting to 3 and clamping to at least 1.
+pub fn agentic_max_rounds() -> usize {
+    std::env::var(ENV_AGENTIC_ROUNDS)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(3)
+        .max(1)
+}
+
+/// The judge's parsed intent for one round of the agentic loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AgenticStep {
+    /// `ANSWER: <text>` — the judge considers the question answerable from
+    /// the current context.
+    Answer(String),
+    /// `SEARCH: <text>` — the judge wants one more specific fact looked up.
+    Search(String),
+    /// Neither prefix was present. Fail-safe, not fail-closed: the raw text
+    /// is used as a forced answer so the loop always terminates rather than
+    /// erroring on a slightly malformed reply.
+    Forced(String),
+}
+
+/// Parse the first line of a judge reply into an [`AgenticStep`]. Only the
+/// first line is inspected, per the prompt contract (`build_agentic_prompt`)
+/// that instructs the judge to reply with exactly one such line; any
+/// following lines (extra reasoning the model added anyway) are ignored for
+/// classification but the raw text is preserved verbatim in the `Forced`
+/// case.
+fn parse_agentic_reply(text: &str) -> AgenticStep {
+    let first_line = text.lines().next().unwrap_or("").trim();
+    if let Some(rest) = first_line.strip_prefix("ANSWER:") {
+        return AgenticStep::Answer(rest.trim().to_string());
+    }
+    if let Some(rest) = first_line.strip_prefix("SEARCH:") {
+        return AgenticStep::Search(rest.trim().to_string());
+    }
+    AgenticStep::Forced(text.trim().to_string())
+}
+
+/// Build the per-round prompt: the question plus the numbered context
+/// memories accumulated so far. `force_answer` is set on the last permitted
+/// round, instructing the judge to answer no matter how incomplete the
+/// context is (the loop's bound / fail-safe against running forever).
+fn build_agentic_prompt(
+    question: &str,
+    context: &[(String, String)],
+    force_answer: bool,
+) -> String {
+    let ctx = if context.is_empty() {
+        "(no memories recalled yet)".to_string()
+    } else {
+        context
+            .iter()
+            .enumerate()
+            .map(|(i, (_, v))| format!("[{}] {v}", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    if force_answer {
+        format!(
+            "You are answering a question using ONLY the memories below. This is \
+             the FINAL round: you must answer now, even if the memories seem \
+             incomplete — do the best you can with what is here. Reply with \
+             EXACTLY one line in the form:\nANSWER: <your answer>\n\n\
+             Memories:\n{ctx}\n\nQuestion: {question}"
+        )
+    } else {
+        format!(
+            "You are answering a question using ONLY the memories below. If the \
+             memories fully answer the question, reply with EXACTLY one line:\n\
+             ANSWER: <your answer>\n\
+             If they do NOT contain enough information, reply with EXACTLY one \
+             line naming ONE specific missing fact to look up:\n\
+             SEARCH: <one specific missing fact>\n\
+             Do not use any knowledge beyond the memories shown. Do not add any \
+             other text.\n\nMemories:\n{ctx}\n\nQuestion: {question}"
+        )
+    }
+}
+
+/// Add `fragments` (key, value pairs) to `context`, skipping any key already
+/// present (dedup by key, first write wins). Returns the keys that were
+/// actually newly added, in order.
+fn add_new_context(
+    context: &mut Vec<(String, String)>,
+    fragments: Vec<(String, String)>,
+) -> Vec<String> {
+    let mut seen: HashSet<String> = context.iter().map(|(k, _)| k.clone()).collect();
+    let mut added_keys = Vec::new();
+    for (key, value) in fragments {
+        if seen.insert(key.clone()) {
+            context.push((key.clone(), value));
+            added_keys.push(key);
+        }
+    }
+    added_keys
+}
+
+/// Did the follow-up searches surface gold evidence that the initial search
+/// missed? `evidence_ids` is the question's labeled gold evidence,
+/// `initial_ids` the normalized ids from the seed search, `followup_keys`
+/// the raw (un-normalized) keys added by ALL follow-up searches across the
+/// loop. `false` when the question has no labeled evidence.
+fn gold_added_by_followup(
+    evidence_ids: &[String],
+    initial_ids: &HashSet<String>,
+    followup_keys: &[String],
+) -> bool {
+    if evidence_ids.is_empty() {
+        return false;
+    }
+    let followup_ids: HashSet<String> = normalize_retrieved(followup_keys).into_iter().collect();
+    evidence_ids
+        .iter()
+        .any(|id| followup_ids.contains(id) && !initial_ids.contains(id))
+}
+
+/// Per-question agentic QA record.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AgenticQuestionRecord {
+    /// Dataset-native question id.
+    pub question_id: String,
+    /// Debug-formatted [`QType`].
+    pub qtype: String,
+    /// The judge's final answer (either an `ANSWER:` reply or, in the rare
+    /// fail-safe case, the raw unparseable reply text).
+    pub predicted: String,
+    /// The judge's verdict against the gold answer.
+    pub correct: bool,
+    /// How many rounds of the loop ran (1 = answered on the seed context;
+    /// up to `max_rounds`).
+    pub rounds_used: usize,
+    /// How many `SEARCH:` follow-up queries were issued.
+    pub follow_up_searches: usize,
+    /// Whether ANY gold `evidence_id` appeared anywhere in the FINAL
+    /// accumulated context (seed + all follow-ups), normalized the same way
+    /// [`normalize_retrieved`] does for [`run_qa`]. `false` for questions
+    /// with no labeled evidence.
+    pub gold_in_context: bool,
+    /// Whether a follow-up search added gold evidence that the seed search
+    /// had missed (see [`gold_added_by_followup`]).
+    pub gold_added_by_followup: bool,
+    /// Whether this question had any `evidence_ids` labeled at all.
+    pub has_gold: bool,
+}
+
+/// Measured agentic QA report.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AgenticReport {
+    /// Retrieval depth used for each search call (seed and follow-ups).
+    pub k: usize,
+    /// Max rounds permitted per question.
+    pub max_rounds: usize,
+    /// Total questions graded.
+    pub questions: usize,
+    /// Questions the judge graded correct.
+    pub correct: usize,
+    /// Overall accuracy (`correct / questions`).
+    pub accuracy: f64,
+    /// Accuracy broken down by question category.
+    pub by_qtype: BTreeMap<String, QTypeAccuracy>,
+    /// Mean `rounds_used` across all questions.
+    pub mean_rounds_used: f64,
+    /// Fraction of questions where a follow-up search added gold evidence
+    /// the seed search had missed.
+    pub gold_added_by_followup_fraction: f64,
+    /// Per-question records.
+    pub per_question: Vec<AgenticQuestionRecord>,
+    /// Gold-in-final-context-vs-judge-verdict cross-tab, computed the same
+    /// way as [`QaRecallBreakdown`] but over the final accumulated context
+    /// rather than a single seed search.
+    pub recall_breakdown: QaRecallBreakdown,
+}
+
+/// The two records produced by [`run_one_agentic_question`] for a single
+/// question: the report-facing [`AgenticQuestionRecord`] and the
+/// [`QaQuestionRecord`] used to build the shared cross-tab, kept in lockstep
+/// so callers never have to recompute overlapping fields.
+struct AgenticQuestionOutcome {
+    per_question: AgenticQuestionRecord,
+    cross_tab: QaQuestionRecord,
+}
+
+/// Run the agentic answer-guided retrieval loop for a single `question`
+/// against the already-ingested `memory`, then grade the result with
+/// `judge`. This is the per-question unit of work that [`run_agentic_qa`]
+/// fans out across questions with bounded concurrency.
+///
+/// Seeds the context from `memory.search(question, k)`, then loops up to
+/// `max_rounds` times, each round asking the judge to either answer from the
+/// current context or name a specific follow-up search; `SEARCH:` results
+/// are merged into the context (deduped by key) and the loop continues. The
+/// loop is bounded: on the last permitted round the judge is asked to answer
+/// no matter what, and an unparseable reply at any point is treated as a
+/// forced answer rather than retried — so the loop always terminates within
+/// `max_rounds` calls to `judge.complete` plus one call to `judge.grade`.
+async fn run_one_agentic_question(
+    memory: &AgentMemory,
+    judge: &CodexCliJudge,
+    question: &EvalQuestion,
+    k: usize,
+    max_rounds: usize,
+) -> Result<AgenticQuestionOutcome, QaError> {
+    let seed_fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
+    let seed_keys: Vec<String> = seed_fragments.iter().map(|f| f.entry.key.clone()).collect();
+    let initial_ids: HashSet<String> = normalize_retrieved(&seed_keys).into_iter().collect();
+
+    let mut context: Vec<(String, String)> = Vec::new();
+    add_new_context(
+        &mut context,
+        seed_fragments
+            .into_iter()
+            .map(|f| (f.entry.key, f.entry.value))
+            .collect(),
+    );
+
+    let mut followup_keys: Vec<String> = Vec::new();
+    let mut follow_up_searches = 0usize;
+    let mut rounds_used = 0usize;
+    let mut final_answer: Option<String> = None;
+
+    for round in 1..=max_rounds {
+        rounds_used = round;
+        let force_answer = round == max_rounds;
+        let prompt = build_agentic_prompt(&question.text, &context, force_answer);
+        let reply = judge.complete(prompt).await?;
+
+        if force_answer {
+            final_answer = Some(match parse_agentic_reply(&reply) {
+                AgenticStep::Answer(a) => a,
+                AgenticStep::Search(_) | AgenticStep::Forced(_) => reply.trim().to_string(),
+            });
+            break;
+        }
+
+        match parse_agentic_reply(&reply) {
+            AgenticStep::Answer(a) => {
+                final_answer = Some(a);
+                break;
+            }
+            AgenticStep::Search(follow_up_query) => {
+                follow_up_searches += 1;
+                let fragments = memory.search(&follow_up_query, k).await.map_err(mem_err)?;
+                let added = add_new_context(
+                    &mut context,
+                    fragments
+                        .into_iter()
+                        .map(|f| (f.entry.key, f.entry.value))
+                        .collect(),
+                );
+                followup_keys.extend(added);
+            }
+            AgenticStep::Forced(text) => {
+                final_answer = Some(text);
+                break;
+            }
+        }
+    }
+
+    // `final_answer` is always `Some` by this point: either an explicit
+    // ANSWER, a Forced fail-safe, or the forced-round reply — every branch
+    // above sets it before falling out of the loop.
+    let predicted = final_answer.expect("agentic loop always sets a final answer before exiting");
+    let correct = judge
+        .grade(&question.text, &question.gold_answer, &predicted)
+        .await?;
+
+    let has_gold = !question.evidence_ids.is_empty();
+    let all_context_keys: Vec<String> = context.iter().map(|(k, _)| k.clone()).collect();
+    let all_ids: HashSet<String> = normalize_retrieved(&all_context_keys).into_iter().collect();
+    let gold_in_context = has_gold && question.evidence_ids.iter().any(|id| all_ids.contains(id));
+    let gold_added = gold_added_by_followup(&question.evidence_ids, &initial_ids, &followup_keys);
+
+    let qtype = qtype_key(question.qtype);
+
+    Ok(AgenticQuestionOutcome {
+        per_question: AgenticQuestionRecord {
+            question_id: question.id.clone(),
+            qtype: qtype.clone(),
+            predicted: predicted.clone(),
+            correct,
+            rounds_used,
+            follow_up_searches,
+            gold_in_context,
+            gold_added_by_followup: gold_added,
+            has_gold,
+        },
+        cross_tab: QaQuestionRecord {
+            question_id: question.id.clone(),
+            qtype,
+            predicted,
+            correct,
+            gold_retrieved: gold_in_context,
+            has_gold,
+        },
+    })
+}
+
+/// Run agentic answer-guided retrieval QA over `conversations` with `judge`.
+///
+/// Conversations run sequentially (ingest is the dominant cost there), but
+/// within each conversation the per-question agentic pipelines — seed
+/// search, the `judge.complete` round loop, and the final `judge.grade` —
+/// run concurrently with bounded concurrency (see [`ENV_QA_CONCURRENCY`],
+/// mirroring [`run_qa`]'s `judge_questions`), since each question makes
+/// several sequential judge calls and is otherwise independent of the
+/// others. `memory.search` and `judge`'s methods all take `&self`, so they
+/// are safe to call concurrently from multiple in-flight questions.
+///
+/// Fail-closed on infrastructure failure: any `memory.search`,
+/// `judge.complete`, or `judge.grade` error aborts the whole run (no partial
+/// report), matching [`run_qa`]'s contract. Results are independent of the
+/// concurrency level: `per_question` (and the internal cross-tab records)
+/// are sorted by `question_id` before returning, and the aggregate counts
+/// are order-independent, so two runs over the same inputs produce
+/// identical reports.
+pub async fn run_agentic_qa(
+    conversations: &[EvalConversation],
+    judge: &CodexCliJudge,
+    k: usize,
+    max_rounds: usize,
+) -> Result<AgenticReport, QaError> {
+    let max_rounds = max_rounds.max(1);
+    let concurrency = qa_concurrency();
+    let mut per_question: Vec<AgenticQuestionRecord> = Vec::new();
+    let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
+    let mut cross_tab_records: Vec<QaQuestionRecord> = Vec::new();
+
+    for conversation in conversations {
+        let mut memory = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(mem_err)?;
+        ingest(conversation, &mut memory)
+            .await
+            .map_err(|e| QaError::Memory(e.to_string()))?;
+
+        let memory_ref = &memory;
+        let mut outcomes = stream::iter(conversation.questions.iter())
+            .map(|question| run_one_agentic_question(memory_ref, judge, question, k, max_rounds))
+            .buffer_unordered(concurrency);
+        while let Some(outcome) = outcomes.next().await {
+            let outcome = outcome?;
+
+            let bucket = by_qtype
+                .entry(outcome.per_question.qtype.clone())
+                .or_insert(QTypeAccuracy {
+                    questions: 0,
+                    correct: 0,
+                    accuracy: 0.0,
+                });
+            bucket.questions += 1;
+            bucket.correct += usize::from(outcome.per_question.correct);
+
+            cross_tab_records.push(outcome.cross_tab);
+            per_question.push(outcome.per_question);
+        }
+    }
+
+    for bucket in by_qtype.values_mut() {
+        bucket.accuracy = if bucket.questions == 0 {
+            0.0
+        } else {
+            bucket.correct as f64 / bucket.questions as f64
+        };
+    }
+    per_question.sort_by(|a, b| a.question_id.cmp(&b.question_id));
+    cross_tab_records.sort_by(|a, b| a.question_id.cmp(&b.question_id));
+
+    let questions = per_question.len();
+    let correct = per_question.iter().filter(|q| q.correct).count();
+    let mean_rounds_used = if questions == 0 {
+        0.0
+    } else {
+        per_question
+            .iter()
+            .map(|q| q.rounds_used as f64)
+            .sum::<f64>()
+            / questions as f64
+    };
+    let gold_added_by_followup_fraction = if questions == 0 {
+        0.0
+    } else {
+        per_question
+            .iter()
+            .filter(|q| q.gold_added_by_followup)
+            .count() as f64
+            / questions as f64
+    };
+    let recall_breakdown = QaRecallBreakdown::from_records(&cross_tab_records);
+
+    Ok(AgenticReport {
+        k,
+        max_rounds,
+        questions,
+        correct,
+        accuracy: if questions == 0 {
+            0.0
+        } else {
+            correct as f64 / questions as f64
+        },
+        by_qtype,
+        mean_rounds_used,
+        gold_added_by_followup_fraction,
+        per_question,
+        recall_breakdown,
+    })
+}
+
+#[cfg(test)]
+mod agentic_qa_tests {
+    use super::*;
+
+    #[test]
+    fn parses_answer_prefix() {
+        assert_eq!(
+            parse_agentic_reply("ANSWER: Paris\nignored trailing line"),
+            AgenticStep::Answer("Paris".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_search_prefix() {
+        assert_eq!(
+            parse_agentic_reply("SEARCH: Alice's birth year"),
+            AgenticStep::Search("Alice's birth year".to_string())
+        );
+    }
+
+    #[test]
+    fn unparseable_reply_is_forced() {
+        assert_eq!(
+            parse_agentic_reply("I think it's Paris, probably."),
+            AgenticStep::Forced("I think it's Paris, probably.".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_reply_is_forced_empty() {
+        assert_eq!(parse_agentic_reply(""), AgenticStep::Forced(String::new()));
+    }
+
+    #[test]
+    fn add_new_context_dedups_by_key_and_reports_only_new_keys() {
+        let mut context: Vec<(String, String)> = vec![("k1".to_string(), "v1".to_string())];
+        let added = add_new_context(
+            &mut context,
+            vec![
+                (
+                    "k1".to_string(),
+                    "v1-duplicate-should-be-ignored".to_string(),
+                ),
+                ("k2".to_string(), "v2".to_string()),
+            ],
+        );
+        assert_eq!(added, vec!["k2".to_string()]);
+        assert_eq!(context.len(), 2);
+        assert_eq!(context[0].1, "v1", "first write for a key wins");
+    }
+
+    #[test]
+    fn add_new_context_dedups_within_a_single_batch() {
+        let mut context: Vec<(String, String)> = Vec::new();
+        let added = add_new_context(
+            &mut context,
+            vec![
+                ("k1".to_string(), "v1".to_string()),
+                ("k1".to_string(), "v1-again".to_string()),
+            ],
+        );
+        assert_eq!(added, vec!["k1".to_string()]);
+        assert_eq!(context.len(), 1);
+    }
+
+    #[test]
+    fn gold_added_by_followup_true_when_followup_finds_gold_initial_missed() {
+        let evidence = vec!["D1:1".to_string()];
+        let initial_ids: HashSet<String> = HashSet::new();
+        let followup_keys = vec!["D1:1".to_string()];
+        assert!(gold_added_by_followup(
+            &evidence,
+            &initial_ids,
+            &followup_keys
+        ));
+    }
+
+    #[test]
+    fn gold_added_by_followup_false_when_initial_already_had_gold() {
+        let evidence = vec!["D1:1".to_string()];
+        let mut initial_ids: HashSet<String> = HashSet::new();
+        initial_ids.insert("D1:1".to_string());
+        let followup_keys = vec!["D1:1".to_string()];
+        assert!(!gold_added_by_followup(
+            &evidence,
+            &initial_ids,
+            &followup_keys
+        ));
+    }
+
+    #[test]
+    fn gold_added_by_followup_false_when_followups_never_find_gold() {
+        let evidence = vec!["D1:1".to_string()];
+        let initial_ids: HashSet<String> = HashSet::new();
+        let followup_keys = vec!["D1:2".to_string(), "D1:3".to_string()];
+        assert!(!gold_added_by_followup(
+            &evidence,
+            &initial_ids,
+            &followup_keys
+        ));
+    }
+
+    #[test]
+    fn gold_added_by_followup_false_when_question_has_no_gold() {
+        let evidence: Vec<String> = vec![];
+        let initial_ids: HashSet<String> = HashSet::new();
+        let followup_keys = vec!["D1:1".to_string()];
+        assert!(!gold_added_by_followup(
+            &evidence,
+            &initial_ids,
+            &followup_keys
+        ));
+    }
+
+    #[test]
+    fn agentic_max_rounds_defaults_and_clamps() {
+        // Guard against test-order env races on this process-wide var, same
+        // pattern as the run_qa concurrency-env tests.
+        std::env::remove_var(ENV_AGENTIC_ROUNDS);
+        assert_eq!(agentic_max_rounds(), 3);
+
+        std::env::set_var(ENV_AGENTIC_ROUNDS, "0");
+        assert_eq!(agentic_max_rounds(), 1, "clamped to at least 1");
+
+        std::env::set_var(ENV_AGENTIC_ROUNDS, "7");
+        assert_eq!(agentic_max_rounds(), 7);
+
+        std::env::remove_var(ENV_AGENTIC_ROUNDS);
     }
 }
 
