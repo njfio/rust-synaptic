@@ -144,6 +144,16 @@ async fn main() -> Result<(), String> {
         .position(|a| a == "--max-questions")
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse().ok());
+    // `--qtype NAME` keeps only questions whose category matches NAME
+    // (case-insensitive: multihop|temporal|opendomain|singlehop|abstention),
+    // applied BEFORE `--max-questions`. Lets a run target a single category
+    // (e.g. abstention, which is clustered at the end of each conversation and
+    // otherwise never reached by first-N sampling).
+    let qtype_filter: Option<String> = args
+        .iter()
+        .position(|a| a == "--qtype")
+        .and_then(|i| args.get(i + 1))
+        .map(|v| v.to_ascii_lowercase());
     let dataset_path = args
         .iter()
         .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
@@ -162,6 +172,12 @@ async fn main() -> Result<(), String> {
     let mut conversations = load(path)?;
     if let Some(n) = max_conversations {
         conversations.truncate(n);
+    }
+    if let Some(ref want) = qtype_filter {
+        for c in &mut conversations {
+            c.questions
+                .retain(|q| format!("{:?}", q.qtype).to_ascii_lowercase() == *want);
+        }
     }
     if let Some(q) = max_questions {
         for c in &mut conversations {
