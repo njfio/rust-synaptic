@@ -112,7 +112,10 @@ pub const ABSTENTION_WORDS: &[&str] = &["unknown", "none"];
 /// false-positive limitation of substring matching.
 pub fn is_abstention(answer: &str) -> bool {
     let lower = answer.to_lowercase();
-    if ABSTENTION_PHRASES.iter().any(|phrase| lower.contains(phrase)) {
+    if ABSTENTION_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+    {
         return true;
     }
     // Short markers ("none"/"unknown") only count as WHOLE words, so an answer
@@ -981,6 +984,101 @@ pub fn agentic_max_rounds() -> usize {
         .max(1)
 }
 
+/// Env var enabling STRUCTURAL GROUNDING for the agentic loop (default off,
+/// byte-identical behavior when unset). Truthy values (`1`, `true`, matched
+/// case-insensitively) turn it on. When on, the final-answer prompt requires
+/// the judge to cite the numbered context memory (or memories) its answer is
+/// drawn from (`SOURCES: [n, ...]`); an answer with no valid citation into
+/// the provided context is structurally ungrounded — since a fabricated
+/// answer cannot legitimately cite a real supporting memory — and is
+/// overridden to "I don't know" rather than graded as-is. See
+/// [`run_one_agentic_question`] and [`grounding_gate`].
+pub const ENV_GROUNDED: &str = "SYNAPTIC_EVAL_GROUNDED";
+
+/// Read [`ENV_GROUNDED`]: `true` when set to a truthy value (`1`/`true`,
+/// case-insensitive), `false` when unset or anything else. Default off, so
+/// existing agentic runs are unaffected unless the flag is explicitly set.
+pub fn grounded_enabled() -> bool {
+    match std::env::var(ENV_GROUNDED) {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            v == "1" || v == "true"
+        }
+        Err(_) => false,
+    }
+}
+
+/// Extract cited context indices from the tail of an `ANSWER:` reply, e.g.
+/// `"Paris SOURCES: [1, 2]"`, `"Paris SOURCES: [3]"`, `"Paris SOURCES: 1 2"`.
+/// Lenient by design (see module docs on leniency): accepts bracketed or
+/// bare, comma- or space-separated integers, and simply ignores anything
+/// that doesn't parse as an integer rather than erroring — a slightly
+/// malformed citation should not itself cause an override; what matters is
+/// whether ANY cited number turns out to be a valid context index (checked
+/// by the caller). Returns an empty vec when there is no `SOURCES:` marker
+/// or it names no integers.
+/// Byte offset of the (ASCII, case-insensitive) `SOURCES:` marker in `s`.
+/// Byte-wise so the returned offset is always a valid char boundary — unlike
+/// `to_uppercase().find(...)`, whose index can desync from the original string
+/// when non-ASCII characters change byte length under case folding.
+fn find_sources_marker(s: &str) -> Option<usize> {
+    s.as_bytes()
+        .windows("SOURCES:".len())
+        .position(|w| w.eq_ignore_ascii_case(b"SOURCES:"))
+}
+
+pub fn parse_sources(answer_line: &str) -> Vec<usize> {
+    let Some(idx) = find_sources_marker(answer_line) else {
+        return Vec::new();
+    };
+    let tail = &answer_line[idx + "SOURCES:".len()..];
+    tail.split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<usize>().ok())
+        .collect()
+}
+
+/// Split an `ANSWER:` reply body into `(answer_text, cited_sources)`: the
+/// text before a trailing `SOURCES: ...` marker (trimmed, so grading never
+/// sees the citation), and the parsed indices (see [`parse_sources`]). When
+/// there is no `SOURCES:` marker, returns the whole text unchanged and an
+/// empty citation list.
+fn split_answer_and_sources(answer: &str) -> (String, Vec<usize>) {
+    let sources = parse_sources(answer);
+    let text = match find_sources_marker(answer) {
+        Some(idx) => answer[..idx].trim().to_string(),
+        None => answer.trim().to_string(),
+    };
+    (text, sources)
+}
+
+/// Is `answer` groundED by at least one citation that is a valid 1-based
+/// index into `context_len` provided memories? Lenient: ANY cited integer
+/// landing in `1..=context_len` counts, even if other cited numbers in the
+/// same reply are out of range or malformed — see [`parse_sources`] docs.
+fn has_valid_citation(sources: &[usize], context_len: usize) -> bool {
+    sources.iter().any(|&n| n >= 1 && n <= context_len)
+}
+
+/// The structural-grounding gate: given a (possibly already-abstaining)
+/// `answer`, whether it cites a valid supporting memory, and the size of the
+/// provided context, decide the final answer text and whether an override
+/// occurred. Already-abstaining answers are never touched (there is nothing
+/// to "catch" — abstaining is already the faithful response). A
+/// non-abstaining answer with no valid citation is overridden to "I don't
+/// know" and reported as an override, since a fabricated answer cannot
+/// legitimately cite a real supporting memory.
+fn grounding_gate(answer: &str, sources: &[usize], context_len: usize) -> (String, bool) {
+    if is_abstention(answer) {
+        return (answer.to_string(), false);
+    }
+    if has_valid_citation(sources, context_len) {
+        (answer.to_string(), false)
+    } else {
+        ("I don't know".to_string(), true)
+    }
+}
+
 /// The judge's parsed intent for one round of the agentic loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AgenticStep {
@@ -1024,6 +1122,7 @@ fn build_agentic_prompt(
     question: &str,
     context: &[(String, String)],
     force_answer: bool,
+    grounded: bool,
 ) -> String {
     let ctx = if context.is_empty() {
         "(no memories recalled yet)".to_string()
@@ -1035,12 +1134,20 @@ fn build_agentic_prompt(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let answer_instruction = if grounded {
+        "ANSWER: <your answer> SOURCES: [n, ...], where each n is the number \
+         of a memory above that supports the answer\n\
+         If no memory above supports an answer, reply with EXACTLY:\n\
+         ANSWER: I don't know"
+    } else {
+        "ANSWER: <your answer>"
+    };
     if force_answer {
         format!(
             "You are answering a question using ONLY the memories below. This is \
              the FINAL round: you must reply now, even if the memories seem \
              incomplete — do the best you can with what is here. Reply with \
-             EXACTLY one line in the form:\nANSWER: <your answer>\n\
+             EXACTLY one line in the form:\n{answer_instruction}\n\
              If, and only if, the memories genuinely do not contain the answer, \
              reply with EXACTLY:\nANSWER: I don't know\n\
              Do not guess or fabricate an answer that is not supported by the \
@@ -1051,7 +1158,7 @@ fn build_agentic_prompt(
         format!(
             "You are answering a question using ONLY the memories below. If the \
              memories fully answer the question, reply with EXACTLY one line:\n\
-             ANSWER: <your answer>\n\
+             {answer_instruction}\n\
              If they do NOT contain enough information, reply with EXACTLY one \
              line naming ONE specific missing fact to look up:\n\
              SEARCH: <one specific missing fact>\n\
@@ -1133,6 +1240,10 @@ pub struct AgenticQuestionRecord {
     /// Whether `predicted` reads as a refusal / "I don't know" response
     /// (see [`is_abstention`]), rather than a confident answer.
     pub abstained: bool,
+    /// Whether structural grounding (see [`ENV_GROUNDED`]) overrode a
+    /// confident-but-uncited answer to "I don't know" for this question.
+    /// Always `false` when grounding is off.
+    pub ungrounded_override: bool,
 }
 
 /// Measured agentic QA report.
@@ -1164,6 +1275,13 @@ pub struct AgenticReport {
     /// Confabulation-vs-abstention breakdown (see [`FaithfulnessBreakdown`]),
     /// computed over the same records as `recall_breakdown`.
     pub faithfulness: FaithfulnessBreakdown,
+    /// Whether structural grounding (see [`ENV_GROUNDED`]) was enabled for
+    /// this run.
+    pub grounded: bool,
+    /// Count of answers overridden to "I don't know" by the structural
+    /// grounding gate because they had no valid citation into the provided
+    /// context. Always `0` when `grounded` is `false`.
+    pub ungrounded_overrides: usize,
 }
 
 /// The two records produced by [`run_one_agentic_question`] for a single
@@ -1194,6 +1312,7 @@ async fn run_one_agentic_question(
     question: &EvalQuestion,
     k: usize,
     max_rounds: usize,
+    grounded: bool,
 ) -> Result<AgenticQuestionOutcome, QaError> {
     let seed_fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
     let seed_keys: Vec<String> = seed_fragments.iter().map(|f| f.entry.key.clone()).collect();
@@ -1216,7 +1335,7 @@ async fn run_one_agentic_question(
     for round in 1..=max_rounds {
         rounds_used = round;
         let force_answer = round == max_rounds;
-        let prompt = build_agentic_prompt(&question.text, &context, force_answer);
+        let prompt = build_agentic_prompt(&question.text, &context, force_answer, grounded);
         let reply = judge.complete(prompt).await?;
 
         if force_answer {
@@ -1254,7 +1373,21 @@ async fn run_one_agentic_question(
     // `final_answer` is always `Some` by this point: either an explicit
     // ANSWER, a Forced fail-safe, or the forced-round reply — every branch
     // above sets it before falling out of the loop.
-    let predicted = final_answer.expect("agentic loop always sets a final answer before exiting");
+    let raw_answer = final_answer.expect("agentic loop always sets a final answer before exiting");
+
+    // Structural grounding (only when enabled): strip any trailing
+    // `SOURCES: [...]` citation from the answer text graded below, and — if
+    // the answer is not already an abstention and cites no memory that was
+    // actually in the provided context — override it to "I don't know"
+    // rather than grade a fabricated answer as-is. See `grounding_gate` and
+    // `parse_sources` for the (deliberately lenient) parsing rules.
+    let (predicted, ungrounded_override) = if grounded {
+        let (text, sources) = split_answer_and_sources(&raw_answer);
+        grounding_gate(&text, &sources, context.len())
+    } else {
+        (raw_answer, false)
+    };
+
     let correct = judge
         .grade(&question.text, &question.gold_answer, &predicted)
         .await?;
@@ -1280,6 +1413,7 @@ async fn run_one_agentic_question(
             gold_added_by_followup: gold_added,
             has_gold,
             abstained,
+            ungrounded_override,
         },
         cross_tab: QaQuestionRecord {
             question_id: question.id.clone(),
@@ -1316,6 +1450,7 @@ pub async fn run_agentic_qa(
     judge: &CodexCliJudge,
     k: usize,
     max_rounds: usize,
+    grounded: bool,
 ) -> Result<AgenticReport, QaError> {
     let max_rounds = max_rounds.max(1);
     let concurrency = qa_concurrency();
@@ -1333,7 +1468,9 @@ pub async fn run_agentic_qa(
 
         let memory_ref = &memory;
         let mut outcomes = stream::iter(conversation.questions.iter())
-            .map(|question| run_one_agentic_question(memory_ref, judge, question, k, max_rounds))
+            .map(|question| {
+                run_one_agentic_question(memory_ref, judge, question, k, max_rounds, grounded)
+            })
             .buffer_unordered(concurrency);
         while let Some(outcome) = outcomes.next().await {
             let outcome = outcome?;
@@ -1385,6 +1522,10 @@ pub async fn run_agentic_qa(
     };
     let recall_breakdown = QaRecallBreakdown::from_records(&cross_tab_records);
     let faithfulness = FaithfulnessBreakdown::from_records(&cross_tab_records);
+    let ungrounded_overrides = per_question
+        .iter()
+        .filter(|q| q.ungrounded_override)
+        .count();
 
     Ok(AgenticReport {
         k,
@@ -1402,6 +1543,8 @@ pub async fn run_agentic_qa(
         per_question,
         recall_breakdown,
         faithfulness,
+        grounded,
+        ungrounded_overrides,
     })
 }
 
@@ -1537,7 +1680,7 @@ mod agentic_qa_tests {
 
     #[test]
     fn final_round_prompt_permits_abstention() {
-        let prompt = build_agentic_prompt("Who is the mayor?", &[], true);
+        let prompt = build_agentic_prompt("Who is the mayor?", &[], true, false);
         assert!(
             prompt.to_lowercase().contains("i don't know"),
             "final-round (force_answer) prompt must explicitly permit \
@@ -1548,7 +1691,7 @@ mod agentic_qa_tests {
 
     #[test]
     fn normal_round_prompt_also_permits_abstention() {
-        let prompt = build_agentic_prompt("Who is the mayor?", &[], false);
+        let prompt = build_agentic_prompt("Who is the mayor?", &[], false, false);
         assert!(
             prompt.to_lowercase().contains("i don't know"),
             "normal-round prompt must also permit abstention when the \
@@ -1556,6 +1699,116 @@ mod agentic_qa_tests {
         );
         // Still preserves the SEARCH path for genuinely missing evidence.
         assert!(prompt.contains("SEARCH:"));
+    }
+
+    #[test]
+    fn grounded_prompt_mentions_sources_ungrounded_does_not() {
+        let grounded_final = build_agentic_prompt("Q?", &[], true, true);
+        let grounded_normal = build_agentic_prompt("Q?", &[], false, true);
+        assert!(grounded_final.contains("SOURCES"));
+        assert!(grounded_normal.contains("SOURCES"));
+
+        let plain_final = build_agentic_prompt("Q?", &[], true, false);
+        let plain_normal = build_agentic_prompt("Q?", &[], false, false);
+        assert!(!plain_final.contains("SOURCES"));
+        assert!(!plain_normal.contains("SOURCES"));
+    }
+
+    #[test]
+    fn parse_sources_bracketed_comma() {
+        assert_eq!(parse_sources("Paris SOURCES: [1, 2]"), vec![1, 2]);
+    }
+
+    #[test]
+    fn parse_sources_single_bracket() {
+        assert_eq!(parse_sources("Paris SOURCES: [3]"), vec![3]);
+    }
+
+    #[test]
+    fn parse_sources_bare_space_separated() {
+        assert_eq!(parse_sources("Paris SOURCES: 1 2"), vec![1, 2]);
+    }
+
+    #[test]
+    fn parse_sources_none_returns_empty() {
+        assert_eq!(
+            parse_sources("Paris, the capital of France"),
+            Vec::<usize>::new()
+        );
+    }
+
+    #[test]
+    fn split_answer_and_sources_strips_citation_from_graded_text() {
+        let (text, sources) = split_answer_and_sources("Paris SOURCES: [1, 2]");
+        assert_eq!(text, "Paris");
+        assert_eq!(sources, vec![1, 2]);
+    }
+
+    #[test]
+    fn split_answer_and_sources_no_marker_leaves_text_unchanged() {
+        let (text, sources) = split_answer_and_sources("Paris");
+        assert_eq!(text, "Paris");
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn grounding_gate_keeps_answer_with_valid_citation() {
+        let (answer, overridden) = grounding_gate("Paris", &[2], 3);
+        assert_eq!(answer, "Paris");
+        assert!(!overridden);
+    }
+
+    #[test]
+    fn grounding_gate_lenient_any_valid_citation_among_several_counts() {
+        // One cited index (99) is out of range, but 2 is valid — lenient:
+        // grounded, not overridden.
+        let (answer, overridden) = grounding_gate("Paris", &[99, 2], 3);
+        assert_eq!(answer, "Paris");
+        assert!(!overridden);
+    }
+
+    #[test]
+    fn grounding_gate_overrides_no_citation() {
+        let (answer, overridden) = grounding_gate("Paris", &[], 3);
+        assert_eq!(answer, "I don't know");
+        assert!(overridden);
+    }
+
+    #[test]
+    fn grounding_gate_overrides_out_of_range_citation() {
+        let (answer, overridden) = grounding_gate("Paris", &[99], 3);
+        assert_eq!(answer, "I don't know");
+        assert!(overridden);
+    }
+
+    #[test]
+    fn grounding_gate_leaves_existing_abstention_untouched_and_not_counted() {
+        let (answer, overridden) = grounding_gate("I don't know", &[], 3);
+        assert_eq!(answer, "I don't know");
+        assert!(
+            !overridden,
+            "an already-abstaining answer must not be counted as an override"
+        );
+    }
+
+    #[test]
+    fn grounded_enabled_defaults_off_and_parses_truthy() {
+        std::env::remove_var(ENV_GROUNDED);
+        assert!(!grounded_enabled());
+
+        std::env::set_var(ENV_GROUNDED, "1");
+        assert!(grounded_enabled());
+
+        std::env::set_var(ENV_GROUNDED, "true");
+        assert!(grounded_enabled());
+
+        std::env::set_var(ENV_GROUNDED, "TRUE");
+        assert!(grounded_enabled());
+
+        std::env::set_var(ENV_GROUNDED, "0");
+        assert!(!grounded_enabled());
+
+        std::env::remove_var(ENV_GROUNDED);
     }
 }
 
