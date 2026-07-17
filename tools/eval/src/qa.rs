@@ -823,12 +823,12 @@ impl Judge for CodexCliJudge {
 // misses supporting evidence that a reasoning model would know to go look
 // for.
 //
-// Concurrency: unlike [`run_qa`], conversations are NOT run concurrently
-// against each other here, and questions within a conversation are
-// sequential. Each question can issue several `codex exec` calls (one per
-// round plus a grade call), so the added complexity of bounding
-// per-question concurrency (`ENV_QA_CONCURRENCY`) was judged not worth it
-// for this mode — `--agentic-qa` is meant to run over small, bounded
+// Concurrency: conversations are processed sequentially (ingest dominates
+// there), but the per-question agentic pipelines within each conversation run
+// with bounded concurrency (`SYNAPTIC_EVAL_QA_CONCURRENCY`, default 4) via
+// `buffer_unordered`, matching `run_qa`. Each question can issue several
+// `codex exec` calls (one per round plus a grade call), so this bounding keeps
+// a bounded sample tractable. `--agentic-qa` is still meant for small, bounded
 // samples (see `--max-conversations` / `--max-questions`), not full sweeps.
 
 /// Env var overriding the max rounds of the agentic retrieval loop (default
