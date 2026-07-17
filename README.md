@@ -4,14 +4,27 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An AI agent memory system in Rust: key/value memory with a knowledge graph,
-vector embeddings, hybrid (keyword + semantic) retrieval, temporal tracking,
-and optional feature-gated security primitives.
+vector embeddings, and a multi-stage retrieval pipeline — hybrid
+(keyword + semantic) retrieval with RRF fusion, over-fetch reranking,
+pseudo-relevance-feedback (PRF) pool augmentation, and an optional GPU
+cross-encoder reranker — plus temporal tracking and optional feature-gated
+security primitives.
+
+Retrieval quality and end-to-end answer accuracy are measured on the LoCoMo
+long-term-memory benchmark (real dataset, real numbers, honest caveats) — see
+[docs/evaluation.md](docs/evaluation.md). Highlights (full 1,986-question set
+unless noted): retrieval recall@10 **0.61** (best config), and an **agentic
+answer-guided retrieval** eval mode that lifts end-to-end QA accuracy to
+**0.50** on a labelled subset (a codex-CLI judge; see caveats) while abstaining
+("I don't know") rather than confabulating when the evidence is absent — a
+faithfulness property measured explicitly.
 
 This is a development library (version 0.2.0, not published to crates.io).
 The table below states honestly which parts are stable, which are beta, and
 which are experimental. There are no simulated or fake fallback code paths:
 features that are not really implemented return errors (fail closed) instead
-of pretending to work.
+of pretending to work. No quality/performance number appears here that is not
+backed by a measured run in [docs/evaluation.md](docs/evaluation.md).
 
 ## Module Maturity
 
@@ -21,7 +34,8 @@ of pretending to work.
 | Storage backends | stable | Memory, file (Sled); SQL (PostgreSQL) behind `sql-storage` |
 | Knowledge graph | stable | Node merging, relationship detection, traversal; tested |
 | Embeddings | stable | Deterministic local embeddings; used by hybrid retrieval |
-| Search / hybrid retrieval | beta | Tokenized keyword + vector search fused with Reciprocal Rank Fusion (RRF); HNSW ANN index used for related-memory counting |
+| Search / hybrid retrieval | beta | Tokenized keyword + vector + graph + temporal retrievers fused with Reciprocal Rank Fusion (RRF), composite scoring, and a deterministic reranker over an over-fetched candidate pool. Optional: PRF pool augmentation (`SYNAPTIC_RETRIEVAL_PRF`), multi-hop graph expansion, semantic embeddings (`static-embeddings` / `ml-models` / Ollama), and a candle BERT cross-encoder reranker (`reranker-model`, GPU via `cuda`). Measured on LoCoMo — see [docs/evaluation.md](docs/evaluation.md) |
+| Evaluation harness (`tools/eval`) | beta | Real LoCoMo/LongMemEval loaders; retrieval metrics (recall/precision/MRR, `--recall-curve`, `--completeness`), memory-growth, and LLM-gated end-to-end QA (`--qa-only`, `--agentic-qa`) with abstention/faithfulness metrics. Every printed number is a real run; QA is gated on a configured judge, never fabricated |
 | Checkpoint / restore | beta | Non-destructive restore (snapshot-validate-swap); tested |
 | Analytics | beta | Basic behavioral/performance analytics behind `analytics` |
 | Security: auth (`security`) | beta | Real argon2 password hashing, TOTP MFA, constant-time API key comparison (`subtle`), deny-by-default policy engine, zeroized keys. Opt-in feature flag |
@@ -87,23 +101,62 @@ Security features are **opt-in** and gated:
 - `zero-knowledge-proofs` — Poseidon + Groth16 proofs
 - `homomorphic-encryption` — TFHE FheInt64 (sum/average only; other encrypted ops fail closed)
 
+Retrieval-quality features (opt-in; the default build stays lean and offline
+with a lexical/TF-IDF embedder):
+
+- `static-embeddings` — fast pure-Rust model2vec static embeddings (best
+  speed/quality default; fetch the model with `scripts/fetch_embedding_model.sh --potion`)
+- `ml-models` — candle transformer embeddings (MiniLM); heavier, CPU-slow
+- `reranker-model` — candle BERT cross-encoder reranker (ms-marco-MiniLM);
+  strongest ranking, opt-in (`SYNAPTIC_RERANKER=cross-encoder`), GPU-recommended
+- `cuda` — candle CUDA backend so `ml-models`/`reranker-model` run on a GPU
+
 Other optional features: `sql-storage`, `multimodal`, `external-integrations`,
 `cross-platform`, `observability`, and `distributed-experimental` (explicitly
 experimental, see maturity table). Convenience groups: `full`, `full-experimental`, `minimal`.
 
-## Performance
+## Performance & Evaluation
 
-Measured benchmark results (with methodology and caveats) live in
-[docs/performance.md](docs/performance.md). Retrieval-quality evaluation on
-the LoCoMo long-term-memory benchmark — recall/precision/MRR, latency, memory
-growth, and a per-capability ablation — lives in
+Measured micro-benchmarks (with methodology and caveats) live in
+[docs/performance.md](docs/performance.md). The full retrieval-quality and
+end-to-end QA evaluation on the **LoCoMo** long-term-memory benchmark lives in
 [docs/evaluation.md](docs/evaluation.md). No other performance or quality
 numbers in this repository should be treated as validated.
+
+Headline measured results (see the doc for methodology and the many caveats):
+
+| metric | value | notes |
+|---|---|---|
+| retrieval recall@10 (full 1,986-q set) | 0.5237 → **0.6104** | baseline → best config (over-fetch + embedding rerank + cross-encoder) |
+| MultiHop recall@10 | 0.2475 → **0.3739** | +51%, via ranking (not graph connectivity) |
+| search latency p50 | **~0.46–0.76 s** | after a 9.5× pipeline-latency fix |
+| end-to-end QA accuracy (40-q subset, codex judge) | 0.375 → **0.50** | single-shot → agentic answer-guided retrieval |
+| faithfulness: abstains on unanswerable q | **~90%** | agentic + grounding; confabulates rather than guesses only ~10% |
+
+Run the harness (LLM-free retrieval metrics need no judge):
+
+```bash
+cargo build --release -p synaptic-eval --bin run_eval --features synaptic/static-embeddings
+SYNAPTIC_RETRIEVAL_EMBEDDER=static SYNAPTIC_STATIC_MODEL_DIR=models/potion-base-8M \
+  ./target/release/run_eval tools/eval/data/locomo10.json --retrieval-only
+```
+
+End-to-end QA (`--qa-only` / `--agentic-qa`) requires a configured judge
+(`SYNAPTIC_EVAL_JUDGE=codex` with the `codex` CLI, or an OpenAI-compatible
+endpoint); without one, QA is reported as not-run — never fabricated. The
+GPU cross-encoder and agentic modes are documented in `docs/evaluation.md`.
+
+**Honesty note:** QA accuracy is measured on labelled subsets (the full
+1,986-question judge run is bounded by sequential judge latency) and the codex
+judge is nondeterministic (~±0.03); the headline deltas are far beyond that
+noise. Retrieval metrics are full-set. Weight-tuned settings (reranker weights,
+PRF) are tuned on LoCoMo and may not transfer; the structural over-fetch fix
+does.
 
 ## Testing
 
 ```bash
-cargo test --lib                                   # library unit tests (440+)
+cargo test --lib                                   # library unit tests (465+)
 cargo test                                          # default-feature test suite
 cargo test --features "security test-utils"        # include security suites
 ```
