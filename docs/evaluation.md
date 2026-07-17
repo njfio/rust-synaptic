@@ -1363,3 +1363,48 @@ judge call for ~no measured benefit. Kept as opt-in; not recommended by default.
 The codex-retry hardening, by contrast, is unconditionally useful: transient "model at
 capacity" errors were aborting whole runs, and retry-with-backoff makes the QA/agentic
 measurements robust to upstream flakiness.
+
+## Head-to-head vs Mem0 (open-source memory system, 2026-07-17)
+
+Ran the popular open-source memory system [Mem0](https://github.com/mem0ai/mem0)
+through the SAME LoCoMo questions, the SAME codex answer/grade prompts, and the SAME
+abstention/faithfulness classification as this repo's harness (see
+`tools/eval/comparisons/`), so the numbers sit on the same footing on the answering side.
+
+**QA accuracy — identical 40-question subset, identical codex judge:**
+
+| system | QA accuracy |
+|---|---|
+| Mem0 (local qwen-7B ingestion) | 0.250 |
+| this repo, single-shot retrieval | 0.375 |
+| this repo, agentic answer-guided retrieval | **0.500** |
+
+**Faithfulness — 50 provably-unanswerable (Abstention) questions:**
+
+| system | abstained (honest "I don't know") | confabulated |
+|---|---|---|
+| Mem0 | 44/50 (88%) | 12% |
+| this repo, single-shot | 47/50 (94%) | 6% |
+| this repo, agentic (after abstention fix) | ~90% | ~10% |
+
+**Honest reading (caveats matter here more than the numbers):**
+- Under **matched local conditions** (both systems answering with the same codex judge
+  in the same environment), this repo outperforms Mem0 on QA accuracy — 1.5× even
+  single-shot, 2× with agentic retrieval. Mem0's single-shot retrieve-then-answer maps
+  to our single-shot (0.375 vs 0.250); agentic (0.50) is our differentiator (Mem0 does
+  not do iterative answer-guided retrieval).
+- **BUT Mem0's ingestion here used a local qwen-7B, not the GPT-4 its published LoCoMo
+  numbers (~66%) assume.** Mem0's memory quality depends heavily on the extraction LLM,
+  so this is NOT a claim of beating Mem0's best case — it is "competitive-to-better in a
+  matched local setup." A genuine architectural point in this repo's favor: its
+  memory-building uses no LLM (heuristic extraction + embeddings), so it is not
+  bottlenecked by the ingestion model's quality the way Mem0 is.
+- **Faithfulness is largely a wash.** Both systems answer with the same codex judge and
+  the same "say I don't know if not answerable" prompt, so abstention is driven mostly by
+  the shared answerer, not the memory system — the ~6-point gap (94% vs 88%) just reflects
+  Mem0 occasionally retrieving plausible-but-irrelevant facts that nudge the judge to
+  answer. This repo's faithfulness *work* was about fixing its OWN agentic mode (which
+  confabulated 100% before the fix), not about being dramatically more faithful than Mem0.
+- Retrieval `recall` is not compared (different memory unit: Mem0 stores extracted facts,
+  not turns). Small subsets; codex judge is nondeterministic (~±0.03). Zep/Graphiti and
+  Letta not tested (heavier setup) — this is one real head-to-head, not a field survey.
