@@ -553,12 +553,21 @@ async fn run_agentic_qa_only(
     }
     let max_rounds = qa::agentic_max_rounds();
     let grounded = qa::grounded_enabled();
-    let report = qa::run_agentic_qa(conversations, &judge, K, max_rounds, grounded)
-        .await
-        .map_err(|e| e.to_string())?;
+    let ground_verify = qa::ground_verify_enabled();
+    let report = qa::run_agentic_qa(
+        conversations,
+        &judge,
+        K,
+        max_rounds,
+        grounded,
+        ground_verify,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     w(format!(
         "QA: graded={} correct={} accuracy={:.4} max_rounds={} mean_rounds_used={:.2} \
-         gold_added_by_followup_fraction={:.4} grounded={} ungrounded_overrides={}",
+         gold_added_by_followup_fraction={:.4} grounded={} ungrounded_overrides={} \
+         ground_verify={} support_overrides={}",
         report.questions,
         report.correct,
         report.accuracy,
@@ -566,7 +575,9 @@ async fn run_agentic_qa_only(
         report.mean_rounds_used,
         report.gold_added_by_followup_fraction,
         report.grounded,
-        report.ungrounded_overrides
+        report.ungrounded_overrides,
+        report.ground_verify,
+        report.support_overrides
     ))?;
     for (qtype, b) in &report.by_qtype {
         w(format!(

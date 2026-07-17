@@ -1327,3 +1327,39 @@ citation), which citation-*existence* cannot catch. True enforced grounding need
 citation-*support* verification (does the cited memory entail the answer? — an entailment
 check), a natural follow-up. As shipped, grounding is a strong opt-in faithfulness lever:
 prompt-required citations move agentic confabulation from ~22% toward single-shot's ~6%.
+
+## Citation-support verification + honest limits of structural grounding (2026-07-17)
+
+Structural grounding (#89) overrode answers with NO valid citation, but couldn't catch a
+HALLUCINATED-but-valid citation (a real in-context memory that doesn't actually support the
+answer). Added an entailment check (opt-in `SYNAPTIC_EVAL_GROUND_VERIFY=1`): after a grounded
+answer with a valid citation, ask the judge whether the cited memory actually supports the
+answer; if not, override to "I don't know" (`support_overrides` counted). Also hardened the
+codex judge to RETRY transient upstream errors (model-at-capacity / rate limits) with backoff
+so a single blip no longer aborts a whole eval run.
+
+**Measured (agentic + PRF + grounding + verify, codex judge):**
+
+| | grounded only | grounded + verify |
+|---|---|---|
+| abstention confabulation | ~10% | ~7% (within noise) |
+| `support_overrides` (abstention 30q) | — | **0** |
+| answerable accuracy (20q) | 0.55 | 0.45 (within noise) |
+| `support_overrides` (answerable 20q) | — | **1** |
+| over_abstention | 0 | 0 |
+
+**Honest finding: the structural override gates are nearly INERT on LoCoMo.** Both
+`ungrounded_overrides` (citation existence, #89) and `support_overrides` (citation support,
+this change) fire ~0-1 times per 30-50 questions. The faithfulness improvements this whole
+sub-arc (agentic 100% → ~10% confabulation on unanswerable questions) came from the PROMPT —
+asking the model to cite/verify makes it reason about grounding and abstain honestly, rather
+than producing catchable violations. The residual confabulations cite plausible-looking
+memories the verify-judge accepts, so citation-support verification does not measurably reduce
+them here. The entailment check is a CORRECT, fail-closed safety layer (off by default) that
+would matter more for models/datasets that hallucinate unsupporting citations at higher rates
+— but on LoCoMo, prompt-level grounding is what does the work, and verification adds an extra
+judge call for ~no measured benefit. Kept as opt-in; not recommended by default.
+
+The codex-retry hardening, by contrast, is unconditionally useful: transient "model at
+capacity" errors were aborting whole runs, and retry-with-backoff makes the QA/agentic
+measurements robust to upstream flakiness.
