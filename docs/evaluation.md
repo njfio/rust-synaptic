@@ -1293,3 +1293,37 @@ declines when the evidence is absent. (The `is_abstention` classifier was
 tightened to whole-word matching for the short markers `none`/`unknown` to avoid
 fragment false positives; the abstention rate was unchanged — ~78% — confirming
 the figure is not a matching artifact.)
+
+## Structural grounding: cite-a-memory-or-abstain (2026-07-17)
+
+The agentic abstention fix (#88) made faithfulness a prompt *request* (~22% residual
+confabulation on unanswerable questions). Structural grounding (opt-in
+`SYNAPTIC_EVAL_GROUNDED=1`) tries to make it a *requirement*: the answer must cite the
+numbered context memory it draws from (`ANSWER: <text> SOURCES: [n,...]`), the citation is
+verified against the provided context, and a non-abstention answer with NO valid citation is
+overridden to "I don't know" (`ungrounded_overrides` counted).
+
+**Measured (agentic + PRF, codex judge):**
+
+| | ungrounded | grounded |
+|---|---|---|
+| unanswerable: abstained | ~78% | **90%** |
+| unanswerable: confabulated | ~22% | **10%** |
+| answerable accuracy (20q) | 0.400 | 0.550 |
+| answerable evidence-missing confabulation | ~56% | ~20% |
+| over_abstention | 0 | 0 |
+
+Grounding improved faithfulness across the board — confabulation roughly halved on both
+unanswerable and answerable-but-evidence-missing questions — **without hurting answerable
+accuracy** (0.40→0.55, held/improved within the small-sample codex noise) and with zero
+over-abstention.
+
+**Honest mechanism note:** `ungrounded_overrides = 0` in practice — the structural override
+never fired. The gain came from the citation *requirement in the prompt* (a model asked to
+cite a supporting memory reasons about whether it can, and abstains honestly when it can't),
+NOT from the override backstop. The override only catches answers with no/invalid citation;
+the residual confabulations cite a VALID-but-unsupporting memory (a hallucinated-but-in-range
+citation), which citation-*existence* cannot catch. True enforced grounding needs
+citation-*support* verification (does the cited memory entail the answer? — an entailment
+check), a natural follow-up. As shipped, grounding is a strong opt-in faithfulness lever:
+prompt-required citations move agentic confabulation from ~22% toward single-shot's ~6%.
