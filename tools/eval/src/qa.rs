@@ -868,6 +868,31 @@ impl CodexCliJudge {
     /// Runs on a blocking thread; enforces the timeout via the coreutils
     /// `timeout` wrapper (exit 124 → timeout error).
     async fn run_codex(&self, prompt: String) -> Result<String, QaError> {
+        // Transient upstream errors ("model at capacity", rate limits) are
+        // retried with backoff so a single blip does not abort a whole eval
+        // run. Non-transient errors (bad exit, timeout) fail immediately.
+        const MAX_ATTEMPTS: usize = 4;
+        let mut last_err = QaError::Judge("codex exec produced no result".to_string());
+        for attempt in 0..MAX_ATTEMPTS {
+            match self.run_codex_once(prompt.clone()).await {
+                Ok(out) => return Ok(out),
+                Err((e, transient)) => {
+                    last_err = e;
+                    if !transient || attempt + 1 == MAX_ATTEMPTS {
+                        return Err(last_err);
+                    }
+                    // Backoff: 2s, 4s, 8s.
+                    let backoff = 2u64 << attempt;
+                    tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
+                }
+            }
+        }
+        Err(last_err)
+    }
+
+    /// One `codex exec` attempt. The `bool` in the error is `true` when the
+    /// failure looks transient (upstream capacity / rate limit) and worth a retry.
+    async fn run_codex_once(&self, prompt: String) -> Result<String, (QaError, bool)> {
         let bin = self.bin.clone();
         let secs = self.timeout_secs;
         let output = tokio::task::spawn_blocking(move || {
@@ -879,22 +904,34 @@ impl CodexCliJudge {
                 .output()
         })
         .await
-        .map_err(|e| QaError::Judge(format!("codex task join failed: {e}")))?
-        .map_err(|e| QaError::Judge(format!("failed to spawn codex CLI: {e}")))?;
+        .map_err(|e| (QaError::Judge(format!("codex task join failed: {e}")), false))?
+        .map_err(|e| (QaError::Judge(format!("failed to spawn codex CLI: {e}")), false))?;
 
         if output.status.code() == Some(124) {
-            return Err(QaError::Judge(format!(
-                "codex exec timed out after {secs}s"
-            )));
+            return Err((
+                QaError::Judge(format!("codex exec timed out after {secs}s")),
+                false,
+            ));
         }
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let tail: String = stderr.chars().rev().take(400).collect::<String>();
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let lower = combined.to_lowercase();
+            let transient = lower.contains("at capacity")
+                || lower.contains("try a different model")
+                || lower.contains("rate limit")
+                || lower.contains("429")
+                || lower.contains("503")
+                || lower.contains("overloaded");
+            let tail: String = combined.chars().rev().take(400).collect::<String>();
             let tail: String = tail.chars().rev().collect();
-            return Err(QaError::Judge(format!(
-                "codex exec exited with {}: {tail}",
-                output.status
-            )));
+            return Err((
+                QaError::Judge(format!("codex exec exited with {}: {tail}", output.status)),
+                transient,
+            ));
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
