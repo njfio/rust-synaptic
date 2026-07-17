@@ -1005,8 +1005,12 @@ fn parse_agentic_reply(text: &str) -> AgenticStep {
 
 /// Build the per-round prompt: the question plus the numbered context
 /// memories accumulated so far. `force_answer` is set on the last permitted
-/// round, instructing the judge to answer no matter how incomplete the
-/// context is (the loop's bound / fail-safe against running forever).
+/// round, instructing the judge to reply now rather than searching further
+/// (the loop's bound / fail-safe against running forever). Both the normal
+/// and final-round prompts explicitly permit the judge to abstain with
+/// `ANSWER: I don't know` when the memories genuinely do not contain the
+/// answer, rather than forcing a fabricated answer — a memory system must be
+/// able to say it doesn't know.
 fn build_agentic_prompt(
     question: &str,
     context: &[(String, String)],
@@ -1025,10 +1029,14 @@ fn build_agentic_prompt(
     if force_answer {
         format!(
             "You are answering a question using ONLY the memories below. This is \
-             the FINAL round: you must answer now, even if the memories seem \
+             the FINAL round: you must reply now, even if the memories seem \
              incomplete — do the best you can with what is here. Reply with \
-             EXACTLY one line in the form:\nANSWER: <your answer>\n\n\
-             Memories:\n{ctx}\n\nQuestion: {question}"
+             EXACTLY one line in the form:\nANSWER: <your answer>\n\
+             If, and only if, the memories genuinely do not contain the answer, \
+             reply with EXACTLY:\nANSWER: I don't know\n\
+             Do not guess or fabricate an answer that is not supported by the \
+             memories — abstaining with 'I don't know' is correct when the \
+             evidence is not present.\n\nMemories:\n{ctx}\n\nQuestion: {question}"
         )
     } else {
         format!(
@@ -1038,8 +1046,13 @@ fn build_agentic_prompt(
              If they do NOT contain enough information, reply with EXACTLY one \
              line naming ONE specific missing fact to look up:\n\
              SEARCH: <one specific missing fact>\n\
-             Do not use any knowledge beyond the memories shown. Do not add any \
-             other text.\n\nMemories:\n{ctx}\n\nQuestion: {question}"
+             If you have already searched and are confident the memories \
+             genuinely do not contain the answer, reply with EXACTLY:\n\
+             ANSWER: I don't know\n\
+             Only abstain with 'I don't know' when the memories truly lack the \
+             answer — if the memories contain it, answer it directly. Do not use \
+             any knowledge beyond the memories shown. Do not add any other \
+             text.\n\nMemories:\n{ctx}\n\nQuestion: {question}"
         )
     }
 }
@@ -1511,6 +1524,29 @@ mod agentic_qa_tests {
         assert_eq!(agentic_max_rounds(), 7);
 
         std::env::remove_var(ENV_AGENTIC_ROUNDS);
+    }
+
+    #[test]
+    fn final_round_prompt_permits_abstention() {
+        let prompt = build_agentic_prompt("Who is the mayor?", &[], true);
+        assert!(
+            prompt.to_lowercase().contains("i don't know"),
+            "final-round (force_answer) prompt must explicitly permit \
+             abstaining with \"I don't know\" instead of forcing a fabricated \
+             answer; prompt was: {prompt}"
+        );
+    }
+
+    #[test]
+    fn normal_round_prompt_also_permits_abstention() {
+        let prompt = build_agentic_prompt("Who is the mayor?", &[], false);
+        assert!(
+            prompt.to_lowercase().contains("i don't know"),
+            "normal-round prompt must also permit abstention when the \
+             memories genuinely lack the answer; prompt was: {prompt}"
+        );
+        // Still preserves the SEARCH path for genuinely missing evidence.
+        assert!(prompt.contains("SEARCH:"));
     }
 }
 
