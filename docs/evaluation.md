@@ -1245,3 +1245,51 @@ missing and searches for it specifically. Gathering (agentic follow-ups) + ranki
 via `SYNAPTIC_EVAL_QA_CONCURRENCY`), best retrieval per round needs the GPU cross-encoder
 build. Caveats: 40-q hard-skewed subset; codex judge nondeterministic (the +0.125 jump is
 far beyond its ~±0.03 noise). MultiHop (0.21) remains the hard tail even here.
+
+## Faithfulness: does the memory system confabulate? (2026-07-17)
+
+Recall is only half of a memory system's value; the other half is GROUNDEDNESS — when it
+lacks the evidence, does it say "I don't know" or fabricate a confident wrong answer? Added
+`is_abstention` classification + a faithfulness breakdown (confabulation vs honest
+abstention), a `--qtype` filter to target the LoCoMo Abstention category (446 questions
+whose gold answer is "None" — provably unanswerable, so any confident answer is pure
+fabrication), and measured both QA modes.
+
+**Abstention category (50 provably-unanswerable questions):**
+
+| config | abstained (faithful) | confabulated |
+|---|---|---|
+| single-shot | 47/50 (94%) | 3/50 (6%) |
+| agentic (as first built) | **0/50 (0%)** | **50/50 (100%)** |
+| agentic (after fix) | 38–39/50 (~78%) | 11–12/50 (~22%) |
+
+**Critical finding:** the agentic loop (which broke the QA ceiling, 0.375→0.500) as first
+built **confabulated on 100% of unanswerable questions** — a disqualifying flaw for a memory
+system. Root cause: the loop offered only `ANSWER`/`SEARCH` and FORCED an answer on the final
+round, so when the evidence genuinely did not exist it fabricated one (mean 2.74 rounds spent
+searching for nothing, then a made-up answer). Single-shot, allowed to say "I don't know,"
+abstained 94% of the time.
+
+**Fix:** make abstention a first-class terminal action — the prompt (every round, and
+especially the forced final round) permits `ANSWER: I don't know` when the memories genuinely
+lack the answer. Result: abstention on unanswerable questions recovered 0%→76%, WITHOUT
+over-correcting — answerable-question accuracy held (agentic-static 0.400 unchanged) and
+`over_abstention = 0` (it never declines a question whose evidence it actually has).
+
+**Honest residuals:** (1) agentic is still more answer-prone than single-shot (24% vs 6%
+confabulation on unanswerable; on answerable-but-evidence-missed questions ~56% vs ~16%) —
+actively searching then answering biases it toward producing something. A structural
+grounding step (require a supporting memory per claim, else abstain) would tighten this
+further. (2) Grading artifact: the codex grader does not credit "I don't know" as matching
+gold "None", so ABSTENTION-category accuracy reads ~0.04–0.16 even when abstention is
+behaviorally correct — the faithfulness metric (not accuracy) is the right measure of
+abstention behavior, and full-set QA accuracy understates faithful systems on the 22% of
+questions that are unanswerable.
+
+**Takeaway:** for a memory system, faithfulness must be measured alongside recall — the
+agentic QA breakthrough was hiding a 100%-confabulation flaw that only the abstention metric
+revealed. Post-fix, the system both answers hard multi-evidence questions AND honestly
+declines when the evidence is absent. (The `is_abstention` classifier was
+tightened to whole-word matching for the short markers `none`/`unknown` to avoid
+fragment false positives; the abstention rate was unchanged — ~78% — confirming
+the figure is not a matching artifact.)

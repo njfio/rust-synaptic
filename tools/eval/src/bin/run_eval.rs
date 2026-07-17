@@ -144,6 +144,16 @@ async fn main() -> Result<(), String> {
         .position(|a| a == "--max-questions")
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse().ok());
+    // `--qtype NAME` keeps only questions whose category matches NAME
+    // (case-insensitive: multihop|temporal|opendomain|singlehop|abstention),
+    // applied BEFORE `--max-questions`. Lets a run target a single category
+    // (e.g. abstention, which is clustered at the end of each conversation and
+    // otherwise never reached by first-N sampling).
+    let qtype_filter: Option<String> = args
+        .iter()
+        .position(|a| a == "--qtype")
+        .and_then(|i| args.get(i + 1))
+        .map(|v| v.to_ascii_lowercase());
     let dataset_path = args
         .iter()
         .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
@@ -162,6 +172,12 @@ async fn main() -> Result<(), String> {
     let mut conversations = load(path)?;
     if let Some(n) = max_conversations {
         conversations.truncate(n);
+    }
+    if let Some(ref want) = qtype_filter {
+        for c in &mut conversations {
+            c.questions
+                .retain(|q| format!("{:?}", q.qtype).to_ascii_lowercase() == *want);
+        }
     }
     if let Some(q) = max_questions {
         for c in &mut conversations {
@@ -497,6 +513,7 @@ async fn run_qa_only(
                 ))?;
             }
             write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
+            write_faithfulness_breakdown(&r.faithfulness, &mut *w)?;
         }
     }
     Ok(())
@@ -555,6 +572,33 @@ async fn run_agentic_qa_only(
         ))?;
     }
     write_recall_breakdown(&report.recall_breakdown, &mut *w)?;
+    write_faithfulness_breakdown(&report.faithfulness, &mut *w)?;
+    Ok(())
+}
+
+/// Print the confabulation-vs-abstention breakdown (see
+/// [`qa::FaithfulnessBreakdown`]): abstention-category abstain rate (the
+/// cleanest confabulation test), the evidence-missing faithful/confabulated/
+/// answered-correct split, and over-abstention on answerable questions.
+fn write_faithfulness_breakdown(
+    f: &qa::FaithfulnessBreakdown,
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w(format!(
+        "  faithfulness: abstention_qtype total={} abstained={} confabulated={}",
+        f.abstention_qtype_total, f.abstention_qtype_abstained, f.abstention_qtype_confabulated
+    ))?;
+    w(format!(
+        "  faithfulness: evidence_missing total={} abstained={} confabulated={} answered_correct={}",
+        f.evidence_missing_total,
+        f.evidence_missing_abstained,
+        f.evidence_missing_confabulated,
+        f.evidence_missing_answered_correct
+    ))?;
+    w(format!(
+        "  faithfulness: over_abstention={}",
+        f.over_abstention
+    ))?;
     Ok(())
 }
 
