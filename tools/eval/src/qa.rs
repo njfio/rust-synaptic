@@ -910,6 +910,47 @@ impl CodexCliJudge {
         parse_codex_stdout(&stdout)
             .ok_or_else(|| QaError::Judge("codex exec produced no parseable output".to_string()))
     }
+
+    /// Citation-support verification (see [`ENV_GROUND_VERIFY`]): ask whether
+    /// `cited_memories` — the content of the memories the judge cited as
+    /// support for `answer` — actually support that answer. Fail-closed: a
+    /// spawn/timeout/exit error propagates as `Err` rather than being treated
+    /// as "supported"; callers must never assume support on a judge error.
+    pub async fn verify_support(
+        &self,
+        answer: &str,
+        cited_memories: &[String],
+    ) -> Result<bool, QaError> {
+        let prompt = build_verify_support_prompt(answer, cited_memories);
+        let stdout = self.run_codex(prompt).await?;
+        parse_grade_verdict(&stdout).ok_or_else(|| {
+            QaError::Judge(format!(
+                "unparseable YES/NO support verdict from codex: {:?}",
+                stdout.trim()
+            ))
+        })
+    }
+}
+
+/// Build the prompt for [`CodexCliJudge::verify_support`]: the cited
+/// memories' content and the answer they were cited to support, asking the
+/// judge for a strict YES/NO on whether the memories directly support the
+/// answer.
+fn build_verify_support_prompt(answer: &str, cited_memories: &[String]) -> String {
+    let memories = if cited_memories.is_empty() {
+        "(no cited memories)".to_string()
+    } else {
+        cited_memories
+            .iter()
+            .enumerate()
+            .map(|(i, m)| format!("[{}] {m}", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "Here are memories:\n{memories}\n\nAnswer: {answer}\n\nDo these memories \
+         directly support that answer? Reply exactly YES or NO."
+    )
 }
 
 #[async_trait::async_trait]
@@ -1008,6 +1049,36 @@ pub fn grounded_enabled() -> bool {
     }
 }
 
+/// Env var enabling CITATION-SUPPORT VERIFICATION on top of structural
+/// grounding (default off, byte-identical behavior when unset). Truthy
+/// values (`1`, `true`, matched case-insensitively) turn it on. Structural
+/// grounding ([`ENV_GROUNDED`]) only checks that a cited index is *valid*
+/// (points at a real context memory); it cannot catch a hallucinated-but-
+/// valid citation, where the judge cites a real memory that does not
+/// actually support the answer it gave. When both `ENV_GROUNDED` and this
+/// flag are on, [`run_one_agentic_question`] asks the judge a second,
+/// independent question — [`CodexCliJudge::verify_support`] — for every
+/// grounded answer that survives the citation-validity gate: do the cited
+/// memories actually support this answer? An unsupported verdict overrides
+/// the answer to "I don't know", same as an invalid citation would. This has
+/// no effect unless [`grounded_enabled`] is also true, and costs one extra
+/// `codex exec` call per such answer.
+pub const ENV_GROUND_VERIFY: &str = "SYNAPTIC_EVAL_GROUND_VERIFY";
+
+/// Read [`ENV_GROUND_VERIFY`]: `true` when set to a truthy value
+/// (`1`/`true`, case-insensitive), `false` when unset or anything else.
+/// Default off, so existing grounded runs are unaffected unless the flag is
+/// explicitly set. Has no effect unless [`grounded_enabled`] is also true.
+pub fn ground_verify_enabled() -> bool {
+    match std::env::var(ENV_GROUND_VERIFY) {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            v == "1" || v == "true"
+        }
+        Err(_) => false,
+    }
+}
+
 /// Extract cited context indices from the tail of an `ANSWER:` reply, e.g.
 /// `"Paris SOURCES: [1, 2]"`, `"Paris SOURCES: [3]"`, `"Paris SOURCES: 1 2"`.
 /// Lenient by design (see module docs on leniency): accepts bracketed or
@@ -1073,6 +1144,26 @@ fn grounding_gate(answer: &str, sources: &[usize], context_len: usize) -> (Strin
         return (answer.to_string(), false);
     }
     if has_valid_citation(sources, context_len) {
+        (answer.to_string(), false)
+    } else {
+        ("I don't know".to_string(), true)
+    }
+}
+
+/// The citation-support verification gate: given a (possibly already-
+/// abstaining) `answer` that already survived [`grounding_gate`] (i.e. it is
+/// either an abstention or carries a valid citation), and whether the judge
+/// confirmed the cited memories actually `supported` that answer, decide the
+/// final answer text and whether an override occurred. Mirrors
+/// [`grounding_gate`]'s shape: already-abstaining answers are never touched,
+/// and a non-abstaining answer the judge found unsupported is overridden to
+/// "I don't know" — a valid-but-hallucinated citation is no better than a
+/// missing one.
+fn verification_gate(answer: &str, supported: bool) -> (String, bool) {
+    if is_abstention(answer) {
+        return (answer.to_string(), false);
+    }
+    if supported {
         (answer.to_string(), false)
     } else {
         ("I don't know".to_string(), true)
@@ -1244,6 +1335,12 @@ pub struct AgenticQuestionRecord {
     /// confident-but-uncited answer to "I don't know" for this question.
     /// Always `false` when grounding is off.
     pub ungrounded_override: bool,
+    /// Whether citation-support verification (see [`ENV_GROUND_VERIFY`])
+    /// overrode a confident, validly-cited-but-unsupported answer to "I
+    /// don't know" for this question. Always `false` when grounding or
+    /// verification is off, or when the grounding gate already overrode
+    /// (or abstained) this answer.
+    pub support_override: bool,
 }
 
 /// Measured agentic QA report.
@@ -1282,6 +1379,14 @@ pub struct AgenticReport {
     /// grounding gate because they had no valid citation into the provided
     /// context. Always `0` when `grounded` is `false`.
     pub ungrounded_overrides: usize,
+    /// Whether citation-support verification (see [`ENV_GROUND_VERIFY`]) was
+    /// enabled for this run. Has no effect unless `grounded` is also `true`.
+    pub ground_verify: bool,
+    /// Count of answers overridden to "I don't know" by citation-support
+    /// verification because the cited memories, though a valid citation,
+    /// were judged not to actually support the answer. Always `0` when
+    /// `ground_verify` is `false` (or `grounded` is `false`).
+    pub support_overrides: usize,
 }
 
 /// The two records produced by [`run_one_agentic_question`] for a single
@@ -1313,6 +1418,7 @@ async fn run_one_agentic_question(
     k: usize,
     max_rounds: usize,
     grounded: bool,
+    ground_verify: bool,
 ) -> Result<AgenticQuestionOutcome, QaError> {
     let seed_fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
     let seed_keys: Vec<String> = seed_fragments.iter().map(|f| f.entry.key.clone()).collect();
@@ -1381,12 +1487,38 @@ async fn run_one_agentic_question(
     // actually in the provided context — override it to "I don't know"
     // rather than grade a fabricated answer as-is. See `grounding_gate` and
     // `parse_sources` for the (deliberately lenient) parsing rules.
+    let (text, sources) = if grounded {
+        split_answer_and_sources(&raw_answer)
+    } else {
+        (raw_answer, Vec::new())
+    };
     let (predicted, ungrounded_override) = if grounded {
-        let (text, sources) = split_answer_and_sources(&raw_answer);
         grounding_gate(&text, &sources, context.len())
     } else {
-        (raw_answer, false)
+        (text, false)
     };
+
+    // Citation-support verification (only when both grounding and
+    // verification are enabled, and only for answers that survived the
+    // grounding gate unchanged — i.e. already-abstaining answers or answers
+    // with a valid citation): ask the judge whether the CITED memories
+    // actually support the answer, and override to "I don't know" if not.
+    // This is what catches a hallucinated-but-valid citation that
+    // `grounding_gate` alone cannot (it only checks citation *validity*, not
+    // whether the citation actually supports the claim). See
+    // `verification_gate` and `CodexCliJudge::verify_support`.
+    let (predicted, support_override) =
+        if grounded && ground_verify && !ungrounded_override && !is_abstention(&predicted) {
+            let cited_contents: Vec<String> = sources
+                .iter()
+                .filter(|&&n| n >= 1 && n <= context.len())
+                .map(|&n| context[n - 1].1.clone())
+                .collect();
+            let supported = judge.verify_support(&predicted, &cited_contents).await?;
+            verification_gate(&predicted, supported)
+        } else {
+            (predicted, false)
+        };
 
     let correct = judge
         .grade(&question.text, &question.gold_answer, &predicted)
@@ -1414,6 +1546,7 @@ async fn run_one_agentic_question(
             has_gold,
             abstained,
             ungrounded_override,
+            support_override,
         },
         cross_tab: QaQuestionRecord {
             question_id: question.id.clone(),
@@ -1451,6 +1584,7 @@ pub async fn run_agentic_qa(
     k: usize,
     max_rounds: usize,
     grounded: bool,
+    ground_verify: bool,
 ) -> Result<AgenticReport, QaError> {
     let max_rounds = max_rounds.max(1);
     let concurrency = qa_concurrency();
@@ -1469,7 +1603,15 @@ pub async fn run_agentic_qa(
         let memory_ref = &memory;
         let mut outcomes = stream::iter(conversation.questions.iter())
             .map(|question| {
-                run_one_agentic_question(memory_ref, judge, question, k, max_rounds, grounded)
+                run_one_agentic_question(
+                    memory_ref,
+                    judge,
+                    question,
+                    k,
+                    max_rounds,
+                    grounded,
+                    ground_verify,
+                )
             })
             .buffer_unordered(concurrency);
         while let Some(outcome) = outcomes.next().await {
@@ -1526,6 +1668,7 @@ pub async fn run_agentic_qa(
         .iter()
         .filter(|q| q.ungrounded_override)
         .count();
+    let support_overrides = per_question.iter().filter(|q| q.support_override).count();
 
     Ok(AgenticReport {
         k,
@@ -1545,6 +1688,8 @@ pub async fn run_agentic_qa(
         faithfulness,
         grounded,
         ungrounded_overrides,
+        ground_verify,
+        support_overrides,
     })
 }
 
@@ -1809,6 +1954,65 @@ mod agentic_qa_tests {
         assert!(!grounded_enabled());
 
         std::env::remove_var(ENV_GROUNDED);
+    }
+
+    #[test]
+    fn ground_verify_enabled_defaults_off_and_parses_truthy() {
+        std::env::remove_var(ENV_GROUND_VERIFY);
+        assert!(!ground_verify_enabled());
+
+        std::env::set_var(ENV_GROUND_VERIFY, "1");
+        assert!(ground_verify_enabled());
+
+        std::env::set_var(ENV_GROUND_VERIFY, "true");
+        assert!(ground_verify_enabled());
+
+        std::env::set_var(ENV_GROUND_VERIFY, "TRUE");
+        assert!(ground_verify_enabled());
+
+        std::env::set_var(ENV_GROUND_VERIFY, "0");
+        assert!(!ground_verify_enabled());
+
+        std::env::remove_var(ENV_GROUND_VERIFY);
+    }
+
+    #[test]
+    fn verification_gate_keeps_supported_answer() {
+        let (answer, overridden) = verification_gate("Paris", true);
+        assert_eq!(answer, "Paris");
+        assert!(!overridden);
+    }
+
+    #[test]
+    fn verification_gate_overrides_unsupported_answer() {
+        let (answer, overridden) = verification_gate("Paris", false);
+        assert_eq!(answer, "I don't know");
+        assert!(overridden);
+    }
+
+    #[test]
+    fn verification_gate_leaves_existing_abstention_untouched_and_not_counted() {
+        let (answer, overridden) = verification_gate("I don't know", false);
+        assert_eq!(answer, "I don't know");
+        assert!(
+            !overridden,
+            "an already-abstaining answer must not be counted as a support override"
+        );
+    }
+
+    #[test]
+    fn verify_support_prompt_contains_answer_and_cited_memories() {
+        let prompt =
+            build_verify_support_prompt("Paris", &["The capital of France is Paris.".to_string()]);
+        assert!(prompt.contains("Answer: Paris"));
+        assert!(prompt.contains("The capital of France is Paris."));
+        assert!(prompt.contains("YES or NO"));
+    }
+
+    #[test]
+    fn verify_support_prompt_handles_no_cited_memories() {
+        let prompt = build_verify_support_prompt("Paris", &[]);
+        assert!(prompt.contains("(no cited memories)"));
     }
 }
 
