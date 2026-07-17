@@ -1017,8 +1017,18 @@ pub fn grounded_enabled() -> bool {
 /// whether ANY cited number turns out to be a valid context index (checked
 /// by the caller). Returns an empty vec when there is no `SOURCES:` marker
 /// or it names no integers.
+/// Byte offset of the (ASCII, case-insensitive) `SOURCES:` marker in `s`.
+/// Byte-wise so the returned offset is always a valid char boundary — unlike
+/// `to_uppercase().find(...)`, whose index can desync from the original string
+/// when non-ASCII characters change byte length under case folding.
+fn find_sources_marker(s: &str) -> Option<usize> {
+    s.as_bytes()
+        .windows("SOURCES:".len())
+        .position(|w| w.eq_ignore_ascii_case(b"SOURCES:"))
+}
+
 pub fn parse_sources(answer_line: &str) -> Vec<usize> {
-    let Some(idx) = answer_line.to_uppercase().find("SOURCES:") else {
+    let Some(idx) = find_sources_marker(answer_line) else {
         return Vec::new();
     };
     let tail = &answer_line[idx + "SOURCES:".len()..];
@@ -1035,7 +1045,7 @@ pub fn parse_sources(answer_line: &str) -> Vec<usize> {
 /// empty citation list.
 fn split_answer_and_sources(answer: &str) -> (String, Vec<usize>) {
     let sources = parse_sources(answer);
-    let text = match answer.to_uppercase().find("SOURCES:") {
+    let text = match find_sources_marker(answer) {
         Some(idx) => answer[..idx].trim().to_string(),
         None => answer.trim().to_string(),
     };
