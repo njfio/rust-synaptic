@@ -97,9 +97,14 @@ pub const ABSTENTION_PHRASES: &[&str] = &[
     "isn't mentioned",
     "doesn't say",
     "does not say",
-    "unknown",
-    "none",
 ];
+
+/// Short single-word abstention markers that are matched as WHOLE WORDS (not
+/// substrings) to avoid false positives inside ordinary answers — e.g.
+/// "unknown to police", "Unknown Pleasures", or a name/place that merely
+/// contains the fragment. Substring-matching these skews the confabulation
+/// metric, so they are word-bounded.
+pub const ABSTENTION_WORDS: &[&str] = &["unknown", "none"];
 
 /// Classify `answer` as an abstention (a refusal / "I don't know" response)
 /// vs. a confident answer, by case-insensitive substring match against
@@ -107,9 +112,13 @@ pub const ABSTENTION_PHRASES: &[&str] = &[
 /// false-positive limitation of substring matching.
 pub fn is_abstention(answer: &str) -> bool {
     let lower = answer.to_lowercase();
-    ABSTENTION_PHRASES
-        .iter()
-        .any(|phrase| lower.contains(phrase))
+    if ABSTENTION_PHRASES.iter().any(|phrase| lower.contains(phrase)) {
+        return true;
+    }
+    // Short markers ("none"/"unknown") only count as WHOLE words, so an answer
+    // that merely contains the fragment is not misclassified as abstention.
+    let mut words = lower.split(|c: char| !c.is_alphanumeric());
+    words.any(|w| ABSTENTION_WORDS.contains(&w))
 }
 
 /// Accuracy over one question category.
@@ -1962,6 +1971,19 @@ mod faithfulness_tests {
     #[test]
     fn is_abstention_false_on_normal_factual_answer() {
         assert!(!is_abstention("Adoption agencies"));
+    }
+
+    #[test]
+    fn is_abstention_whole_word_markers() {
+        // Whole-word markers ARE abstention.
+        assert!(is_abstention("None"));
+        assert!(is_abstention("unknown"));
+        assert!(is_abstention("The answer is none."));
+        // But NOT when the marker is only a FRAGMENT of a longer word (the
+        // false positives bare-substring matching produced).
+        assert!(!is_abstention("The suspect is unknownish"));
+        assert!(!is_abstention("nonexistent"));
+        assert!(!is_abstention("anemone"));
     }
 
     fn record(
