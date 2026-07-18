@@ -1509,3 +1509,12 @@ deterministic comparison. Two real bugs were found and fixed en route: a char-bo
 `--extract-facts` run with a frontier extractor is the natural next measurement (extraction cost
 ~20 s/session). The direction, though, is settled: **distill facts at write time and this repo
 matches the best open-source agentic memory on LoCoMo.**
+
+**Shipped as a library capability (not just an eval mode).** `MemoryConfig::store_extracted_facts`
+(default `false`) turns the same distillation on inside the normal write path: every
+`AgentMemory::store` runs the active `MemoryReasoner` over the value and persists each extracted
+fact as its own retrievable memory (`<key>::fact<N>`), alongside the raw value and KG updates. A
+re-entrancy guard prevents fact-memories from re-triggering extraction. With the default heuristic
+reasoner this is fully offline/deterministic; with `LlmReasoner` (`SYNAPTIC_LLM_URL`/`_MODEL`) it is
+LLM-quality. So the measured LoCoMo lift is reachable through the plain store API, not only the
+eval harness.

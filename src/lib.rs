@@ -113,6 +113,11 @@ pub struct AgentMemory {
     /// once this reaches the configured threshold.
     #[cfg(feature = "embeddings")]
     reflection_accumulated_importance: f64,
+    /// Re-entrancy guard for the intelligent write path: set while storing an
+    /// extracted fact-memory so the nested `store_with_report` does not itself
+    /// re-run extraction (which would recurse forever).
+    #[cfg(feature = "embeddings")]
+    storing_facts: bool,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -449,6 +454,8 @@ impl AgentMemory {
             reflection_pending: Vec::new(),
             #[cfg(feature = "embeddings")]
             reflection_accumulated_importance: 0.0,
+            #[cfg(feature = "embeddings")]
+            storing_facts: false,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -678,9 +685,11 @@ impl AgentMemory {
 
         // Intelligent write path: extract facts from the new value, resolve
         // each against similar existing memories, and apply the outcome to
-        // the knowledge graph. Best-effort like the other subsystems.
+        // the knowledge graph. Best-effort like the other subsystems. Skipped
+        // while storing an already-extracted fact-memory (`storing_facts`) so
+        // extraction does not recurse.
         #[cfg(feature = "embeddings")]
-        if self.knowledge_graph.is_some() {
+        if self.knowledge_graph.is_some() && !self.storing_facts {
             if let Err(e) = self.reason_over_store(&entry).await {
                 tracing::warn!(error = %e, "reasoning degraded during store");
                 degradations.reasoning = Some(e.to_string());
@@ -713,7 +722,7 @@ impl AgentMemory {
         if extraction.facts.is_empty() {
             return Ok(());
         }
-        for fact in &extraction.facts {
+        for (i, fact) in extraction.facts.iter().enumerate() {
             let neighbors = self.neighbor_facts(&entry.key, fact, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
             // The reasoner picks its target among the neighbors we supplied;
@@ -722,6 +731,18 @@ impl AgentMemory {
             let best_neighbor_id = neighbors.first().map(|n| n.id.clone());
             self.apply_resolution(entry, fact, resolution, best_neighbor_id)
                 .await?;
+
+            // Optionally persist the extracted fact as its own retrievable
+            // memory so search surfaces distilled facts, not just raw turns.
+            if self._config.store_extracted_facts && !fact.text.trim().is_empty() {
+                let fact_key = format!("{}::fact{}", entry.key, i);
+                self.storing_facts = true;
+                // Box::pin breaks the recursive-future size cycle
+                // (store_with_report → reason_over_store → store_with_report).
+                let result = Box::pin(self.store_with_report(&fact_key, &fact.text)).await;
+                self.storing_facts = false;
+                result?;
+            }
         }
         Ok(())
     }
@@ -1622,6 +1643,17 @@ pub struct MemoryConfig {
     pub enable_memory_promotion: bool,
     /// Memory promotion configuration
     pub promotion_config: Option<memory::promotion::PromotionConfig>,
+    /// Intelligent write path: when `true`, each stored value is passed through
+    /// the [`memory::reasoning::MemoryReasoner`] and the extracted facts are
+    /// stored as their own **retrievable** memories (keyed `<key>::fact<N>`),
+    /// in addition to the raw value and the knowledge-graph updates. This is the
+    /// Mem0-style write-time distillation that lets retrieval surface clean
+    /// facts rather than raw turns (measured to lift LoCoMo QA; see
+    /// `docs/evaluation.md`). Requires `enable_knowledge_graph` + `embeddings`;
+    /// extraction quality scales with the active reasoner (heuristic default, or
+    /// `LlmReasoner` when `SYNAPTIC_LLM_URL`/`_MODEL` are set). Default: `false`
+    /// (raw-value-only behavior is unchanged).
+    pub store_extracted_facts: bool,
 }
 
 impl Default for MemoryConfig {
@@ -1667,6 +1699,7 @@ impl Default for MemoryConfig {
             logging_config: Some(logging::LoggingConfig::default()),
             enable_memory_promotion: true,
             promotion_config: Some(memory::promotion::PromotionConfig::default()),
+            store_extracted_facts: false,
         }
     }
 }
@@ -1705,6 +1738,50 @@ mod tests {
         assert!(config.enable_advanced_management);
         assert!(!config.enable_integrations);
         assert!(config.logging_config.is_some());
+    }
+
+    #[tokio::test]
+    async fn store_extracted_facts_off_by_default_keeps_raw_only() {
+        let mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
+        assert!(
+            !mem._config.store_extracted_facts,
+            "intelligent-write fact storage must be opt-in"
+        );
+        let mut mem = mem;
+        mem.store("note", "Alice lives in Berlin. Bob works at Acme.")
+            .await
+            .unwrap();
+        // No `::fact` memories are created when the flag is off.
+        assert!(
+            mem.retrieve("note::fact0").await.unwrap().is_none(),
+            "no fact-memories should exist with the default (off) config"
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn store_extracted_facts_makes_facts_retrievable() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            ..MemoryConfig::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.store("note", "Alice lives in Berlin. Bob works at Acme.")
+            .await
+            .unwrap();
+        // The deterministic heuristic reasoner extracts at least one fact, which
+        // is stored under a `::fact<N>` key and is retrievable.
+        let fact0 = mem.retrieve("note::fact0").await.unwrap();
+        assert!(
+            fact0.is_some(),
+            "an extracted fact-memory should be stored and retrievable"
+        );
+        assert!(!fact0.unwrap().value.trim().is_empty());
+        // Storing a fact-memory must NOT recurse into further extraction.
+        assert!(
+            mem.retrieve("note::fact0::fact0").await.unwrap().is_none(),
+            "fact-memories must not themselves be re-extracted (recursion guard)"
+        );
     }
 
     #[test]
