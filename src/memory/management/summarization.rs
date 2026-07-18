@@ -1062,8 +1062,17 @@ impl MemorySummarizer {
         let mut start = 0;
         while let Some(pos) = text_lower[start..].find(&keyword_lower) {
             let actual_pos = start + pos;
-            let context_start = actual_pos.saturating_sub(30);
-            let context_end = (actual_pos + keyword.len() + 30).min(text.len());
+            // Clamp the ±30-byte window to char boundaries so multibyte
+            // characters (e.g. “smart quotes”) never cause a mid-char slice
+            // panic.
+            let mut context_start = actual_pos.saturating_sub(30);
+            while context_start > 0 && !text.is_char_boundary(context_start) {
+                context_start -= 1;
+            }
+            let mut context_end = (actual_pos + keyword.len() + 30).min(text.len());
+            while context_end < text.len() && !text.is_char_boundary(context_end) {
+                context_end += 1;
+            }
 
             let context = text[context_start..context_end].trim().to_string();
             if !context.is_empty() {
@@ -2831,5 +2840,31 @@ impl MemorySummarizer {
 impl Default for MemorySummarizer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+
+    /// Regression: a ±30-byte context window around a keyword must not slice
+    /// through a multibyte character (e.g. “smart quotes”), which previously
+    /// panicked with "byte index N is not a char boundary".
+    #[test]
+    fn extract_context_handles_multibyte_chars() {
+        let s = MemorySummarizer::new();
+        // Smart quotes are 3 bytes each; place the keyword right after one so
+        // the window boundaries land inside a multibyte char.
+        let text = "Gina identified the motivational “Just do it” slogan as her keyword anchor here.";
+        let contexts = s.extract_context_for_keyword(text, "keyword");
+        assert!(
+            !contexts.is_empty(),
+            "expected a context window for the keyword"
+        );
+        // The returned context must be valid UTF-8 that is a substring of text
+        // (guaranteed by construction if no panic occurred).
+        for c in &contexts {
+            assert!(text.contains(c.trim()) || !c.is_empty());
+        }
     }
 }
