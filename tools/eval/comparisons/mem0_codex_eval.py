@@ -127,18 +127,17 @@ def main():
         coll=f"conv{ci}"
         conv=c["conversation"]
         # ingest sessions
-        marker=f"/tmp/mem0cxq/.done_{coll}"
-        if not os.path.exists(marker):
-            si=1
-            while f"session_{si}" in conv:
+        si=1
+        while f"session_{si}" in conv:
+            sm=f"/tmp/mem0cxq/.done_{coll}_s{si}"
+            if not os.path.exists(sm):
                 turns=conv[f"session_{si}"]
                 msgs=[{"role":"user" if t["speaker"]==conv["speaker_a"] else "assistant",
                        "content":f'{t["speaker"]}: {t["text"]}'} for t in turns]
-                try: m.add(msgs, user_id=coll, infer=True)
-                except Exception as e: print(f"  add err conv{ci} s{si}: {str(e)[:100]}")
-                si+=1
-            open(marker,"w").write("1")
-            print(f"conv{ci}: ingested {si-1} sessions", flush=True)
+                m.add(msgs, user_id=coll, infer=True)
+                open(sm,"w").write("1")
+                print(f"conv{ci} s{si}: ingested", flush=True)
+            si+=1
         qa=c.get("qa") or []
         qs=[q for q in qa if (qfilter is None or CATS.get(str(q.get("category")),"").lower()==qfilter)][:per]
         def do(q):

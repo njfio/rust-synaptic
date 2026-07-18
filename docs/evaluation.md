@@ -1408,3 +1408,48 @@ abstention/faithfulness classification as this repo's harness (see
 - Retrieval `recall` is not compared (different memory unit: Mem0 stores extracted facts,
   not turns). Small subsets; codex judge is nondeterministic (~±0.03). Zep/Graphiti and
   Letta not tested (heavier setup) — this is one real head-to-head, not a field survey.
+
+### Follow-up: Mem0 ingestion on a frontier LLM (codex/gpt-5.6-sol) instead of local qwen (2026-07-17)
+
+The caveat above — "Mem0's 0.250 used a local qwen-7B, not the frontier LLM its published
+~66% assumes" — was the obvious hole. We closed it *without an API key* by driving Mem0's
+fact-extraction through the codex OAuth login via the local codex→OpenAI shim
+(`comparisons/codex_openai_shim.py` / `mem0_codex_eval.py`). Mem0 ingested conversations 0–2
+of LoCoMo on **gpt-5.6-sol** — 607 real extracted facts stored (conv0:170, conv1:122,
+conv2:244) — then answered + graded with the SAME codex prompts as our harness.
+
+**Matched head-to-head — identical 12 questions (conv0–2, first 4 each), same codex
+answerer+judge, differing only in the memory system:**
+
+| Category (n) | Mem0 + codex extraction | This repo (single-shot) |
+|---|---|---|
+| **Overall (12)** | **0.333** (4/12) | **0.500** (6/12) |
+| MultiHop (4) | 0.50 | 0.25 |
+| OpenDomain (1) | 1.00 | 1.00 |
+| SingleHop (1) | 1.00 | 1.00 |
+| Temporal (6) | 0.00 | 0.50 |
+
+**What this settles:**
+- **A frontier extractor DID help Mem0** — 0.250 (qwen, 40-q run) → 0.333 (codex, 12-q run).
+  Mem0's memory quality really does scale with the ingestion LLM, exactly as its published
+  numbers imply. The qwen 0.250 was a floor.
+- **But it did not close the gap.** On the *same* 12 questions with the *same* codex
+  answerer, this repo scored 0.500 single-shot. Upgrading Mem0's extractor narrowed the
+  gap, it did not erase it — because the delta is in *retrieval/representation*, not in the
+  answering LLM (which is identical for both).
+- **The gap is concentrated in Temporal (0.50 vs 0.00).** Caveat and honest partial-cause:
+  the shim flattens each conversation and codex anchors relative dates to *today* (facts
+  came out stamped "around July 17, 2026"), corrupting the very timestamps temporal
+  questions need. A production Mem0+OpenAI integration that passes real message timestamps
+  would likely recover some Temporal accuracy — so the 0/6 is partly a harness artifact,
+  not purely a Mem0 property. We do NOT claim Mem0 is inherently bad at temporal.
+- Mem0 edged ahead on MultiHop (0.50 vs 0.25), but n=4 — noise, not a signal.
+
+**Hard caveats:** n=12 is a *small, noisy* slice (a different subset than the 40-q qwen run,
+so 0.333 and 0.250 are not directly comparable point-to-point — both are "Mem0 in this
+environment," measured on different questions). Directional, not definitive. What IS solid:
+(a) codex/frontier extraction measurably beats local-qwen extraction for Mem0; (b) on a
+strictly matched subset with a shared answerer, this repo's retrieval still answered more
+questions correctly; (c) the whole thing ran on the codex OAuth login — no OpenAI API key.
+Reproduce: `comparisons/mem0_codex_eval.py 3 4` (Mem0) vs
+`run_eval … --qa-only --max-conversations 3 --max-questions 4` (ours).
