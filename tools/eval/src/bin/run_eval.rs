@@ -705,7 +705,10 @@ async fn run_qa_facts_only(
     }
     let judge = qa::CodexCliJudge::from_env();
     if !judge.is_available() {
-        w(format!("QA: not run — {}=codex but codex CLI not runnable", qa::ENV_JUDGE))?;
+        w(format!(
+            "QA: not run — {}=codex but codex CLI not runnable",
+            qa::ENV_JUDGE
+        ))?;
         return Ok(());
     }
     let r = qa::run_qa_over_facts(conversations, facts, &judge, K)
@@ -743,7 +746,10 @@ async fn run_agentic_facts_only(
     }
     let judge = qa::CodexCliJudge::from_env();
     if !judge.is_available() {
-        w(format!("QA: not run — {}=codex but codex CLI not runnable", qa::ENV_JUDGE))?;
+        w(format!(
+            "QA: not run — {}=codex but codex CLI not runnable",
+            qa::ENV_JUDGE
+        ))?;
         return Ok(());
     }
     let report = qa::run_agentic_qa_over_facts(

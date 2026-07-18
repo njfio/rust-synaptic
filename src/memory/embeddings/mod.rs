@@ -198,7 +198,7 @@ impl RetrievalEmbeddingConfig {
     /// CPU is currently un-batched and slow (~28 s per query at eval scale in
     /// measurement), so silently defaulting to it would make search unusably
     /// slow. Enable it explicitly (`SYNAPTIC_RETRIEVAL_EMBEDDER=candle`, or set
-    /// `retrieval_embedding_provider` in [`MemoryConfig`]) once you have a GPU
+    /// `retrieval_embedding_provider` in `MemoryConfig`) once you have a GPU
     /// or the batch-embedding optimization; TF-IDF stays the safe default so a
     /// plain build is lean, offline, and fast.
     pub fn auto() -> Self {

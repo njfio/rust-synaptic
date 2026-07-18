@@ -381,7 +381,7 @@ impl ZeroKnowledgeManager {
     /// held elsewhere (e.g. distributed out of band from the prover's
     /// manager). Rejects non-canonical commitment encodings.
     ///
-    /// Reject-if-present (unlike the idempotent [`register_prover`]): once a
+    /// Reject-if-present (unlike the idempotent `register_prover`): once a
     /// commitment is bound to an identity, silently rebinding it to a
     /// different value would let a misconfiguration or a hostile caller swap
     /// in an attacker-controlled commitment. Callers that legitimately need
@@ -1366,6 +1366,7 @@ pub enum AccessType {
 }
 
 impl AccessType {
+    #[allow(dead_code)] // used by feature-gated proof labelling paths
     fn label(&self) -> &'static str {
         match self {
             AccessType::Read => "read",
@@ -1392,6 +1393,7 @@ pub enum AggregateType {
 }
 
 impl AggregateType {
+    #[allow(dead_code)] // used by feature-gated proof labelling paths
     fn label(&self) -> &'static str {
         match self {
             AggregateType::Count => "count",

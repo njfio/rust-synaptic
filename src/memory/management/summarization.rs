@@ -2855,7 +2855,8 @@ mod boundary_tests {
         let s = MemorySummarizer::new();
         // Smart quotes are 3 bytes each; place the keyword right after one so
         // the window boundaries land inside a multibyte char.
-        let text = "Gina identified the motivational “Just do it” slogan as her keyword anchor here.";
+        let text =
+            "Gina identified the motivational “Just do it” slogan as her keyword anchor here.";
         let contexts = s.extract_context_for_keyword(text, "keyword");
         assert!(
             !contexts.is_empty(),

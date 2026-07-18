@@ -8,6 +8,8 @@
 use std::error::Error;
 #[cfg(feature = "security")]
 use synaptic::security::{SecurityConfig, SecurityContext, SecurityManager};
+#[cfg(feature = "zero-knowledge-proofs")]
+use synaptic::{MemoryEntry, MemoryType};
 
 #[cfg(feature = "zero-knowledge-proofs")]
 mod bellman_tests {
@@ -207,7 +209,7 @@ mod bellman_tests {
             .await?;
 
         // Create a statement that matches what was actually computed
-        let actual_statement = synaptic::security::zero_knowledge::AggregateStatement {
+        let _actual_statement = synaptic::security::zero_knowledge::AggregateStatement {
             entry_count: entries.len(),
             aggregate_type: aggregate_statement.aggregate_type.clone(),
             timestamp: chrono::Utc::now(),

@@ -588,11 +588,13 @@ pub async fn run_qa_over_facts(
 
         let records = judge_questions(judge, pending, concurrency).await?;
         for record in records {
-            let bucket = by_qtype.entry(record.qtype.clone()).or_insert(QTypeAccuracy {
-                questions: 0,
-                correct: 0,
-                accuracy: 0.0,
-            });
+            let bucket = by_qtype
+                .entry(record.qtype.clone())
+                .or_insert(QTypeAccuracy {
+                    questions: 0,
+                    correct: 0,
+                    accuracy: 0.0,
+                });
             bucket.questions += 1;
             bucket.correct += usize::from(record.correct);
             per_question.push(record);
@@ -1001,8 +1003,18 @@ impl CodexCliJudge {
                 .output()
         })
         .await
-        .map_err(|e| (QaError::Judge(format!("codex task join failed: {e}")), false))?
-        .map_err(|e| (QaError::Judge(format!("failed to spawn codex CLI: {e}")), false))?;
+        .map_err(|e| {
+            (
+                QaError::Judge(format!("codex task join failed: {e}")),
+                false,
+            )
+        })?
+        .map_err(|e| {
+            (
+                QaError::Judge(format!("failed to spawn codex CLI: {e}")),
+                false,
+            )
+        })?;
 
         if output.status.code() == Some(124) {
             return Err((

@@ -7,8 +7,8 @@
 //! downloaded.
 
 #![cfg(feature = "ml-models")]
-// Test code: unwrap/panic on failure is the intended behaviour.
-#![allow(clippy::unwrap_used, clippy::panic)]
+// Test code: unwrap/panic/diagnostic stdout are legitimate here.
+#![allow(clippy::unwrap_used, clippy::panic, clippy::print_stdout)]
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::var_builder::SimpleBackend;
