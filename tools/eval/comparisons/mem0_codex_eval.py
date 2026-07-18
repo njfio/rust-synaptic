@@ -132,8 +132,12 @@ def main():
             sm=f"/tmp/mem0cxq/.done_{coll}_s{si}"
             if not os.path.exists(sm):
                 turns=conv[f"session_{si}"]
+                sdate=conv.get(f"session_{si}_date_time","")  # e.g. "1:56 pm on 8 May, 2023"
+                # Prefix each turn with the real session date so the extractor anchors
+                # relative/absolute dates to when it was said (not "today"). Matches how
+                # Mem0's own LoCoMo harness timestamps messages.
                 msgs=[{"role":"user" if t["speaker"]==conv["speaker_a"] else "assistant",
-                       "content":f'{t["speaker"]}: {t["text"]}'} for t in turns]
+                       "content":f'[{sdate}] {t["speaker"]}: {t["text"]}'} for t in turns]
                 m.add(msgs, user_id=coll, infer=True)
                 open(sm,"w").write("1")
                 print(f"conv{ci} s{si}: ingested", flush=True)

@@ -1387,12 +1387,19 @@ abstention/faithfulness classification as this repo's harness (see
 | this repo, single-shot | 47/50 (94%) | 6% |
 | this repo, agentic (after abstention fix) | ~90% | ~10% |
 
+> **⚠️ This section's "outperforms Mem0" reading was overturned by a fairer follow-up.**
+> The numbers below are real, but they used Mem0's *local qwen-7B* extractor. When Mem0 was
+> given its intended frontier extractor (gpt-5.6-sol) with correct dates and tested on a
+> larger matched slice, **Mem0 won (0.500 vs our 0.450 agentic / 0.325 single-shot)** — see
+> "Mem0 with a fair setup … beats this repo" below. Read that section as the current result.
+
 **Honest reading (caveats matter here more than the numbers):**
 - Under **matched local conditions** (both systems answering with the same codex judge
   in the same environment), this repo outperforms Mem0 on QA accuracy — 1.5× even
   single-shot, 2× with agentic retrieval. Mem0's single-shot retrieve-then-answer maps
   to our single-shot (0.375 vs 0.250); agentic (0.50) is our differentiator (Mem0 does
-  not do iterative answer-guided retrieval).
+  not do iterative answer-guided retrieval). **[Superseded — see the ⚠️ note above: this
+  held only because Mem0 was on a weak local extractor with broken dates.]**
 - **BUT Mem0's ingestion here used a local qwen-7B, not the GPT-4 its published LoCoMo
   numbers (~66%) assume.** Mem0's memory quality depends heavily on the extraction LLM,
   so this is NOT a claim of beating Mem0's best case — it is "competitive-to-better in a
@@ -1409,47 +1416,56 @@ abstention/faithfulness classification as this repo's harness (see
   not turns). Small subsets; codex judge is nondeterministic (~±0.03). Zep/Graphiti and
   Letta not tested (heavier setup) — this is one real head-to-head, not a field survey.
 
-### Follow-up: Mem0 ingestion on a frontier LLM (codex/gpt-5.6-sol) instead of local qwen (2026-07-17)
+### Follow-up: Mem0 with a fair setup (frontier extractor + correct dates) beats this repo (2026-07-17)
 
-The caveat above — "Mem0's 0.250 used a local qwen-7B, not the frontier LLM its published
-~66% assumes" — was the obvious hole. We closed it *without an API key* by driving Mem0's
-fact-extraction through the codex OAuth login via the local codex→OpenAI shim
-(`comparisons/codex_openai_shim.py` / `mem0_codex_eval.py`). Mem0 ingested conversations 0–2
-of LoCoMo on **gpt-5.6-sol** — 607 real extracted facts stored (conv0:170, conv1:122,
-conv2:244) — then answered + graded with the SAME codex prompts as our harness.
+The 0.250 above used Mem0's *local qwen-7B* extractor. We gave Mem0 its intended setup —
+**gpt-5.6-sol** fact-extraction via the codex OAuth login (the codex→OpenAI shim, no API
+key) — and fixed a harness bug of our own along the way. Two rounds, reported honestly
+because the second overturned the first.
 
-**Matched head-to-head — identical 12 questions (conv0–2, first 4 each), same codex
-answerer+judge, differing only in the memory system:**
+**Round 1 (n=12, and it was unfair to Mem0):** a first pass on conv0–2 gave Mem0 0.333 vs
+our 0.500 and we nearly shipped "we still win." But that pass had two defects: (a) n=12 is
+tiny; (b) the shim flattened each conversation and codex stamped every fact with *today's*
+date ("July 10, **2026**" for a 2023 event), destroying the timestamps temporal questions
+need — Mem0 scored **0/6 on Temporal** purely from our bug. That gap was ours, not Mem0's.
 
-| Category (n) | Mem0 + codex extraction | This repo (single-shot) |
-|---|---|---|
-| **Overall (12)** | **0.333** (4/12) | **0.500** (6/12) |
-| MultiHop (4) | 0.50 | 0.25 |
-| OpenDomain (1) | 1.00 | 1.00 |
-| SingleHop (1) | 1.00 | 1.00 |
-| Temporal (6) | 0.00 | 0.50 |
+**Round 2 (n=40, fair):** we fixed the extraction to prefix each turn with its real session
+date (as Mem0's own LoCoMo harness does), re-ingested **all 10 conversations** on gpt-5.6-sol
+(**2,182 facts stored**, dates now correct — "On May 8, 2023 …"), and ran the matched
+40-question slice (10 convs × first 4) through the SAME codex answerer+judge as our harness.
 
-**What this settles:**
-- **A frontier extractor DID help Mem0** — 0.250 (qwen, 40-q run) → 0.333 (codex, 12-q run).
-  Mem0's memory quality really does scale with the ingestion LLM, exactly as its published
-  numbers imply. The qwen 0.250 was a floor.
-- **But it did not close the gap.** On the *same* 12 questions with the *same* codex
-  answerer, this repo scored 0.500 single-shot. Upgrading Mem0's extractor narrowed the
-  gap, it did not erase it — because the delta is in *retrieval/representation*, not in the
-  answering LLM (which is identical for both).
-- **The gap is concentrated in Temporal (0.50 vs 0.00).** Caveat and honest partial-cause:
-  the shim flattens each conversation and codex anchors relative dates to *today* (facts
-  came out stamped "around July 17, 2026"), corrupting the very timestamps temporal
-  questions need. A production Mem0+OpenAI integration that passes real message timestamps
-  would likely recover some Temporal accuracy — so the 0/6 is partly a harness artifact,
-  not purely a Mem0 property. We do NOT claim Mem0 is inherently bad at temporal.
-- Mem0 edged ahead on MultiHop (0.50 vs 0.25), but n=4 — noise, not a signal.
+| Category (n) | **Mem0** (gpt-5.6-sol extract, dated) | This repo — single-shot | This repo — agentic |
+|---|---|---|---|
+| **Overall (40)** | **0.500** (20/40) | 0.325 (13/40) | 0.450 (18/40) |
+| MultiHop (19) | **0.421** | 0.263 | 0.263 |
+| OpenDomain (4) | 0.25 | 0.00 | 0.50 |
+| SingleHop (1) | 1.00 | 1.00 | 1.00 |
+| Temporal (16) | 0.625 | 0.438 | 0.625 |
 
-**Hard caveats:** n=12 is a *small, noisy* slice (a different subset than the 40-q qwen run,
-so 0.333 and 0.250 are not directly comparable point-to-point — both are "Mem0 in this
-environment," measured on different questions). Directional, not definitive. What IS solid:
-(a) codex/frontier extraction measurably beats local-qwen extraction for Mem0; (b) on a
-strictly matched subset with a shared answerer, this repo's retrieval still answered more
-questions correctly; (c) the whole thing ran on the codex OAuth login — no OpenAI API key.
-Reproduce: `comparisons/mem0_codex_eval.py 3 4` (Mem0) vs
-`run_eval … --qa-only --max-conversations 3 --max-questions 4` (ours).
+**What this settles — including against our own earlier claim:**
+- **The date fix worked and it mattered.** Mem0's Temporal went 0.0 (n=12, broken) → **0.625**
+  (n=40, dated). The earlier temporal gap was our harness artifact, exactly as Round 1's
+  caveat suspected — confirmed, not hand-waved.
+- **The result reverses. Mem0 (0.500) beats this repo** on the fair, larger slice: clearly
+  over our single-shot (0.325), and above our agentic (0.450). 0.500 vs 0.450 is 2 questions —
+  within codex-judge noise (~±0.03), so agentic-vs-Mem0 is ≈ a tie — but Mem0 is *not behind
+  us anymore*. The n=12 "we win" did not survive enlarging n and removing our own bug.
+- **Mem0's real edge is MultiHop (0.421 vs our 0.263).** Write-time fact-extraction — the
+  thing this repo does *not* do (we retrieve raw turns) — genuinely helps multi-hop, matching
+  our own finding that our multi-hop is ranking-limited (see the MultiHop analysis above).
+- Faithfulness is comparable: Mem0 abstained on 6/40 (2 OpenDomain, 4 Temporal); ours
+  confabulated 4–5 on evidence-missing questions. Neither is dramatically more faithful; both
+  answer with the same codex judge.
+
+**Honest bottom line:** with both systems on frontier answering and Mem0 on its intended
+frontier+dated extraction, **Mem0's write-time fact extraction edges our retrieve-raw-turns
+pipeline on LoCoMo (0.500 vs 0.450 agentic, within noise; 0.500 vs 0.325 single-shot,
+clearly).** The direction to close it is on our side: distill/extract facts at write time and
+strengthen multi-hop, rather than retrieving raw conversation turns. This corrects the
+earlier under-tested "outperforms Mem0" framing.
+
+**Caveats:** n=40, single codex-judge pass (nondeterministic ~±0.03); our config is
+static-embeddings + PRF single-shot/agentic (no cross-encoder reranker in this run); ran
+entirely on the codex OAuth login (no OpenAI key). Reproduce:
+`comparisons/mem0_codex_eval.py 10 4` (Mem0, date-aware) vs
+`run_eval … --qa-only|--agentic-qa --max-conversations 10 --max-questions 4` (ours).
