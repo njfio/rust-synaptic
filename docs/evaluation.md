@@ -1510,6 +1510,50 @@ deterministic comparison. Two real bugs were found and fixed en route: a char-bo
 ~20 s/session). The direction, though, is settled: **distill facts at write time and this repo
 matches the best open-source agentic memory on LoCoMo.**
 
+### Field survey: adding Graphiti (Zep's engine) — and where Letta fits (2026-07-18)
+
+Extending the one-off Mem0 head-to-head toward a real survey. **Graphiti** (the open-source
+temporal-knowledge-graph engine behind Zep) was run through the same pipeline: frontier
+extraction via the codex OAuth login (its `OpenAIGenericClient` on `/chat/completions` +
+`json_object` — the default client uses OpenAI's Responses API, which the shim doesn't serve),
+FalkorDB for the graph, Ollama for embeddings, same codex answer/grade prompts.
+
+Matched **12-question** slice (conv0–2, first 4 each — the largest that fits Graphiti's slow
+ingestion; see below), same codex answerer+judge:
+
+| System (12 q) | Overall | MultiHop (4) | OpenDomain (1) | SingleHop (1) | Temporal (6) |
+|---|---|---|---|---|---|
+| Mem0 (date-aware, frontier) | **0.750** | 0.25 | 1.00 | 1.00 | 1.00 |
+| This repo — over facts | 0.583 | 0.00 | 1.00 | 0.00 | 1.00 |
+| This repo — raw turns | 0.500 | 0.50 | 0.00 | 1.00 | 0.50 |
+| Graphiti (Zep) | 0.500 | 0.50 | 0.00 | 0.00 | 0.667 |
+
+**Honest reading:**
+- All four land in a **0.50–0.75 band** on this slice; the write-time-extraction systems (Mem0,
+  our over-facts) lead, driven by **perfect Temporal (6/6)** — dated fact extraction pays off
+  exactly where it should. Graphiti is competitive, tying our raw-turns baseline.
+- **n=12 is small and conv0–2 is an easier slice** (every system scores higher here than on the
+  40-q set — e.g. Mem0 0.750 here vs 0.500 at n=40). The reliable ranking remains the 40-q
+  numbers above; this slice ranks systems only loosely. The OpenDomain/SingleHop rows are n=1
+  (pure noise).
+- **Why only 12 q for Graphiti:** its temporal-KG write path is ~4× slower than Mem0's
+  (~70 s/episode vs ~20 s/session — it does entity + edge extraction, dedup, and temporal
+  invalidation per episode via the LLM), so a 40-q (10-conversation) run was not feasible in
+  session. A first attempt also scored a spurious 0.083 until we caught that FalkorDB stores each
+  `group_id` as a *separate graph*; `search(group_ids=…)` queried the empty default graph. Fixed
+  by connecting the driver per-conversation (`database=<conv>`); the corrected run is above. (Same
+  "verify the store is non-empty before trusting a low score" lesson as the Mem0 empty-store bug.)
+- **Letta** (formerly MemGPT) is intentionally *not* in the table: it is a full stateful-agent
+  framework (core-memory blocks + self-editing + archival passages), not a drop-in
+  retrieve-then-answer memory. A fair LoCoMo QA comparison would let Letta's *own* agent answer,
+  which changes the answerer and breaks the "same codex judge, only the memory differs" control
+  this survey depends on. Noted as architecturally different; a separate agent-level eval, not
+  this retrieval-substitution one.
+
+**Bottom line of the survey:** across Mem0, Graphiti, and this repo — held to the same answerer —
+the systems cluster together, and the single biggest lever is **write-time fact extraction**
+(the thing this repo now does via `store_extracted_facts`), not the choice of retrieval engine.
+
 **Shipped as a library capability (not just an eval mode).** `MemoryConfig::store_extracted_facts`
 (default `false`) turns the same distillation on inside the normal write path: every
 `AgentMemory::store` runs the active `MemoryReasoner` over the value and persists each extracted

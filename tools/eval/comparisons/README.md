@@ -50,3 +50,20 @@ was not completed here. With a real OpenAI-compatible endpoint (fast), the same 
 runs quickly. Qualitatively the frontier extractor produced clearly better facts than
 qwen-7B, consistent with Mem0's published numbers being higher with a GPT-4-class
 extractor — so the qwen-based 0.25 is a floor for Mem0, not its best case.
+
+## Graphiti (Zep) head-to-head (2026-07-18)
+
+`graphiti_eval.py <n_conv> <per>` ingests LoCoMo into FalkorDB via Graphiti's
+`OpenAIGenericClient` (chat/completions + json_object) driven by the codex shim
+(frontier extraction, no API key), Ollama for embeddings. `graphiti_qa.py
+<n_conv> <per>` runs the matched codex QA over the ingested graphs.
+
+Setup: `docker run -d --name falkordb -p 6379:6379 falkordb/falkordb:latest`;
+`uv pip install "graphiti-core[falkordb]"`.
+
+IMPORTANT: FalkorDB stores each `group_id` as a SEPARATE graph. Retrieve by
+connecting the driver per-conversation (`FalkorDriver(database=<conv>)`), NOT
+`search(group_ids=…)` (which queries the empty default graph → 0 results, a
+spurious near-zero score). Result (matched 12-q slice): Graphiti 0.500, in the
+same band as Mem0/this repo — see docs/evaluation.md. Graphiti ingestion is
+~4× slower than Mem0 (~70s/episode), so only a 12-q slice was run.
