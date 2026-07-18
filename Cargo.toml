@@ -55,6 +55,11 @@ unimplemented = "deny"
 # (Examples print by design; they carry file-level allows where needed.)
 print_stdout = "deny"
 print_stderr = "deny"
+# `sort_by(|a, b| a.k.cmp(&b.k))` is kept over `sort_by_key(|x| x.k)` where the
+# key is non-`Copy`: `sort_by_key` clones the key on every comparison, so the
+# closure form is the more efficient choice here. (clippy itself flags these as
+# only MaybeIncorrect and will not auto-fix them.)
+unnecessary_sort_by = "allow"
 
 # The style/complexity/perf groups run at their default (warn) levels and are
 # enforced by the `-D warnings` CI gate. pedantic/nursery stay `allow`: they

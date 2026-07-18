@@ -2589,12 +2589,11 @@ impl AdvancedSearchEngine {
                         weights[i] *= 1.15;
                     }
                 }
-                "recency" => {
+                "recency"
                     // Boost recency weight for very recent memories
-                    if *value > 0.9 {
+                    if *value > 0.9 => {
                         weights[i] *= 1.1;
                     }
-                }
                 _ => {}
             }
         }

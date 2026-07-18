@@ -437,14 +437,14 @@ impl AuditLogger {
                     );
                 }
             }
-            AuditEventType::Encryption if !event.success => {
-                if self.alert_tracker.should_alert_encryption_failures() {
-                    self.alert_tracker.create_alert(
-                        AlertType::EncryptionFailure,
-                        "Multiple encryption failures detected".to_string(),
-                        RiskLevel::Critical,
-                    );
-                }
+            AuditEventType::Encryption
+                if !event.success && self.alert_tracker.should_alert_encryption_failures() =>
+            {
+                self.alert_tracker.create_alert(
+                    AlertType::EncryptionFailure,
+                    "Multiple encryption failures detected".to_string(),
+                    RiskLevel::Critical,
+                );
             }
             _ => {}
         }

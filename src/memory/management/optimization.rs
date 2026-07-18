@@ -1420,7 +1420,7 @@ impl MemoryOptimizer {
     async fn implement_cache_compression(&mut self) -> Result<()> {
         let mut compressed_entries = 0;
 
-        for (_key, entry) in self.entries.iter_mut() {
+        for entry in self.entries.values_mut() {
             if entry.metadata.custom_fields.get("cache_partition") == Some(&"cold".to_string()) {
                 let compression_result = MemoryOptimizer::apply_optimal_compression(&entry.value);
 

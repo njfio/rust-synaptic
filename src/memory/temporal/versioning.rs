@@ -354,7 +354,7 @@ impl VersionManager {
         }
 
         // Sort by creation time
-        all_versions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        all_versions.sort_by_key(|a| a.created_at);
 
         Ok(all_versions)
     }

@@ -770,7 +770,7 @@ impl DomainAdaptationEngine {
         let learning_rate = self.config.feature_lr;
 
         // Simple parameter update
-        for (_, params) in self.feature_extractor.iter_mut() {
+        for params in self.feature_extractor.values_mut() {
             for param in params.iter_mut() {
                 *param -= learning_rate * loss * 0.01; // Simplified gradient
             }
