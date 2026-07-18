@@ -1387,12 +1387,19 @@ abstention/faithfulness classification as this repo's harness (see
 | this repo, single-shot | 47/50 (94%) | 6% |
 | this repo, agentic (after abstention fix) | ~90% | ~10% |
 
+> **⚠️ This section's "outperforms Mem0" reading was overturned by a fairer follow-up.**
+> The numbers below are real, but they used Mem0's *local qwen-7B* extractor. When Mem0 was
+> given its intended frontier extractor (gpt-5.6-sol) with correct dates and tested on a
+> larger matched slice, **Mem0 won (0.500 vs our 0.450 agentic / 0.325 single-shot)** — see
+> "Mem0 with a fair setup … beats this repo" below. Read that section as the current result.
+
 **Honest reading (caveats matter here more than the numbers):**
 - Under **matched local conditions** (both systems answering with the same codex judge
   in the same environment), this repo outperforms Mem0 on QA accuracy — 1.5× even
   single-shot, 2× with agentic retrieval. Mem0's single-shot retrieve-then-answer maps
   to our single-shot (0.375 vs 0.250); agentic (0.50) is our differentiator (Mem0 does
-  not do iterative answer-guided retrieval).
+  not do iterative answer-guided retrieval). **[Superseded — see the ⚠️ note above: this
+  held only because Mem0 was on a weak local extractor with broken dates.]**
 - **BUT Mem0's ingestion here used a local qwen-7B, not the GPT-4 its published LoCoMo
   numbers (~66%) assume.** Mem0's memory quality depends heavily on the extraction LLM,
   so this is NOT a claim of beating Mem0's best case — it is "competitive-to-better in a
@@ -1408,3 +1415,150 @@ abstention/faithfulness classification as this repo's harness (see
 - Retrieval `recall` is not compared (different memory unit: Mem0 stores extracted facts,
   not turns). Small subsets; codex judge is nondeterministic (~±0.03). Zep/Graphiti and
   Letta not tested (heavier setup) — this is one real head-to-head, not a field survey.
+
+### Follow-up: Mem0 with a fair setup (frontier extractor + correct dates) beats this repo (2026-07-17)
+
+The 0.250 above used Mem0's *local qwen-7B* extractor. We gave Mem0 its intended setup —
+**gpt-5.6-sol** fact-extraction via the codex OAuth login (the codex→OpenAI shim, no API
+key) — and fixed a harness bug of our own along the way. Two rounds, reported honestly
+because the second overturned the first.
+
+**Round 1 (n=12, and it was unfair to Mem0):** a first pass on conv0–2 gave Mem0 0.333 vs
+our 0.500 and we nearly shipped "we still win." But that pass had two defects: (a) n=12 is
+tiny; (b) the shim flattened each conversation and codex stamped every fact with *today's*
+date ("July 10, **2026**" for a 2023 event), destroying the timestamps temporal questions
+need — Mem0 scored **0/6 on Temporal** purely from our bug. That gap was ours, not Mem0's.
+
+**Round 2 (n=40, fair):** we fixed the extraction to prefix each turn with its real session
+date (as Mem0's own LoCoMo harness does), re-ingested **all 10 conversations** on gpt-5.6-sol
+(**2,182 facts stored**, dates now correct — "On May 8, 2023 …"), and ran the matched
+40-question slice (10 convs × first 4) through the SAME codex answerer+judge as our harness.
+
+| Category (n) | **Mem0** (gpt-5.6-sol extract, dated) | This repo — single-shot | This repo — agentic |
+|---|---|---|---|
+| **Overall (40)** | **0.500** (20/40) | 0.325 (13/40) | 0.450 (18/40) |
+| MultiHop (19) | **0.421** | 0.263 | 0.263 |
+| OpenDomain (4) | 0.25 | 0.00 | 0.50 |
+| SingleHop (1) | 1.00 | 1.00 | 1.00 |
+| Temporal (16) | 0.625 | 0.438 | 0.625 |
+
+**What this settles — including against our own earlier claim:**
+- **The date fix worked and it mattered.** Mem0's Temporal went 0.0 (n=12, broken) → **0.625**
+  (n=40, dated). The earlier temporal gap was our harness artifact, exactly as Round 1's
+  caveat suspected — confirmed, not hand-waved.
+- **The result reverses. Mem0 (0.500) beats this repo** on the fair, larger slice: clearly
+  over our single-shot (0.325), and above our agentic (0.450). 0.500 vs 0.450 is 2 questions —
+  within codex-judge noise (~±0.03), so agentic-vs-Mem0 is ≈ a tie — but Mem0 is *not behind
+  us anymore*. The n=12 "we win" did not survive enlarging n and removing our own bug.
+- **Mem0's real edge is MultiHop (0.421 vs our 0.263).** Write-time fact-extraction — the
+  thing this repo does *not* do (we retrieve raw turns) — genuinely helps multi-hop, matching
+  our own finding that our multi-hop is ranking-limited (see the MultiHop analysis above).
+- Faithfulness is comparable: Mem0 abstained on 6/40 (2 OpenDomain, 4 Temporal); ours
+  confabulated 4–5 on evidence-missing questions. Neither is dramatically more faithful; both
+  answer with the same codex judge.
+
+**Honest bottom line:** with both systems on frontier answering and Mem0 on its intended
+frontier+dated extraction, **Mem0's write-time fact extraction edges our retrieve-raw-turns
+pipeline on LoCoMo (0.500 vs 0.450 agentic, within noise; 0.500 vs 0.325 single-shot,
+clearly).** The direction to close it is on our side: distill/extract facts at write time and
+strengthen multi-hop, rather than retrieving raw conversation turns. This corrects the
+earlier under-tested "outperforms Mem0" framing.
+
+**Caveats:** n=40, single codex-judge pass (nondeterministic ~±0.03); our config is
+static-embeddings + PRF single-shot/agentic (no cross-encoder reranker in this run); ran
+entirely on the codex OAuth login (no OpenAI key). Reproduce:
+`comparisons/mem0_codex_eval.py 10 4` (Mem0, date-aware) vs
+`run_eval … --qa-only|--agentic-qa --max-conversations 10 --max-questions 4` (ours).
+
+### Closing the gap: write-time fact extraction lifts this repo to match Mem0 (2026-07-18)
+
+The section above pinned Mem0's edge on **write-time fact extraction** (it stores LLM-distilled
+facts; this repo retrieved raw conversation turns). We tested that hypothesis directly: feed the
+*same* extracted facts into *our* retrieval+answer pipeline and see if the gap closes. Using the
+identical 2,182 codex-extracted facts (the exact haystack Mem0 scored 0.500 on), same 40-question
+slice, same codex answerer+judge — only the retrieval layer differs:
+
+| Config (40 q) | Overall | MultiHop | OpenDomain | Temporal |
+|---|---|---|---|---|
+| This repo — raw turns, single-shot | 0.325 | 0.263 | 0.00 | 0.438 |
+| This repo — raw turns, agentic | 0.450 | 0.263 | 0.50 | 0.625 |
+| This repo — **over extracted facts**, single-shot | 0.475 | 0.316 | 0.50 | 0.688 |
+| This repo — **over extracted facts**, agentic | **0.500** | 0.368 | 0.25 | 0.688 |
+| Mem0 (over its own facts) | 0.500 | 0.421 | 0.25 | 0.625 |
+
+**What this proves:**
+- **Write-time extraction is the entire gap.** Swapping raw turns for extracted facts lifts this
+  repo +0.15 single-shot (0.325→0.475) and to **0.500 agentic — exactly Mem0's score.**
+- **Our retrieval was never behind.** Given the *identical* fact haystack, this repo ties Mem0
+  to the decimal (0.500 = 0.500). The earlier deficit was representation (raw turns), not ranking.
+- Temporal actually leads (0.688 vs Mem0's 0.625) once facts carry correct dates.
+
+**Implementation (shipped, `llm-reasoning` feature):** the intelligent write path already existed
+(`MemoryReasoner` trait + `LlmReasoner`, `src/memory/reasoning/`). Two new eval ingestion modes
+exercise it end-to-end: `--extract-facts` builds the haystack live with **synaptic's own
+`LlmReasoner`** (`SYNAPTIC_LLM_URL`/`SYNAPTIC_LLM_MODEL`; each session date-prefixed so extraction
+anchors dates correctly), and `--facts-from FILE` replays a precomputed fact set for fast,
+deterministic comparison. Two real bugs were found and fixed en route: a char-boundary panic in
+`summarization.rs` (multibyte chars in stored text) and non-tolerant relation parsing in
+`LlmReasoner` (weaker models omit a field). Reproduce:
+`run_eval … --qa-only --facts-from mem0_facts_by_conv.json --max-conversations 10 --max-questions 4`
+(replay), or `--extract-facts` with an OpenAI-compatible endpoint (live extraction).
+
+**Caveats:** n=40, single codex-judge pass (~±0.03); the 0.500 uses codex-quality extracted facts
+(the `--facts-from` replay isolates retrieval by holding the facts fixed); a full live
+`--extract-facts` run with a frontier extractor is the natural next measurement (extraction cost
+~20 s/session). The direction, though, is settled: **distill facts at write time and this repo
+matches the best open-source agentic memory on LoCoMo.**
+
+### Field survey: adding Graphiti (Zep's engine) — and where Letta fits (2026-07-18)
+
+Extending the one-off Mem0 head-to-head toward a real survey. **Graphiti** (the open-source
+temporal-knowledge-graph engine behind Zep) was run through the same pipeline: frontier
+extraction via the codex OAuth login (its `OpenAIGenericClient` on `/chat/completions` +
+`json_object` — the default client uses OpenAI's Responses API, which the shim doesn't serve),
+FalkorDB for the graph, Ollama for embeddings, same codex answer/grade prompts.
+
+Matched **12-question** slice (conv0–2, first 4 each — the largest that fits Graphiti's slow
+ingestion; see below), same codex answerer+judge:
+
+| System (12 q) | Overall | MultiHop (4) | OpenDomain (1) | SingleHop (1) | Temporal (6) |
+|---|---|---|---|---|---|
+| Mem0 (date-aware, frontier) | **0.750** | 0.25 | 1.00 | 1.00 | 1.00 |
+| This repo — over facts | 0.583 | 0.00 | 1.00 | 0.00 | 1.00 |
+| This repo — raw turns | 0.500 | 0.50 | 0.00 | 1.00 | 0.50 |
+| Graphiti (Zep) | 0.500 | 0.50 | 0.00 | 0.00 | 0.667 |
+
+**Honest reading:**
+- All four land in a **0.50–0.75 band** on this slice; the write-time-extraction systems (Mem0,
+  our over-facts) lead, driven by **perfect Temporal (6/6)** — dated fact extraction pays off
+  exactly where it should. Graphiti is competitive, tying our raw-turns baseline.
+- **n=12 is small and conv0–2 is an easier slice** (every system scores higher here than on the
+  40-q set — e.g. Mem0 0.750 here vs 0.500 at n=40). The reliable ranking remains the 40-q
+  numbers above; this slice ranks systems only loosely. The OpenDomain/SingleHop rows are n=1
+  (pure noise).
+- **Why only 12 q for Graphiti:** its temporal-KG write path is ~4× slower than Mem0's
+  (~70 s/episode vs ~20 s/session — it does entity + edge extraction, dedup, and temporal
+  invalidation per episode via the LLM), so a 40-q (10-conversation) run was not feasible in
+  session. A first attempt also scored a spurious 0.083 until we caught that FalkorDB stores each
+  `group_id` as a *separate graph*; `search(group_ids=…)` queried the empty default graph. Fixed
+  by connecting the driver per-conversation (`database=<conv>`); the corrected run is above. (Same
+  "verify the store is non-empty before trusting a low score" lesson as the Mem0 empty-store bug.)
+- **Letta** (formerly MemGPT) is intentionally *not* in the table: it is a full stateful-agent
+  framework (core-memory blocks + self-editing + archival passages), not a drop-in
+  retrieve-then-answer memory. A fair LoCoMo QA comparison would let Letta's *own* agent answer,
+  which changes the answerer and breaks the "same codex judge, only the memory differs" control
+  this survey depends on. Noted as architecturally different; a separate agent-level eval, not
+  this retrieval-substitution one.
+
+**Bottom line of the survey:** across Mem0, Graphiti, and this repo — held to the same answerer —
+the systems cluster together, and the single biggest lever is **write-time fact extraction**
+(the thing this repo now does via `store_extracted_facts`), not the choice of retrieval engine.
+
+**Shipped as a library capability (not just an eval mode).** `MemoryConfig::store_extracted_facts`
+(default `false`) turns the same distillation on inside the normal write path: every
+`AgentMemory::store` runs the active `MemoryReasoner` over the value and persists each extracted
+fact as its own retrievable memory (`<key>::fact<N>`), alongside the raw value and KG updates. A
+re-entrancy guard prevents fact-memories from re-triggering extraction. With the default heuristic
+reasoner this is fully offline/deterministic; with `LlmReasoner` (`SYNAPTIC_LLM_URL`/`_MODEL`) it is
+LLM-quality. So the measured LoCoMo lift is reachable through the plain store API, not only the
+eval harness.

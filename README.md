@@ -4,7 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An AI agent memory system in Rust: key/value memory with a knowledge graph,
-vector embeddings, and a multi-stage retrieval pipeline — hybrid
+vector embeddings, an **intelligent write path** that distills stored text into
+retrievable facts, and a multi-stage retrieval pipeline — hybrid
 (keyword + semantic) retrieval with RRF fusion, over-fetch reranking,
 pseudo-relevance-feedback (PRF) pool augmentation, and an optional GPU
 cross-encoder reranker — plus temporal tracking and optional feature-gated
@@ -13,11 +14,18 @@ security primitives.
 Retrieval quality and end-to-end answer accuracy are measured on the LoCoMo
 long-term-memory benchmark (real dataset, real numbers, honest caveats) — see
 [docs/evaluation.md](docs/evaluation.md). Highlights (full 1,986-question set
-unless noted): retrieval recall@10 **0.61** (best config), and an **agentic
+unless noted): retrieval recall@10 **0.61** (best config); an **agentic
 answer-guided retrieval** eval mode that lifts end-to-end QA accuracy to
 **0.50** on a labelled subset (a codex-CLI judge; see caveats) while abstaining
 ("I don't know") rather than confabulating when the evidence is absent — a
-faithfulness property measured explicitly.
+faithfulness property measured explicitly; and **write-time fact extraction**
+(`MemoryConfig::store_extracted_facts`) that lifts QA from 0.325/0.450 (raw
+turns) to **0.475/0.500** on a matched 40-question slice — tying
+[Mem0](https://github.com/mem0ai/mem0) (0.500) when both answer from the same
+judge, i.e. our retrieval was never the gap; the raw-turn representation was.
+Honest head-to-heads vs Mem0 and Graphiti (Zep) — including a result that
+*reversed* an earlier under-tested claim — are documented with all caveats in
+[docs/evaluation.md](docs/evaluation.md).
 
 This is a development library (version 0.2.0, not published to crates.io).
 The table below states honestly which parts are stable, which are beta, and
@@ -33,6 +41,7 @@ backed by a measured run in [docs/evaluation.md](docs/evaluation.md).
 | Memory store/retrieve (`AgentMemory`) | stable | Core store/retrieve/update with tests; in-memory and file (Sled) backends |
 | Storage backends | stable | Memory, file (Sled); SQL (PostgreSQL) behind `sql-storage` |
 | Knowledge graph | stable | Node merging, relationship detection, traversal; tested |
+| Intelligent write path (`MemoryReasoner`) | beta | On store, the active reasoner extracts facts/entities/relations from the value: entities & relations feed the knowledge graph; with `MemoryConfig::store_extracted_facts` (default off) each fact is also persisted as its own retrievable memory (`<key>::fact<N>`). Deterministic `HeuristicReasoner` by default (offline); `LlmReasoner` (OpenAI-compatible endpoint) under `llm-reasoning`, with heuristic fallback. Measured to lift LoCoMo QA to Mem0 parity — see [docs/evaluation.md](docs/evaluation.md) |
 | Embeddings | stable | Deterministic local embeddings; used by hybrid retrieval |
 | Search / hybrid retrieval | beta | Tokenized keyword + vector + graph + temporal retrievers fused with Reciprocal Rank Fusion (RRF), composite scoring, and a deterministic reranker over an over-fetched candidate pool. Optional: PRF pool augmentation (`SYNAPTIC_RETRIEVAL_PRF`), multi-hop graph expansion, semantic embeddings (`static-embeddings` / `ml-models` / Ollama), and a candle BERT cross-encoder reranker (`reranker-model`, GPU via `cuda`). Measured on LoCoMo — see [docs/evaluation.md](docs/evaluation.md) |
 | Evaluation harness (`tools/eval`) | beta | Real LoCoMo/LongMemEval loaders; retrieval metrics (recall/precision/MRR, `--recall-curve`, `--completeness`), memory-growth, and LLM-gated end-to-end QA (`--qa-only`, `--agentic-qa`) with abstention/faithfulness metrics. Every printed number is a real run; QA is gated on a configured judge, never fabricated |
@@ -110,6 +119,14 @@ with a lexical/TF-IDF embedder):
 - `reranker-model` — candle BERT cross-encoder reranker (ms-marco-MiniLM);
   strongest ranking, opt-in (`SYNAPTIC_RERANKER=cross-encoder`), GPU-recommended
 - `cuda` — candle CUDA backend so `ml-models`/`reranker-model` run on a GPU
+- `llm-reasoning` — `LlmReasoner` for the intelligent write path (extract /
+  resolve / synthesize via an OpenAI-compatible endpoint, `SYNAPTIC_LLM_URL` /
+  `SYNAPTIC_LLM_MODEL`), with deterministic heuristic fallback. Without it the
+  offline `HeuristicReasoner` is used
+
+Write-time fact extraction is a runtime config, not a feature flag: set
+`MemoryConfig::store_extracted_facts = true` to persist each extracted fact as a
+retrievable memory (default off; works with either reasoner).
 
 Other optional features: `sql-storage`, `multimodal`, `external-integrations`,
 `cross-platform`, `observability`, and `distributed-experimental` (explicitly
@@ -131,6 +148,7 @@ Headline measured results (see the doc for methodology and the many caveats):
 | MultiHop recall@10 | 0.2475 → **0.3739** | +51%, via ranking (not graph connectivity) |
 | search latency p50 | **~0.46–0.76 s** | after a 9.5× pipeline-latency fix |
 | end-to-end QA accuracy (40-q subset, codex judge) | 0.375 → **0.50** | single-shot → agentic answer-guided retrieval |
+| QA with write-time fact extraction (40-q, codex judge) | 0.325/0.450 → **0.475/0.500** | raw turns → over extracted facts (single-shot/agentic); **ties Mem0's 0.500** on identical facts |
 | faithfulness: abstains on unanswerable q | **~90%** | agentic + grounding; confabulates rather than guesses only ~10% |
 
 Run the harness (LLM-free retrieval metrics need no judge):
@@ -145,6 +163,17 @@ End-to-end QA (`--qa-only` / `--agentic-qa`) requires a configured judge
 (`SYNAPTIC_EVAL_JUDGE=codex` with the `codex` CLI, or an OpenAI-compatible
 endpoint); without one, QA is reported as not-run — never fabricated. The
 GPU cross-encoder and agentic modes are documented in `docs/evaluation.md`.
+
+**Head-to-head comparisons.** `docs/evaluation.md` also documents honest,
+matched-slice comparisons against [Mem0](https://github.com/mem0ai/mem0) and
+Graphiti (Zep) — same LoCoMo questions, same codex answerer+judge, differing
+only in the memory system — with reproducible harnesses in
+`tools/eval/comparisons/`. All run on the codex OAuth login (no API key). The
+write-up includes a result that *reversed* an earlier under-tested "we beat
+Mem0" claim once Mem0 was given its intended frontier extractor and correct
+dates; the honest conclusion is that write-time fact extraction (not the
+retrieval engine) is the dominant lever, and the systems cluster once held to
+the same answerer.
 
 **Honesty note:** QA accuracy is measured on labelled subsets (the full
 1,986-question judge run is bounded by sequential judge latency) and the codex

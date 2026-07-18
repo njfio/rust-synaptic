@@ -78,8 +78,14 @@ struct WireEntity {
 
 #[derive(Deserialize)]
 struct WireRelation {
+    // Tolerate weaker models that omit a field: a partial relation should not
+    // fail the whole extraction parse. Empty-field relations are dropped after
+    // parsing (see `try_extract`).
+    #[serde(default)]
     subject: String,
+    #[serde(default)]
     predicate: String,
+    #[serde(default)]
     object: String,
 }
 
@@ -197,6 +203,11 @@ impl LlmReasoner {
                 let relations = f
                     .relations
                     .into_iter()
+                    // Drop partial relations (a field the model omitted defaults
+                    // to empty) — an incomplete triple is not a usable relation.
+                    .filter(|r| {
+                        !r.subject.is_empty() && !r.predicate.is_empty() && !r.object.is_empty()
+                    })
                     .map(|r| Relation {
                         subject: r.subject,
                         predicate: r.predicate,
@@ -415,4 +426,38 @@ fn http_chat_call(url: String, model: String, api_key: Option<String>) -> ChatCa
                 .ok_or_else(|| "LLM reply missing choices[0].message.content".to_string())
         })
     })
+}
+
+#[cfg(test)]
+mod tolerant_parse_tests {
+    use super::*;
+
+    fn canned(reply: &'static str) -> ChatCall {
+        Arc::new(move |_s: String, _u: String| {
+            Box::pin(async move { Ok(reply.to_string()) })
+        })
+    }
+
+    /// A weaker model can emit a relation missing a field. That must not fail
+    /// the whole extraction (previously: "missing field `object`"); the fact
+    /// still parses and the incomplete relation is dropped.
+    #[tokio::test]
+    async fn extract_tolerates_relation_missing_object() {
+        let reply = r#"{"facts":[{"text":"Alice lives in Berlin.","entities":[{"name":"Alice","kind":"Person"}],"relations":[{"subject":"Alice","predicate":"lives_in"}]}]}"#;
+        let r = LlmReasoner::with_call(canned(reply));
+        let ctx = ExtractionContext {
+            source_key: "k".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        let ex = r
+            .extract("Alice lives in Berlin.", &ctx)
+            .await
+            .expect("extraction should succeed");
+        assert_eq!(ex.facts.len(), 1, "the fact must parse despite partial relation");
+        assert_eq!(ex.facts[0].text, "Alice lives in Berlin.");
+        assert!(
+            ex.facts[0].relations.is_empty(),
+            "incomplete relation (no object) must be dropped, not kept empty"
+        );
+    }
 }

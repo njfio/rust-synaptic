@@ -24,4 +24,4 @@ tracing-subscriber = "0.3"
 [features]
 # Enables the real LLM judge (`LlmJudge`) for end-to-end QA accuracy.
 # Off by default: without it QA accuracy is reported as "not run".
-llm-reasoning = ["dep:reqwest"]
+llm-reasoning = ["dep:reqwest", "synaptic/llm-reasoning"]

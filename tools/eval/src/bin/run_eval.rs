@@ -154,6 +154,17 @@ async fn main() -> Result<(), String> {
         .position(|a| a == "--qtype")
         .and_then(|i| args.get(i + 1))
         .map(|v| v.to_ascii_lowercase());
+    // `--facts-from FILE` swaps the haystack from raw conversation turns to
+    // LLM-extracted facts (JSON: {"<conv_index>": ["fact", ...]}), for the
+    // write-time-extraction experiment. Combine with `--qa-only`/`--agentic-qa`.
+    let facts_from: Option<String> = args
+        .iter()
+        .position(|a| a == "--facts-from")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    // `--extract-facts` builds the haystack live with synaptic's own
+    // LlmReasoner (needs `--features llm-reasoning` + SYNAPTIC_LLM_URL/MODEL).
+    let extract_facts = args.iter().any(|a| a == "--extract-facts");
     let dataset_path = args
         .iter()
         .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
@@ -209,10 +220,28 @@ async fn main() -> Result<(), String> {
     if completeness {
         return run_completeness(&conversations, &mut w).await;
     }
+    // Build the extracted-fact haystack once (from a live LlmReasoner or a
+    // JSON file) when a fact-QA mode is requested.
+    let facts_map: Option<std::collections::BTreeMap<usize, Vec<String>>> =
+        if (qa_only || agentic_qa) && (extract_facts || facts_from.is_some()) {
+            if extract_facts {
+                Some(extract_facts_via_reasoner(&conversations, &mut w).await?)
+            } else {
+                Some(load_facts(facts_from.as_deref().unwrap_or_default())?)
+            }
+        } else {
+            None
+        };
     if qa_only {
+        if let Some(ref facts) = facts_map {
+            return run_qa_facts_only(&conversations, facts, &mut w).await;
+        }
         return run_qa_only(&conversations, &mut w).await;
     }
     if agentic_qa {
+        if let Some(ref facts) = facts_map {
+            return run_agentic_facts_only(&conversations, facts, &mut w).await;
+        }
         return run_agentic_qa_only(&conversations, &mut w).await;
     }
     if growth_only {
@@ -586,6 +615,158 @@ async fn run_agentic_qa_only(
         ))?;
     }
     write_recall_breakdown(&report.recall_breakdown, &mut *w)?;
+    write_faithfulness_breakdown(&report.faithfulness, &mut *w)?;
+    Ok(())
+}
+
+/// Build the fact haystack live, using synaptic's own [`LlmReasoner`] to
+/// extract facts from each session (date-prefixed so the extractor anchors
+/// dates to when things were said). Requires the `llm-reasoning` feature and
+/// `SYNAPTIC_LLM_URL` + `SYNAPTIC_LLM_MODEL` pointing at an OpenAI-compatible
+/// endpoint (e.g. the codex shim). Returns the same `{conv_index: [facts]}`
+/// map shape as [`load_facts`], so the QA path is identical.
+#[cfg(feature = "llm-reasoning")]
+async fn extract_facts_via_reasoner(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<std::collections::BTreeMap<usize, Vec<String>>, String> {
+    use synaptic::memory::reasoning::{ExtractionContext, LlmReasoner, MemoryReasoner};
+    let reasoner = LlmReasoner::from_env().ok_or_else(|| {
+        format!(
+            "--extract-facts requires {} + {} (OpenAI-compatible endpoint)",
+            LlmReasoner::ENV_URL,
+            LlmReasoner::ENV_MODEL
+        )
+    })?;
+    let mut out = std::collections::BTreeMap::new();
+    for (ci, conv) in conversations.iter().enumerate() {
+        let mut facts: Vec<String> = Vec::new();
+        for session in &conv.sessions {
+            let date = session.timestamp.as_deref().unwrap_or("");
+            let mut text = String::new();
+            for turn in &session.turns {
+                text.push_str(&format!("[{date}] {}: {}\n", turn.speaker, turn.text));
+            }
+            let ctx = ExtractionContext {
+                source_key: format!("conv{ci}"),
+                timestamp: chrono::Utc::now(),
+            };
+            match reasoner.extract(&text, &ctx).await {
+                Ok(ex) => facts.extend(ex.facts.into_iter().map(|f| f.text)),
+                Err(e) => w(format!("  extract error conv{ci}: {e}"))?,
+            }
+        }
+        w(format!("conv{ci}: extracted {} facts", facts.len()))?;
+        out.insert(ci, facts);
+    }
+    Ok(out)
+}
+
+#[cfg(not(feature = "llm-reasoning"))]
+async fn extract_facts_via_reasoner(
+    _conversations: &[EvalConversation],
+    _w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<std::collections::BTreeMap<usize, Vec<String>>, String> {
+    Err("--extract-facts requires building with --features llm-reasoning".to_string())
+}
+
+/// Load `--facts-from` JSON (`{"<conv_index>": ["fact", ...]}`) into a map
+/// from conversation position to its extracted facts.
+fn load_facts(path: &str) -> Result<std::collections::BTreeMap<usize, Vec<String>>, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| format!("--facts-from {path}: {e}"))?;
+    let parsed: std::collections::BTreeMap<String, Vec<String>> =
+        serde_json::from_str(&raw).map_err(|e| format!("--facts-from {path}: {e}"))?;
+    let mut out = std::collections::BTreeMap::new();
+    for (k, v) in parsed {
+        let idx = k
+            .parse::<usize>()
+            .map_err(|e| format!("--facts-from key {k:?} not a conv index: {e}"))?;
+        out.insert(idx, v);
+    }
+    Ok(out)
+}
+
+/// `--qa-only` with an extracted-fact haystack (from `--facts-from` or
+/// `--extract-facts`): single-shot QA.
+async fn run_qa_facts_only(
+    conversations: &[EvalConversation],
+    facts: &std::collections::BTreeMap<usize, Vec<String>>,
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== QA end-to-end accuracy (--qa-only: extracted-fact haystack) ==".to_string())?;
+    let n: usize = facts.values().map(|v| v.len()).sum();
+    w(format!("facts: {n} across {} conversations", facts.len()))?;
+    if std::env::var(qa::ENV_JUDGE).ok().as_deref() != Some("codex") {
+        w(format!(
+            "QA: not run — --facts-from requires {}=codex with the codex CLI",
+            qa::ENV_JUDGE
+        ))?;
+        return Ok(());
+    }
+    let judge = qa::CodexCliJudge::from_env();
+    if !judge.is_available() {
+        w(format!("QA: not run — {}=codex but codex CLI not runnable", qa::ENV_JUDGE))?;
+        return Ok(());
+    }
+    let r = qa::run_qa_over_facts(conversations, facts, &judge, K)
+        .await
+        .map_err(|e| e.to_string())?;
+    w(format!(
+        "QA: graded={} correct={} accuracy={:.4}",
+        r.questions, r.correct, r.accuracy
+    ))?;
+    for (qtype, b) in &r.by_qtype {
+        w(format!(
+            "  {qtype}: graded={} correct={} accuracy={:.4}",
+            b.questions, b.correct, b.accuracy
+        ))?;
+    }
+    write_faithfulness_breakdown(&r.faithfulness, &mut *w)?;
+    Ok(())
+}
+
+/// `--agentic-qa` with an extracted-fact haystack: agentic QA.
+async fn run_agentic_facts_only(
+    conversations: &[EvalConversation],
+    facts: &std::collections::BTreeMap<usize, Vec<String>>,
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== Agentic QA (--agentic-qa: extracted-fact haystack) ==".to_string())?;
+    let n: usize = facts.values().map(|v| v.len()).sum();
+    w(format!("facts: {n} across {} conversations", facts.len()))?;
+    if std::env::var(qa::ENV_JUDGE).ok().as_deref() != Some("codex") {
+        w(format!(
+            "QA: not run — fact QA requires {}=codex with the codex CLI",
+            qa::ENV_JUDGE
+        ))?;
+        return Ok(());
+    }
+    let judge = qa::CodexCliJudge::from_env();
+    if !judge.is_available() {
+        w(format!("QA: not run — {}=codex but codex CLI not runnable", qa::ENV_JUDGE))?;
+        return Ok(());
+    }
+    let report = qa::run_agentic_qa_over_facts(
+        conversations,
+        facts,
+        &judge,
+        K,
+        qa::agentic_max_rounds(),
+        qa::grounded_enabled(),
+        qa::ground_verify_enabled(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    w(format!(
+        "QA: graded={} correct={} accuracy={:.4} mean_rounds_used={:.2}",
+        report.questions, report.correct, report.accuracy, report.mean_rounds_used
+    ))?;
+    for (qtype, b) in &report.by_qtype {
+        w(format!(
+            "  {qtype}: graded={} correct={} accuracy={:.4}",
+            b.questions, b.correct, b.accuracy
+        ))?;
+    }
     write_faithfulness_breakdown(&report.faithfulness, &mut *w)?;
     Ok(())
 }
