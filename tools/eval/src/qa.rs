@@ -530,6 +530,103 @@ pub async fn run_qa(
     })
 }
 
+/// Store LLM-extracted **facts** (one memory per fact) as the haystack
+/// instead of raw conversation turns, then run the identical retrieve→judge
+/// QA. This measures whether a write-time fact-extraction memory (Mem0-style)
+/// beats retrieving raw turns, holding the answerer/judge fixed.
+///
+/// `facts_by_index` maps a conversation's position in `conversations` to its
+/// list of extracted facts. A conversation with no entry falls back to raw
+/// turn ingestion. Extracted facts carry no dataset evidence ids, so
+/// `gold_retrieved`/recall are not meaningful in this mode (reported as
+/// `false`); QA **accuracy** is the signal.
+pub async fn run_qa_over_facts(
+    conversations: &[EvalConversation],
+    facts_by_index: &std::collections::BTreeMap<usize, Vec<String>>,
+    judge: &dyn Judge,
+    k: usize,
+) -> Result<QaReport, QaError> {
+    let concurrency = qa_concurrency();
+    let mut per_question: Vec<QaQuestionRecord> = Vec::new();
+    let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
+
+    for (ci, conversation) in conversations.iter().enumerate() {
+        let mut memory = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(mem_err)?;
+        match facts_by_index.get(&ci) {
+            Some(facts) => {
+                for (j, fact) in facts.iter().enumerate() {
+                    memory
+                        .store(&format!("f{j}"), fact)
+                        .await
+                        .map_err(|e| QaError::Memory(e.to_string()))?;
+                }
+            }
+            None => {
+                ingest(conversation, &mut memory)
+                    .await
+                    .map_err(|e| QaError::Memory(e.to_string()))?;
+            }
+        }
+
+        let mut pending: Vec<PendingQuestion> = Vec::with_capacity(conversation.questions.len());
+        for question in &conversation.questions {
+            let fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
+            let recalled: Vec<String> = fragments.into_iter().map(|f| f.entry.value).collect();
+            // Facts have no evidence ids; gold retrieval is undefined here.
+            pending.push(PendingQuestion {
+                question_id: question.id.clone(),
+                qtype: qtype_key(question.qtype),
+                question_text: question.text.clone(),
+                gold_answer: question.gold_answer.clone(),
+                recalled,
+                gold_retrieved: false,
+                has_gold: !question.evidence_ids.is_empty(),
+            });
+        }
+
+        let records = judge_questions(judge, pending, concurrency).await?;
+        for record in records {
+            let bucket = by_qtype.entry(record.qtype.clone()).or_insert(QTypeAccuracy {
+                questions: 0,
+                correct: 0,
+                accuracy: 0.0,
+            });
+            bucket.questions += 1;
+            bucket.correct += usize::from(record.correct);
+            per_question.push(record);
+        }
+    }
+
+    for bucket in by_qtype.values_mut() {
+        bucket.accuracy = if bucket.questions == 0 {
+            0.0
+        } else {
+            bucket.correct as f64 / bucket.questions as f64
+        };
+    }
+    per_question.sort_by(|a, b| a.question_id.cmp(&b.question_id));
+    let questions = per_question.len();
+    let correct = per_question.iter().filter(|q| q.correct).count();
+    let recall_breakdown = QaRecallBreakdown::from_records(&per_question);
+    let faithfulness = FaithfulnessBreakdown::from_records(&per_question);
+    Ok(QaReport {
+        k,
+        questions,
+        correct,
+        accuracy: if questions == 0 {
+            0.0
+        } else {
+            correct as f64 / questions as f64
+        },
+        by_qtype,
+        per_question,
+        recall_breakdown,
+        faithfulness,
+    })
+}
+
 /// Environment variable selecting which judge [`run_qa_gated`] uses:
 /// `codex` for [`CodexCliJudge`], `llm` (or unset) for [`LlmJudge`] /
 /// existing behavior.
@@ -1623,19 +1720,77 @@ pub async fn run_agentic_qa(
     grounded: bool,
     ground_verify: bool,
 ) -> Result<AgenticReport, QaError> {
+    run_agentic_qa_impl(
+        conversations,
+        None,
+        judge,
+        k,
+        max_rounds,
+        grounded,
+        ground_verify,
+    )
+    .await
+}
+
+/// Agentic QA over LLM-extracted **facts** instead of raw turns (see
+/// [`run_qa_over_facts`] for the single-shot analogue). `facts_by_index` maps
+/// a conversation's position to its extracted facts; missing entries fall back
+/// to raw-turn ingestion.
+pub async fn run_agentic_qa_over_facts(
+    conversations: &[EvalConversation],
+    facts_by_index: &std::collections::BTreeMap<usize, Vec<String>>,
+    judge: &CodexCliJudge,
+    k: usize,
+    max_rounds: usize,
+    grounded: bool,
+    ground_verify: bool,
+) -> Result<AgenticReport, QaError> {
+    run_agentic_qa_impl(
+        conversations,
+        Some(facts_by_index),
+        judge,
+        k,
+        max_rounds,
+        grounded,
+        ground_verify,
+    )
+    .await
+}
+
+async fn run_agentic_qa_impl(
+    conversations: &[EvalConversation],
+    facts_by_index: Option<&std::collections::BTreeMap<usize, Vec<String>>>,
+    judge: &CodexCliJudge,
+    k: usize,
+    max_rounds: usize,
+    grounded: bool,
+    ground_verify: bool,
+) -> Result<AgenticReport, QaError> {
     let max_rounds = max_rounds.max(1);
     let concurrency = qa_concurrency();
     let mut per_question: Vec<AgenticQuestionRecord> = Vec::new();
     let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
     let mut cross_tab_records: Vec<QaQuestionRecord> = Vec::new();
 
-    for conversation in conversations {
+    for (ci, conversation) in conversations.iter().enumerate() {
         let mut memory = AgentMemory::new(MemoryConfig::default())
             .await
             .map_err(mem_err)?;
-        ingest(conversation, &mut memory)
-            .await
-            .map_err(|e| QaError::Memory(e.to_string()))?;
+        match facts_by_index.and_then(|m| m.get(&ci)) {
+            Some(facts) => {
+                for (j, fact) in facts.iter().enumerate() {
+                    memory
+                        .store(&format!("f{j}"), fact)
+                        .await
+                        .map_err(|e| QaError::Memory(e.to_string()))?;
+                }
+            }
+            None => {
+                ingest(conversation, &mut memory)
+                    .await
+                    .map_err(|e| QaError::Memory(e.to_string()))?;
+            }
+        }
 
         let memory_ref = &memory;
         let mut outcomes = stream::iter(conversation.questions.iter())
