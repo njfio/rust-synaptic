@@ -194,8 +194,34 @@ impl FileStorage {
             .await
             .storage_context("Failed to read JSON import file")?;
 
-        let entries: Vec<MemoryEntry> =
+        // Accept both the canonical bare-array export (`[MemoryEntry, ...]`) and
+        // the structured backup format written by other backends (e.g.
+        // `MemoryStorage::backup`), which wraps the entries in an object:
+        // `{ "entries": [...], "version": "1.1", ... }`. Parsing directly into
+        // `Vec<MemoryEntry>` fails on the object form with
+        // "invalid type: map, expected a sequence", so branch on the JSON shape.
+        let value: serde_json::Value =
             serde_json::from_str(&json).storage_context("Failed to deserialize JSON data")?;
+        let entries: Vec<MemoryEntry> = match value {
+            serde_json::Value::Array(_) => serde_json::from_value(value)
+                .storage_context("Failed to deserialize JSON data")?,
+            serde_json::Value::Object(mut map) => {
+                let entries_value = map.remove("entries").ok_or_else(|| {
+                    MemoryError::storage(
+                        "Failed to deserialize JSON data: backup object missing `entries` field"
+                            .to_string(),
+                    )
+                })?;
+                serde_json::from_value(entries_value)
+                    .storage_context("Failed to deserialize JSON data")?
+            }
+            _ => {
+                return Err(MemoryError::storage(
+                    "Failed to deserialize JSON data: expected an array or backup object"
+                        .to_string(),
+                ));
+            }
+        };
 
         let mut imported_count = 0;
         for entry in entries {
