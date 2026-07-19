@@ -1597,6 +1597,13 @@ pattern seen throughout: a strong answerer masks retrieval-level gaps. Bi-tempor
 built (supersede/`is_valid_at`/`query_as_of` unit-tested); its measurable *value* lives at the
 retrieval-precision or weak-answerer level (does validity filtering surface the current fact at
 rank 1?), not in end-to-end QA accuracy with a frontier model — which is already at 0.875.
+**Wiring now built + demonstrated:** `MemoryConfig::retrieval_excludes_superseded` closes the loop —
+the intelligent write path marks a memory superseded when a later fact contradicts it (same
+subject+predicate, different object), and `search` drops superseded memories so retrieval returns
+the *current* fact. A deterministic test proves the retrieval-precision effect: after "Alice lives
+in Berlin" is superseded by "Munich", search returns only Munich with the flag on, both with it off.
+So bi-temporal's value is real and demonstrable at the retrieval level; it simply doesn't move
+frontier-answerer QA (0.875), which already disambiguates updates from the retrieved context.
 
 **Forgetting / decay (measured — validated with a differentiated-access harness):** an explicit
 eviction pass over `retained_strength = decay(age)·importance·recency`. LoCoMo QA can't show its

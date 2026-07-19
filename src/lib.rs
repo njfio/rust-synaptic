@@ -729,8 +729,15 @@ impl AgentMemory {
             // for id-less outcomes (UpdateInPlace/Append) the target is the
             // best neighbor by the same deterministic ordering.
             let best_neighbor_id = neighbors.first().map(|n| n.id.clone());
-            self.apply_resolution(entry, fact, resolution, best_neighbor_id)
+            let superseded = self
+                .apply_resolution(entry, fact, resolution, best_neighbor_id)
                 .await?;
+            // Mark the superseded memory itself (not just its KG edges) so
+            // bi-temporal validity is visible to retrieval (see `mark_superseded`
+            // and `MemoryConfig::retrieval_excludes_superseded`).
+            if let Some(old_key) = superseded {
+                self.mark_superseded(&old_key).await?;
+            }
 
             // Optionally persist the extracted fact as its own retrievable
             // memory so search surfaces distilled facts, not just raw turns.
@@ -742,6 +749,28 @@ impl AgentMemory {
                 let result = Box::pin(self.store_with_report(&fact_key, &fact.text)).await;
                 self.storing_facts = false;
                 result?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Mark a memory as superseded (bi-temporal invalidation at the memory
+    /// level): records `superseded_at` in the entry's custom fields and persists
+    /// it, without re-running the write-path reasoning. With
+    /// [`MemoryConfig::retrieval_excludes_superseded`] set, such memories are
+    /// dropped from `search` results so retrieval surfaces the *current* fact.
+    #[cfg(feature = "embeddings")]
+    async fn mark_superseded(&mut self, key: &str) -> Result<()> {
+        if let Some(mut entry) = self.storage.retrieve(key).await? {
+            entry
+                .metadata
+                .custom_fields
+                .insert(Self::SUPERSEDED_FIELD.to_string(), Utc::now().to_rfc3339());
+            self.storage.store(&entry).await?;
+            // Keep in-memory state consistent (best-effort; state is the search
+            // corpus for the non-pipeline path).
+            if self.state.has_memory(key) {
+                self.state.add_memory(entry);
             }
         }
         Ok(())
@@ -879,6 +908,10 @@ impl AgentMemory {
     #[cfg(feature = "embeddings")]
     const NEIGHBOR_CANDIDATE_LIMIT: usize = 20;
 
+    /// Custom-field key recording when a memory was bi-temporally superseded.
+    #[cfg(feature = "embeddings")]
+    const SUPERSEDED_FIELD: &'static str = "superseded_at";
+
     /// Test-only op-count proxy: the maximum number of candidate memories a
     /// single `neighbor_facts` call has examined so far.
     #[cfg(all(feature = "embeddings", feature = "test-utils"))]
@@ -895,11 +928,12 @@ impl AgentMemory {
         fact: &memory::reasoning::Fact,
         resolution: memory::reasoning::ConflictResolution,
         best_neighbor_id: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         use memory::reasoning::ConflictResolution;
         let Some(ref kg) = self.knowledge_graph else {
-            return Ok(());
+            return Ok(None);
         };
+        let mut superseded_key: Option<String> = None;
         let mut kg = kg.write().await;
         match resolution {
             ConflictResolution::Insert => {
@@ -911,6 +945,10 @@ impl AgentMemory {
                 // the old memory (same subject + predicate as the new fact).
                 kg.supersede_matching_relations(&old_id, fact).await?;
                 kg.add_extracted_fact(&entry.key, fact).await?;
+                // `old_id` is the superseded memory's key (see `neighbor_facts`):
+                // report it so the write path can mark the memory itself
+                // superseded, making bi-temporal validity visible to retrieval.
+                superseded_key = Some(old_id);
             }
             ConflictResolution::UpdateInPlace { reason } => {
                 tracing::debug!(reason = %reason, "updating fact in place");
@@ -928,7 +966,7 @@ impl AgentMemory {
                 tracing::debug!(reason = %reason, "reasoner chose no-op");
             }
         }
-        Ok(())
+        Ok(superseded_key)
     }
 
     /// Query the knowledge graph for all extracted relations whose subject is
@@ -1297,11 +1335,22 @@ impl AgentMemory {
         validate_non_empty_string(query, "search query")?;
         validate_range(limit, 1, 10000, "search limit")?; // Max 10k results
 
-        let results = if let Some(ref pipeline) = self.retrieval_pipeline {
+        let mut results = if let Some(ref pipeline) = self.retrieval_pipeline {
             pipeline.search(query, limit).await?
         } else {
             self.storage.search(query, limit).await?
         };
+        // Bi-temporal validity: when enabled, drop memories that have been
+        // superseded so retrieval surfaces the *current* fact after an update.
+        #[cfg(feature = "embeddings")]
+        if self._config.retrieval_excludes_superseded {
+            results.retain(|f| {
+                !f.entry
+                    .metadata
+                    .custom_fields
+                    .contains_key(Self::SUPERSEDED_FIELD)
+            });
+        }
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
     }
@@ -1654,6 +1703,12 @@ pub struct MemoryConfig {
     /// `LlmReasoner` when `SYNAPTIC_LLM_URL`/`_MODEL` are set). Default: `false`
     /// (raw-value-only behavior is unchanged).
     pub store_extracted_facts: bool,
+    /// Bi-temporal validity in retrieval: when `true`, `search` drops memories
+    /// that the intelligent write path has marked superseded (a later fact
+    /// contradicted them), so retrieval returns the *current* fact after an
+    /// update instead of the stale one. Default: `false` (superseded memories
+    /// remain retrievable, matching prior behavior).
+    pub retrieval_excludes_superseded: bool,
 }
 
 impl Default for MemoryConfig {
@@ -1700,6 +1755,7 @@ impl Default for MemoryConfig {
             enable_memory_promotion: true,
             promotion_config: Some(memory::promotion::PromotionConfig::default()),
             store_extracted_facts: false,
+            retrieval_excludes_superseded: false,
         }
     }
 }
@@ -1755,6 +1811,49 @@ mod tests {
         assert!(
             mem.retrieve("note::fact0").await.unwrap().is_none(),
             "no fact-memories should exist with the default (off) config"
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn superseded_memory_excluded_from_retrieval_when_enabled() {
+        // A later contradicting fact supersedes the earlier one; with
+        // retrieval_excludes_superseded the stale memory is dropped from search.
+        let config = MemoryConfig {
+            retrieval_excludes_superseded: true,
+            ..MemoryConfig::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.store("r1", "Alice lives in Berlin").await.unwrap();
+        mem.store("r2", "Alice lives in Munich").await.unwrap();
+
+        let results = mem.search("Where does Alice live", 10).await.unwrap();
+        let values: Vec<String> = results.iter().map(|f| f.entry.value.clone()).collect();
+        // The current fact (Munich) is retrievable; the superseded one (Berlin)
+        // is filtered out.
+        assert!(
+            values.iter().any(|v| v.contains("Munich")),
+            "current fact should be retrieved, got {values:?}"
+        );
+        assert!(
+            !values.iter().any(|v| v.contains("Berlin")),
+            "superseded fact should be excluded, got {values:?}"
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn superseded_memory_retained_by_default() {
+        // Same sequence, but with the default (flag off): the superseded memory
+        // stays retrievable (no behavior change).
+        let mut mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
+        mem.store("r1", "Alice lives in Berlin").await.unwrap();
+        mem.store("r2", "Alice lives in Munich").await.unwrap();
+        let results = mem.search("Where does Alice live", 10).await.unwrap();
+        let values: Vec<String> = results.iter().map(|f| f.entry.value.clone()).collect();
+        assert!(
+            values.iter().any(|v| v.contains("Berlin")),
+            "with the flag off the superseded memory must remain, got {values:?}"
         );
     }
 
