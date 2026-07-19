@@ -48,9 +48,10 @@ async fn test_memory_operations_no_panic() -> Result<()> {
     let result = memory.retrieve("nonexistent_key").await?;
     assert!(result.is_none());
 
-    // Test searching with empty query
-    let results = memory.search("", 10).await?;
-    assert!(results.is_empty() || !results.is_empty()); // Either is fine, just don't panic
+    // Test searching with empty query: depending on the active retriever it may
+    // be rejected with an error or return results — either is fine. The
+    // invariant under test is only that it does not PANIC.
+    let _ = memory.search("", 10).await;
 
     Ok(())
 }

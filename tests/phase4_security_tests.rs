@@ -2,6 +2,10 @@
 //!
 //! Tests all advanced security components including homomorphic encryption,
 //! zero-knowledge proofs, differential privacy, and advanced access control.
+//!
+//! Requires the `security` feature (with zk/homomorphic, as in the CI feature
+//! set); compiled out of default/portable builds.
+#![cfg(feature = "security")]
 
 use std::error::Error;
 use synaptic::security::{
