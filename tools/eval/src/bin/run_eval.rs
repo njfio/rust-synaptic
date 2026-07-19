@@ -131,6 +131,12 @@ async fn main() -> Result<(), String> {
     // much of the "gold-retrieved-but-answer-wrong" QA bucket is really
     // multi-evidence undersupply (retrieval completeness) rather than the judge.
     let completeness = args.iter().any(|a| a == "--completeness");
+    // `--forget-curve` measures whether principled forgetting (retained_strength
+    // = decay·importance·recency) preserves recall better than random eviction:
+    // differentiate access via the question searches, then rank turns by strength
+    // and by a deterministic pseudo-random key, keep the top fraction of each,
+    // and compare recall@k of the two survivor sets across store sizes.
+    let forget_curve = args.iter().any(|a| a == "--forget-curve");
     let max_conversations: Option<usize> = args
         .iter()
         .position(|a| a == "--max-conversations")
@@ -222,6 +228,9 @@ async fn main() -> Result<(), String> {
     }
     if completeness {
         return run_completeness(&conversations, &mut w).await;
+    }
+    if forget_curve {
+        return run_forget_curve(&conversations, &mut w).await;
     }
     // Build the extracted-fact haystack once (from a live LlmReasoner or a
     // JSON file) when a fact-QA mode is requested.
@@ -452,6 +461,155 @@ async fn run_completeness(
         overall.2 as f64 / overall.0 as f64,
         overall.3 as f64 / overall.0 as f64
     ))?;
+    Ok(())
+}
+
+/// `--forget-curve`: measure whether principled forgetting preserves recall
+/// better than random eviction. Access is differentiated by running each
+/// question's search over the full memory (retrieved turns are "accessed");
+/// turns are then ranked by `ForgettingPolicy::retained_strength`
+/// (decay·importance·recency) and, separately, by a deterministic pseudo-random
+/// key. For each target store fraction we keep the top slice of each ranking,
+/// rebuild a fresh memory from the survivors, and compare recall@k. If
+/// forgetting > random, the strength ranking is selective; on uniformly-ingested
+/// LoCoMo (equal age/importance) the only signal is access, so the two converge.
+async fn run_forget_curve(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    use std::collections::{HashMap, HashSet};
+    use synaptic::memory::forgetting::ForgettingPolicy;
+    use synaptic::{MemoryEntry, MemoryType};
+
+    w(
+        "== Forgetting retention curve (recall@k: strength-ranked vs random eviction) =="
+            .to_string(),
+    )?;
+    let policy = ForgettingPolicy::default();
+    let fractions = [1.0_f64, 0.75, 0.5, 0.25];
+    let mut fg_recall = vec![0.0_f64; fractions.len()];
+    let mut rnd_recall = vec![0.0_f64; fractions.len()];
+    let mut q_counts = vec![0_usize; fractions.len()];
+
+    // Deterministic FNV-1a hash for a reproducible "random" ordering that is
+    // uncorrelated with retained strength.
+    fn fnv(key: &str) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in key.as_bytes() {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    }
+
+    for conv in conversations {
+        let mut full = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        runner::ingest(conv, &mut full)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Reconstruct the ingested turns (same keys ingest used).
+        let mut turns: Vec<(String, String)> = Vec::new();
+        for session in &conv.sessions {
+            for (i, turn) in session.turns.iter().enumerate() {
+                turns.push((runner::turn_memory_key(session, i), turn.text.clone()));
+            }
+        }
+
+        // Differentiate access: retrieved turns get "accessed".
+        let mut access: HashMap<String, u64> = HashMap::new();
+        for q in &conv.questions {
+            for f in full.search(&q.text, K).await.map_err(|e| e.to_string())? {
+                *access.entry(f.entry.key).or_insert(0) += 1;
+            }
+        }
+
+        // Score each turn by retained strength.
+        let mut scored: Vec<(String, String, f64)> = Vec::with_capacity(turns.len());
+        for (key, value) in &turns {
+            let mut e = MemoryEntry::new(key.clone(), value.clone(), MemoryType::LongTerm);
+            for _ in 0..access.get(key).copied().unwrap_or(0) {
+                e.mark_accessed();
+            }
+            let s = policy
+                .retained_strength(&e)
+                .await
+                .map_err(|err| err.to_string())?;
+            scored.push((key.clone(), value.clone(), s));
+        }
+        let n = scored.len();
+        let mut by_strength: Vec<usize> = (0..n).collect();
+        by_strength.sort_by(|&a, &b| {
+            scored[b]
+                .2
+                .partial_cmp(&scored[a].2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut by_rand: Vec<usize> = (0..n).collect();
+        by_rand.sort_by_key(|&i| fnv(&scored[i].0));
+
+        for (fi, &frac) in fractions.iter().enumerate() {
+            let keep = (((frac * n as f64).round()) as usize).clamp(1, n);
+            let fg_keep: HashSet<&String> =
+                by_strength[..keep].iter().map(|&i| &scored[i].0).collect();
+            let rnd_keep: HashSet<&String> =
+                by_rand[..keep].iter().map(|&i| &scored[i].0).collect();
+
+            let mut fg_mem = AgentMemory::new(MemoryConfig::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut rnd_mem = AgentMemory::new(MemoryConfig::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            for (key, value, _) in &scored {
+                if fg_keep.contains(key) {
+                    fg_mem.store(key, value).await.map_err(|e| e.to_string())?;
+                }
+                if rnd_keep.contains(key) {
+                    rnd_mem.store(key, value).await.map_err(|e| e.to_string())?;
+                }
+            }
+
+            for q in &conv.questions {
+                if q.evidence_ids.is_empty() {
+                    continue;
+                }
+                let relevant: HashSet<String> = q.evidence_ids.iter().cloned().collect();
+                let fg_keys: Vec<String> = fg_mem
+                    .search(&q.text, K)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .iter()
+                    .map(|f| f.entry.key.clone())
+                    .collect();
+                let rnd_keys: Vec<String> = rnd_mem
+                    .search(&q.text, K)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .iter()
+                    .map(|f| f.entry.key.clone())
+                    .collect();
+                fg_recall[fi] += recall_at_k(&runner::normalize_retrieved(&fg_keys), &relevant, K);
+                rnd_recall[fi] +=
+                    recall_at_k(&runner::normalize_retrieved(&rnd_keys), &relevant, K);
+                q_counts[fi] += 1;
+            }
+        }
+    }
+
+    for (fi, &frac) in fractions.iter().enumerate() {
+        let c = q_counts[fi].max(1) as f64;
+        w(format!(
+            "  keep={:>3.0}%  forgetting recall@{K}={:.4}  random recall@{K}={:.4}  delta={:+.4}  (n={})",
+            frac * 100.0,
+            fg_recall[fi] / c,
+            rnd_recall[fi] / c,
+            (fg_recall[fi] - rnd_recall[fi]) / c,
+            q_counts[fi]
+        ))?;
+    }
     Ok(())
 }
 
