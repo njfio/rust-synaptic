@@ -45,7 +45,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
-        run: cargo clippy --all-targets --features "$CI_FEATURES" -- -D warnings
+        run: cargo clippy --all-targets --features "${{ env.CI_FEATURES }}" -- -D warnings
 
   documentation:
     name: Documentation
@@ -62,7 +62,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-doc-${{ hashFiles('**/Cargo.lock') }}
       - name: Check documentation
-        run: cargo doc --no-deps --document-private-items --features "$CI_FEATURES"
+        run: cargo doc --no-deps --document-private-items --features "${{ env.CI_FEATURES }}"
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -102,7 +102,7 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Generate coverage
-        run: cargo tarpaulin --out xml --engine llvm --timeout 300 --features "$CI_FEATURES"
+        run: cargo tarpaulin --out xml --engine llvm --timeout 300 --features "${{ env.CI_FEATURES }}"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -111,10 +111,15 @@ jobs:
           # token must not fail the pipeline.
           fail_ci_if_error: false
 
+  # Cross-platform portability: DEFAULT features only. The full CI feature set
+  # includes crypto/ML crates (tfhe, candle, bellman) whose cross-platform build
+  # support varies; those are exercised on Linux by `test-features` below. This
+  # matrix guarantees the core builds and tests everywhere.
   test-matrix:
     name: Test Matrix
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable, beta]
@@ -137,8 +142,26 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run tests (default features)
+        run: cargo test
+
+  # Full CI feature set (crypto/ML/etc.) on Linux, where those crates build.
+  test-features:
+    name: Test (all CI features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-featuretest-${{ hashFiles('**/Cargo.lock') }}
       - name: Run tests
-        run: cargo test --features "$CI_FEATURES"
+        run: cargo test --features "${{ env.CI_FEATURES }}"
 
   # Non-blocking while 11 TODO markers remain in src/ (as of Phase 7);
   # flip to a hard failure once the count reaches zero.
