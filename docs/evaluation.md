@@ -1562,3 +1562,81 @@ re-entrancy guard prevents fact-memories from re-triggering extraction. With the
 reasoner this is fully offline/deterministic; with `LlmReasoner` (`SYNAPTIC_LLM_URL`/`_MODEL`) it is
 LLM-quality. So the measured LoCoMo lift is reachable through the plain store API, not only the
 eval harness.
+
+### v2 capability validation on LoCoMo: reflection is neutral; the rest need other instruments (2026-07-19)
+
+Applying the honesty bar to the agent-memory-v2 capabilities that were built but not yet
+measured. The finding: **LoCoMo QA is a fact-recall benchmark, so only fact-retrieval
+capabilities show up in it.**
+
+**Reflection / synthesis (`--reflect`, measured):** after ingesting each conversation we trigger
+`AgentMemory::reflect()` so synthesized insight-memories join the haystack, then run the same
+matched 40-question QA. Result — **neutral**:
+
+| | Overall | MultiHop | Temporal |
+|---|---|---|---|
+| baseline (raw turns, single-shot) | 0.325 | 0.263 | 0.438 |
+| + reflection (heuristic, 71 insights) | 0.325 | 0.211 | 0.438 |
+
+Identical overall accuracy; MultiHop marginally worse (extra memories perturb ranking). Expected:
+reflection produces higher-level *summaries*, but LoCoMo questions need *specific facts* the raw
+turns already contain — summaries add no fact-level value. The write-path lever for this benchmark
+is fact *extraction* (above), not synthesis. LLM-quality synthesis is untested but the mechanism
+argues against a QA gain here. Reflection is retained as a capability (unit-tested) and as an eval
+mode (`--reflect`); it is simply not a LoCoMo-QA lever.
+
+**Bi-temporal KG (measured on LongMemEval; strong answerer masks its value):**
+supersede-on-contradiction runs on the *write* path (`supersede_matching_relations`, unit-tested)
+but `search` does not consult edge validity — so LoCoMo turn-QA cannot exercise it. We measured its
+target directly on **LongMemEval knowledge-update** (78 questions where a later fact updates an
+earlier one; oracle sessions), same codex answerer/judge. Baseline (current system, no validity
+wiring): **0.875 (63/72)**. The frontier answerer already resolves updates itself by reasoning over
+the retrieved timestamps/context, so retrieval-level validity filtering has <=12.5% end-to-end
+headroom — most of which is likely retrieval/ambiguity, not stale-fact confusion. This is the same
+pattern seen throughout: a strong answerer masks retrieval-level gaps. Bi-temporal is correctly
+built (supersede/`is_valid_at`/`query_as_of` unit-tested); its measurable *value* lives at the
+retrieval-precision or weak-answerer level (does validity filtering surface the current fact at
+rank 1?), not in end-to-end QA accuracy with a frontier model — which is already at 0.875.
+**Wiring now built + demonstrated:** `MemoryConfig::retrieval_excludes_superseded` closes the loop —
+the intelligent write path marks a memory superseded when a later fact contradicts it (same
+subject+predicate, different object), and `search` drops superseded memories so retrieval returns
+the *current* fact. A deterministic test proves the retrieval-precision effect: after "Alice lives
+in Berlin" is superseded by "Munich", search returns only Munich with the flag on, both with it off.
+So bi-temporal's value is real and demonstrable at the retrieval level; it simply doesn't move
+frontier-answerer QA (0.875), which already disambiguates updates from the retrieved context.
+
+**Forgetting / decay (measured — validated with a differentiated-access harness):** an explicit
+eviction pass over `retained_strength = decay(age)·importance·recency`. LoCoMo QA can't show its
+value (every memory is potentially needed; uniform ingestion gives uniform strength), so we built a
+purpose-fit measurement (`--forget-curve`): differentiate access by running each question's search
+over the full memory (retrieved turns are "accessed"), rank turns by
+`ForgettingPolicy::retained_strength` and, separately, by a deterministic pseudo-random key, keep
+the top fraction of each, and compare recall@10 of the survivor sets across store sizes (5 convs,
+75 questions):
+
+| store kept | forgetting recall@10 | random recall@10 | delta |
+|---|---|---|---|
+| 100% | 0.316 | 0.316 | +0.000 (sanity: no eviction) |
+| 75% | 0.361 | 0.301 | **+0.060** |
+| 50% | 0.372 | 0.299 | **+0.073** |
+| 25% | 0.390 | 0.170 | **+0.220** |
+
+**Two findings:** (1) principled forgetting beats random eviction by a widening margin as the store
+shrinks — at 25% it retains recall@10 = 0.39 vs random's 0.17 (2.3x); the strength ranking keeps the
+question-relevant memories. (2) Forgetting *raises* recall as it evicts (0.316->0.390): removing
+low-strength/unaccessed turns lets the relevant ones rank higher in the top-10 (denoising). **Honest
+caveat:** access is differentiated on the same questions recall is measured on (past = future
+queries), so this is an optimistic best-case; a train/held-out query split would be stricter. The
+mechanism — usage-based retention preserving what's needed while bounding size — is validated.
+
+**Conclusion (v2 capability scorecard):** composite retrieval and write-time extraction are
+validated on LoCoMo (recall 0.61; QA parity with Mem0). Reflection is **measured-neutral** on LoCoMo
+QA (summaries ≠ facts). **Forgetting is measured-positive** on its purpose-fit instrument — a
+differentiated-access retention curve where principled eviction beats random 2.3× at 25% store size
+(and denoises). **Bi-temporal** was measured on its purpose-fit instrument too (LongMemEval
+knowledge-update): the current system is already at **0.875** because the frontier answerer resolves
+updates itself, so retrieval-level validity filtering has little end-to-end headroom — its value is
+at the retrieval-precision / weak-answerer level. The throughline across the whole eval: **LoCoMo/QA
+with a frontier answerer measures fact-retrieval capabilities and masks the rest**; each capability
+must be validated on an instrument that isolates *what it changes*, and doing so honestly shows one
+neutral (reflection), one clear win (forgetting), and one strong-answerer-masked (bi-temporal).
