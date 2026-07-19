@@ -1562,3 +1562,42 @@ re-entrancy guard prevents fact-memories from re-triggering extraction. With the
 reasoner this is fully offline/deterministic; with `LlmReasoner` (`SYNAPTIC_LLM_URL`/`_MODEL`) it is
 LLM-quality. So the measured LoCoMo lift is reachable through the plain store API, not only the
 eval harness.
+
+### v2 capability validation on LoCoMo: reflection is neutral; the rest need other instruments (2026-07-19)
+
+Applying the honesty bar to the agent-memory-v2 capabilities that were built but not yet
+measured. The finding: **LoCoMo QA is a fact-recall benchmark, so only fact-retrieval
+capabilities show up in it.**
+
+**Reflection / synthesis (`--reflect`, measured):** after ingesting each conversation we trigger
+`AgentMemory::reflect()` so synthesized insight-memories join the haystack, then run the same
+matched 40-question QA. Result — **neutral**:
+
+| | Overall | MultiHop | Temporal |
+|---|---|---|---|
+| baseline (raw turns, single-shot) | 0.325 | 0.263 | 0.438 |
+| + reflection (heuristic, 71 insights) | 0.325 | 0.211 | 0.438 |
+
+Identical overall accuracy; MultiHop marginally worse (extra memories perturb ranking). Expected:
+reflection produces higher-level *summaries*, but LoCoMo questions need *specific facts* the raw
+turns already contain — summaries add no fact-level value. The write-path lever for this benchmark
+is fact *extraction* (above), not synthesis. LLM-quality synthesis is untested but the mechanism
+argues against a QA gain here. Reflection is retained as a capability (unit-tested) and as an eval
+mode (`--reflect`); it is simply not a LoCoMo-QA lever.
+
+**Bi-temporal KG (not LoCoMo-measurable):** supersede-on-contradiction runs on the *write* path
+(`supersede_matching_relations`, unit-tested) but `search` does not consult edge validity, and
+LoCoMo QA answers from raw turns, not KG facts — so turn-based retrieval cannot exercise it. Its
+value (return the *current* fact after an update) needs a knowledge-update benchmark
+(LongMemEval), and/or wiring validity into fact-based retrieval.
+
+**Forgetting / decay (not a fact-recall lever):** an explicit eviction pass over
+`decay(age)·importance·recency`. On a benchmark where every memory is potentially needed, eviction
+can only maintain or reduce recall; its real value (bound growth while preserving important
+memories) requires differentiated importance/access and a retention-vs-store-size measurement, not
+a QA-accuracy number.
+
+**Conclusion:** composite retrieval and write-time extraction are validated on LoCoMo (recall 0.61;
+QA parity with Mem0). Reflection is measured-neutral here. Bi-temporal and forgetting are correctly
+validated at their own level (unit tests) and need purpose-fit benchmarks (LongMemEval
+knowledge-update; retention curves) — measuring them on LoCoMo QA would be a category error.

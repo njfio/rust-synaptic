@@ -165,6 +165,9 @@ async fn main() -> Result<(), String> {
     // `--extract-facts` builds the haystack live with synaptic's own
     // LlmReasoner (needs `--features llm-reasoning` + SYNAPTIC_LLM_URL/MODEL).
     let extract_facts = args.iter().any(|a| a == "--extract-facts");
+    // `--reflect` triggers reflection/synthesis after ingestion so insight
+    // memories join the QA haystack (measures capability 2 of the v2 spec).
+    let reflect = args.iter().any(|a| a == "--reflect");
     let dataset_path = args
         .iter()
         .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
@@ -235,6 +238,9 @@ async fn main() -> Result<(), String> {
     if qa_only {
         if let Some(ref facts) = facts_map {
             return run_qa_facts_only(&conversations, facts, &mut w).await;
+        }
+        if reflect {
+            return run_qa_reflect_only(&conversations, &mut w).await;
         }
         return run_qa_only(&conversations, &mut w).await;
     }
@@ -545,6 +551,49 @@ async fn run_qa_only(
             write_faithfulness_breakdown(&r.faithfulness, &mut *w)?;
         }
     }
+    Ok(())
+}
+
+/// `--qa-only --reflect`: QA after triggering reflection so synthesized insight
+/// memories join the haystack. Requires the codex judge.
+async fn run_qa_reflect_only(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== QA end-to-end accuracy (--qa-only --reflect: +synthesized insights) ==".to_string())?;
+    if std::env::var(qa::ENV_JUDGE).ok().as_deref() != Some("codex") {
+        w(format!(
+            "QA: not run — --reflect requires {}=codex with the codex CLI",
+            qa::ENV_JUDGE
+        ))?;
+        return Ok(());
+    }
+    let judge = qa::CodexCliJudge::from_env();
+    if !judge.is_available() {
+        w(format!(
+            "QA: not run — {}=codex but codex CLI not runnable",
+            qa::ENV_JUDGE
+        ))?;
+        return Ok(());
+    }
+    let (r, insights) = qa::run_qa_reflect(conversations, &judge, K)
+        .await
+        .map_err(|e| e.to_string())?;
+    w(format!(
+        "insights synthesized (stored + retrievable): {insights}"
+    ))?;
+    w(format!(
+        "QA: graded={} correct={} accuracy={:.4}",
+        r.questions, r.correct, r.accuracy
+    ))?;
+    for (qtype, b) in &r.by_qtype {
+        w(format!(
+            "  {qtype}: graded={} correct={} accuracy={:.4}",
+            b.questions, b.correct, b.accuracy
+        ))?;
+    }
+    write_recall_breakdown(&r.recall_breakdown, &mut *w)?;
+    write_faithfulness_breakdown(&r.faithfulness, &mut *w)?;
     Ok(())
 }
 

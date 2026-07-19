@@ -629,6 +629,106 @@ pub async fn run_qa_over_facts(
     })
 }
 
+/// Like [`run_qa`], but after ingesting each conversation's turns it triggers
+/// **reflection** ([`AgentMemory::reflect`]) so the synthesized insight
+/// memories join the haystack before the QA search loop. Measures whether
+/// reflection/synthesis improves end-to-end answer accuracy (insight quality
+/// scales with the active reasoner — heuristic by default, `LlmReasoner` when
+/// `SYNAPTIC_LLM_URL`/`_MODEL` are set).
+pub async fn run_qa_reflect(
+    conversations: &[EvalConversation],
+    judge: &dyn Judge,
+    k: usize,
+) -> Result<(QaReport, usize), QaError> {
+    let concurrency = qa_concurrency();
+    let mut per_question: Vec<QaQuestionRecord> = Vec::new();
+    let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
+    let mut total_insights = 0usize;
+
+    for conversation in conversations {
+        let mut memory = AgentMemory::new(MemoryConfig::default())
+            .await
+            .map_err(mem_err)?;
+        ingest(conversation, &mut memory)
+            .await
+            .map_err(|e| QaError::Memory(e.to_string()))?;
+        // Trigger reflection: synthesized insights are persisted as retrievable
+        // memories (best-effort — a reasoner error fails open, see reflect()).
+        let insights = memory
+            .reflect()
+            .await
+            .map_err(|e| QaError::Memory(e.to_string()))?;
+        total_insights += insights.len();
+
+        let mut pending: Vec<PendingQuestion> = Vec::with_capacity(conversation.questions.len());
+        for question in &conversation.questions {
+            let fragments = memory.search(&question.text, k).await.map_err(mem_err)?;
+            let keys: Vec<String> = fragments.iter().map(|f| f.entry.key.clone()).collect();
+            let recalled: Vec<String> = fragments.into_iter().map(|f| f.entry.value).collect();
+            let retrieved_ids = normalize_retrieved(&keys);
+            let has_gold = !question.evidence_ids.is_empty();
+            let gold_retrieved = has_gold
+                && question
+                    .evidence_ids
+                    .iter()
+                    .any(|id| retrieved_ids.contains(id));
+            pending.push(PendingQuestion {
+                question_id: question.id.clone(),
+                qtype: qtype_key(question.qtype),
+                question_text: question.text.clone(),
+                gold_answer: question.gold_answer.clone(),
+                recalled,
+                gold_retrieved,
+                has_gold,
+            });
+        }
+
+        let records = judge_questions(judge, pending, concurrency).await?;
+        for record in records {
+            let bucket = by_qtype
+                .entry(record.qtype.clone())
+                .or_insert(QTypeAccuracy {
+                    questions: 0,
+                    correct: 0,
+                    accuracy: 0.0,
+                });
+            bucket.questions += 1;
+            bucket.correct += usize::from(record.correct);
+            per_question.push(record);
+        }
+    }
+
+    for bucket in by_qtype.values_mut() {
+        bucket.accuracy = if bucket.questions == 0 {
+            0.0
+        } else {
+            bucket.correct as f64 / bucket.questions as f64
+        };
+    }
+    per_question.sort_by(|a, b| a.question_id.cmp(&b.question_id));
+    let questions = per_question.len();
+    let correct = per_question.iter().filter(|q| q.correct).count();
+    let recall_breakdown = QaRecallBreakdown::from_records(&per_question);
+    let faithfulness = FaithfulnessBreakdown::from_records(&per_question);
+    Ok((
+        QaReport {
+            k,
+            questions,
+            correct,
+            accuracy: if questions == 0 {
+                0.0
+            } else {
+                correct as f64 / questions as f64
+            },
+            by_qtype,
+            per_question,
+            recall_breakdown,
+            faithfulness,
+        },
+        total_insights,
+    ))
+}
+
 /// Environment variable selecting which judge [`run_qa_gated`] uses:
 /// `codex` for [`CodexCliJudge`], `llm` (or unset) for [`LlmJudge`] /
 /// existing behavior.
