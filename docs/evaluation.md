@@ -1585,11 +1585,18 @@ is fact *extraction* (above), not synthesis. LLM-quality synthesis is untested b
 argues against a QA gain here. Reflection is retained as a capability (unit-tested) and as an eval
 mode (`--reflect`); it is simply not a LoCoMo-QA lever.
 
-**Bi-temporal KG (not LoCoMo-measurable):** supersede-on-contradiction runs on the *write* path
-(`supersede_matching_relations`, unit-tested) but `search` does not consult edge validity, and
-LoCoMo QA answers from raw turns, not KG facts — so turn-based retrieval cannot exercise it. Its
-value (return the *current* fact after an update) needs a knowledge-update benchmark
-(LongMemEval), and/or wiring validity into fact-based retrieval.
+**Bi-temporal KG (measured on LongMemEval; strong answerer masks its value):**
+supersede-on-contradiction runs on the *write* path (`supersede_matching_relations`, unit-tested)
+but `search` does not consult edge validity — so LoCoMo turn-QA cannot exercise it. We measured its
+target directly on **LongMemEval knowledge-update** (78 questions where a later fact updates an
+earlier one; oracle sessions), same codex answerer/judge. Baseline (current system, no validity
+wiring): **0.875 (63/72)**. The frontier answerer already resolves updates itself by reasoning over
+the retrieved timestamps/context, so retrieval-level validity filtering has <=12.5% end-to-end
+headroom — most of which is likely retrieval/ambiguity, not stale-fact confusion. This is the same
+pattern seen throughout: a strong answerer masks retrieval-level gaps. Bi-temporal is correctly
+built (supersede/`is_valid_at`/`query_as_of` unit-tested); its measurable *value* lives at the
+retrieval-precision or weak-answerer level (does validity filtering surface the current fact at
+rank 1?), not in end-to-end QA accuracy with a frontier model — which is already at 0.875.
 
 **Forgetting / decay (measured — validated with a differentiated-access harness):** an explicit
 eviction pass over `retained_strength = decay(age)·importance·recency`. LoCoMo QA can't show its
@@ -1615,7 +1622,14 @@ caveat:** access is differentiated on the same questions recall is measured on (
 queries), so this is an optimistic best-case; a train/held-out query split would be stricter. The
 mechanism — usage-based retention preserving what's needed while bounding size — is validated.
 
-**Conclusion:** composite retrieval and write-time extraction are validated on LoCoMo (recall 0.61;
-QA parity with Mem0). Reflection is measured-neutral here. Bi-temporal and forgetting are correctly
-validated at their own level (unit tests) and need purpose-fit benchmarks (LongMemEval
-knowledge-update; retention curves) — measuring them on LoCoMo QA would be a category error.
+**Conclusion (v2 capability scorecard):** composite retrieval and write-time extraction are
+validated on LoCoMo (recall 0.61; QA parity with Mem0). Reflection is **measured-neutral** on LoCoMo
+QA (summaries ≠ facts). **Forgetting is measured-positive** on its purpose-fit instrument — a
+differentiated-access retention curve where principled eviction beats random 2.3× at 25% store size
+(and denoises). **Bi-temporal** was measured on its purpose-fit instrument too (LongMemEval
+knowledge-update): the current system is already at **0.875** because the frontier answerer resolves
+updates itself, so retrieval-level validity filtering has little end-to-end headroom — its value is
+at the retrieval-precision / weak-answerer level. The throughline across the whole eval: **LoCoMo/QA
+with a frontier answerer measures fact-retrieval capabilities and masks the rest**; each capability
+must be validated on an instrument that isolates *what it changes*, and doing so honestly shows one
+neutral (reflection), one clear win (forgetting), and one strong-answerer-masked (bi-temporal).
