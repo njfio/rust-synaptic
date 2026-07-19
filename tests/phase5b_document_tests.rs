@@ -382,7 +382,7 @@ fn test_storage_operations() {
     let stats = manager.get_stats().unwrap();
     assert_eq!(stats.total_memories, 2);
     assert!(stats.total_size > 0);
-    assert!(stats.memories_by_type.len() > 0);
+    assert!(!stats.memories_by_type.is_empty());
 
     // Test search by type
     let doc_type = ContentType::Document {

@@ -107,7 +107,7 @@ async fn database_integration_demo() -> Result<(), Box<dyn Error>> {
         };
 
         match DatabaseClient::new(config).await {
-            Ok(mut client) => {
+            Ok(client) => {
                 println!(" Connected to PostgreSQL successfully");
 
                 // Test health check

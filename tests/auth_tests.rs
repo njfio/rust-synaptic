@@ -3,6 +3,9 @@
 //! Covers argon2 password verification, constant-time API-key verification
 //! against stored SHA-256 digests, RFC 6238 TOTP MFA with a ±1 time-step
 //! window, and deny-by-default policy-engine condition evaluation.
+//!
+//! Requires the `security` feature; compiled out of default/portable builds.
+#![cfg(feature = "security")]
 
 use std::error::Error;
 

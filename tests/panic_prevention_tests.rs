@@ -48,9 +48,10 @@ async fn test_memory_operations_no_panic() -> Result<()> {
     let result = memory.retrieve("nonexistent_key").await?;
     assert!(result.is_none());
 
-    // Test searching with empty query
-    let results = memory.search("", 10).await?;
-    assert!(results.is_empty() || !results.is_empty()); // Either is fine, just don't panic
+    // Test searching with empty query: depending on the active retriever it may
+    // be rejected with an error or return results — either is fine. The
+    // invariant under test is only that it does not PANIC.
+    let _ = memory.search("", 10).await;
 
     Ok(())
 }
@@ -324,8 +325,14 @@ async fn test_timeout_operations_no_panic() -> Result<()> {
         .await
     })
     .await;
-    // The timeout should complete, and the panic should be contained in the spawned task
-    assert!(result.is_err()); // Timeout or join error, but no panic
+    // The panic must be CONTAINED, not escape the test: either the outer
+    // timeout elapsed (`Err`), or the spawned task completed within the window
+    // and its panic surfaced as a `JoinError` (`Ok(Err(_))`). Both are fine; a
+    // successful `Ok(Ok(_))` would mean the panic vanished silently.
+    match result {
+        Err(_) => {} // timed out
+        Ok(join) => assert!(join.is_err(), "spawned panic should surface as a JoinError"),
+    }
 
     Ok(())
 }

@@ -327,7 +327,7 @@ impl MemoryKnowledgeGraph {
 
     /// Plan the KG mutation for a stored memory WITHOUT mutating the graph.
     /// This carries the O(n) similarity scan (bounded by
-    /// [`Self::KG_SCAN_LIMIT`]) so callers can run it under a read lock and
+    /// `KG_SCAN_LIMIT`) so callers can run it under a read lock and
     /// keep the write lock ([`Self::apply_memory_node_plan`]) short.
     pub async fn plan_memory_node_update(&self, memory: &MemoryEntry) -> Result<MemoryNodePlan> {
         if let Some(existing_node_id) = self.memory_to_node.get(&memory.key) {
@@ -632,7 +632,7 @@ impl MemoryKnowledgeGraph {
     /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
     /// DETERMINISTICALLY by content relevance to `query_text` (token-overlap
     /// desc), then recency (newest first), then node id, and capped at
-    /// [`Self::KG_SCAN_LIMIT`]. Unlike iterating an unordered `HashMap`/
+    /// `KG_SCAN_LIMIT`. Unlike iterating an unordered `HashMap`/
     /// `DashMap`, this keeps the examined candidate set reproducible run-to-run
     /// AND biased toward the memories most likely to match.
     async fn relevance_ordered_candidates(
@@ -712,7 +712,7 @@ impl MemoryKnowledgeGraph {
 
     /// Memory-backed candidate nodes (excluding `exclude_key`), ordered
     /// DETERMINISTICALLY by recency (newest first) then node id — an explicit
-    /// "most-recent-N nodes" window — capped at [`Self::KG_SCAN_LIMIT`]. Used
+    /// "most-recent-N nodes" window — capped at `KG_SCAN_LIMIT`. Used
     /// for temporal detection, which is about creation time rather than
     /// content.
     async fn recency_ordered_candidates(&self, exclude_key: &str) -> Result<Vec<(Uuid, Node)>> {
@@ -749,7 +749,7 @@ impl MemoryKnowledgeGraph {
     /// graph, so callers can run it under a read lock and apply the returned
     /// edges under a short write lock ([`Self::add_detected_edges`]).
     /// Temporal/semantic candidate scans are capped at
-    /// [`Self::KG_SCAN_LIMIT`] nodes.
+    /// `KG_SCAN_LIMIT` nodes.
     pub async fn detect_relationship_edges(
         &self,
         node_id: Uuid,
@@ -922,7 +922,7 @@ impl MemoryKnowledgeGraph {
 
     /// All graph nodes ordered DETERMINISTICALLY by content relevance to
     /// `query_text` (token-overlap of the node's description/label desc), then
-    /// recency (newest first), then id, capped at [`Self::KG_SCAN_LIMIT`].
+    /// recency (newest first), then id, capped at `KG_SCAN_LIMIT`.
     /// Includes non-memory (entity) nodes, so `find_similar_node` keeps its
     /// original candidate universe but examines a reproducible, relevant
     /// subset instead of an arbitrary map-iteration-order prefix.
@@ -974,7 +974,7 @@ impl MemoryKnowledgeGraph {
     /// Test-only: the deterministic candidate node ordering
     /// `find_similar_node` will scan for `memory`, as (node_id) in order.
     /// Exposed so tests can prove the candidate set is reproducible and
-    /// relevance-ordered past [`Self::KG_SCAN_LIMIT`].
+    /// relevance-ordered past `KG_SCAN_LIMIT`.
     #[cfg(feature = "test-utils")]
     pub fn debug_similar_candidate_ids(&self, memory: &MemoryEntry) -> Vec<Uuid> {
         self.relevance_ordered_graph_nodes(&memory.value)

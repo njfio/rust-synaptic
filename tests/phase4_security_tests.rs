@@ -2,6 +2,10 @@
 //!
 //! Tests all advanced security components including homomorphic encryption,
 //! zero-knowledge proofs, differential privacy, and advanced access control.
+//!
+//! Requires the `security` feature (with zk/homomorphic, as in the CI feature
+//! set); compiled out of default/portable builds.
+#![cfg(feature = "security")]
 
 use std::error::Error;
 use synaptic::security::{
@@ -89,13 +93,19 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
         MemoryType::LongTerm,
     );
 
-    // The `homomorphic-encryption` cargo feature is off by default, so the
-    // fake CKKS-labelled encryption path must fail closed instead of
-    // returning fabricated ciphertext. Revert this assertion to the old
-    // "encrypt then decrypt" flow in Phase 4, once a real HE backend lands.
-    let result = security_manager.encrypt_memory(&entry, &context).await;
-    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
-    assert!(err.to_string().contains("homomorphic-encryption"));
+    // With the `homomorphic-encryption` feature enabled a real TFHE backend is
+    // used, so encryption must succeed and round-trip through decryption.
+    let encrypted = security_manager.encrypt_memory(&entry, &context).await?;
+    assert!(encrypted.is_homomorphic);
+    assert_eq!(encrypted.encryption_algorithm, "Homomorphic-TFHE");
+    // TFHE ciphertext is non-deterministic, so assert on the decrypted
+    // invariant (exact fixed-point round-trip of the value) rather than the
+    // raw ciphertext bytes.
+    let decrypted = security_manager
+        .decrypt_memory(&encrypted, &context)
+        .await?;
+    assert_eq!(decrypted.memory_type, entry.memory_type);
+    assert_eq!(decrypted.value, entry.value);
 
     Ok(())
 }
@@ -127,7 +137,9 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
     let context =
         create_authenticated_context(&mut security_manager, "admin", "adminpass123").await?;
 
-    // Create multiple test entries
+    // Create multiple test entries. Homomorphic `Sum` adds ciphertexts
+    // element-wise, so the plaintext values must encode to equal-length
+    // feature vectors (kept the same character length here).
     let entries = [
         MemoryEntry::new(
             "entry1".to_string(),
@@ -141,19 +153,30 @@ async fn test_homomorphic_computation() -> Result<(), Box<dyn Error>> {
         ),
         MemoryEntry::new(
             "entry3".to_string(),
-            "Data three".to_string(),
+            "Data six".to_string(),
             MemoryType::LongTerm,
         ),
     ];
 
-    // Encrypting the first entry must fail closed: the
-    // `homomorphic-encryption` cargo feature is disabled, so there is no real
-    // ciphertext to compute over. Revert to the full encrypt-then-compute
-    // flow in Phase 4, once a real HE backend lands.
-    let entry = &entries[0];
-    let result = security_manager.encrypt_memory(entry, &context).await;
-    let err = result.expect_err("must not fake-encrypt when the HE feature is disabled");
-    assert!(err.to_string().contains("homomorphic-encryption"));
+    // With the `homomorphic-encryption` feature enabled, encrypt every entry
+    // with the real TFHE backend, then run a secure computation over the
+    // resulting ciphertexts.
+    let mut encrypted_entries = Vec::new();
+    for entry in &entries {
+        let encrypted = security_manager.encrypt_memory(entry, &context).await?;
+        encrypted_entries.push(encrypted);
+    }
+
+    // Perform a supported secure computation over the encrypted entries.
+    // (Encrypted `Count` is unsupported by design, so use `Sum`, which the
+    // TFHE backend evaluates homomorphically.)
+    let result = security_manager
+        .secure_compute(&encrypted_entries, SecureOperation::Sum, &context)
+        .await?;
+
+    assert!(result.privacy_preserved);
+    assert!(matches!(result.operation, SecureOperation::Sum));
+    assert!(!result.result_data.is_empty());
 
     Ok(())
 }
@@ -599,11 +622,12 @@ async fn test_integrated_security_workflow() -> Result<(), Box<dyn Error>> {
         .generate_content_proof(&sensitive_entry, &workflow_content_statement, &context)
         .await?;
 
-    // 6. Perform secure computation
+    // 6. Perform a supported secure computation (encrypted `Count` is
+    //    unsupported by design; `Sum` is evaluated homomorphically by TFHE).
     let computation_result = security_manager
         .secure_compute(
             std::slice::from_ref(&encrypted_entry),
-            SecureOperation::Count,
+            SecureOperation::Sum,
             &context,
         )
         .await?;

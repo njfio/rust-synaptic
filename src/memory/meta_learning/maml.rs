@@ -50,7 +50,7 @@ impl MAMLLearner {
         let mut gradient_accumulator = HashMap::new();
 
         // Initialize meta-parameters for memory processing network
-        let input_dim = 512; // Memory feature dimension
+        let input_dim = config.feature_dimension; // Memory feature dimension
         let hidden_dim = 256;
         let output_dim = match config.support_set_size {
             n if n <= 5 => n,
@@ -97,7 +97,7 @@ impl MAMLLearner {
 
     /// Extract features from memory entries
     fn extract_features(&self, memories: &[MemoryEntry]) -> Result<Array2<f64>> {
-        let feature_dim = 512;
+        let feature_dim = self.config.feature_dimension;
         let mut features = Array2::zeros((memories.len(), feature_dim));
 
         for (i, memory) in memories.iter().enumerate() {
@@ -203,7 +203,7 @@ impl MAMLLearner {
         let w2 = parameters.get("w2").expect("value should be available");
         let b2 = parameters.get("b2").expect("value should be available");
 
-        let input_dim = 512;
+        let input_dim = self.config.feature_dimension;
         let hidden_dim = b1.len();
         let output_dim = b2.len();
 

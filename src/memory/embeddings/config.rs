@@ -304,17 +304,16 @@ impl EmbeddingProviderConfig {
                             ));
                         }
                     }
-                    ProviderConfig::Cohere { api_key, .. } => {
-                        if api_key.is_none()
+                    ProviderConfig::Cohere { api_key, .. }
+                        if (api_key.is_none()
                             || api_key
                                 .as_ref()
                                 .expect("as_ref() should succeed")
-                                .is_empty()
-                        {
-                            return Err(MemoryError::configuration(
-                                "Cohere API key is required".to_string(),
-                            ));
-                        }
+                                .is_empty()) =>
+                    {
+                        return Err(MemoryError::configuration(
+                            "Cohere API key is required".to_string(),
+                        ));
                     }
                     _ => {}
                 }

@@ -2,16 +2,14 @@
 // Implements actual database persistence for memory entries and analytics
 
 use crate::error::{MemoryError, Result};
-use crate::memory::management::analytics::{AnalyticsEvent, AnalyticsInsight};
+use crate::memory::management::analytics::AnalyticsEvent;
 use crate::memory::storage::Storage;
 use crate::memory::types::{MemoryEntry, MemoryMetadata, MemoryType};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sql-storage")]
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use uuid::Uuid;
 
 /// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -350,6 +348,7 @@ impl DatabaseClient {
         }
     }
 
+    #[allow(dead_code)] // scaffolding: populated when event user-context lands
     fn extract_user_context(&self, _event: &AnalyticsEvent) -> Option<String> {
         // Extract user context from event data if available
         None
@@ -379,7 +378,7 @@ impl DatabaseClient {
     }
 }
 
-/// Build a [`MemoryFragment`] from a `(key, value)` database row.
+/// Build a `MemoryFragment` from a `(key, value)` database row.
 ///
 /// The full value is stored on the underlying [`MemoryEntry`], and a truncated
 /// snippet of the value is surfaced as a highlight for display purposes.

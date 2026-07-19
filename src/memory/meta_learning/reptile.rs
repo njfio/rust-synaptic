@@ -193,7 +193,7 @@ impl ReptileLearner {
         let total_words = words.len() as f64;
 
         for word in words.iter().take(50) {
-            let len_idx = (word.len().min(10) - 1).max(0);
+            let len_idx = word.len().min(10) - 1;
             if 40 + len_idx < features.len() {
                 features[40 + len_idx] += 1.0 / total_words.max(1.0);
             }

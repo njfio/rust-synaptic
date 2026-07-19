@@ -68,22 +68,22 @@ run_critical_tests() {
 
     run_test_category "Core Library Tests" \
         "Core memory operations and basic functionality" \
-        "cargo test --lib --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --lib --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     run_test_category "Integration Tests" \
         "End-to-end integration testing" \
-        "cargo test --test integration_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test integration_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     # Security tests (may require features)
     if cargo test --test security_tests --quiet 2>/dev/null; then
         echo -e "${GREEN}✓ Security Tests passed${NC}"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${YELLOW}⊘ Security Tests skipped (requires security features)${NC}"
     fi
-    ((TOTAL_TESTS++))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 # High priority tests
@@ -93,22 +93,22 @@ run_high_tests() {
 
     run_test_category "Performance Tests" \
         "Performance measurement and optimization" \
-        "cargo test --test performance_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test performance_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     run_test_category "Lifecycle Management" \
         "Memory lifecycle management and archiving" \
-        "cargo test --test real_lifecycle_management_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test real_lifecycle_management_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     # Multimodal tests (may require features)
     if cargo test --test data_processor_tests --quiet 2>/dev/null; then
         echo -e "${GREEN}✓ Multimodal Tests passed${NC}"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${YELLOW}⊘ Multimodal Tests skipped (requires multimodal features)${NC}"
     fi
-    ((TOTAL_TESTS++))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 # Medium priority tests
@@ -118,18 +118,18 @@ run_medium_tests() {
 
     run_test_category "Temporal Analysis" \
         "Temporal patterns and differential analysis" \
-        "cargo test --test temporal_evolution_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test temporal_evolution_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     run_test_category "Knowledge Graph" \
         "Knowledge graph and reasoning functionality" \
-        "cargo test --test knowledge_graph_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test knowledge_graph_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     run_test_category "Search & Similarity" \
         "Advanced search and similarity algorithms" \
-        "cargo test --test search_scoring_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test search_scoring_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 # Low priority tests
@@ -139,17 +139,17 @@ run_low_tests() {
 
     run_test_category "Logging Tests" \
         "Comprehensive logging and error handling" \
-        "cargo test --test comprehensive_logging_tests --quiet" && ((PASSED_TESTS++)) || ((FAILED_TESTS++))
-    ((TOTAL_TESTS++))
+        "cargo test --test comprehensive_logging_tests --quiet" && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     # Visualization tests (may require features)
     if cargo test --test visualization_tests --quiet 2>/dev/null; then
         echo -e "${GREEN}✓ Visualization Tests passed${NC}"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${YELLOW}⊘ Visualization Tests skipped (requires visualization features)${NC}"
     fi
-    ((TOTAL_TESTS++))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 # Execute tests based on priority

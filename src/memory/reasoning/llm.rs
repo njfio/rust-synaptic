@@ -433,9 +433,7 @@ mod tolerant_parse_tests {
     use super::*;
 
     fn canned(reply: &'static str) -> ChatCall {
-        Arc::new(move |_s: String, _u: String| {
-            Box::pin(async move { Ok(reply.to_string()) })
-        })
+        Arc::new(move |_s: String, _u: String| Box::pin(async move { Ok(reply.to_string()) }))
     }
 
     /// A weaker model can emit a relation missing a field. That must not fail
@@ -453,7 +451,11 @@ mod tolerant_parse_tests {
             .extract("Alice lives in Berlin.", &ctx)
             .await
             .expect("extraction should succeed");
-        assert_eq!(ex.facts.len(), 1, "the fact must parse despite partial relation");
+        assert_eq!(
+            ex.facts.len(),
+            1,
+            "the fact must parse despite partial relation"
+        );
         assert_eq!(ex.facts[0].text, "Alice lives in Berlin.");
         assert!(
             ex.facts[0].relations.is_empty(),

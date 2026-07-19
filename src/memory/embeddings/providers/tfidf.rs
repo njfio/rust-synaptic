@@ -31,7 +31,7 @@ use std::sync::{Arc, RwLock};
 ///
 /// The scoring cache is invalidated whenever `embed` mutates the vocabulary
 /// (so a cached vector never reflects stale IDF state), and its size is
-/// capped ([`SCORING_CACHE_CAP`]) to bound memory.
+/// capped (`SCORING_CACHE_CAP`) to bound memory.
 ///
 /// In the shipped hybrid pipeline `AgentMemory` retains the provider instance
 /// shared by the dense retriever and reranker and feeds every stored memory's
@@ -42,7 +42,7 @@ pub struct TfIdfProvider {
     config: TfIdfConfig,
     state: Arc<RwLock<TfIdfState>>,
     /// Content-hash-keyed cache of scoring vectors (query-time path only).
-    /// Invalidated on vocabulary mutation; bounded by [`SCORING_CACHE_CAP`].
+    /// Invalidated on vocabulary mutation; bounded by `SCORING_CACHE_CAP`.
     scoring_cache: DashMap<String, Vec<f32>>,
     /// Test-only op counters for the scoring path.
     #[cfg(feature = "test-utils")]

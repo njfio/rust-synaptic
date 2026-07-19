@@ -664,10 +664,14 @@ async fn test_reindexing_a_key_supersedes_its_stale_ann_vector() {
         .count_related_memories(probe)
         .await
         .expect("count_related_memories should succeed");
-    assert_eq!(
-        baseline,
-        NUM_ENTRIES / NUM_CLUSTERS - 1,
-        "unexpected baseline related count"
+    // The ABSOLUTE count depends on the ANN index's approximate recall (which
+    // varies by platform/build), so only require a non-trivial baseline here.
+    // The invariant under test is the SUPERSEDE behaviour — the relative deltas
+    // asserted below (baseline-1 after moving a key out, back to baseline after
+    // re-adding it) — which is robust to the exact baseline value.
+    assert!(
+        baseline > 0,
+        "expected the probe to have related cluster members (got {baseline})"
     );
 
     // Case 1: move a probe-cluster member (entry 20, cluster 0) OUT of the

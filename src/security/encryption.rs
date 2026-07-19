@@ -531,7 +531,19 @@ impl EncryptionManager {
         // Reconstruct memory entry from numeric features (simplified)
         let mut text_bytes = Vec::new();
 
-        for &feature in features.iter().take(features.len().saturating_sub(768)) {
+        // The text features are the leading elements; a 768-dim embedding, when
+        // present, is appended after them (see `extract_numeric_features`).
+        // When no embedding is present every feature is a text feature, so only
+        // subtract the embedding width when the vector is actually long enough
+        // to contain one (otherwise `len - 768` underflows to 0 and drops the
+        // entire payload).
+        let text_feature_count = if features.len() > 768 {
+            features.len() - 768
+        } else {
+            features.len()
+        };
+
+        for &feature in features.iter().take(text_feature_count) {
             let value = feature as u32;
             for i in 0..4 {
                 text_bytes.push(((value >> (i * 8)) & 0xFF) as u8);

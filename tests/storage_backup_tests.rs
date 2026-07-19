@@ -142,8 +142,8 @@ async fn test_backup_format_validation() {
     assert!(backup_data.get("version").is_some());
     assert!(backup_data.get("entry_count").is_some());
 
-    // Verify version
-    assert_eq!(backup_data["version"], "1.0");
+    // Verify version (current enhanced backup format; loader still accepts 1.0)
+    assert_eq!(backup_data["version"], "1.1");
 
     // Verify entry count
     assert_eq!(backup_data["entry_count"], 1);

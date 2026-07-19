@@ -7,6 +7,8 @@
 //! The fallback test runs without any download.
 
 #![cfg(feature = "static-embeddings")]
+// Test code: diagnostic stdout is legitimate here.
+#![allow(clippy::print_stdout)]
 
 use std::path::{Path, PathBuf};
 use synaptic::memory::embeddings::{

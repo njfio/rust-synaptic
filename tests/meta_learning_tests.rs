@@ -81,6 +81,7 @@ async fn test_maml_meta_learning() -> Result<()> {
         convergence_threshold: 0.1,
         second_order: false, // Use first-order for faster testing
         adaptation_timeout_ms: 1000,
+        feature_dimension: 32,
     };
 
     // Create MAML system
@@ -147,6 +148,7 @@ async fn test_reptile_meta_learning() -> Result<()> {
         convergence_threshold: 0.1,
         second_order: false,
         adaptation_timeout_ms: 1000,
+        feature_dimension: 32,
     };
 
     // Create Reptile system
@@ -209,6 +211,7 @@ async fn test_prototypical_networks() -> Result<()> {
         convergence_threshold: 0.1,
         second_order: false,
         adaptation_timeout_ms: 500,
+        feature_dimension: 32,
     };
 
     // Create Prototypical Networks system
@@ -337,6 +340,7 @@ async fn test_meta_learning_evaluation() -> Result<()> {
         convergence_threshold: 0.2,
         second_order: false,
         adaptation_timeout_ms: 1000,
+        feature_dimension: 32,
     };
 
     let mut meta_system = MetaLearningSystem::new(config, MetaAlgorithm::MAML)?;
@@ -410,6 +414,7 @@ async fn test_meta_learning_performance_comparison() -> Result<()> {
         convergence_threshold: 0.15,
         second_order: false,
         adaptation_timeout_ms: 1000,
+        feature_dimension: 32,
     };
 
     // Test all three algorithms
