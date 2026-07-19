@@ -82,8 +82,10 @@ jobs:
       run: ./scripts/run_tests.sh low
       if: matrix.rust == 'stable'
 
-    - name: Run all tests (fallback for non-stable)
-      run: cargo test --verbose
+    # Library unit tests on beta/nightly (deterministic/portable); full
+    # integration + feature tests run on the Linux stable jobs.
+    - name: Run library tests (non-stable toolchains)
+      run: cargo test --lib --verbose
       if: matrix.rust != 'stable'
 
   coverage:
