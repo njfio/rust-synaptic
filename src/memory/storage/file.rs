@@ -203,8 +203,9 @@ impl FileStorage {
         let value: serde_json::Value =
             serde_json::from_str(&json).storage_context("Failed to deserialize JSON data")?;
         let entries: Vec<MemoryEntry> = match value {
-            serde_json::Value::Array(_) => serde_json::from_value(value)
-                .storage_context("Failed to deserialize JSON data")?,
+            serde_json::Value::Array(_) => {
+                serde_json::from_value(value).storage_context("Failed to deserialize JSON data")?
+            }
             serde_json::Value::Object(mut map) => {
                 let entries_value = map.remove("entries").ok_or_else(|| {
                     MemoryError::storage(

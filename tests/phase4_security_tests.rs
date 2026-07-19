@@ -97,7 +97,9 @@ async fn test_homomorphic_encryption_basic() -> Result<(), Box<dyn Error>> {
     // TFHE ciphertext is non-deterministic, so assert on the decrypted
     // invariant (exact fixed-point round-trip of the value) rather than the
     // raw ciphertext bytes.
-    let decrypted = security_manager.decrypt_memory(&encrypted, &context).await?;
+    let decrypted = security_manager
+        .decrypt_memory(&encrypted, &context)
+        .await?;
     assert_eq!(decrypted.memory_type, entry.memory_type);
     assert_eq!(decrypted.value, entry.value);
 
