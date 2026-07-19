@@ -231,9 +231,14 @@ pub struct ProviderCapabilities {
 
 /// Embedding cache for avoiding re-computation
 pub struct EmbeddingCache {
-    cache: HashMap<String, Embedding>,
+    /// Each entry carries a monotonically increasing insertion sequence so
+    /// eviction order is deterministic and independent of `Embedding::created_at`
+    /// (which is set at embedding creation, not insertion — several embeddings
+    /// created in the same instant would otherwise evict in arbitrary order).
+    cache: HashMap<String, (u64, Embedding)>,
     max_size: usize,
     ttl_seconds: u64,
+    next_seq: u64,
 }
 
 impl EmbeddingCache {
@@ -242,12 +247,13 @@ impl EmbeddingCache {
             cache: HashMap::new(),
             max_size,
             ttl_seconds,
+            next_seq: 0,
         }
     }
 
     /// Get cached embedding
     pub fn get(&self, content_hash: &str) -> Option<&Embedding> {
-        if let Some(embedding) = self.cache.get(content_hash) {
+        if let Some((_, embedding)) = self.cache.get(content_hash) {
             // Check if expired
             let age = (Utc::now() - embedding.created_at).num_seconds() as u64;
             if age < self.ttl_seconds {
@@ -259,20 +265,22 @@ impl EmbeddingCache {
 
     /// Insert embedding into cache
     pub fn insert(&mut self, content_hash: String, embedding: Embedding) {
-        // Evict if at capacity
-        if self.cache.len() >= self.max_size {
-            // Simple LRU: remove oldest by created_at
+        // Evict if at capacity: remove the least-recently-inserted entry
+        // (lowest insertion sequence) — deterministic across platforms.
+        if self.cache.len() >= self.max_size && !self.cache.contains_key(&content_hash) {
             if let Some(oldest_key) = self
                 .cache
                 .iter()
-                .min_by_key(|(_, e)| e.created_at)
+                .min_by_key(|(_, (seq, _))| *seq)
                 .map(|(k, _)| k.clone())
             {
                 self.cache.remove(&oldest_key);
             }
         }
 
-        self.cache.insert(content_hash, embedding);
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.cache.insert(content_hash, (seq, embedding));
     }
 
     /// Clear the cache
