@@ -1640,3 +1640,33 @@ at the retrieval-precision / weak-answerer level. The throughline across the who
 with a frontier answerer measures fact-retrieval capabilities and masks the rest**; each capability
 must be validated on an instrument that isolates *what it changes*, and doing so honestly shows one
 neutral (reflection), one clear win (forgetting), and one strong-answerer-masked (bi-temporal).
+
+### MultiHop: entity-bridge gather — abandoned (measured negative, 2026-07-19)
+
+A fresh attempt at the MultiHop *pool-absence* gap (recall@50 = 0.516, so ~48% of MultiHop gold is
+never even pooled). Diagnostic first (`--recall-curve --qtype multihop`): recall@10 0.316 / @20 0.394
+/ @50 0.516 — a large ranking gap (0.316→0.516, gold pooled but below top-10) *and* a large pool
+gap (0.484 never pooled). We targeted the pool gap with a NEW deterministic lever distinct from the
+already-exhausted graph expansion: **entity-bridge gather** — extract named entities (capitalized
+spans) from the top seed hits, run a *focused* retrieval per entity, and union into the pool
+(opt-in, discounted). Hypothesis: a multi-hop bridge fact ("Beth is a doctor") shares no vocabulary
+with the query ("what does Alice's sister do?") but is reachable via a bridge entity ("Beth")
+surfaced by the seed retrieval.
+
+Measured (full-set MultiHop, 282 q):
+
+| | recall@10 | recall@20 | recall@50 |
+|---|---|---|---|
+| baseline (PRF) | 0.316 | 0.394 | **0.516** |
+| + entity-bridge | 0.319 | 0.398 | **0.509** |
+
+**Negative — abandoned (not shipped).** recall@10/@20 moved +0.003 (noise); recall@50 went *down*
+0.007. A per-entity retrieval returns many entity-*general* turns ("everything mentioning Beth"),
+which fill and self-poison the bounded pool, displacing gold faster than they add the one specific
+connecting fact. This is the **third independent confirmation** of the prior finding
+([[multihop-needs-coreference-edges]] in the project notes; PRs #82/#83/#86): gathering *more*
+entity/similarity-related content adds noise > gold, whether via KG edges or focused re-retrieval.
+It also sharpens *why* the agentic loop works where deterministic gather doesn't — an LLM identifies
+the *specific* missing fact ("SEARCH: what is Beth's job"), whereas any deterministic expansion
+("more about Beth") is too coarse. The working MultiHop levers remain **ranking** (cross-encoder →
+0.374) and **LLM-guided agentic gather** (QA 0.500); deterministic gather is now exhausted too.
