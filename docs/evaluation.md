@@ -1591,11 +1591,15 @@ LoCoMo QA answers from raw turns, not KG facts — so turn-based retrieval canno
 value (return the *current* fact after an update) needs a knowledge-update benchmark
 (LongMemEval), and/or wiring validity into fact-based retrieval.
 
-**Forgetting / decay (not a fact-recall lever):** an explicit eviction pass over
-`decay(age)·importance·recency`. On a benchmark where every memory is potentially needed, eviction
-can only maintain or reduce recall; its real value (bound growth while preserving important
-memories) requires differentiated importance/access and a retention-vs-store-size measurement, not
-a QA-accuracy number.
+**Forgetting / decay (no ranking signal on LoCoMo):** an explicit eviction pass over
+`retained_strength = decay(age)·importance·recency`. Two reasons LoCoMo cannot demonstrate its
+value: (1) every memory is potentially needed, so eviction can only maintain or reduce recall; and
+(2) more fundamentally, LoCoMo ingests a whole conversation in one pass — uniform age, uniform
+default importance, zero prior access — so `retained_strength` is ~uniform and there is no ranking
+signal for principled forgetting to beat random eviction (it degenerates to keep-all/evict-all).
+Its real value (bound growth while preserving *important/recently-used* memories) needs a workload
+with differentiated access/importance and a retention-vs-store-size curve measured against a
+random-eviction baseline — not a QA-accuracy number on uniformly-ingested memories.
 
 **Conclusion:** composite retrieval and write-time extraction are validated on LoCoMo (recall 0.61;
 QA parity with Mem0). Reflection is measured-neutral here. Bi-temporal and forgetting are correctly
