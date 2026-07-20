@@ -464,43 +464,92 @@ async fn run_completeness(
     Ok(())
 }
 
+/// Deterministic FNV-1a hash. Used both for a reproducible pseudo-random
+/// eviction ordering (uncorrelated with retained strength) and as a stable
+/// train/test split key, so the whole `--forget-curve` result is reproducible.
+fn fnv(key: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in key.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Deterministic ~50/50 split of item indices into `(train, test)` by FNV
+/// parity of each item's stable key. Train drives access differentiation; test
+/// is the held-out set recall is measured on. Reproducible and independent of
+/// input order.
+fn split_train_test_by_key(keys: &[String]) -> (Vec<usize>, Vec<usize>) {
+    let mut train = Vec::new();
+    let mut test = Vec::new();
+    for (i, k) in keys.iter().enumerate() {
+        if fnv(k) & 1 == 0 {
+            train.push(i);
+        } else {
+            test.push(i);
+        }
+    }
+    (train, test)
+}
+
+/// Score every turn by `ForgettingPolicy::retained_strength`, marking each turn
+/// accessed as many times as `access` records. Returns `(key, value, strength)`
+/// in the input order of `turns`.
+async fn score_turns(
+    policy: &synaptic::memory::forgetting::ForgettingPolicy,
+    turns: &[(String, String)],
+    access: &std::collections::HashMap<String, u64>,
+) -> Result<Vec<(String, String, f64)>, String> {
+    use synaptic::{MemoryEntry, MemoryType};
+    let mut scored = Vec::with_capacity(turns.len());
+    for (key, value) in turns {
+        let mut e = MemoryEntry::new(key.clone(), value.clone(), MemoryType::LongTerm);
+        for _ in 0..access.get(key).copied().unwrap_or(0) {
+            e.mark_accessed();
+        }
+        let s = policy
+            .retained_strength(&e)
+            .await
+            .map_err(|err| err.to_string())?;
+        scored.push((key.clone(), value.clone(), s));
+    }
+    Ok(scored)
+}
+
 /// `--forget-curve`: measure whether principled forgetting preserves recall
-/// better than random eviction. Access is differentiated by running each
-/// question's search over the full memory (retrieved turns are "accessed");
-/// turns are then ranked by `ForgettingPolicy::retained_strength`
-/// (decay·importance·recency) and, separately, by a deterministic pseudo-random
-/// key. For each target store fraction we keep the top slice of each ranking,
-/// rebuild a fresh memory from the survivors, and compare recall@k. If
-/// forgetting > random, the strength ranking is selective; on uniformly-ingested
-/// LoCoMo (equal age/importance) the only signal is access, so the two converge.
+/// better than random eviction — WITHOUT leaking the eval queries into the
+/// forgetting signal. Each conversation's questions are split (deterministically,
+/// by [`split_train_test_by_key`]) into a TRAIN half that differentiates access
+/// (retrieved turns are "accessed") and a disjoint TEST half that recall is
+/// measured on. Turns are ranked by `ForgettingPolicy::retained_strength`
+/// (decay·importance·recency) and, separately, by a pseudo-random key; for each
+/// target store fraction we keep the top slice, rebuild a fresh memory, and
+/// compare recall@k on the held-out TEST questions only. This tests whether
+/// access patterns from PAST queries generalize to UNSEEN ones — the realistic
+/// forgetting scenario.
+///
+/// For comparison, we also compute the IN-SAMPLE strength ranking (access
+/// differentiated from ALL questions, including the test set) and measure it on
+/// the SAME test questions. The gap between in-sample and held-out strength
+/// recall is exactly the inflation from letting the policy see the eval queries.
 async fn run_forget_curve(
     conversations: &[EvalConversation],
     w: &mut impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     use std::collections::{HashMap, HashSet};
     use synaptic::memory::forgetting::ForgettingPolicy;
-    use synaptic::{MemoryEntry, MemoryType};
 
     w(
-        "== Forgetting retention curve (recall@k: strength-ranked vs random eviction) =="
+        "== Forgetting retention curve (held-out queries: train split drives access, disjoint test split scored) =="
             .to_string(),
     )?;
     let policy = ForgettingPolicy::default();
     let fractions = [1.0_f64, 0.75, 0.5, 0.25];
-    let mut fg_recall = vec![0.0_f64; fractions.len()];
+    let mut fg_heldout = vec![0.0_f64; fractions.len()];
+    let mut fg_insample = vec![0.0_f64; fractions.len()];
     let mut rnd_recall = vec![0.0_f64; fractions.len()];
     let mut q_counts = vec![0_usize; fractions.len()];
-
-    // Deterministic FNV-1a hash for a reproducible "random" ordering that is
-    // uncorrelated with retained strength.
-    fn fnv(key: &str) -> u64 {
-        let mut h: u64 = 0xcbf29ce484222325;
-        for b in key.as_bytes() {
-            h ^= u64::from(*b);
-            h = h.wrapping_mul(0x100000001b3);
-        }
-        h
-    }
 
     for conv in conversations {
         let mut full = AgentMemory::new(MemoryConfig::default())
@@ -518,82 +567,107 @@ async fn run_forget_curve(
             }
         }
 
-        // Differentiate access: retrieved turns get "accessed".
-        let mut access: HashMap<String, u64> = HashMap::new();
-        for q in &conv.questions {
+        // Split questions into train (drives access) and held-out test (scored).
+        let qkeys: Vec<String> = conv
+            .questions
+            .iter()
+            .map(|q| if q.id.is_empty() { &q.text } else { &q.id }.clone())
+            .collect();
+        let (train_idx, test_idx) = split_train_test_by_key(&qkeys);
+        if test_idx.is_empty() {
+            continue;
+        }
+        let train_set: HashSet<usize> = train_idx.iter().copied().collect();
+
+        // Two access maps: train-only (held-out signal) and all-questions
+        // (in-sample, leaks the eval queries).
+        let mut access_train: HashMap<String, u64> = HashMap::new();
+        let mut access_all: HashMap<String, u64> = HashMap::new();
+        for (qi, q) in conv.questions.iter().enumerate() {
             for f in full.search(&q.text, K).await.map_err(|e| e.to_string())? {
-                *access.entry(f.entry.key).or_insert(0) += 1;
+                *access_all.entry(f.entry.key.clone()).or_insert(0) += 1;
+                if train_set.contains(&qi) {
+                    *access_train.entry(f.entry.key).or_insert(0) += 1;
+                }
             }
         }
 
-        // Score each turn by retained strength.
-        let mut scored: Vec<(String, String, f64)> = Vec::with_capacity(turns.len());
-        for (key, value) in &turns {
-            let mut e = MemoryEntry::new(key.clone(), value.clone(), MemoryType::LongTerm);
-            for _ in 0..access.get(key).copied().unwrap_or(0) {
-                e.mark_accessed();
-            }
-            let s = policy
-                .retained_strength(&e)
-                .await
-                .map_err(|err| err.to_string())?;
-            scored.push((key.clone(), value.clone(), s));
-        }
-        let n = scored.len();
-        let mut by_strength: Vec<usize> = (0..n).collect();
-        by_strength.sort_by(|&a, &b| {
-            scored[b]
-                .2
-                .partial_cmp(&scored[a].2)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let scored_ho = score_turns(&policy, &turns, &access_train).await?;
+        let scored_is = score_turns(&policy, &turns, &access_all).await?;
+        let n = turns.len();
+        // Both scorings share turn order, so one key list serves all rankings.
+        let keys: Vec<String> = scored_ho.iter().map(|(k, _, _)| k.clone()).collect();
+
+        let rank_by_strength = |scored: &[(String, String, f64)]| -> Vec<usize> {
+            let mut idx: Vec<usize> = (0..scored.len()).collect();
+            idx.sort_by(|&a, &b| {
+                scored[b]
+                    .2
+                    .partial_cmp(&scored[a].2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            idx
+        };
+        let by_strength_ho = rank_by_strength(&scored_ho);
+        let by_strength_is = rank_by_strength(&scored_is);
         let mut by_rand: Vec<usize> = (0..n).collect();
-        by_rand.sort_by_key(|&i| fnv(&scored[i].0));
+        by_rand.sort_by_key(|&i| fnv(&keys[i]));
+
+        // Rank the FULL corpus once per held-out test question. Retrieval
+        // scores are per-item, so a survivor subset's top-k is exactly the full
+        // ranking filtered to survivors — no need to rebuild a memory per
+        // (fraction × ranking), which is O(n²) on the write path and
+        // intractable at LoCoMo scale.
+        let mut test_ranked: Vec<(Vec<String>, HashSet<String>)> = Vec::new();
+        for &qi in &test_idx {
+            let q = &conv.questions[qi];
+            if q.evidence_ids.is_empty() {
+                continue;
+            }
+            let ranked: Vec<String> = full
+                .search(&q.text, n)
+                .await
+                .map_err(|e| e.to_string())?
+                .iter()
+                .map(|f| f.entry.key.clone())
+                .collect();
+            let relevant: HashSet<String> = q.evidence_ids.iter().cloned().collect();
+            test_ranked.push((ranked, relevant));
+        }
+
+        let top_survivors = |ranked: &[String], keep_set: &HashSet<&String>| -> Vec<String> {
+            ranked
+                .iter()
+                .filter(|k| keep_set.contains(k))
+                .take(K)
+                .cloned()
+                .collect()
+        };
 
         for (fi, &frac) in fractions.iter().enumerate() {
             let keep = (((frac * n as f64).round()) as usize).clamp(1, n);
-            let fg_keep: HashSet<&String> =
-                by_strength[..keep].iter().map(|&i| &scored[i].0).collect();
-            let rnd_keep: HashSet<&String> =
-                by_rand[..keep].iter().map(|&i| &scored[i].0).collect();
+            let ho_keep: HashSet<&String> =
+                by_strength_ho[..keep].iter().map(|&i| &keys[i]).collect();
+            let is_keep: HashSet<&String> =
+                by_strength_is[..keep].iter().map(|&i| &keys[i]).collect();
+            let rnd_keep: HashSet<&String> = by_rand[..keep].iter().map(|&i| &keys[i]).collect();
 
-            let mut fg_mem = AgentMemory::new(MemoryConfig::default())
-                .await
-                .map_err(|e| e.to_string())?;
-            let mut rnd_mem = AgentMemory::new(MemoryConfig::default())
-                .await
-                .map_err(|e| e.to_string())?;
-            for (key, value, _) in &scored {
-                if fg_keep.contains(key) {
-                    fg_mem.store(key, value).await.map_err(|e| e.to_string())?;
-                }
-                if rnd_keep.contains(key) {
-                    rnd_mem.store(key, value).await.map_err(|e| e.to_string())?;
-                }
-            }
-
-            for q in &conv.questions {
-                if q.evidence_ids.is_empty() {
-                    continue;
-                }
-                let relevant: HashSet<String> = q.evidence_ids.iter().cloned().collect();
-                let fg_keys: Vec<String> = fg_mem
-                    .search(&q.text, K)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .iter()
-                    .map(|f| f.entry.key.clone())
-                    .collect();
-                let rnd_keys: Vec<String> = rnd_mem
-                    .search(&q.text, K)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .iter()
-                    .map(|f| f.entry.key.clone())
-                    .collect();
-                fg_recall[fi] += recall_at_k(&runner::normalize_retrieved(&fg_keys), &relevant, K);
-                rnd_recall[fi] +=
-                    recall_at_k(&runner::normalize_retrieved(&rnd_keys), &relevant, K);
+            for (ranked, relevant) in &test_ranked {
+                fg_heldout[fi] += recall_at_k(
+                    &runner::normalize_retrieved(&top_survivors(ranked, &ho_keep)),
+                    relevant,
+                    K,
+                );
+                fg_insample[fi] += recall_at_k(
+                    &runner::normalize_retrieved(&top_survivors(ranked, &is_keep)),
+                    relevant,
+                    K,
+                );
+                rnd_recall[fi] += recall_at_k(
+                    &runner::normalize_retrieved(&top_survivors(ranked, &rnd_keep)),
+                    relevant,
+                    K,
+                );
                 q_counts[fi] += 1;
             }
         }
@@ -601,16 +675,58 @@ async fn run_forget_curve(
 
     for (fi, &frac) in fractions.iter().enumerate() {
         let c = q_counts[fi].max(1) as f64;
+        let ho = fg_heldout[fi] / c;
+        let is = fg_insample[fi] / c;
+        let rnd = rnd_recall[fi] / c;
         w(format!(
-            "  keep={:>3.0}%  forgetting recall@{K}={:.4}  random recall@{K}={:.4}  delta={:+.4}  (n={})",
+            "  keep={:>3.0}%  held-out fg@{K}={:.4}  random@{K}={:.4}  held-out Δ={:+.4}  | \
+             in-sample fg@{K}={:.4} (Δ={:+.4})  leak={:+.4}  (n={})",
             frac * 100.0,
-            fg_recall[fi] / c,
-            rnd_recall[fi] / c,
-            (fg_recall[fi] - rnd_recall[fi]) / c,
+            ho,
+            rnd,
+            ho - rnd,
+            is,
+            is - rnd,
+            is - ho,
             q_counts[fi]
         ))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod forget_curve_tests {
+    use super::{fnv, split_train_test_by_key};
+
+    #[test]
+    fn split_is_deterministic_and_disjoint() {
+        let keys: Vec<String> = (0..200).map(|i| format!("q{i}")).collect();
+        let (train, test) = split_train_test_by_key(&keys);
+        // Every index appears exactly once across the two splits.
+        assert_eq!(train.len() + test.len(), keys.len());
+        let mut all: Vec<usize> = train.iter().chain(test.iter()).copied().collect();
+        all.sort_unstable();
+        all.dedup();
+        assert_eq!(all.len(), keys.len(), "splits must be disjoint and total");
+        // Reproducible across calls.
+        let (train2, test2) = split_train_test_by_key(&keys);
+        assert_eq!(train, train2);
+        assert_eq!(test, test2);
+        // Both non-trivial for a realistic question count.
+        assert!(train.len() > 10 && test.len() > 10);
+    }
+
+    #[test]
+    fn split_matches_fnv_parity() {
+        let keys = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let (train, test) = split_train_test_by_key(&keys);
+        for &i in &train {
+            assert_eq!(fnv(&keys[i]) & 1, 0);
+        }
+        for &i in &test {
+            assert_eq!(fnv(&keys[i]) & 1, 1);
+        }
+    }
 }
 
 /// Measure the recall@k curve (`--recall-curve`): one limit-50 search per
