@@ -1670,3 +1670,27 @@ It also sharpens *why* the agentic loop works where deterministic gather doesn't
 the *specific* missing fact ("SEARCH: what is Beth's job"), whereas any deterministic expansion
 ("more about Beth") is too coarse. The working MultiHop levers remain **ranking** (cross-encoder →
 0.374) and **LLM-guided agentic gather** (QA 0.500); deterministic gather is now exhausted too.
+
+### MultiHop: GPU cross-encoder exploits the ranking gap (confirmed, 2026-07-19)
+
+Having ruled out gather (again), we exercised the *ranking* lever the entity-bridge diagnostic had
+just re-exposed: the same PRF pool has recall@50 = 0.516 but recall@10 = 0.316 — 0.200 of MultiHop
+gold is *pooled but ranked below the top-10 cutoff*. Reordering that pool with the GPU cross-encoder
+(`SYNAPTIC_RERANKER=cross-encoder`, `ms-marco-MiniLM-L-6-v2`, candle CUDA on the RTX A3000 —
+`--features "synaptic/static-embeddings synaptic/reranker-model synaptic/cuda"`) against the
+*identical* PRF pool:
+
+| | recall@10 | recall@20 | recall@50 |
+|---|---|---|---|
+| baseline (PRF) | 0.316 | 0.394 | **0.516** |
+| + GPU cross-encoder | **0.3968** | 0.4580 | **0.5159** |
+
+**Positive — and it is *pure reordering*.** recall@50 is unchanged (0.516 → 0.5159, same pool), so
+the entire +0.081 recall@10 (+26%) comes from ranking already-pooled gold into the top-10 — the
+mirror image of the entity-bridge failure (which moved the pool and got nothing). This reproduces and
+slightly exceeds the earlier full-set cross-encoder MultiHop figure (0.3739) on the current PRF
+baseline. Net for MultiHop retrieval, the ledger is unambiguous: every gain since 0.2475 has come
+from **ranking** (over-fetch #75, embedding-dominant rerank #76, cross-encoder #80, and this
+confirmation), and **zero** from any of the four deterministic-gather attempts (similarity edges,
+coreference edges, entity-bridge, MMR). The remaining MultiHop headroom above 0.397 is the pool gap
+(0.484 never pooled), addressable only by LLM-guided agentic gather, not by reordering.
