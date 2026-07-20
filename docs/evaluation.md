@@ -1629,11 +1629,38 @@ caveat:** access is differentiated on the same questions recall is measured on (
 queries), so this is an optimistic best-case; a train/held-out query split would be stricter. The
 mechanism — usage-based retention preserving what's needed while bounding size — is validated.
 
+**Held-out query split (2026-07-20): the effect survives, at ~⅔ the magnitude.** The caveat above
+is now resolved. `--forget-curve` splits each conversation's questions (deterministically, by FNV
+parity) into a TRAIN half that differentiates access and a *disjoint* TEST half that recall is
+measured on — so the policy never sees the queries it is evaluated against. For a clean comparison
+it also reports the IN-SAMPLE strength ranking (access from ALL questions, including the test set)
+scored on the *same* test questions; the gap between them is exactly the leakage. Full LoCoMo, 10
+conversations, n = 990 held-out test questions:
+
+| store kept | held-out fg@10 | random@10 | held-out Δ | in-sample fg@10 | in-sample Δ | leak |
+|---|---|---|---|---|---|---|
+| 100% | 0.5776 | 0.5776 | +0.0000 | 0.5776 | +0.0000 | +0.0000 |
+| 75% | 0.5296 | 0.4681 | **+0.0615** | 0.5736 | +0.1055 | +0.0440 |
+| 50% | 0.4716 | 0.3476 | **+0.1240** | 0.5236 | +0.1760 | +0.0520 |
+| 25% | 0.3110 | 0.2162 | **+0.0948** | 0.3558 | +0.1396 | +0.0448 |
+
+**Two honest conclusions.** (1) **Forgetting generalizes** — held-out, principled retention still
+beats random eviction at every level (+0.062 to +0.124), peaking at keep=50% (0.472 vs 0.348 =
+**1.36×**). Retention learned from past queries preserves memories that answer *future, unseen*
+queries; it is not memorizing the eval set. (2) **The earlier 2.3× was inflated by leakage** —
+letting the policy see the eval queries adds ~0.044–0.052 recall at every eviction level, roughly
+*doubling* the apparent advantage (e.g. keep=75%: honest +0.062 → leaked +0.106). So ~40–45% of the
+old headline advantage was query leakage; the honest, generalizing effect is ≈1.4× at aggressive
+eviction. (The measurement is exact and fast: retrieval scores are per-item, so a survivor subset's
+top-k is the full-corpus ranking filtered to survivors — no per-fraction memory rebuild, which is
+O(n²) on the write path and was intractable.)
+
 **Conclusion (v2 capability scorecard):** composite retrieval and write-time extraction are
 validated on LoCoMo (recall 0.61; QA parity with Mem0). Reflection is **measured-neutral** on LoCoMo
 QA (summaries ≠ facts). **Forgetting is measured-positive** on its purpose-fit instrument — a
-differentiated-access retention curve where principled eviction beats random 2.3× at 25% store size
-(and denoises). **Bi-temporal** was measured on its purpose-fit instrument too (LongMemEval
+differentiated-access retention curve where principled eviction beats random (held-out ~1.4× at
+aggressive eviction, peaking +0.124 at keep=50%; the earlier 2.3× was ~40–45% query leakage, now
+corrected with a train/test split) and denoises. **Bi-temporal** was measured on its purpose-fit instrument too (LongMemEval
 knowledge-update): the current system is already at **0.875** because the frontier answerer resolves
 updates itself, so retrieval-level validity filtering has little end-to-end headroom — its value is
 at the retrieval-precision / weak-answerer level. The throughline across the whole eval: **LoCoMo/QA
