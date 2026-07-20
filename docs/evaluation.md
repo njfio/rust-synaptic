@@ -1694,3 +1694,52 @@ from **ranking** (over-fetch #75, embedding-dominant rerank #76, cross-encoder #
 confirmation), and **zero** from any of the four deterministic-gather attempts (similarity edges,
 coreference edges, entity-bridge, MMR). The remaining MultiHop headroom above 0.397 is the pool gap
 (0.484 never pooled), addressable only by LLM-guided agentic gather, not by reordering.
+
+## Full-scale agentic QA: the 0.500 subset was pessimistic (2026-07-19)
+
+Every agentic QA number to date (0.500, above) was on a 40-question subset — the FIRST few
+questions per conversation, which over-weights the hard MultiHop/Temporal categories and
+under-samples the dominant SingleHop. The standing rule (see the eval memory) is to gate quality
+claims on the full 1,986-question set. This is that run: **all 1,986 questions**, agentic
+(`--agentic-qa`, 3 rounds) + PRF + GPU cross-encoder + codex judge, concurrency 12, in **72 min**
+(4330 s) on the RTX A3000.
+
+To make a multi-hour codex run survivable, `run_agentic_qa` gained a resumable JSONL checkpoint
+(`SYNAPTIC_EVAL_QA_CHECKPOINT`): each graded question is flushed as it completes; on restart,
+already-graded questions are restored into the aggregates and skipped, and fully-graded
+conversations skip ingestion. (A live smoke test confirmed a second run resumes in 0 s with an
+identical aggregate and no duplicate lines.)
+
+| category | n | accuracy |
+|---|---|---|
+| **Overall** | **1986** | **0.5463** |
+| SingleHop | 841 | 0.7467 |
+| Temporal | 321 | 0.7321 |
+| OpenDomain | 96 | 0.4167 |
+| MultiHop | 282 | 0.3121 |
+| Abstention | 446 | 0.2108 |
+
+**The subset was pessimistic, not optimistic.** Full-scale accuracy is **0.5463**, *above* the 0.500
+subset figure — because SingleHop (the plurality, 841 q) answers at 0.747 and the subset barely
+sampled it. MultiHop (0.312) and OpenDomain (0.417) remain the retrieval-bound tail, exactly
+tracking their first-stage recall ceilings; the Abstention/adversarial category (0.211) is the
+weakest — see faithfulness below.
+
+**Failure split is ~even at scale** (recall-vs-judge cross-tab): of 900 wrong answers,
+retrieval-bound (no gold retrieved, d) = 424 and judge-bound (gold retrieved but wrong, b) = 476.
+Neither dominates — further gains need BOTH better retrieval for the MultiHop/OpenDomain tail AND a
+better answer step for the judge-bound half. (a = gold-retrieved-and-correct = 978, c =
+answered-correct-without-gold = 104.)
+
+**Faithfulness at scale (the honest caveat):** on the 358 questions whose gold evidence was never
+retrieved, the model **confabulates a confident wrong answer 148 times (41%)** rather than
+abstaining (115 abstained, 95 answered correctly anyway). On the 446 adversarial/abstention
+questions it confabulates 147 times. Over-abstention (had the evidence, still abstained) = 71.
+So the headline 0.5463 comes with a real groundedness cost: absent evidence, the system guesses
+confidently more often than it abstains. The structural-grounding gate (`SYNAPTIC_EVAL_GROUNDED`,
+documented above) is the opt-in lever against this and was left OFF here to measure the raw number.
+
+**This is the standing-gate number** for agentic retrieval QA on LoCoMo. Caveat: the codex judge is
+nondeterministic run-to-run (~±0.03 on small samples; far tighter at n=1986), and grades adversarial
+abstention strictly (a correctly-refused question can still be marked wrong if the phrasing diverges
+from the expected form), which depresses the Abstention row.

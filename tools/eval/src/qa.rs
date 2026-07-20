@@ -136,7 +136,7 @@ pub struct QTypeAccuracy {
 }
 
 /// Per-question QA record (all values come from this run's judge).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct QaQuestionRecord {
     /// Dataset-native question id.
     pub question_id: String,
@@ -1258,6 +1258,50 @@ impl Judge for CodexCliJudge {
 // a bounded sample tractable. `--agentic-qa` is still meant for small, bounded
 // samples (see `--max-conversations` / `--max-questions`), not full sweeps.
 
+/// Env var naming a JSONL checkpoint file for [`run_agentic_qa`]. When set,
+/// every graded question is appended as one [`CheckpointRecord`] line as soon
+/// as it completes, and on startup any questions already present in the file
+/// are restored (folded into the aggregates) and skipped — so a multi-hour
+/// full-set run that is killed mid-way resumes where it left off instead of
+/// starting over. A conversation whose every question is already checkpointed
+/// skips ingestion entirely. Unset (the default) means no checkpointing,
+/// byte-identical to the prior behavior.
+pub const ENV_QA_CHECKPOINT: &str = "SYNAPTIC_EVAL_QA_CHECKPOINT";
+
+/// One persisted agentic-QA result: the two per-question records the report is
+/// rebuilt from, plus the conversation index so the resume key is unique even
+/// if dataset question ids repeat across conversations.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CheckpointRecord {
+    pub conversation_index: usize,
+    pub per_question: AgenticQuestionRecord,
+    pub cross_tab: QaQuestionRecord,
+}
+
+/// Load a checkpoint file written by prior [`run_agentic_qa`] runs. Returns the
+/// set of already-graded `(conversation_index, question_id)` keys and the
+/// restored records, in file order. Malformed lines are skipped (a partially
+/// written trailing line from a killed process must not abort the resume).
+/// A missing file yields empty results (first run).
+fn load_checkpoint(path: &std::path::Path) -> (HashSet<(usize, String)>, Vec<CheckpointRecord>) {
+    let mut done = HashSet::new();
+    let mut records = Vec::new();
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return (done, records);
+    };
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(rec) = serde_json::from_str::<CheckpointRecord>(line) {
+            done.insert((rec.conversation_index, rec.per_question.question_id.clone()));
+            records.push(rec);
+        }
+    }
+    (done, records)
+}
+
 /// Env var overriding the max rounds of the agentic retrieval loop (default
 /// 3, i.e. up to 2 follow-up searches before a forced final answer).
 pub const ENV_AGENTIC_ROUNDS: &str = "SYNAPTIC_EVAL_AGENTIC_ROUNDS";
@@ -1548,7 +1592,7 @@ fn gold_added_by_followup(
 }
 
 /// Per-question agentic QA record.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AgenticQuestionRecord {
     /// Dataset-native question id.
     pub question_id: String,
@@ -1884,7 +1928,54 @@ async fn run_agentic_qa_impl(
     let mut by_qtype: BTreeMap<String, QTypeAccuracy> = BTreeMap::new();
     let mut cross_tab_records: Vec<QaQuestionRecord> = Vec::new();
 
+    // Optional resumable checkpoint (see ENV_QA_CHECKPOINT). When set, restore
+    // already-graded questions and fold them into the aggregates, then append
+    // each newly-graded question as it completes.
+    let checkpoint_path = std::env::var(ENV_QA_CHECKPOINT)
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .map(std::path::PathBuf::from);
+    let mut done: HashSet<(usize, String)> = HashSet::new();
+    let mut checkpoint_file = if let Some(path) = &checkpoint_path {
+        let (restored_done, restored) = load_checkpoint(path);
+        done = restored_done;
+        for rec in restored {
+            let bucket = by_qtype
+                .entry(rec.per_question.qtype.clone())
+                .or_insert(QTypeAccuracy {
+                    questions: 0,
+                    correct: 0,
+                    accuracy: 0.0,
+                });
+            bucket.questions += 1;
+            bucket.correct += usize::from(rec.per_question.correct);
+            cross_tab_records.push(rec.cross_tab);
+            per_question.push(rec.per_question);
+        }
+        Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| QaError::Memory(format!("checkpoint open {}: {e}", path.display())))?,
+        )
+    } else {
+        None
+    };
+
     for (ci, conversation) in conversations.iter().enumerate() {
+        // Questions not yet checkpointed for this conversation.
+        let pending: Vec<&EvalQuestion> = conversation
+            .questions
+            .iter()
+            .filter(|q| !done.contains(&(ci, q.id.clone())))
+            .collect();
+        // Skip ingestion entirely when a resumed run already has every
+        // question in this conversation (the expensive part on resume).
+        if pending.is_empty() {
+            continue;
+        }
+
         let mut memory = AgentMemory::new(MemoryConfig::default())
             .await
             .map_err(mem_err)?;
@@ -1905,7 +1996,7 @@ async fn run_agentic_qa_impl(
         }
 
         let memory_ref = &memory;
-        let mut outcomes = stream::iter(conversation.questions.iter())
+        let mut outcomes = stream::iter(pending)
             .map(|question| {
                 run_one_agentic_question(
                     memory_ref,
@@ -1930,6 +2021,21 @@ async fn run_agentic_qa_impl(
                 });
             bucket.questions += 1;
             bucket.correct += usize::from(outcome.per_question.correct);
+
+            // Persist before moving the records into the in-memory tallies so a
+            // kill right after this point loses nothing.
+            if let Some(file) = checkpoint_file.as_mut() {
+                use std::io::Write;
+                let rec = CheckpointRecord {
+                    conversation_index: ci,
+                    per_question: outcome.per_question.clone(),
+                    cross_tab: outcome.cross_tab.clone(),
+                };
+                if let Ok(line) = serde_json::to_string(&rec) {
+                    let _ = writeln!(file, "{line}");
+                    let _ = file.flush();
+                }
+            }
 
             cross_tab_records.push(outcome.cross_tab);
             per_question.push(outcome.per_question);
@@ -2015,6 +2121,75 @@ mod agentic_qa_tests {
             parse_agentic_reply("SEARCH: Alice's birth year"),
             AgenticStep::Search("Alice's birth year".to_string())
         );
+    }
+
+    fn sample_checkpoint_record(ci: usize, qid: &str, correct: bool) -> CheckpointRecord {
+        CheckpointRecord {
+            conversation_index: ci,
+            per_question: AgenticQuestionRecord {
+                question_id: qid.to_string(),
+                qtype: "MultiHop".to_string(),
+                predicted: "Paris".to_string(),
+                correct,
+                rounds_used: 2,
+                follow_up_searches: 1,
+                gold_in_context: true,
+                gold_added_by_followup: false,
+                has_gold: true,
+                abstained: false,
+                ungrounded_override: false,
+                support_override: false,
+            },
+            cross_tab: QaQuestionRecord {
+                question_id: qid.to_string(),
+                qtype: "MultiHop".to_string(),
+                predicted: "Paris".to_string(),
+                correct,
+                gold_retrieved: true,
+                has_gold: true,
+                abstained: false,
+            },
+        }
+    }
+
+    #[test]
+    fn load_checkpoint_restores_valid_lines_and_skips_malformed() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "synaptic_ckpt_test_{}_{}.jsonl",
+            std::process::id(),
+            line!()
+        ));
+        let a = sample_checkpoint_record(0, "q1", true);
+        let b = sample_checkpoint_record(1, "q2", false);
+        // Two valid records, a blank line, and a truncated/garbage trailing
+        // line as a killed writer would leave behind.
+        let body = format!(
+            "{}\n\n{}\n{{\"conversation_index\":2,\"per_q",
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap(),
+        );
+        std::fs::write(&path, body).unwrap();
+
+        let (done, records) = load_checkpoint(&path);
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(records.len(), 2, "malformed trailing line must be skipped");
+        assert!(done.contains(&(0, "q1".to_string())));
+        assert!(done.contains(&(1, "q2".to_string())));
+        assert!(!done.contains(&(2, "q3".to_string())));
+        assert!(records[0].per_question.correct);
+        assert!(!records[1].per_question.correct);
+    }
+
+    #[test]
+    fn load_checkpoint_missing_file_is_empty() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("synaptic_ckpt_absent_{}.jsonl", std::process::id()));
+        std::fs::remove_file(&path).ok();
+        let (done, records) = load_checkpoint(&path);
+        assert!(done.is_empty());
+        assert!(records.is_empty());
     }
 
     #[test]
