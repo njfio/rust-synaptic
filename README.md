@@ -18,14 +18,16 @@ unless noted): retrieval recall@10 **0.61** (best config); an **agentic
 answer-guided retrieval** eval mode that lifts end-to-end QA accuracy to
 **0.50** on a labelled subset (a codex-CLI judge; see caveats) while abstaining
 ("I don't know") rather than confabulating when the evidence is absent — a
-faithfulness property measured explicitly; and **write-time fact extraction**
-(`MemoryConfig::store_extracted_facts`) that lifts QA from 0.325/0.450 (raw
-turns) to **0.475/0.500** on a matched 40-question slice — tying
-[Mem0](https://github.com/mem0ai/mem0) (0.500) when both answer from the same
-judge, i.e. our retrieval was never the gap; the raw-turn representation was.
-Honest head-to-heads vs Mem0 and Graphiti (Zep) — including a result that
-*reversed* an earlier under-tested claim — are documented with all caveats in
-[docs/evaluation.md](docs/evaluation.md).
+faithfulness property measured explicitly. **Write-time fact distillation** is
+implemented as an opt-in write path (`MemoryConfig::distillation`, default
+**Off**): in an offline facts-only construction with a frontier extractor it
+tied [Mem0](https://github.com/mem0ai/mem0) (0.500) on a 40-question slice, but
+a matched end-to-end A/B of the *shipped* facts-primary path (raw turns
+excluded from search) with an accessible local extractor measured it to **hurt**
+QA (0.505 → 0.258 on 198 questions) — so it ships default-off. Honest
+head-to-heads vs Mem0 and Graphiti (Zep), and this negative distillation
+result — each *reversing* an earlier under-tested claim — are documented with
+all caveats in [docs/evaluation.md](docs/evaluation.md).
 
 This is a development library (version 0.2.0, not published to crates.io).
 The table below states honestly which parts are stable, which are beta, and
@@ -41,7 +43,8 @@ backed by a measured run in [docs/evaluation.md](docs/evaluation.md).
 | Memory store/retrieve (`AgentMemory`) | stable | Core store/retrieve/update with tests; in-memory and file (Sled) backends |
 | Storage backends | stable | Memory, file (Sled); SQL (PostgreSQL) behind `sql-storage` |
 | Knowledge graph | stable | Node merging, relationship detection, traversal; tested |
-| Intelligent write path (`MemoryReasoner`) | beta | On store, the active reasoner extracts facts/entities/relations from the value: entities & relations feed the knowledge graph; with `MemoryConfig::store_extracted_facts` (default off) each fact is also persisted as its own retrievable memory (`<key>::fact<N>`). Deterministic `HeuristicReasoner` by default (offline); `LlmReasoner` (OpenAI-compatible endpoint) under `llm-reasoning`, with heuristic fallback. Measured to lift LoCoMo QA to Mem0 parity — see [docs/evaluation.md](docs/evaluation.md) |
+| Intelligent write path (`MemoryReasoner`) | beta | On store, the active reasoner extracts facts/entities/relations from the value: entities & relations feed the knowledge graph. Deterministic `HeuristicReasoner` by default (offline); `LlmReasoner` (OpenAI-compatible endpoint) under `llm-reasoning`, with heuristic fallback. |
+| Write-time distillation (`MemoryConfig::distillation`) | experimental, **default off** | When `On` (or the deprecated `store_extracted_facts = true`) each extracted fact is persisted as its own retrievable memory (`<key>::fact<N>`) and raw turns are excluded from `search` (facts-primary). A matched LoCoMo A/B measured this to **hurt** QA with an accessible extractor (0.505 → 0.258) — opt-in only. See [docs/evaluation.md](docs/evaluation.md) |
 | Embeddings | stable | Deterministic local embeddings; used by hybrid retrieval |
 | Search / hybrid retrieval | beta | Tokenized keyword + vector + graph + temporal retrievers fused with Reciprocal Rank Fusion (RRF), composite scoring, and a deterministic reranker over an over-fetched candidate pool. Optional: PRF pool augmentation (`SYNAPTIC_RETRIEVAL_PRF`), multi-hop graph expansion, semantic embeddings (`static-embeddings` / `ml-models` / Ollama), and a candle BERT cross-encoder reranker (`reranker-model`, GPU via `cuda`). Measured on LoCoMo — see [docs/evaluation.md](docs/evaluation.md) |
 | Evaluation harness (`tools/eval`) | beta | Real LoCoMo/LongMemEval loaders; retrieval metrics (recall/precision/MRR, `--recall-curve`, `--completeness`), memory-growth, and LLM-gated end-to-end QA (`--qa-only`, `--agentic-qa`) with abstention/faithfulness metrics. Every printed number is a real run; QA is gated on a configured judge, never fabricated |
@@ -124,9 +127,14 @@ with a lexical/TF-IDF embedder):
   `SYNAPTIC_LLM_MODEL`), with deterministic heuristic fallback. Without it the
   offline `HeuristicReasoner` is used
 
-Write-time fact extraction is a runtime config, not a feature flag: set
-`MemoryConfig::store_extracted_facts = true` to persist each extracted fact as a
-retrievable memory (default off; works with either reasoner).
+Write-time distillation is a runtime config, not a feature flag: set
+`MemoryConfig::distillation = DistillationMode::On` (or the deprecated
+`store_extracted_facts = true`) to persist each extracted fact as a retrievable
+memory and serve facts-primary. **Default is `Off`** — a matched LoCoMo A/B
+measured facts-primary distillation to hurt QA with an accessible extractor
+(see [docs/evaluation.md](docs/evaluation.md)); enable only with a strong, fast
+extractor you have measured on your own workload. Quality scales with the active
+reasoner (`LlmReasoner` under `llm-reasoning`, else `HeuristicReasoner`).
 
 Other optional features: `sql-storage`, `multimodal`, `external-integrations`,
 `cross-platform`, `observability`, and `distributed-experimental` (explicitly

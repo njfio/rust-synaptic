@@ -1867,7 +1867,15 @@ impl Default for MemoryConfig {
             promotion_config: Some(memory::promotion::PromotionConfig::default()),
             store_extracted_facts: false,
             retrieval_excludes_superseded: false,
-            distillation: memory::reasoning::DistillationMode::Auto,
+            // Default OFF (opt-in), not Auto: a full-LoCoMo-subset A/B measured
+            // facts-primary distillation to HURT QA (raw baseline 0.505 ->
+            // distill 0.258 on 198 matched questions with a local 7B extractor;
+            // abstention doubled). Lossy facts drop answer detail and excluding
+            // raw turns removes the verbatim fallback (incl. the session-date
+            // prefix temporal questions need). A frontier extractor helps but is
+            // impractically slow for the write path. See docs/evaluation.md
+            // "Write-time distillation A/B". Enable explicitly to opt in.
+            distillation: memory::reasoning::DistillationMode::Off,
             retrieval_excludes_raw_sources: true,
         }
     }
@@ -2022,10 +2030,16 @@ mod tests {
 
     #[cfg(feature = "embeddings")]
     #[tokio::test]
-    async fn distillation_defaults_to_auto_off_without_llm() {
-        // Default build has no LLM endpoint => Auto resolves to not-live.
+    async fn distillation_default_is_off() {
+        // Default is DistillationMode::Off (opt-in) after the A/B measured
+        // facts-primary distillation to hurt QA — so the default write path is
+        // never live, even if an LLM endpoint happens to be configured.
         let mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
-        assert!(!mem.distillation_live, "Auto must be off without an LLM reasoner");
+        assert!(!mem.distillation_live, "default distillation must be off (opt-in)");
+        assert_eq!(
+            mem._config.distillation,
+            memory::reasoning::DistillationMode::Off
+        );
     }
 
     #[cfg(feature = "embeddings")]
