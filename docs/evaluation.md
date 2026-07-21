@@ -1945,3 +1945,29 @@ blocked upstream at *supersession detection*, not at the answerer. Applying it t
 (augment) and reflection would similarly isolate whether their value is answerer-masked or, like
 bi-temporal, blocked upstream — each needs its own (LLM-reasoner or LLM-synthesizer) run, now that the
 answerer side is solved. Caveats: n=40, heuristic supersession, single dataset.
+
+## Weak-answerer distillation: facts-primary hurts every answerer — closing the question (2026-07-21)
+
+The distillation investigation's last open question: with a strong answerer, facts-primary
+distillation *hurt* (it reads verbatim detail from raw turns) — would a **weak** answerer instead do
+better with clean distilled facts than noisy raw turns? Using the weak-answerer instrument (qwen-7b
+answers, codex grades), matched conv-0, n=199:
+
+| answerer | raw | facts-primary | Δ |
+|---|---|---|---|
+| codex (strong) | 0.5051 | 0.2576 | −0.2475 |
+| **qwen-7b (weak)** | **0.3266** | **0.1910** | **−0.1357** |
+
+**Facts-primary hurts both answerers.** The hypothesis is refuted: a weak answerer does *worse* with
+distilled facts, not better. The mechanism holds for both — excluding raw turns discards the verbatim
+detail (dates, exact phrasing) that both strong and weak answerers need, and single-turn 7b facts
+cannot replace it. (The weak answerer also validates the instrument: qwen drops raw-turn QA from
+codex's 0.505 to 0.327, i.e. it is genuinely retrieval-dependent, yet still can't benefit from
+facts-primary.)
+
+**This closes the distillation question.** There is no answerer-strength regime where per-turn
+facts-primary distillation is a win. The augment default (raw retained; `retrieval_excludes_raw_sources
+= false`, shipped) is the only safe configuration, and it is neutral. A real distillation *lift* would
+require the facts to add signal raw turns lack — i.e. cross-turn synthesis or entity linking, not
+per-turn extraction — which is a different mechanism than what this feature implements. Caveats:
+single conversation (n=199), 7b extractor.
