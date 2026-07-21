@@ -118,6 +118,17 @@ pub struct AgentMemory {
     /// re-run extraction (which would recurse forever).
     #[cfg(feature = "embeddings")]
     storing_facts: bool,
+    /// Whether write-time fact distillation is active for this instance
+    /// (resolved once at construction time from `MemoryConfig::distillation` /
+    /// the deprecated `store_extracted_facts` alias, the active reasoner kind,
+    /// and prerequisite availability).
+    #[cfg(feature = "embeddings")]
+    distillation_live: bool,
+    /// Which reasoner kind backs the write path (LLM or heuristic); used to
+    /// resolve `DistillationMode` and to warn when distillation goes live on
+    /// the heuristic reasoner.
+    #[cfg(feature = "embeddings")]
+    resolved_reasoner_kind: memory::reasoning::ResolvedReasonerKind,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -166,6 +177,12 @@ pub struct AgentMemory {
 }
 
 impl AgentMemory {
+    /// Metadata field name used to tag a memory as a raw source that
+    /// write-time distillation has summarized into fact-memories. Consulted
+    /// by retrieval when `MemoryConfig::retrieval_excludes_raw_sources` is set.
+    #[allow(dead_code)]
+    const RAW_SOURCE_FIELD: &'static str = "raw_source";
+
     /// Create a new agent memory system with the given configuration
     #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
@@ -243,7 +260,10 @@ impl AgentMemory {
         // inner HeuristicReasoner on any LLM error, so the write path never
         // hard-fails or fabricates. Feature off or unconfigured: heuristic.
         #[cfg(feature = "embeddings")]
-        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> = {
+        let (reasoner, resolved_reasoner_kind): (
+            Arc<dyn memory::reasoning::MemoryReasoner>,
+            memory::reasoning::ResolvedReasonerKind,
+        ) = {
             let heuristic: Arc<dyn memory::reasoning::MemoryReasoner> =
                 Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
                     memory::embeddings::TfIdfProvider::default(),
@@ -251,12 +271,53 @@ impl AgentMemory {
             #[cfg(feature = "llm-reasoning")]
             {
                 match memory::reasoning::LlmReasoner::from_env() {
-                    Some(llm) => Arc::new(llm),
-                    None => heuristic,
+                    Some(llm) => (
+                        Arc::new(llm) as Arc<dyn memory::reasoning::MemoryReasoner>,
+                        memory::reasoning::ResolvedReasonerKind::Llm,
+                    ),
+                    None => (heuristic, memory::reasoning::ResolvedReasonerKind::Heuristic),
                 }
             }
             #[cfg(not(feature = "llm-reasoning"))]
-            heuristic
+            {
+                (heuristic, memory::reasoning::ResolvedReasonerKind::Heuristic)
+            }
+        };
+
+        // Resolve write-time distillation activation from config (and the
+        // deprecated `store_extracted_facts` alias, which forces `On`).
+        #[cfg(feature = "embeddings")]
+        let distillation_live = {
+            let mode = if config.store_extracted_facts {
+                memory::reasoning::DistillationMode::On
+            } else {
+                config.distillation
+            };
+            let prerequisites_met = config.enable_knowledge_graph;
+            let llm_feature_enabled = cfg!(feature = "llm-reasoning");
+            match memory::reasoning::resolve_distillation(
+                mode,
+                resolved_reasoner_kind,
+                prerequisites_met,
+                llm_feature_enabled,
+            ) {
+                Ok(decision) => {
+                    if decision.live
+                        && resolved_reasoner_kind
+                            == memory::reasoning::ResolvedReasonerKind::Heuristic
+                    {
+                        tracing::warn!(
+                            "write-time distillation is live with the heuristic reasoner; \
+                             the measured LoCoMo lift requires an LLM endpoint \
+                             (SYNAPTIC_LLM_URL / SYNAPTIC_LLM_MODEL)"
+                        );
+                    }
+                    decision.live
+                }
+                Err(msg) => {
+                    return Err(crate::error::MemoryError::Configuration { message: msg });
+                }
+            }
         };
 
         // Reflection engine: clusters memories accumulated since the last
@@ -456,6 +517,10 @@ impl AgentMemory {
             reflection_accumulated_importance: 0.0,
             #[cfg(feature = "embeddings")]
             storing_facts: false,
+            #[cfg(feature = "embeddings")]
+            distillation_live,
+            #[cfg(feature = "embeddings")]
+            resolved_reasoner_kind,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -1692,16 +1757,10 @@ pub struct MemoryConfig {
     pub enable_memory_promotion: bool,
     /// Memory promotion configuration
     pub promotion_config: Option<memory::promotion::PromotionConfig>,
-    /// Intelligent write path: when `true`, each stored value is passed through
-    /// the [`memory::reasoning::MemoryReasoner`] and the extracted facts are
-    /// stored as their own **retrievable** memories (keyed `<key>::fact<N>`),
-    /// in addition to the raw value and the knowledge-graph updates. This is the
-    /// Mem0-style write-time distillation that lets retrieval surface clean
-    /// facts rather than raw turns (measured to lift LoCoMo QA; see
-    /// `docs/evaluation.md`). Requires `enable_knowledge_graph` + `embeddings`;
-    /// extraction quality scales with the active reasoner (heuristic default, or
-    /// `LlmReasoner` when `SYNAPTIC_LLM_URL`/`_MODEL` are set). Default: `false`
-    /// (raw-value-only behavior is unchanged).
+    /// DEPRECATED — use [`MemoryConfig::distillation`]. When `true`, forces
+    /// `DistillationMode::On` (facts stored as `<key>::fact<N>` memories). Kept
+    /// for backwards compatibility; slated for removal in a future major.
+    /// Default `false`.
     pub store_extracted_facts: bool,
     /// Bi-temporal validity in retrieval: when `true`, `search` drops memories
     /// that the intelligent write path has marked superseded (a later fact
@@ -1709,6 +1768,16 @@ pub struct MemoryConfig {
     /// update instead of the stale one. Default: `false` (superseded memories
     /// remain retrievable, matching prior behavior).
     pub retrieval_excludes_superseded: bool,
+    /// Write-time fact distillation activation (see
+    /// [`memory::reasoning::DistillationMode`]). Default `Auto`: live when an
+    /// LLM reasoner is configured and the knowledge graph + embeddings are
+    /// available, off otherwise (raw-value behavior unchanged).
+    pub distillation: memory::reasoning::DistillationMode,
+    /// Facts-primary retrieval: when `true`, `search` drops memories tagged as
+    /// raw sources (the original turns distillation summarized), so retrieval
+    /// surfaces distilled facts rather than raw turns. Default `true`. Only has
+    /// an effect when distillation is live (untagged raw turns are unaffected).
+    pub retrieval_excludes_raw_sources: bool,
 }
 
 impl Default for MemoryConfig {
@@ -1756,6 +1825,8 @@ impl Default for MemoryConfig {
             promotion_config: Some(memory::promotion::PromotionConfig::default()),
             store_extracted_facts: false,
             retrieval_excludes_superseded: false,
+            distillation: memory::reasoning::DistillationMode::Auto,
+            retrieval_excludes_raw_sources: true,
         }
     }
 }
@@ -1812,6 +1883,34 @@ mod tests {
             mem.retrieve("note::fact0").await.unwrap().is_none(),
             "no fact-memories should exist with the default (off) config"
         );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_defaults_to_auto_off_without_llm() {
+        // Default build has no LLM endpoint => Auto resolves to not-live.
+        let mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
+        assert!(!mem.distillation_live, "Auto must be off without an LLM reasoner");
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn store_extracted_facts_alias_forces_on() {
+        // Deprecated alias: store_extracted_facts=true behaves as DistillationMode::On.
+        // With KG+embeddings present and no llm feature endpoint, On is live (heuristic).
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mem = AgentMemory::new(config).await.unwrap();
+        assert!(mem.distillation_live, "store_extracted_facts=true must make distillation live");
+    }
+
+    #[tokio::test]
+    async fn retrieval_excludes_raw_sources_defaults_true() {
+        let config = MemoryConfig::default();
+        assert!(config.retrieval_excludes_raw_sources);
     }
 
     #[cfg(feature = "embeddings")]
