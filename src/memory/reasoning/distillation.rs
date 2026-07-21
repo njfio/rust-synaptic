@@ -70,8 +70,8 @@ mod tests {
     // Auto: live only with an LLM reasoner AND prerequisites.
     #[test]
     fn auto_llm_with_prereqs_is_live() {
-        let d = resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, true)
-            .unwrap();
+        let d =
+            resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, true).unwrap();
         assert!(d.live);
     }
 
@@ -88,27 +88,24 @@ mod tests {
 
     #[test]
     fn auto_llm_without_prereqs_is_off() {
-        let d = resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, false)
-            .unwrap();
+        let d =
+            resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, false).unwrap();
         assert!(!d.live);
     }
 
     // Off: never live, regardless of everything else.
     #[test]
     fn off_is_never_live() {
-        let d = resolve_distillation(DistillationMode::Off, ResolvedReasonerKind::Llm, true)
-            .unwrap();
+        let d =
+            resolve_distillation(DistillationMode::Off, ResolvedReasonerKind::Llm, true).unwrap();
         assert!(!d.live);
     }
 
     // On: hard error when prerequisites are absent.
     #[test]
     fn on_without_prereqs_errors() {
-        let err = resolve_distillation(
-            DistillationMode::On,
-            ResolvedReasonerKind::Heuristic,
-            false,
-        );
+        let err =
+            resolve_distillation(DistillationMode::On, ResolvedReasonerKind::Heuristic, false);
         assert!(err.is_err());
     }
 
@@ -116,19 +113,15 @@ mod tests {
     // met: proceed live rather than erroring; the caller warns.
     #[test]
     fn on_with_heuristic_reasoner_is_live() {
-        let d = resolve_distillation(
-            DistillationMode::On,
-            ResolvedReasonerKind::Heuristic,
-            true,
-        )
-        .unwrap();
+        let d = resolve_distillation(DistillationMode::On, ResolvedReasonerKind::Heuristic, true)
+            .unwrap();
         assert!(d.live);
     }
 
     #[test]
     fn on_llm_with_prereqs_is_live() {
-        let d = resolve_distillation(DistillationMode::On, ResolvedReasonerKind::Llm, true)
-            .unwrap();
+        let d =
+            resolve_distillation(DistillationMode::On, ResolvedReasonerKind::Llm, true).unwrap();
         assert!(d.live);
     }
 }

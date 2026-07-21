@@ -280,12 +280,18 @@ impl AgentMemory {
                         Arc::new(llm) as Arc<dyn memory::reasoning::MemoryReasoner>,
                         memory::reasoning::ResolvedReasonerKind::Llm,
                     ),
-                    None => (heuristic, memory::reasoning::ResolvedReasonerKind::Heuristic),
+                    None => (
+                        heuristic,
+                        memory::reasoning::ResolvedReasonerKind::Heuristic,
+                    ),
                 }
             }
             #[cfg(not(feature = "llm-reasoning"))]
             {
-                (heuristic, memory::reasoning::ResolvedReasonerKind::Heuristic)
+                (
+                    heuristic,
+                    memory::reasoning::ResolvedReasonerKind::Heuristic,
+                )
             }
         };
 
@@ -1965,7 +1971,9 @@ mod tests {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
         }));
-        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
 
         // Raw turn is tagged; the fact memory exists and is not tagged.
         let raw = mem.get_entry_for_test("turn1").await.unwrap();
@@ -1988,7 +1996,9 @@ mod tests {
             fail: true,
         }));
         // Write still succeeds (best-effort); raw turn stays searchable/untagged.
-        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
         let raw = mem.get_entry_for_test("turn1").await.unwrap();
         assert!(!raw.metadata.custom_fields.contains_key("raw_source"));
     }
@@ -2035,7 +2045,10 @@ mod tests {
         // facts-primary distillation to hurt QA — so the default write path is
         // never live, even if an LLM endpoint happens to be configured.
         let mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
-        assert!(!mem.distillation_live, "default distillation must be off (opt-in)");
+        assert!(
+            !mem.distillation_live,
+            "default distillation must be off (opt-in)"
+        );
         assert_eq!(
             mem._config.distillation,
             memory::reasoning::DistillationMode::Off
@@ -2053,7 +2066,10 @@ mod tests {
             ..Default::default()
         };
         let mem = AgentMemory::new(config).await.unwrap();
-        assert!(mem.distillation_live, "store_extracted_facts=true must make distillation live");
+        assert!(
+            mem.distillation_live,
+            "store_extracted_facts=true must make distillation live"
+        );
     }
 
     #[tokio::test]
@@ -2144,12 +2160,20 @@ mod tests {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
         }));
-        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
 
         let hits = mem.search("Berlin", 10).await.unwrap();
         let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
-        assert!(keys.iter().any(|k| k.contains("::fact")), "fact must be retrievable");
-        assert!(!keys.contains(&"turn1"), "raw source must be excluded by default");
+        assert!(
+            keys.iter().any(|k| k.contains("::fact")),
+            "fact must be retrievable"
+        );
+        assert!(
+            !keys.contains(&"turn1"),
+            "raw source must be excluded by default"
+        );
     }
 
     #[cfg(feature = "embeddings")]
@@ -2166,11 +2190,16 @@ mod tests {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
         }));
-        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
 
         let hits = mem.search("Berlin", 10).await.unwrap();
         let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
-        assert!(keys.contains(&"turn1"), "raw source must reappear when filter disabled");
+        assert!(
+            keys.contains(&"turn1"),
+            "raw source must reappear when filter disabled"
+        );
     }
 
     #[test]
