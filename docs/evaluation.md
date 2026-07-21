@@ -1910,3 +1910,38 @@ consequence: none of these three is a shippable default lift on LoCoMo/LongMemEv
 answerer, and each needs a weak-answerer (or LLM-synthesizer) instrument — which the agentic eval path
 does not yet support — to demonstrate its value. (Caveats throughout: n≈40 subsets, heuristic
 supersession/synthesis, single-conversation extractor comparison.)
+
+## Weak-answerer instrument: the tool to unmask retrieval-side capabilities (2026-07-21)
+
+The three "masked" verdicts above all share a limitation: a strong (codex) answerer resolves
+updates, synthesizes, and reads verbatim detail itself, so retrieval-side capabilities can't show
+their value. We built the instrument to remove that mask: the agentic loop is split into an
+**answerer** (a `Completer` trait — the answer-or-search completions) and a **grader** (codex, still
+grades). With `SYNAPTIC_EVAL_ANSWERER_URL`/`_MODEL` set, a weak local model (qwen2.5-7b via ollama)
+drives answering while codex grades — so *retrieval* has to carry the answer. (The answerer uses
+dedicated env vars, decoupled from the library reasoner's `SYNAPTIC_EVAL_LLM_URL` fallback, so ingest
+stays heuristic/fast rather than running per-turn LLM extraction.)
+
+**The instrument works, demonstrated on bi-temporal.** LongMemEval knowledge-update, n=40, qwen
+answerer + codex grader:
+
+| answerer | superseded retained | superseded excluded |
+|---|---|---|
+| codex (strong) | 0.925 | 0.950 |
+| **qwen-7b (weak)** | **0.500** | **0.500** |
+
+The weak answerer drops to 0.500 (vs codex's 0.925) — confirming it is genuinely weaker and
+retrieval-dependent, i.e. the mask is off. **Yet bi-temporal is still a no-op** — the two arms produce
+**identical predictions on all 40 questions** (`exclude_superseded` changed retrieval for zero of
+them). This is a sharper finding than the strong-answerer run gave: the blocker is not answerer
+masking, it is that **supersession never fires** — the heuristic reasoner detects LongMemEval's
+natural-language updates as same-subject/predicate contradictions **0 times**. The bi-temporal
+mechanism is correct (library unit test: Berlin→Munich) but does not trigger on realistic updates
+without an LLM reasoner to detect the contradiction at write time.
+
+**Net.** The weak-answerer instrument is validated and reusable (any agentic run: set the answerer
+vars). It converts the "masked" verdicts into precise ones — for bi-temporal, the value question is
+blocked upstream at *supersession detection*, not at the answerer. Applying it to distillation
+(augment) and reflection would similarly isolate whether their value is answerer-masked or, like
+bi-temporal, blocked upstream — each needs its own (LLM-reasoner or LLM-synthesizer) run, now that the
+answerer side is solved. Caveats: n=40, heuristic supersession, single dataset.
