@@ -1875,6 +1875,7 @@ pub async fn run_agentic_qa(
     max_rounds: usize,
     grounded: bool,
     ground_verify: bool,
+    memory_config: MemoryConfig,
 ) -> Result<AgenticReport, QaError> {
     run_agentic_qa_impl(
         conversations,
@@ -1884,6 +1885,7 @@ pub async fn run_agentic_qa(
         max_rounds,
         grounded,
         ground_verify,
+        memory_config,
     )
     .await
 }
@@ -1900,6 +1902,7 @@ pub async fn run_agentic_qa_over_facts(
     max_rounds: usize,
     grounded: bool,
     ground_verify: bool,
+    memory_config: MemoryConfig,
 ) -> Result<AgenticReport, QaError> {
     run_agentic_qa_impl(
         conversations,
@@ -1909,6 +1912,7 @@ pub async fn run_agentic_qa_over_facts(
         max_rounds,
         grounded,
         ground_verify,
+        memory_config,
     )
     .await
 }
@@ -1921,6 +1925,7 @@ async fn run_agentic_qa_impl(
     max_rounds: usize,
     grounded: bool,
     ground_verify: bool,
+    memory_config: MemoryConfig,
 ) -> Result<AgenticReport, QaError> {
     let max_rounds = max_rounds.max(1);
     let concurrency = qa_concurrency();
@@ -1976,7 +1981,7 @@ async fn run_agentic_qa_impl(
             continue;
         }
 
-        let mut memory = AgentMemory::new(MemoryConfig::default())
+        let mut memory = AgentMemory::new(memory_config.clone())
             .await
             .map_err(mem_err)?;
         match facts_by_index.and_then(|m| m.get(&ci)) {

@@ -257,7 +257,8 @@ async fn main() -> Result<(), String> {
         if let Some(ref facts) = facts_map {
             return run_agentic_facts_only(&conversations, facts, &mut w).await;
         }
-        return run_agentic_qa_only(&conversations, &mut w).await;
+        let distill = args.iter().any(|a| a == "--distill");
+        return run_agentic_qa_only(&conversations, distill, &mut w).await;
     }
     if growth_only {
         return run_growth_and_qa(&conversations, grow_100k, &mut w).await;
@@ -880,8 +881,45 @@ async fn run_qa_reflect_only(
 /// without codex this reports not-run, never a fabricated number.
 /// `SYNAPTIC_EVAL_AGENTIC_ROUNDS` overrides the max rounds per question
 /// (default 3; see [`qa::agentic_max_rounds`]).
+/// Build the memory config for the agentic-QA run. `distill=true` selects the
+/// facts-primary write path (DistillationMode::On, KG on, raw sources excluded);
+/// `false` returns the default config (today's raw-turn behavior).
+fn distillation_config(distill: bool) -> synaptic::MemoryConfig {
+    if distill {
+        synaptic::MemoryConfig {
+            distillation: synaptic::memory::reasoning::DistillationMode::On,
+            enable_knowledge_graph: true,
+            retrieval_excludes_raw_sources: true,
+            ..Default::default()
+        }
+    } else {
+        synaptic::MemoryConfig::default()
+    }
+}
+
+#[cfg(test)]
+mod distill_flag_tests {
+    use super::distillation_config;
+    use synaptic::memory::reasoning::DistillationMode;
+
+    #[test]
+    fn distill_flag_builds_facts_primary_config() {
+        let cfg = distillation_config(true);
+        assert_eq!(cfg.distillation, DistillationMode::On);
+        assert!(cfg.enable_knowledge_graph);
+        assert!(cfg.retrieval_excludes_raw_sources);
+    }
+
+    #[test]
+    fn no_distill_flag_is_default() {
+        let cfg = distillation_config(false);
+        assert_eq!(cfg.distillation, DistillationMode::Auto);
+    }
+}
+
 async fn run_agentic_qa_only(
     conversations: &[EvalConversation],
+    distill: bool,
     w: &mut impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     w("== Agentic answer-guided retrieval QA (--agentic-qa) ==".to_string())?;
@@ -913,6 +951,7 @@ async fn run_agentic_qa_only(
         max_rounds,
         grounded,
         ground_verify,
+        distillation_config(distill),
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -1083,6 +1122,7 @@ async fn run_agentic_facts_only(
         qa::agentic_max_rounds(),
         qa::grounded_enabled(),
         qa::ground_verify_enabled(),
+        synaptic::MemoryConfig::default(),
     )
     .await
     .map_err(|e| e.to_string())?;
