@@ -124,11 +124,6 @@ pub struct AgentMemory {
     /// and prerequisite availability).
     #[cfg(feature = "embeddings")]
     distillation_live: bool,
-    /// Which reasoner kind backs the write path (LLM or heuristic); used to
-    /// resolve `DistillationMode` and to warn when distillation goes live on
-    /// the heuristic reasoner.
-    #[cfg(feature = "embeddings")]
-    resolved_reasoner_kind: memory::reasoning::ResolvedReasonerKind,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -180,6 +175,7 @@ impl AgentMemory {
     /// Metadata field name used to tag a memory as a raw source that
     /// write-time distillation has summarized into fact-memories. Consulted
     /// by retrieval when `MemoryConfig::retrieval_excludes_raw_sources` is set.
+    #[cfg(feature = "embeddings")]
     const RAW_SOURCE_FIELD: &'static str = "raw_source";
 
     #[cfg(all(feature = "embeddings", test))]
@@ -303,12 +299,10 @@ impl AgentMemory {
                 config.distillation
             };
             let prerequisites_met = config.enable_knowledge_graph;
-            let llm_feature_enabled = cfg!(feature = "llm-reasoning");
             match memory::reasoning::resolve_distillation(
                 mode,
                 resolved_reasoner_kind,
                 prerequisites_met,
-                llm_feature_enabled,
             ) {
                 Ok(decision) => {
                     if decision.live
@@ -528,8 +522,6 @@ impl AgentMemory {
             storing_facts: false,
             #[cfg(feature = "embeddings")]
             distillation_live,
-            #[cfg(feature = "embeddings")]
-            resolved_reasoner_kind,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -1808,7 +1800,9 @@ pub struct MemoryConfig {
     /// DEPRECATED — use [`MemoryConfig::distillation`]. When `true`, forces
     /// `DistillationMode::On` (facts stored as `<key>::fact<N>` memories). Kept
     /// for backwards compatibility; slated for removal in a future major.
-    /// Default `false`.
+    /// Default `false`. When this alias is live, raw source turns are excluded
+    /// from default `search` results (facts-primary retrieval) because
+    /// `retrieval_excludes_raw_sources` defaults to `true`.
     pub store_extracted_facts: bool,
     /// Bi-temporal validity in retrieval: when `true`, `search` drops memories
     /// that the intelligent write path has marked superseded (a later fact

@@ -10,11 +10,10 @@ pub enum DistillationMode {
     /// (knowledge graph + embeddings) are available; off otherwise. Default.
     #[default]
     Auto,
-    /// Require distillation. A hard error at construction when prerequisites are
-    /// absent, or when the `llm-reasoning` feature is enabled but no endpoint
-    /// resolved (a heuristic reasoner where an LLM was expected). In a build
-    /// without the feature, proceeds live with a heuristic reasoner and a
-    /// one-time warning.
+    /// Require distillation. A hard error at construction when prerequisites
+    /// (knowledge graph + embeddings) are absent. If the resolved reasoner is
+    /// heuristic (no LLM endpoint resolved), proceeds live anyway with a
+    /// one-time warning rather than erroring.
     On,
     /// Never distill (escape hatch; today's raw-value-only behavior).
     Off,
@@ -35,14 +34,15 @@ pub struct DistillationDecision {
 }
 
 /// Resolve whether distillation is live. `prerequisites_met` is
-/// `enable_knowledge_graph && embeddings-available`; `llm_feature_enabled` is
-/// whether the `llm-reasoning` cargo feature is compiled in. Returns `Err` only
-/// for the `On` misconfiguration cases, where the caller should fail construction.
+/// `enable_knowledge_graph && embeddings-available`. Returns `Err` only when
+/// `On` is requested but prerequisites are absent, where the caller should
+/// fail construction. `On` with a heuristic reasoner (no LLM endpoint
+/// resolved) is not an error here; the caller is expected to warn and
+/// proceed live.
 pub fn resolve_distillation(
     mode: DistillationMode,
     reasoner: ResolvedReasonerKind,
     prerequisites_met: bool,
-    llm_feature_enabled: bool,
 ) -> Result<DistillationDecision, String> {
     match mode {
         DistillationMode::Off => Ok(DistillationDecision { live: false }),
@@ -57,35 +57,21 @@ pub fn resolve_distillation(
                         .to_string(),
                 );
             }
-            // Feature enabled but reasoner came back Heuristic => an endpoint was
-            // expected (SYNAPTIC_LLM_URL/_MODEL) but did not resolve.
-            if llm_feature_enabled && reasoner == ResolvedReasonerKind::Heuristic {
-                return Err(
-                    "DistillationMode::On with the llm-reasoning feature requires a \
-                     configured LLM endpoint (SYNAPTIC_LLM_URL / SYNAPTIC_LLM_MODEL), \
-                     but none resolved"
-                        .to_string(),
-                );
-            }
             Ok(DistillationDecision { live: true })
         }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{resolve_distillation, DistillationMode, ResolvedReasonerKind};
 
     // Auto: live only with an LLM reasoner AND prerequisites.
     #[test]
     fn auto_llm_with_prereqs_is_live() {
-        let d = resolve_distillation(
-            DistillationMode::Auto,
-            ResolvedReasonerKind::Llm,
-            true,
-            true,
-        )
-        .unwrap();
+        let d = resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, true)
+            .unwrap();
         assert!(d.live);
     }
 
@@ -95,7 +81,6 @@ mod tests {
             DistillationMode::Auto,
             ResolvedReasonerKind::Heuristic,
             true,
-            false,
         )
         .unwrap();
         assert!(!d.live);
@@ -103,26 +88,16 @@ mod tests {
 
     #[test]
     fn auto_llm_without_prereqs_is_off() {
-        let d = resolve_distillation(
-            DistillationMode::Auto,
-            ResolvedReasonerKind::Llm,
-            false,
-            true,
-        )
-        .unwrap();
+        let d = resolve_distillation(DistillationMode::Auto, ResolvedReasonerKind::Llm, false)
+            .unwrap();
         assert!(!d.live);
     }
 
     // Off: never live, regardless of everything else.
     #[test]
     fn off_is_never_live() {
-        let d = resolve_distillation(
-            DistillationMode::Off,
-            ResolvedReasonerKind::Llm,
-            true,
-            true,
-        )
-        .unwrap();
+        let d = resolve_distillation(DistillationMode::Off, ResolvedReasonerKind::Llm, true)
+            .unwrap();
         assert!(!d.live);
     }
 
@@ -133,33 +108,18 @@ mod tests {
             DistillationMode::On,
             ResolvedReasonerKind::Heuristic,
             false,
-            false,
         );
         assert!(err.is_err());
     }
 
-    // On + feature enabled but reasoner resolved Heuristic = endpoint expected
-    // but unresolved = misconfiguration = hard error.
+    // On with a heuristic reasoner (no LLM endpoint resolved) but prerequisites
+    // met: proceed live rather than erroring; the caller warns.
     #[test]
-    fn on_llm_feature_but_heuristic_reasoner_errors() {
-        let err = resolve_distillation(
-            DistillationMode::On,
-            ResolvedReasonerKind::Heuristic,
-            true,
-            true,
-        );
-        assert!(err.is_err());
-    }
-
-    // On without the llm feature (heuristic is the only possible reasoner):
-    // proceed live with a warning rather than erroring.
-    #[test]
-    fn on_no_llm_feature_is_live_with_heuristic() {
+    fn on_with_heuristic_reasoner_is_live() {
         let d = resolve_distillation(
             DistillationMode::On,
             ResolvedReasonerKind::Heuristic,
             true,
-            false,
         )
         .unwrap();
         assert!(d.live);
@@ -167,13 +127,8 @@ mod tests {
 
     #[test]
     fn on_llm_with_prereqs_is_live() {
-        let d = resolve_distillation(
-            DistillationMode::On,
-            ResolvedReasonerKind::Llm,
-            true,
-            true,
-        )
-        .unwrap();
+        let d = resolve_distillation(DistillationMode::On, ResolvedReasonerKind::Llm, true)
+            .unwrap();
         assert!(d.live);
     }
 }
