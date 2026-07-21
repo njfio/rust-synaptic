@@ -118,6 +118,12 @@ pub struct AgentMemory {
     /// re-run extraction (which would recurse forever).
     #[cfg(feature = "embeddings")]
     storing_facts: bool,
+    /// Whether write-time fact distillation is active for this instance
+    /// (resolved once at construction time from `MemoryConfig::distillation` /
+    /// the deprecated `store_extracted_facts` alias, the active reasoner kind,
+    /// and prerequisite availability).
+    #[cfg(feature = "embeddings")]
+    distillation_live: bool,
     #[cfg(feature = "distributed-experimental")]
     distributed_coordinator:
         Option<std::sync::Arc<distributed::coordination::DistributedCoordinator>>,
@@ -166,6 +172,22 @@ pub struct AgentMemory {
 }
 
 impl AgentMemory {
+    /// Metadata field name used to tag a memory as a raw source that
+    /// write-time distillation has summarized into fact-memories. Consulted
+    /// by retrieval when `MemoryConfig::retrieval_excludes_raw_sources` is set.
+    #[cfg(feature = "embeddings")]
+    const RAW_SOURCE_FIELD: &'static str = "raw_source";
+
+    #[cfg(all(feature = "embeddings", test))]
+    fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
+        self.reasoner = r;
+    }
+
+    #[cfg(all(feature = "embeddings", test))]
+    async fn get_entry_for_test(&self, key: &str) -> Option<MemoryEntry> {
+        self.storage.retrieve(key).await.ok().flatten()
+    }
+
     /// Create a new agent memory system with the given configuration
     #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
@@ -243,7 +265,10 @@ impl AgentMemory {
         // inner HeuristicReasoner on any LLM error, so the write path never
         // hard-fails or fabricates. Feature off or unconfigured: heuristic.
         #[cfg(feature = "embeddings")]
-        let reasoner: Arc<dyn memory::reasoning::MemoryReasoner> = {
+        let (reasoner, resolved_reasoner_kind): (
+            Arc<dyn memory::reasoning::MemoryReasoner>,
+            memory::reasoning::ResolvedReasonerKind,
+        ) = {
             let heuristic: Arc<dyn memory::reasoning::MemoryReasoner> =
                 Arc::new(memory::reasoning::HeuristicReasoner::new(Arc::new(
                     memory::embeddings::TfIdfProvider::default(),
@@ -251,12 +276,57 @@ impl AgentMemory {
             #[cfg(feature = "llm-reasoning")]
             {
                 match memory::reasoning::LlmReasoner::from_env() {
-                    Some(llm) => Arc::new(llm),
-                    None => heuristic,
+                    Some(llm) => (
+                        Arc::new(llm) as Arc<dyn memory::reasoning::MemoryReasoner>,
+                        memory::reasoning::ResolvedReasonerKind::Llm,
+                    ),
+                    None => (
+                        heuristic,
+                        memory::reasoning::ResolvedReasonerKind::Heuristic,
+                    ),
                 }
             }
             #[cfg(not(feature = "llm-reasoning"))]
-            heuristic
+            {
+                (
+                    heuristic,
+                    memory::reasoning::ResolvedReasonerKind::Heuristic,
+                )
+            }
+        };
+
+        // Resolve write-time distillation activation from config (and the
+        // deprecated `store_extracted_facts` alias, which forces `On`).
+        #[cfg(feature = "embeddings")]
+        let distillation_live = {
+            let mode = if config.store_extracted_facts {
+                memory::reasoning::DistillationMode::On
+            } else {
+                config.distillation
+            };
+            let prerequisites_met = config.enable_knowledge_graph;
+            match memory::reasoning::resolve_distillation(
+                mode,
+                resolved_reasoner_kind,
+                prerequisites_met,
+            ) {
+                Ok(decision) => {
+                    if decision.live
+                        && resolved_reasoner_kind
+                            == memory::reasoning::ResolvedReasonerKind::Heuristic
+                    {
+                        tracing::warn!(
+                            "write-time distillation is live with the heuristic reasoner; \
+                             the measured LoCoMo lift requires an LLM endpoint \
+                             (SYNAPTIC_LLM_URL / SYNAPTIC_LLM_MODEL)"
+                        );
+                    }
+                    decision.live
+                }
+                Err(msg) => {
+                    return Err(crate::error::MemoryError::Configuration { message: msg });
+                }
+            }
         };
 
         // Reflection engine: clusters memories accumulated since the last
@@ -456,6 +526,8 @@ impl AgentMemory {
             reflection_accumulated_importance: 0.0,
             #[cfg(feature = "embeddings")]
             storing_facts: false,
+            #[cfg(feature = "embeddings")]
+            distillation_live,
             #[cfg(feature = "distributed-experimental")]
             distributed_coordinator,
             #[cfg(feature = "analytics")]
@@ -722,6 +794,7 @@ impl AgentMemory {
         if extraction.facts.is_empty() {
             return Ok(());
         }
+        let mut stored_any_fact = false;
         for (i, fact) in extraction.facts.iter().enumerate() {
             let neighbors = self.neighbor_facts(&entry.key, fact, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
@@ -739,9 +812,9 @@ impl AgentMemory {
                 self.mark_superseded(&old_key).await?;
             }
 
-            // Optionally persist the extracted fact as its own retrievable
-            // memory so search surfaces distilled facts, not just raw turns.
-            if self._config.store_extracted_facts && !fact.text.trim().is_empty() {
+            // Persist the extracted fact as its own retrievable memory so
+            // search surfaces distilled facts, not just raw turns.
+            if self.distillation_live && !fact.text.trim().is_empty() {
                 let fact_key = format!("{}::fact{}", entry.key, i);
                 self.storing_facts = true;
                 // Box::pin breaks the recursive-future size cycle
@@ -749,6 +822,33 @@ impl AgentMemory {
                 let result = Box::pin(self.store_with_report(&fact_key, &fact.text)).await;
                 self.storing_facts = false;
                 result?;
+                stored_any_fact = true;
+            }
+        }
+        // Failure-ordering invariant: tag the raw turn as a summarized source
+        // ONLY after ≥1 fact has been stored. If extraction or fact storage
+        // failed above (propagated via `?`), we never reach here, so the raw
+        // turn stays untagged and searchable — a distillation outage degrades
+        // to raw-turn retrieval rather than hiding a turn with no replacement.
+        if stored_any_fact {
+            self.mark_raw_source(&entry.key).await?;
+        }
+        Ok(())
+    }
+
+    /// Tag a raw source turn as summarized-by-distillation (facts-primary
+    /// retrieval). Mirrors [`Self::mark_superseded`]: records `raw_source` in the
+    /// entry's custom fields and persists it, without re-running reasoning.
+    #[cfg(feature = "embeddings")]
+    async fn mark_raw_source(&mut self, key: &str) -> Result<()> {
+        if let Some(mut entry) = self.storage.retrieve(key).await? {
+            entry
+                .metadata
+                .custom_fields
+                .insert(Self::RAW_SOURCE_FIELD.to_string(), Utc::now().to_rfc3339());
+            self.storage.store(&entry).await?;
+            if self.state.has_memory(key) {
+                self.state.add_memory(entry);
             }
         }
         Ok(())
@@ -1351,6 +1451,17 @@ impl AgentMemory {
                     .contains_key(Self::SUPERSEDED_FIELD)
             });
         }
+        // Facts-primary retrieval: when enabled, drop raw source turns that
+        // distillation has summarized, so search surfaces distilled facts.
+        #[cfg(feature = "embeddings")]
+        if self._config.retrieval_excludes_raw_sources {
+            results.retain(|f| {
+                !f.entry
+                    .metadata
+                    .custom_fields
+                    .contains_key(Self::RAW_SOURCE_FIELD)
+            });
+        }
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
     }
@@ -1692,16 +1803,12 @@ pub struct MemoryConfig {
     pub enable_memory_promotion: bool,
     /// Memory promotion configuration
     pub promotion_config: Option<memory::promotion::PromotionConfig>,
-    /// Intelligent write path: when `true`, each stored value is passed through
-    /// the [`memory::reasoning::MemoryReasoner`] and the extracted facts are
-    /// stored as their own **retrievable** memories (keyed `<key>::fact<N>`),
-    /// in addition to the raw value and the knowledge-graph updates. This is the
-    /// Mem0-style write-time distillation that lets retrieval surface clean
-    /// facts rather than raw turns (measured to lift LoCoMo QA; see
-    /// `docs/evaluation.md`). Requires `enable_knowledge_graph` + `embeddings`;
-    /// extraction quality scales with the active reasoner (heuristic default, or
-    /// `LlmReasoner` when `SYNAPTIC_LLM_URL`/`_MODEL` are set). Default: `false`
-    /// (raw-value-only behavior is unchanged).
+    /// DEPRECATED — use [`MemoryConfig::distillation`]. When `true`, forces
+    /// `DistillationMode::On` (facts stored as `<key>::fact<N>` memories). Kept
+    /// for backwards compatibility; slated for removal in a future major.
+    /// Default `false`. When this alias is live, raw source turns are excluded
+    /// from default `search` results (facts-primary retrieval) because
+    /// `retrieval_excludes_raw_sources` defaults to `true`.
     pub store_extracted_facts: bool,
     /// Bi-temporal validity in retrieval: when `true`, `search` drops memories
     /// that the intelligent write path has marked superseded (a later fact
@@ -1709,6 +1816,16 @@ pub struct MemoryConfig {
     /// update instead of the stale one. Default: `false` (superseded memories
     /// remain retrievable, matching prior behavior).
     pub retrieval_excludes_superseded: bool,
+    /// Write-time fact distillation activation (see
+    /// [`memory::reasoning::DistillationMode`]). Default `Auto`: live when an
+    /// LLM reasoner is configured and the knowledge graph + embeddings are
+    /// available, off otherwise (raw-value behavior unchanged).
+    pub distillation: memory::reasoning::DistillationMode,
+    /// Facts-primary retrieval: when `true`, `search` drops memories tagged as
+    /// raw sources (the original turns distillation summarized), so retrieval
+    /// surfaces distilled facts rather than raw turns. Default `true`. Only has
+    /// an effect when distillation is live (untagged raw turns are unaffected).
+    pub retrieval_excludes_raw_sources: bool,
 }
 
 impl Default for MemoryConfig {
@@ -1756,6 +1873,16 @@ impl Default for MemoryConfig {
             promotion_config: Some(memory::promotion::PromotionConfig::default()),
             store_extracted_facts: false,
             retrieval_excludes_superseded: false,
+            // Default OFF (opt-in), not Auto: a full-LoCoMo-subset A/B measured
+            // facts-primary distillation to HURT QA (raw baseline 0.505 ->
+            // distill 0.258 on 198 matched questions with a local 7B extractor;
+            // abstention doubled). Lossy facts drop answer detail and excluding
+            // raw turns removes the verbatim fallback (incl. the session-date
+            // prefix temporal questions need). A frontier extractor helps but is
+            // impractically slow for the write path. See docs/evaluation.md
+            // "Write-time distillation A/B". Enable explicitly to opt in.
+            distillation: memory::reasoning::DistillationMode::Off,
+            retrieval_excludes_raw_sources: true,
         }
     }
 }
@@ -1778,6 +1905,103 @@ pub enum StorageBackend {
 #[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    // A stub reasoner that returns a fixed set of facts (or an error) so the write
+    // path is testable without an LLM.
+    #[cfg(feature = "embeddings")]
+    #[derive(Clone)]
+    struct StubReasoner {
+        facts: Vec<String>,
+        fail: bool,
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[async_trait::async_trait]
+    impl memory::reasoning::MemoryReasoner for StubReasoner {
+        async fn extract(
+            &self,
+            _text: &str,
+            _ctx: &memory::reasoning::ExtractionContext,
+        ) -> Result<memory::reasoning::Extraction> {
+            if self.fail {
+                return Err(crate::error::MemoryError::ProcessingError(
+                    "stub extract failure".to_string(),
+                ));
+            }
+            Ok(memory::reasoning::Extraction {
+                facts: self
+                    .facts
+                    .iter()
+                    .map(|t| memory::reasoning::Fact {
+                        text: t.clone(),
+                        entities: Vec::new(),
+                        relations: Vec::new(),
+                    })
+                    .collect(),
+            })
+        }
+        async fn resolve(
+            &self,
+            _candidate: &memory::reasoning::Fact,
+            _neighbors: &[memory::reasoning::NeighborFact],
+        ) -> Result<memory::reasoning::ConflictResolution> {
+            Ok(memory::reasoning::ConflictResolution::Insert)
+        }
+        async fn synthesize(
+            &self,
+            _cluster: &[MemoryEntry],
+        ) -> Result<Option<memory::reasoning::Insight>> {
+            Ok(None)
+        }
+        fn name(&self) -> &str {
+            "StubReasoner"
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_tags_raw_source_after_facts_land() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
+
+        // Raw turn is tagged; the fact memory exists and is not tagged.
+        let raw = mem.get_entry_for_test("turn1").await.unwrap();
+        assert!(raw.metadata.custom_fields.contains_key("raw_source"));
+        let fact = mem.get_entry_for_test("turn1::fact0").await.unwrap();
+        assert!(!fact.metadata.custom_fields.contains_key("raw_source"));
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_failure_leaves_raw_untagged() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec![],
+            fail: true,
+        }));
+        // Write still succeeds (best-effort); raw turn stays searchable/untagged.
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
+        let raw = mem.get_entry_for_test("turn1").await.unwrap();
+        assert!(!raw.metadata.custom_fields.contains_key("raw_source"));
+    }
 
     #[test]
     fn test_memory_config_default() {
@@ -1812,6 +2036,46 @@ mod tests {
             mem.retrieve("note::fact0").await.unwrap().is_none(),
             "no fact-memories should exist with the default (off) config"
         );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_default_is_off() {
+        // Default is DistillationMode::Off (opt-in) after the A/B measured
+        // facts-primary distillation to hurt QA — so the default write path is
+        // never live, even if an LLM endpoint happens to be configured.
+        let mem = AgentMemory::new(MemoryConfig::default()).await.unwrap();
+        assert!(
+            !mem.distillation_live,
+            "default distillation must be off (opt-in)"
+        );
+        assert_eq!(
+            mem._config.distillation,
+            memory::reasoning::DistillationMode::Off
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn store_extracted_facts_alias_forces_on() {
+        // Deprecated alias: store_extracted_facts=true behaves as DistillationMode::On.
+        // With KG+embeddings present and no llm feature endpoint, On is live (heuristic).
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mem = AgentMemory::new(config).await.unwrap();
+        assert!(
+            mem.distillation_live,
+            "store_extracted_facts=true must make distillation live"
+        );
+    }
+
+    #[tokio::test]
+    async fn retrieval_excludes_raw_sources_defaults_true() {
+        let config = MemoryConfig::default();
+        assert!(config.retrieval_excludes_raw_sources);
     }
 
     #[cfg(feature = "embeddings")]
@@ -1880,6 +2144,61 @@ mod tests {
         assert!(
             mem.retrieve("note::fact0::fact0").await.unwrap().is_none(),
             "fact-memories must not themselves be re-extracted (recursion guard)"
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn search_excludes_raw_sources_by_default() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
+
+        let hits = mem.search("Berlin", 10).await.unwrap();
+        let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
+        assert!(
+            keys.iter().any(|k| k.contains("::fact")),
+            "fact must be retrievable"
+        );
+        assert!(
+            !keys.contains(&"turn1"),
+            "raw source must be excluded by default"
+        );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn search_includes_raw_sources_when_disabled() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            retrieval_excludes_raw_sources: false,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year")
+            .await
+            .unwrap();
+
+        let hits = mem.search("Berlin", 10).await.unwrap();
+        let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
+        assert!(
+            keys.contains(&"turn1"),
+            "raw source must reappear when filter disabled"
         );
     }
 

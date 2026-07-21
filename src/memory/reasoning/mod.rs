@@ -6,10 +6,14 @@
 //! ([`ConflictResolution`]), and higher-level [`Insight`]s synthesized
 //! across clusters of related memories.
 
+pub mod distillation;
 pub mod heuristic;
 #[cfg(feature = "llm-reasoning")]
 pub mod llm;
 
+pub use distillation::{
+    resolve_distillation, DistillationDecision, DistillationMode, ResolvedReasonerKind,
+};
 pub use heuristic::HeuristicReasoner;
 #[cfg(feature = "llm-reasoning")]
 pub use llm::LlmReasoner;

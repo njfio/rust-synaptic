@@ -1770,3 +1770,54 @@ documented above) is the opt-in lever against this and was left OFF here to meas
 nondeterministic run-to-run (~±0.03 on small samples; far tighter at n=1986), and grades adversarial
 abstention strictly (a correctly-refused question can still be marked wrong if the phrasing diverges
 from the expected form), which depresses the Abstention row.
+
+## Write-time distillation A/B: facts-primary retrieval HURTS (negative result, 2026-07-21)
+
+We built write-time fact distillation as a real, default write path (spec/plan under
+`docs/superpowers/`): when an LLM endpoint + knowledge graph are configured, `store()` distills each
+turn into fact-memories (`{key}::fact{i}`) that become the primary retrievable units, and the raw
+turn is tagged `raw_source` and excluded from default `search` (`MemoryConfig::distillation`,
+`retrieval_excludes_raw_sources`). The hypothesis (from the earlier Mem0-parity result) was that
+distilled facts retrieve cleaner than raw turns. **A matched A/B refuted this for the accessible
+configuration, so distillation ships default-OFF (opt-in).**
+
+**Setup.** Same conversation (LoCoMo conv 0), same codex judge + retrieval (PRF + GPU cross-encoder);
+only the write path differs. Arm A ingests raw turns (`distillation: Off`). Arm B distills
+facts-primary (`--distill`, `On`), extracting with a local `qwen2.5:7b-instruct` (Ollama, GPU). The
+matched set is the 198 questions both arms graded.
+
+| category | Arm A (raw) | Arm B (7B distill) | Δ |
+|---|---|---|---|
+| **Overall** | **0.5051** | **0.2576** | **−0.2475** |
+| SingleHop | 0.729 | 0.257 | −0.471 |
+| Temporal | 0.784 | 0.486 | −0.297 |
+| MultiHop | 0.188 | 0.062 | −0.125 |
+| OpenDomain | 0.385 | 0.308 | −0.077 |
+| Abstention | 0.196 | 0.196 | +0.000 |
+
+**Distillation nearly halved accuracy.** The driver is abstention: it **doubled** (103 vs 44 "I
+don't know" on the 198). The judge grades the actual answer text, so this is a real retrieval/answer
+loss, not a scoring artifact. (The `gold_in_context` recall metric reads 0.000 for Arm B — an
+*instrumentation artifact*: it credits raw-turn `evidence_id`s, which distillation replaces with
+`::fact` keys, so recall is not meaningful under facts-primary. Accuracy is the valid signal.)
+
+**Two mechanisms (from a direct qwen-vs-codex extraction diagnostic on the answer-losing turns):**
+1. **Extractor quality is real.** For "When did Melanie run a charity race?", codex extracted
+   *"Melanie ran a charity race … last Saturday"* (answer preserved) while qwen dropped it entirely.
+   A frontier extractor would beat the 7B's 0.258. But a frontier extractor is **impractically slow
+   for the write path** — codex-via-CLI is ~15 s/turn × multiple calls/turn (extract + per-fact
+   resolve); a single-conversation ingest did not finish in 1 h, so the full codex A/B was infeasible.
+2. **Facts-primary loses context regardless of extractor.** Raw turns are ingested with a
+   `[session-date]` prefix; extracted facts drop it, so temporal questions (gold "7 May 2023"; the
+   turn says "yesterday") lose their date anchor even with a perfect extractor. Excluding raw removes
+   the verbatim fallback. This is a design-level floor a better extractor cannot fully overcome.
+
+**Decision (honesty bar).** Distillation defaults to **`Off`**. The machinery is complete, tested,
+and reviewed, and is available opt-in (`MemoryConfig::distillation = On`, or the deprecated
+`store_extracted_facts = true`) for deployments with a strong, fast extractor that measure it for
+their own workload. It is **not** shipped default-on because the only end-to-end measurement shows
+harm. Caveats: single-conversation matched set (n=198); local 7B extractor; a frontier extractor was
+not measured end-to-end (infeasibly slow here). The finding that generalizes: **facts-primary
+retrieval that excludes raw turns trades away verbatim recall (dates, exact details) that LoCoMo QA
+depends on** — distillation should *augment* raw retrieval, not replace it, and only with an
+extraction step faithful enough to not drop answer-bearing detail.
