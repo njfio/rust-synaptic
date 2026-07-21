@@ -257,8 +257,11 @@ async fn main() -> Result<(), String> {
         if let Some(ref facts) = facts_map {
             return run_agentic_facts_only(&conversations, facts, &mut w).await;
         }
-        let distill = args.iter().any(|a| a == "--distill");
-        return run_agentic_qa_only(&conversations, distill, &mut w).await;
+        // `--distill` = facts-primary (raw excluded); `--distill-keep-raw` =
+        // augment (distill on, raw turns retained in search).
+        let keep_raw = args.iter().any(|a| a == "--distill-keep-raw");
+        let distill = keep_raw || args.iter().any(|a| a == "--distill");
+        return run_agentic_qa_only(&conversations, distill, !keep_raw, &mut w).await;
     }
     if growth_only {
         return run_growth_and_qa(&conversations, grow_100k, &mut w).await;
@@ -881,15 +884,18 @@ async fn run_qa_reflect_only(
 /// without codex this reports not-run, never a fabricated number.
 /// `SYNAPTIC_EVAL_AGENTIC_ROUNDS` overrides the max rounds per question
 /// (default 3; see [`qa::agentic_max_rounds`]).
-/// Build the memory config for the agentic-QA run. `distill=true` selects the
-/// facts-primary write path (DistillationMode::On, KG on, raw sources excluded);
-/// `false` returns the default config (today's raw-turn behavior).
-fn distillation_config(distill: bool) -> synaptic::MemoryConfig {
+/// Build the memory config for the agentic-QA run. `distill=true` turns on the
+/// distillation write path (DistillationMode::On, KG on). `exclude_raw` controls
+/// whether raw source turns are dropped from search: `true` = facts-primary
+/// (facts replace raw in retrieval), `false` = augment (facts ADD alongside raw,
+/// so the verbatim fallback is preserved). `distill=false` returns the default
+/// config (today's raw-turn behavior).
+fn distillation_config(distill: bool, exclude_raw: bool) -> synaptic::MemoryConfig {
     if distill {
         synaptic::MemoryConfig {
             distillation: synaptic::memory::reasoning::DistillationMode::On,
             enable_knowledge_graph: true,
-            retrieval_excludes_raw_sources: true,
+            retrieval_excludes_raw_sources: exclude_raw,
             ..Default::default()
         }
     } else {
@@ -904,22 +910,33 @@ mod distill_flag_tests {
 
     #[test]
     fn distill_flag_builds_facts_primary_config() {
-        let cfg = distillation_config(true);
+        let cfg = distillation_config(true, true);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(cfg.enable_knowledge_graph);
         assert!(cfg.retrieval_excludes_raw_sources);
     }
 
     #[test]
+    fn distill_keep_raw_augments() {
+        // Augment mode: distillation on, but raw turns retained in search.
+        let cfg = distillation_config(true, false);
+        assert_eq!(cfg.distillation, DistillationMode::On);
+        assert!(cfg.enable_knowledge_graph);
+        assert!(!cfg.retrieval_excludes_raw_sources);
+    }
+
+    #[test]
     fn no_distill_flag_is_default() {
-        let cfg = distillation_config(false);
-        assert_eq!(cfg.distillation, DistillationMode::Auto);
+        // Library default is Off (opt-in) after the A/B negative result.
+        let cfg = distillation_config(false, true);
+        assert_eq!(cfg.distillation, DistillationMode::Off);
     }
 }
 
 async fn run_agentic_qa_only(
     conversations: &[EvalConversation],
     distill: bool,
+    exclude_raw: bool,
     w: &mut impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     w("== Agentic answer-guided retrieval QA (--agentic-qa) ==".to_string())?;
@@ -951,7 +968,7 @@ async fn run_agentic_qa_only(
         max_rounds,
         grounded,
         ground_verify,
-        distillation_config(distill),
+        distillation_config(distill, exclude_raw),
     )
     .await
     .map_err(|e| e.to_string())?;

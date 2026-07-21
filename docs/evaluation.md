@@ -1821,3 +1821,33 @@ not measured end-to-end (infeasibly slow here). The finding that generalizes: **
 retrieval that excludes raw turns trades away verbatim recall (dates, exact details) that LoCoMo QA
 depends on** — distillation should *augment* raw retrieval, not replace it, and only with an
 extraction step faithful enough to not drop answer-bearing detail.
+
+### Follow-up: augment (raw retained) recovers the loss — the exclusion was the culprit (2026-07-21)
+
+The negative result above pointed at a specific fix: distillation should *augment* raw retrieval,
+not *replace* it. We tested it directly with a third arm on the same conversation and matched
+questions, changing only `retrieval_excludes_raw_sources` (a new `--distill-keep-raw` eval flag):
+Arm C distills facts (same qwen2.5:7b extractor) but **keeps raw turns searchable**.
+
+| arm | overall | abstained | Δ vs raw baseline |
+|---|---|---|---|
+| A — raw baseline | 0.5051 | 44 | — |
+| B — facts-primary (raw excluded) | 0.2576 | 103 | −0.2475 |
+| **C — augment (raw retained)** | **0.5000** | 52 | **−0.0051 (tie)** |
+
+Per category (A raw / B facts-primary / C augment): Temporal 0.784 / 0.486 / **0.784**; MultiHop
+0.188 / 0.062 / **0.188**; OpenDomain 0.385 / 0.308 / **0.385**; SingleHop 0.729 / 0.257 / 0.671;
+Abstention 0.196 / 0.196 / **0.261**.
+
+**The harm was entirely the raw-exclusion, not distillation.** Augment recovers the whole −0.25 —
+matching baseline exactly on Temporal, MultiHop, and OpenDomain, nearly on SingleHop, and slightly
+*beating* it on Abstention. So distilled facts added alongside raw turns are **safe** (neutral with a
+weak extractor) and preserve the verbatim fallback (dates, exact details) that facts-primary threw
+away. They do not *lift* QA here — a 7B extractor's facts add no signal the raw turns lack — but this
+is the correct foundation: with a stronger extractor, augment could add lift without the downside.
+
+**Change applied:** the opt-in distillation default is now **augment** —
+`MemoryConfig::retrieval_excludes_raw_sources` defaults to `false`. Enabling `distillation = On` (or
+the deprecated `store_extracted_facts = true`) now adds facts alongside raw turns rather than
+replacing them, so opting in is safe by default. Facts-primary (raw excluded) remains available by
+setting the flag to `true`, for callers who measure it as a net win on their own extractor/workload.

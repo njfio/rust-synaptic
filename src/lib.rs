@@ -1806,9 +1806,9 @@ pub struct MemoryConfig {
     /// DEPRECATED — use [`MemoryConfig::distillation`]. When `true`, forces
     /// `DistillationMode::On` (facts stored as `<key>::fact<N>` memories). Kept
     /// for backwards compatibility; slated for removal in a future major.
-    /// Default `false`. When this alias is live, raw source turns are excluded
-    /// from default `search` results (facts-primary retrieval) because
-    /// `retrieval_excludes_raw_sources` defaults to `true`.
+    /// Default `false`. When this alias is live, distilled facts are added
+    /// alongside raw turns (augment mode), since `retrieval_excludes_raw_sources`
+    /// defaults to `false`.
     pub store_extracted_facts: bool,
     /// Bi-temporal validity in retrieval: when `true`, `search` drops memories
     /// that the intelligent write path has marked superseded (a later fact
@@ -1817,14 +1817,20 @@ pub struct MemoryConfig {
     /// remain retrievable, matching prior behavior).
     pub retrieval_excludes_superseded: bool,
     /// Write-time fact distillation activation (see
-    /// [`memory::reasoning::DistillationMode`]). Default `Auto`: live when an
-    /// LLM reasoner is configured and the knowledge graph + embeddings are
-    /// available, off otherwise (raw-value behavior unchanged).
+    /// [`memory::reasoning::DistillationMode`]). Default `Off` (opt-in): a
+    /// matched LoCoMo A/B measured facts-primary distillation to hurt QA (see
+    /// `docs/evaluation.md`), so the default write path never distills. Set to
+    /// `On` to enable; quality scales with the active reasoner (an `LlmReasoner`
+    /// under `llm-reasoning`, else the heuristic).
     pub distillation: memory::reasoning::DistillationMode,
     /// Facts-primary retrieval: when `true`, `search` drops memories tagged as
     /// raw sources (the original turns distillation summarized), so retrieval
-    /// surfaces distilled facts rather than raw turns. Default `true`. Only has
-    /// an effect when distillation is live (untagged raw turns are unaffected).
+    /// surfaces distilled facts *instead of* raw turns. Default `false`
+    /// (**augment** mode: distilled facts are added alongside raw turns rather
+    /// than replacing them). The A/B showed that *excluding* raw turns is what
+    /// hurt QA — it removed the verbatim fallback (dates, exact details) — while
+    /// augment recovered baseline accuracy (0.505 → 0.258 facts-primary vs 0.500
+    /// augment). Only has an effect when distillation is live.
     pub retrieval_excludes_raw_sources: bool,
 }
 
@@ -1882,7 +1888,10 @@ impl Default for MemoryConfig {
             // impractically slow for the write path. See docs/evaluation.md
             // "Write-time distillation A/B". Enable explicitly to opt in.
             distillation: memory::reasoning::DistillationMode::Off,
-            retrieval_excludes_raw_sources: true,
+            // Augment, not facts-primary: distillation (when opted in) adds
+            // facts alongside raw turns rather than excluding raw from search.
+            // The A/B showed exclusion is what hurt QA; augment ties baseline.
+            retrieval_excludes_raw_sources: false,
         }
     }
 }
@@ -2073,9 +2082,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retrieval_excludes_raw_sources_defaults_true() {
+    async fn retrieval_excludes_raw_sources_defaults_false_augment() {
+        // Default is augment (raw retained), not facts-primary: the A/B showed
+        // excluding raw turns hurts QA.
         let config = MemoryConfig::default();
-        assert!(config.retrieval_excludes_raw_sources);
+        assert!(!config.retrieval_excludes_raw_sources);
     }
 
     #[cfg(feature = "embeddings")]
@@ -2149,10 +2160,13 @@ mod tests {
 
     #[cfg(feature = "embeddings")]
     #[tokio::test]
-    async fn search_excludes_raw_sources_by_default() {
+    async fn search_excludes_raw_sources_when_enabled() {
+        // Facts-primary is now opt-in (default is augment), so set the flag
+        // explicitly to exercise the exclusion filter.
         let config = MemoryConfig {
             store_extracted_facts: true,
             enable_knowledge_graph: true,
+            retrieval_excludes_raw_sources: true,
             ..Default::default()
         };
         let mut mem = AgentMemory::new(config).await.unwrap();
