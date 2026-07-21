@@ -1453,6 +1453,17 @@ impl AgentMemory {
                     .contains_key(Self::SUPERSEDED_FIELD)
             });
         }
+        // Facts-primary retrieval: when enabled, drop raw source turns that
+        // distillation has summarized, so search surfaces distilled facts.
+        #[cfg(feature = "embeddings")]
+        if self._config.retrieval_excludes_raw_sources {
+            results.retain(|f| {
+                !f.entry
+                    .metadata
+                    .custom_fields
+                    .contains_key(Self::RAW_SOURCE_FIELD)
+            });
+        }
         tracing::debug!("Search completed, found {} results", results.len());
         Ok(results)
     }
@@ -2110,6 +2121,48 @@ mod tests {
             mem.retrieve("note::fact0::fact0").await.unwrap().is_none(),
             "fact-memories must not themselves be re-extracted (recursion guard)"
         );
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn search_excludes_raw_sources_by_default() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+
+        let hits = mem.search("Berlin", 10).await.unwrap();
+        let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
+        assert!(keys.iter().any(|k| k.contains("::fact")), "fact must be retrievable");
+        assert!(!keys.contains(&"turn1"), "raw source must be excluded by default");
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn search_includes_raw_sources_when_disabled() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            retrieval_excludes_raw_sources: false,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+
+        let hits = mem.search("Berlin", 10).await.unwrap();
+        let keys: Vec<&str> = hits.iter().map(|f| f.entry.key.as_str()).collect();
+        assert!(keys.contains(&"turn1"), "raw source must reappear when filter disabled");
     }
 
     #[test]
