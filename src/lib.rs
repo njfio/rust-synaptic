@@ -837,7 +837,7 @@ impl AgentMemory {
     }
 
     /// Tag a raw source turn as summarized-by-distillation (facts-primary
-    /// retrieval). Mirrors [`mark_superseded`]: records `raw_source` in the
+    /// retrieval). Mirrors [`Self::mark_superseded`]: records `raw_source` in the
     /// entry's custom fields and persists it, without re-running reasoning.
     #[cfg(feature = "embeddings")]
     async fn mark_raw_source(&mut self, key: &str) -> Result<()> {
