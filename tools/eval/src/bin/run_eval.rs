@@ -1007,8 +1007,27 @@ async fn run_agentic_qa_only(
     let max_rounds = qa::agentic_max_rounds();
     let grounded = qa::grounded_enabled();
     let ground_verify = qa::ground_verify_enabled();
+    // Weak-answerer instrument: when SYNAPTIC_EVAL_ANSWERER_URL/_MODEL are set,
+    // the agentic answer-or-search completions run on that (weak) model while
+    // the codex judge still grades — so retrieval has to carry the answer rather
+    // than the model's own reasoning. The dedicated answerer vars are decoupled
+    // from SYNAPTIC_EVAL_LLM_URL so the library reasoner stays heuristic at
+    // ingest (avoids per-turn LLM extraction). Default: codex answers and grades.
+    #[cfg(feature = "llm-reasoning")]
+    let llm_answerer = qa::LlmJudge::from_answerer_env().map_err(|e| e.to_string())?;
+    #[cfg(feature = "llm-reasoning")]
+    let answerer: &dyn qa::Completer = match &llm_answerer {
+        Some(j) => {
+            w("agentic answerer: weak LLM (grader stays codex)".to_string())?;
+            j
+        }
+        None => &judge,
+    };
+    #[cfg(not(feature = "llm-reasoning"))]
+    let answerer: &dyn qa::Completer = &judge;
     let report = qa::run_agentic_qa(
         conversations,
+        answerer,
         &judge,
         K,
         max_rounds,
@@ -1180,6 +1199,7 @@ async fn run_agentic_facts_only(
     let report = qa::run_agentic_qa_over_facts(
         conversations,
         facts,
+        &judge,
         &judge,
         K,
         qa::agentic_max_rounds(),

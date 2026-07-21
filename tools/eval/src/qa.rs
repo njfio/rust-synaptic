@@ -70,6 +70,41 @@ pub trait Judge: Send + Sync {
     async fn grade(&self, question: &str, gold: &str, predicted: &str) -> Result<bool, QaError>;
 }
 
+/// Free-form completion for the agentic answer-or-search loop, pluggable so the
+/// *answerer* can be a weak model (e.g. a local 7B via an OpenAI-compatible
+/// endpoint) while the *grader* stays a strong judge. This is the instrument
+/// that unmasks retrieval-side capabilities a strong answerer resolves itself:
+/// with a weak answerer, better retrieval (bi-temporal supersession, distilled
+/// facts) has to carry the answer rather than the model's own reasoning.
+#[async_trait::async_trait]
+pub trait Completer: Send + Sync {
+    /// Produce a completion for `prompt` (a self-contained instruction+context
+    /// prompt from the agentic loop).
+    async fn complete(&self, prompt: String) -> Result<String, QaError>;
+}
+
+#[async_trait::async_trait]
+impl Completer for CodexCliJudge {
+    async fn complete(&self, prompt: String) -> Result<String, QaError> {
+        CodexCliJudge::complete(self, prompt).await
+    }
+}
+
+#[cfg(feature = "llm-reasoning")]
+#[async_trait::async_trait]
+impl Completer for LlmJudge {
+    async fn complete(&self, prompt: String) -> Result<String, QaError> {
+        // The agentic prompt is self-contained; a minimal system message keeps
+        // the weak model focused on following it verbatim.
+        self.chat(
+            "You are a precise assistant. Follow the user's instructions exactly \
+             and reply in the exact format they request.",
+            &prompt,
+        )
+        .await
+    }
+}
+
 /// Phrases (matched case-insensitively as substrings of the predicted
 /// answer) that indicate the judge abstained — i.e. said "I don't know"
 /// rather than confabulating an answer. Kept as a documented, reviewable
@@ -823,30 +858,60 @@ impl LlmJudge {
     /// Environment variable holding the optional bearer token.
     pub const ENV_KEY: &'static str = "SYNAPTIC_EVAL_LLM_KEY";
 
+    /// Dedicated endpoint vars for the agentic *answerer* (weak-answerer
+    /// instrument). Kept separate from `ENV_URL` so configuring a weak answerer
+    /// does NOT also activate the library's `LlmReasoner` at ingest time, which
+    /// falls back to `SYNAPTIC_EVAL_LLM_URL` — that would run per-turn LLM
+    /// extraction and make ingest intractably slow.
+    pub const ENV_ANSWERER_URL: &'static str = "SYNAPTIC_EVAL_ANSWERER_URL";
+    pub const ENV_ANSWERER_MODEL: &'static str = "SYNAPTIC_EVAL_ANSWERER_MODEL";
+    pub const ENV_ANSWERER_KEY: &'static str = "SYNAPTIC_EVAL_ANSWERER_KEY";
+
     /// Build from environment variables. `Ok(None)` when no endpoint is
     /// configured (the caller reports not-run); `Err` when the configuration
     /// is present but incomplete (URL without model) — fail closed rather
     /// than guessing a model.
     pub fn from_env() -> Result<Option<Self>, QaError> {
-        let url = match std::env::var(Self::ENV_URL) {
+        Self::from_env_vars(Self::ENV_URL, Self::ENV_MODEL, Self::ENV_KEY)
+    }
+
+    /// Build the weak *answerer* from its dedicated env vars (see
+    /// [`Self::ENV_ANSWERER_URL`]), decoupled from the library reasoner's
+    /// endpoint so ingest stays heuristic/fast.
+    pub fn from_answerer_env() -> Result<Option<Self>, QaError> {
+        Self::from_env_vars(
+            Self::ENV_ANSWERER_URL,
+            Self::ENV_ANSWERER_MODEL,
+            Self::ENV_ANSWERER_KEY,
+        )
+    }
+
+    fn from_env_vars(
+        url_var: &str,
+        model_var: &str,
+        key_var: &str,
+    ) -> Result<Option<Self>, QaError> {
+        let url = match std::env::var(url_var) {
             Ok(u) if !u.trim().is_empty() => u.trim().to_string(),
             _ => return Ok(None),
         };
-        let model = std::env::var(Self::ENV_MODEL)
+        let model = std::env::var(model_var)
             .ok()
             .filter(|m| !m.trim().is_empty())
             .ok_or_else(|| {
                 QaError::Judge(format!(
-                    "{} is set but {} is not — refusing to guess a model",
-                    Self::ENV_URL,
-                    Self::ENV_MODEL
+                    "{url_var} is set but {model_var} is not — refusing to guess a model"
                 ))
             })?;
-        let api_key = std::env::var(Self::ENV_KEY)
-            .ok()
-            .filter(|k| !k.trim().is_empty());
+        let api_key = std::env::var(key_var).ok().filter(|k| !k.trim().is_empty());
+        // Explicit timeout so a hung endpoint fails the run instead of stalling
+        // it indefinitely (reqwest defaults to no timeout).
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| QaError::Judge(format!("building HTTP client: {e}")))?;
         Ok(Some(Self {
-            client: reqwest::Client::new(),
+            client,
             url,
             model: model.trim().to_string(),
             api_key,
@@ -1703,7 +1768,8 @@ struct AgenticQuestionOutcome {
 /// `max_rounds` calls to `judge.complete` plus one call to `judge.grade`.
 async fn run_one_agentic_question(
     memory: &AgentMemory,
-    judge: &CodexCliJudge,
+    answerer: &dyn Completer,
+    grader: &CodexCliJudge,
     question: &EvalQuestion,
     k: usize,
     max_rounds: usize,
@@ -1732,7 +1798,7 @@ async fn run_one_agentic_question(
         rounds_used = round;
         let force_answer = round == max_rounds;
         let prompt = build_agentic_prompt(&question.text, &context, force_answer, grounded);
-        let reply = judge.complete(prompt).await?;
+        let reply = answerer.complete(prompt).await?;
 
         if force_answer {
             final_answer = Some(match parse_agentic_reply(&reply) {
@@ -1804,13 +1870,13 @@ async fn run_one_agentic_question(
                 .filter(|&&n| n >= 1 && n <= context.len())
                 .map(|&n| context[n - 1].1.clone())
                 .collect();
-            let supported = judge.verify_support(&predicted, &cited_contents).await?;
+            let supported = grader.verify_support(&predicted, &cited_contents).await?;
             verification_gate(&predicted, supported)
         } else {
             (predicted, false)
         };
 
-    let correct = judge
+    let correct = grader
         .grade(&question.text, &question.gold_answer, &predicted)
         .await?;
 
@@ -1870,6 +1936,7 @@ async fn run_one_agentic_question(
 /// identical reports.
 pub async fn run_agentic_qa(
     conversations: &[EvalConversation],
+    answerer: &dyn Completer,
     judge: &CodexCliJudge,
     k: usize,
     max_rounds: usize,
@@ -1880,6 +1947,7 @@ pub async fn run_agentic_qa(
     run_agentic_qa_impl(
         conversations,
         None,
+        answerer,
         judge,
         k,
         max_rounds,
@@ -1897,6 +1965,7 @@ pub async fn run_agentic_qa(
 pub async fn run_agentic_qa_over_facts(
     conversations: &[EvalConversation],
     facts_by_index: &std::collections::BTreeMap<usize, Vec<String>>,
+    answerer: &dyn Completer,
     judge: &CodexCliJudge,
     k: usize,
     max_rounds: usize,
@@ -1907,6 +1976,7 @@ pub async fn run_agentic_qa_over_facts(
     run_agentic_qa_impl(
         conversations,
         Some(facts_by_index),
+        answerer,
         judge,
         k,
         max_rounds,
@@ -1917,9 +1987,11 @@ pub async fn run_agentic_qa_over_facts(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_agentic_qa_impl(
     conversations: &[EvalConversation],
     facts_by_index: Option<&std::collections::BTreeMap<usize, Vec<String>>>,
+    answerer: &dyn Completer,
     judge: &CodexCliJudge,
     k: usize,
     max_rounds: usize,
@@ -2005,6 +2077,7 @@ async fn run_agentic_qa_impl(
             .map(|question| {
                 run_one_agentic_question(
                     memory_ref,
+                    answerer,
                     judge,
                     question,
                     k,
@@ -2535,6 +2608,36 @@ mod run_qa_tests {
             let n = self.call.fetch_add(1, Ordering::SeqCst);
             Ok(n % 2 == 0)
         }
+    }
+
+    // A weak-answerer stand-in: echoes a fixed completion so the answerer path
+    // can be exercised as a trait object independent of the grader.
+    struct StubCompleter {
+        reply: String,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Completer for StubCompleter {
+        async fn complete(&self, _prompt: String) -> Result<String, QaError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.reply.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn completer_trait_object_dispatches() {
+        let c = StubCompleter {
+            reply: "ANSWER: 42".to_string(),
+            calls: AtomicUsize::new(0),
+        };
+        let dyn_c: &dyn Completer = &c;
+        let out = dyn_c
+            .complete("what is the answer?".to_string())
+            .await
+            .unwrap();
+        assert_eq!(out, "ANSWER: 42");
+        assert_eq!(c.calls.load(Ordering::SeqCst), 1);
     }
 
     fn fixture() -> Vec<EvalConversation> {
