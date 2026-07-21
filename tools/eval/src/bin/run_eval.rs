@@ -258,10 +258,19 @@ async fn main() -> Result<(), String> {
             return run_agentic_facts_only(&conversations, facts, &mut w).await;
         }
         // `--distill` = facts-primary (raw excluded); `--distill-keep-raw` =
-        // augment (distill on, raw turns retained in search).
+        // augment (distill on, raw turns retained in search);
+        // `--exclude-superseded` = bi-temporal (drop stale facts after updates).
         let keep_raw = args.iter().any(|a| a == "--distill-keep-raw");
+        let exclude_superseded = args.iter().any(|a| a == "--exclude-superseded");
         let distill = keep_raw || args.iter().any(|a| a == "--distill");
-        return run_agentic_qa_only(&conversations, distill, !keep_raw, &mut w).await;
+        return run_agentic_qa_only(
+            &conversations,
+            distill,
+            !keep_raw,
+            exclude_superseded,
+            &mut w,
+        )
+        .await;
     }
     if growth_only {
         return run_growth_and_qa(&conversations, grow_100k, &mut w).await;
@@ -888,14 +897,31 @@ async fn run_qa_reflect_only(
 /// distillation write path (DistillationMode::On, KG on). `exclude_raw` controls
 /// whether raw source turns are dropped from search: `true` = facts-primary
 /// (facts replace raw in retrieval), `false` = augment (facts ADD alongside raw,
-/// so the verbatim fallback is preserved). `distill=false` returns the default
-/// config (today's raw-turn behavior).
-fn distillation_config(distill: bool, exclude_raw: bool) -> synaptic::MemoryConfig {
+/// so the verbatim fallback is preserved). `exclude_superseded` drops memories
+/// the write path marked bi-temporally superseded (a later fact contradicted
+/// them), so retrieval returns the current fact after an update. Supersession
+/// marking runs whenever the knowledge graph is on (independent of distillation),
+/// so `exclude_superseded` is applied to whatever config `distill` selects —
+/// including the default config — without forcing distillation on (which would
+/// confound the bi-temporal isolation with fact-storage effects).
+fn distillation_config(
+    distill: bool,
+    exclude_raw: bool,
+    exclude_superseded: bool,
+) -> synaptic::MemoryConfig {
     if distill {
         synaptic::MemoryConfig {
             distillation: synaptic::memory::reasoning::DistillationMode::On,
             enable_knowledge_graph: true,
             retrieval_excludes_raw_sources: exclude_raw,
+            retrieval_excludes_superseded: exclude_superseded,
+            ..Default::default()
+        }
+    } else if exclude_superseded {
+        // Bi-temporal without distillation: default config (KG on) already runs
+        // supersession marking; just drop superseded memories from retrieval.
+        synaptic::MemoryConfig {
+            retrieval_excludes_superseded: true,
             ..Default::default()
         }
     } else {
@@ -910,7 +936,7 @@ mod distill_flag_tests {
 
     #[test]
     fn distill_flag_builds_facts_primary_config() {
-        let cfg = distillation_config(true, true);
+        let cfg = distillation_config(true, true, false);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(cfg.enable_knowledge_graph);
         assert!(cfg.retrieval_excludes_raw_sources);
@@ -919,16 +945,35 @@ mod distill_flag_tests {
     #[test]
     fn distill_keep_raw_augments() {
         // Augment mode: distillation on, but raw turns retained in search.
-        let cfg = distillation_config(true, false);
+        let cfg = distillation_config(true, false, false);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(cfg.enable_knowledge_graph);
         assert!(!cfg.retrieval_excludes_raw_sources);
     }
 
     #[test]
+    fn exclude_superseded_bitemporal_without_distill() {
+        // Bi-temporal without distillation: supersession marking runs whenever
+        // the KG is on (default), so we just drop superseded memories — no need
+        // to force distillation on (which would confound the isolation).
+        let cfg = distillation_config(false, false, true);
+        assert_eq!(cfg.distillation, DistillationMode::Off);
+        assert!(cfg.enable_knowledge_graph);
+        assert!(cfg.retrieval_excludes_superseded);
+    }
+
+    #[test]
+    fn distill_with_exclude_superseded_sets_both() {
+        let cfg = distillation_config(true, false, true);
+        assert_eq!(cfg.distillation, DistillationMode::On);
+        assert!(!cfg.retrieval_excludes_raw_sources);
+        assert!(cfg.retrieval_excludes_superseded);
+    }
+
+    #[test]
     fn no_distill_flag_is_default() {
         // Library default is Off (opt-in) after the A/B negative result.
-        let cfg = distillation_config(false, true);
+        let cfg = distillation_config(false, true, false);
         assert_eq!(cfg.distillation, DistillationMode::Off);
     }
 }
@@ -937,6 +982,7 @@ async fn run_agentic_qa_only(
     conversations: &[EvalConversation],
     distill: bool,
     exclude_raw: bool,
+    exclude_superseded: bool,
     w: &mut impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     w("== Agentic answer-guided retrieval QA (--agentic-qa) ==".to_string())?;
@@ -968,7 +1014,7 @@ async fn run_agentic_qa_only(
         max_rounds,
         grounded,
         ground_verify,
-        distillation_config(distill, exclude_raw),
+        distillation_config(distill, exclude_raw, exclude_superseded),
     )
     .await
     .map_err(|e| e.to_string())?;
