@@ -180,8 +180,17 @@ impl AgentMemory {
     /// Metadata field name used to tag a memory as a raw source that
     /// write-time distillation has summarized into fact-memories. Consulted
     /// by retrieval when `MemoryConfig::retrieval_excludes_raw_sources` is set.
-    #[allow(dead_code)]
     const RAW_SOURCE_FIELD: &'static str = "raw_source";
+
+    #[cfg(all(feature = "embeddings", test))]
+    fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
+        self.reasoner = r;
+    }
+
+    #[cfg(all(feature = "embeddings", test))]
+    async fn get_entry_for_test(&self, key: &str) -> Option<MemoryEntry> {
+        self.storage.retrieve(key).await.ok().flatten()
+    }
 
     /// Create a new agent memory system with the given configuration
     #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
@@ -787,6 +796,7 @@ impl AgentMemory {
         if extraction.facts.is_empty() {
             return Ok(());
         }
+        let mut stored_any_fact = false;
         for (i, fact) in extraction.facts.iter().enumerate() {
             let neighbors = self.neighbor_facts(&entry.key, fact, 5).await?;
             let resolution = reasoner.resolve(fact, &neighbors).await?;
@@ -804,9 +814,9 @@ impl AgentMemory {
                 self.mark_superseded(&old_key).await?;
             }
 
-            // Optionally persist the extracted fact as its own retrievable
-            // memory so search surfaces distilled facts, not just raw turns.
-            if self._config.store_extracted_facts && !fact.text.trim().is_empty() {
+            // Persist the extracted fact as its own retrievable memory so
+            // search surfaces distilled facts, not just raw turns.
+            if self.distillation_live && !fact.text.trim().is_empty() {
                 let fact_key = format!("{}::fact{}", entry.key, i);
                 self.storing_facts = true;
                 // Box::pin breaks the recursive-future size cycle
@@ -814,6 +824,33 @@ impl AgentMemory {
                 let result = Box::pin(self.store_with_report(&fact_key, &fact.text)).await;
                 self.storing_facts = false;
                 result?;
+                stored_any_fact = true;
+            }
+        }
+        // Failure-ordering invariant: tag the raw turn as a summarized source
+        // ONLY after ≥1 fact has been stored. If extraction or fact storage
+        // failed above (propagated via `?`), we never reach here, so the raw
+        // turn stays untagged and searchable — a distillation outage degrades
+        // to raw-turn retrieval rather than hiding a turn with no replacement.
+        if stored_any_fact {
+            self.mark_raw_source(&entry.key).await?;
+        }
+        Ok(())
+    }
+
+    /// Tag a raw source turn as summarized-by-distillation (facts-primary
+    /// retrieval). Mirrors [`mark_superseded`]: records `raw_source` in the
+    /// entry's custom fields and persists it, without re-running reasoning.
+    #[cfg(feature = "embeddings")]
+    async fn mark_raw_source(&mut self, key: &str) -> Result<()> {
+        if let Some(mut entry) = self.storage.retrieve(key).await? {
+            entry
+                .metadata
+                .custom_fields
+                .insert(Self::RAW_SOURCE_FIELD.to_string(), Utc::now().to_rfc3339());
+            self.storage.store(&entry).await?;
+            if self.state.has_memory(key) {
+                self.state.add_memory(entry);
             }
         }
         Ok(())
@@ -1849,6 +1886,99 @@ pub enum StorageBackend {
 #[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    // A stub reasoner that returns a fixed set of facts (or an error) so the write
+    // path is testable without an LLM.
+    #[cfg(feature = "embeddings")]
+    #[derive(Clone)]
+    struct StubReasoner {
+        facts: Vec<String>,
+        fail: bool,
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[async_trait::async_trait]
+    impl memory::reasoning::MemoryReasoner for StubReasoner {
+        async fn extract(
+            &self,
+            _text: &str,
+            _ctx: &memory::reasoning::ExtractionContext,
+        ) -> Result<memory::reasoning::Extraction> {
+            if self.fail {
+                return Err(crate::error::MemoryError::ProcessingError(
+                    "stub extract failure".to_string(),
+                ));
+            }
+            Ok(memory::reasoning::Extraction {
+                facts: self
+                    .facts
+                    .iter()
+                    .map(|t| memory::reasoning::Fact {
+                        text: t.clone(),
+                        entities: Vec::new(),
+                        relations: Vec::new(),
+                    })
+                    .collect(),
+            })
+        }
+        async fn resolve(
+            &self,
+            _candidate: &memory::reasoning::Fact,
+            _neighbors: &[memory::reasoning::NeighborFact],
+        ) -> Result<memory::reasoning::ConflictResolution> {
+            Ok(memory::reasoning::ConflictResolution::Insert)
+        }
+        async fn synthesize(
+            &self,
+            _cluster: &[MemoryEntry],
+        ) -> Result<Option<memory::reasoning::Insight>> {
+            Ok(None)
+        }
+        fn name(&self) -> &str {
+            "StubReasoner"
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_tags_raw_source_after_facts_land() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin last year").await.unwrap();
+
+        // Raw turn is tagged; the fact memory exists and is not tagged.
+        let raw = mem.get_entry_for_test("turn1").await.unwrap();
+        assert!(raw.metadata.custom_fields.contains_key("raw_source"));
+        let fact = mem.get_entry_for_test("turn1::fact0").await.unwrap();
+        assert!(!fact.metadata.custom_fields.contains_key("raw_source"));
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn distillation_failure_leaves_raw_untagged() {
+        let config = MemoryConfig {
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec![],
+            fail: true,
+        }));
+        // Write still succeeds (best-effort); raw turn stays searchable/untagged.
+        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        let raw = mem.get_entry_for_test("turn1").await.unwrap();
+        assert!(!raw.metadata.custom_fields.contains_key("raw_source"));
+    }
 
     #[test]
     fn test_memory_config_default() {
