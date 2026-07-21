@@ -1851,3 +1851,62 @@ is the correct foundation: with a stronger extractor, augment could add lift wit
 the deprecated `store_extracted_facts = true`) now adds facts alongside raw turns rather than
 replacing them, so opting in is safe by default. Facts-primary (raw excluded) remains available by
 setting the flag to `true`, for callers who measure it as a net win on their own extractor/workload.
+
+## Three capability-validation threads: all masked by a strong answerer (2026-07-21)
+
+Following the distillation investigation, we measured the three remaining v2 capability questions on
+their target instruments. All three came back neutral/masked — a coherent, honest result that sharpens
+the scorecard's core lesson.
+
+**Thread 1 — bi-temporal (supersede-on-update).** LongMemEval knowledge-update, n=40, codex agentic,
+heuristic supersession marking; only `retrieval_excludes_superseded` differs (new `--exclude-superseded`
+eval flag):
+
+| arm | accuracy |
+|---|---|
+| superseded retained | 0.925 (37/40) |
+| superseded excluded (bi-temporal) | 0.950 (38/40) |
+
++1 question, within codex noise at n=40. Codex is near-ceiling (mean rounds = 1.0, no follow-ups) — it
+resolves updates from the retrieved context itself, so the retrieval-precision value of dropping stale
+facts is **masked**. The mechanism is proven (library unit test: Berlin→Munich, flag on returns only
+Munich); the end-to-end value needs a weak answerer to surface.
+
+**Thread 2 — reflection/synthesis.** LongMemEval multi-session (the synthesis-requiring type), n=40,
+single-shot codex, `--reflect` vs baseline:
+
+| arm | accuracy |
+|---|---|
+| baseline | 0.425 (17/40) |
+| + reflection (216 insights synthesized) | 0.450 (18/40) |
+
++1 question, within noise — **neutral even on the question type reflection should most help**. 216
+insights were synthesized and made retrievable but didn't move accuracy: the heuristic synthesizer
+(TF-IDF clustering) doesn't produce the specific cross-turn facts these questions need, and codex
+already synthesizes across the retrieved raw turns. A fair test needs an LLM synthesizer.
+
+**Thread 3 — distillation lift with a stronger extractor.** Matched conv-0 (n=198), augment mode,
+qwen2.5-**14b** extractor vs the earlier 7b:
+
+| arm | accuracy |
+|---|---|
+| raw baseline | 0.5051 |
+| augment (7b) | 0.5000 |
+| augment (14b) | 0.4697 |
+
+A stronger extractor does **not** turn augment into a lift (14b within noise of baseline, marginally
+below 7b). In augment mode raw turns already carry the answers, so single-turn extraction — however
+good the model — only *duplicates* what raw turns hold. Per-turn distillation adds no retrievable
+signal on LoCoMo regardless of extractor strength; a real lift would need cross-turn synthesis, not
+better per-turn facts.
+
+**The throughline (confirmed across three fresh measurements).** Retrieval-side capabilities
+(distillation, bi-temporal validity, reflection) are **masked by a strong answerer**: codex reads
+verbatim detail (masks distillation), resolves updates from context (masks bi-temporal), and
+synthesizes across retrieved turns (masks reflection). Each would matter with a *weak* answerer, or
+where first-stage retrieval — not answering — is the bottleneck. This is exactly what the v2 scorecard
+predicted; measuring it on the target instruments confirms it rather than refuting it. The honest
+consequence: none of these three is a shippable default lift on LoCoMo/LongMemEval with a frontier
+answerer, and each needs a weak-answerer (or LLM-synthesizer) instrument — which the agentic eval path
+does not yet support — to demonstrate its value. (Caveats throughout: n≈40 subsets, heuristic
+supersession/synthesis, single-conversation extractor comparison.)
