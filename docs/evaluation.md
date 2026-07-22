@@ -1971,3 +1971,28 @@ facts-primary distillation is a win. The augment default (raw retained; `retriev
 require the facts to add signal raw turns lack — i.e. cross-turn synthesis or entity linking, not
 per-turn extraction — which is a different mechanism than what this feature implements. Caveats:
 single conversation (n=199), 7b extractor.
+
+## Bi-temporal, final: mechanism correct, fires 0× on realistic updates, LLM detection impractical (2026-07-21)
+
+Pulling the bi-temporal thread to its end across three measurements:
+
+1. **Mechanism is correct** — library unit test (Berlin→Munich; `retrieval_excludes_superseded` on
+   returns only Munich).
+2. **Heuristic reasoner fires 0×** — with the weak-answerer instrument on LongMemEval knowledge-update
+   (n=40, qwen answers / codex grades), `--exclude-superseded` produced **identical predictions on all
+   40 questions**. The heuristic supersede rule (same subject + predicate, different object) does not
+   trigger on natural-language updates, so nothing is ever dropped.
+3. **LLM-reasoner detection is impractical to test at scale locally** — pointing the library reasoner
+   at a local 7B (so `resolve` could detect contradictions in natural language) makes the write path
+   run a synchronous LLM extract + per-fact resolve *per turn*: ~5.7 s per extraction call, ~6 min per
+   LongMemEval instance, ~4 h for a 20-instance A/B. Aborted as impractical.
+
+**The real bottleneck is architectural, not the capability.** This is the same wall the distillation
+runs hit: **the write path performs synchronous per-turn LLM calls**, which is too slow for both
+write-time distillation and LLM-based supersession detection at any real scale with an accessible
+model. Bi-temporal's value question is therefore *gated on write-path throughput*, not on the
+retrieval mechanism (which works) or the answerer (a weak answerer still showed nothing, because
+nothing fired). The productive next step for every write-side LLM capability (distillation,
+supersession, reflection synthesis) is the same: **move LLM enrichment off the synchronous per-turn
+write path** — batch it, do it asynchronously, or gate it to a cheap detector — so it can run at scale
+without stalling ingest. That is an engineering change to the write path, not another eval.
