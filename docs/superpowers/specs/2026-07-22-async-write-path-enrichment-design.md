@@ -96,10 +96,11 @@ This spec decouples the fast raw write from the slow LLM enrichment and makes en
    `embedding_manager` (a separate, already best-effort subsystem, `src/lib.rs:100`) is **not** fed
    for deferred-enriched facts — a documented, minor gap that does not affect pipeline/`storage`
    search retrievability (the real search path). Storage is `Arc<dyn Storage + Send + Sync>` with
-   `&self` methods, so concurrent access is sound. Deferred/Background facts likewise do **not**
-   get a knowledge-graph memory node, temporal tracking, or analytics events (unlike the Inline
-   path's `store_with_report`), so graph-based retrieval over deferred facts differs from Inline —
-   also documented, not expanded in scope here.
+   `&self` methods, so concurrent access is sound. Deferred/Background facts DO get a knowledge-graph
+   memory node (the same `plan/apply_memory_node_plan` + edge-detection the Inline path runs), so
+   graph-based retrieval over deferred facts matches Inline. The only remaining Inline-vs-deferred
+   divergence is temporal tracking + analytics events (owned, non-`Arc` subsystems the shared path
+   cannot reach) — best-effort observability, not retrieval.
 
 5. **`enrich_pending()`** — `pub async fn enrich_pending(&self) -> EnrichmentReport`. Drains the
    queue, spawns bounded-concurrent (`Semaphore`, `enrichment_concurrency`) `enrich_one` tasks

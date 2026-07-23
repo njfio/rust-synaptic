@@ -117,7 +117,7 @@ mod enrich_one_engine {
             // search surfaces distilled facts, not just raw turns.
             if params.distillation_live && !fact.text.trim().is_empty() {
                 let fact_key = format!("{key}::fact{i}");
-                store_fact_shared(storage, state, scoring, &fact_key, &fact.text).await?;
+                store_fact_shared(storage, state, kg, scoring, &fact_key, &fact.text).await?;
                 stored_any_fact = true;
                 outcome.facts_stored += 1;
             }
@@ -141,15 +141,17 @@ mod enrich_one_engine {
     /// scoring-provider embed so the fact stays pipeline-retrievable (this
     /// mirrors what `AgentMemory::store_with_report` does for every entry).
     ///
-    /// Deferred/Background fact-memories are written to storage + state and
-    /// the scoring corpus (so they are retrievable via storage/dense/sparse
-    /// search and are checkpointable), but -- unlike the Inline path -- do
-    /// NOT get a knowledge-graph memory node, temporal tracking, or
-    /// analytics events. Graph-based retrieval over deferred facts therefore
-    /// differs from Inline.
+    /// Deferred/Background fact-memories are written to storage + state, the
+    /// scoring corpus, AND a knowledge-graph node (below) — so they are
+    /// retrievable via storage/dense/sparse AND graph-based retrieval,
+    /// matching the Inline path. The only remaining Inline-vs-deferred
+    /// divergence is temporal tracking and analytics events (owned,
+    /// non-`Arc` subsystems that this shared path cannot reach); both are
+    /// best-effort observability, not retrieval.
     async fn store_fact_shared(
         storage: &Arc<dyn Storage + Send + Sync>,
         state: &Arc<RwLock<AgentState>>,
+        kg: &Arc<RwLock<MemoryKnowledgeGraph>>,
         scoring: &Option<Arc<dyn EmbeddingProvider>>,
         fact_key: &str,
         fact_text: &str,
@@ -161,6 +163,39 @@ mod enrich_one_engine {
         );
         storage.store(&entry).await?;
         state.write().await.add_memory(entry.clone());
+
+        // Give the fact-memory a knowledge-graph node (and detected relationship
+        // edges), matching the inline write path (`store_with_report`,
+        // src/lib.rs) so graph-based retrieval sees deferred/background facts
+        // exactly as it sees inline ones. Locks are short (read to plan/detect,
+        // write to apply/add) and never held across the awaits below; the LLM
+        // calls in `enrich_one` already completed before this point. Best-effort
+        // like the inline path: a KG failure degrades graph coverage of this
+        // fact but never fails the fact store.
+        let kg_result: Result<()> = async {
+            let plan = kg.read().await.plan_memory_node_update(&entry).await?;
+            let (node_id, needs_detection) = kg
+                .write()
+                .await
+                .apply_memory_node_plan(plan, &entry)
+                .await?;
+            if needs_detection {
+                let edges = kg
+                    .read()
+                    .await
+                    .detect_relationship_edges(node_id, &entry)
+                    .await?;
+                if !edges.is_empty() {
+                    kg.write().await.add_detected_edges(edges).await?;
+                }
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(e) = kg_result {
+            tracing::warn!(error = %e, fact_key, "knowledge-graph node add degraded for deferred fact");
+        }
+
         if let Some(provider) = scoring {
             // Keep the retrieval scoring corpus live so the pipeline can
             // rank the fact; best-effort like the inline write path.
@@ -422,6 +457,54 @@ mod enrich_one_engine {
                 .metadata
                 .custom_fields
                 .contains_key(RAW_SOURCE_FIELD));
+        }
+
+        #[tokio::test]
+        async fn enrich_one_gives_deferred_fact_a_kg_node() {
+            // Parity with the inline write path: a deferred/background fact-memory
+            // gets a knowledge-graph node, so graph-based retrieval sees it.
+            let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
+            let kg = Arc::new(RwLock::new(MemoryKnowledgeGraph::new(
+                GraphConfig::default(),
+            )));
+            let state = Arc::new(RwLock::new(AgentState::new(uuid::Uuid::new_v4())));
+            let reasoner: Arc<dyn MemoryReasoner> = Arc::new(StubReasoner);
+            let scoring: Option<Arc<dyn EmbeddingProvider>> = None;
+
+            let raw = MemoryEntry::new(
+                "turn1".to_string(),
+                "Alice: Berlin".to_string(),
+                MemoryType::ShortTerm,
+            );
+            storage.store(&raw).await.unwrap();
+            state.write().await.add_memory(raw.clone());
+
+            enrich_one(
+                &storage,
+                &kg,
+                &state,
+                &reasoner,
+                &scoring,
+                EnrichmentParams {
+                    distillation_live: true,
+                },
+                "turn1",
+                "Alice: Berlin",
+            )
+            .await
+            .unwrap();
+
+            // The fact-memory must have a KG node (pre-fix this was None).
+            let node = kg
+                .read()
+                .await
+                .get_node_for_memory("turn1::fact0")
+                .await
+                .unwrap();
+            assert!(
+                node.is_some(),
+                "deferred fact-memory should have a knowledge-graph node"
+            );
         }
     }
 }
