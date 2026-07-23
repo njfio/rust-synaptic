@@ -300,7 +300,7 @@ mod external_integration_tests {
         assert!(!search_results.is_empty());
 
         // Test stats
-        let stats = memory.stats();
+        let stats = memory.stats().await;
         assert!(stats.short_term_count > 0);
 
         Ok(())

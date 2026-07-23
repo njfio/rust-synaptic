@@ -204,7 +204,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("\n Example 9: Final System State");
     println!("-------------------------------");
 
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     println!("Memory Statistics:");
     println!("  • Short-term memories: {}", stats.short_term_count);
     println!("  • Long-term memories: {}", stats.long_term_count);

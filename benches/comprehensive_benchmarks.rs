@@ -546,7 +546,7 @@ fn bench_throughput_validation(c: &mut Criterion) {
                     }
                     3 => {
                         // Stats operation (25%)
-                        let stats = memory.stats();
+                        let stats = memory.stats().await;
                         black_box(stats);
                     }
                     _ => unreachable!(),

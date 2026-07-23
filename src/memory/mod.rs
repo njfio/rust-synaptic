@@ -10,6 +10,7 @@
 pub mod checkpoint;
 pub mod consolidation;
 pub mod context;
+pub mod enrichment;
 pub mod forgetting;
 pub mod indexing;
 pub mod knowledge_graph;

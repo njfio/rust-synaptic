@@ -87,7 +87,10 @@ use uuid::Uuid;
 /// Main memory system for AI agents
 pub struct AgentMemory {
     _config: MemoryConfig,
-    state: memory::state::AgentState,
+    /// Immutable session identifier, cached so `session_id()` stays sync
+    /// (the value equals the id passed to `AgentState::new`).
+    session_id: Uuid,
+    state: std::sync::Arc<tokio::sync::RwLock<memory::state::AgentState>>,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     checkpoint_manager: memory::checkpoint::CheckpointManager,
     /// Knowledge graph shared with the retrieval pipeline's `GraphRetriever`
@@ -169,6 +172,39 @@ pub struct AgentMemory {
     /// candidate cap regardless of store size.
     #[cfg(all(feature = "embeddings", feature = "test-utils"))]
     neighbor_examined_max: std::sync::atomic::AtomicUsize,
+    /// Entries awaiting enrichment when `MemoryConfig::enrichment_mode` is
+    /// `Deferred` or `Background` (see `memory::enrichment`).
+    /// Shared cell holding the active reasoner, read by both `enrich_pending`
+    /// and the Background worker loop. Indirection exists so
+    /// `set_reasoner_for_test` (called after construction) can inject a stub
+    /// into an already-spawned worker task rather than the value it captured
+    /// at spawn time.
+    #[cfg(feature = "embeddings")]
+    reasoner_cell: Arc<tokio::sync::Mutex<Arc<dyn memory::reasoning::MemoryReasoner>>>,
+    /// Wakes the Background worker after `store()` enqueues an entry, and
+    /// after `shutdown()`/`wait_for_enrichment()` request a drain.
+    #[cfg(feature = "embeddings")]
+    enrichment_notify: Arc<tokio::sync::Notify>,
+    /// Set by `shutdown()`; the worker exits its loop once this is true AND
+    /// the queue is empty.
+    #[cfg(feature = "embeddings")]
+    enrichment_shutdown: Arc<std::sync::atomic::AtomicBool>,
+    /// Number of entries currently drained from `enrichment_queue` but not
+    /// yet finished enriching. `drain_and_enrich` moves entries into a local
+    /// batch before running them concurrently, so the queue itself is empty
+    /// while enrichment is still in flight; `wait_for_enrichment` must poll
+    /// this in addition to the queue to avoid returning early.
+    #[cfg(feature = "embeddings")]
+    enrichment_inflight: Arc<std::sync::atomic::AtomicUsize>,
+    /// Handle to the spawned Background worker task; `None` unless
+    /// `MemoryConfig::enrichment_mode == Background` and a knowledge graph is
+    /// configured. Taken (and awaited) by `shutdown()`.
+    #[cfg(feature = "embeddings")]
+    enrichment_worker: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(feature = "embeddings")]
+    enrichment_queue: std::sync::Arc<
+        tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
+    >,
 }
 
 impl AgentMemory {
@@ -179,13 +215,82 @@ impl AgentMemory {
     const RAW_SOURCE_FIELD: &'static str = "raw_source";
 
     #[cfg(all(feature = "embeddings", test))]
-    fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
-        self.reasoner = r;
+    async fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
+        self.reasoner = r.clone();
+        *self.reasoner_cell.lock().await = r;
     }
 
     #[cfg(all(feature = "embeddings", test))]
     async fn get_entry_for_test(&self, key: &str) -> Option<MemoryEntry> {
         self.storage.retrieve(key).await.ok().flatten()
+    }
+
+    #[cfg(all(feature = "embeddings", test))]
+    async fn enrichment_queue_len(&self) -> usize {
+        self.enrichment_queue.lock().await.len()
+    }
+
+    /// Drain the pending-enrichment queue and enrich all entries with bounded
+    /// concurrency (`MemoryConfig::enrichment_concurrency`). Best-effort: a
+    /// per-entry failure is counted in the report, never aborts the batch.
+    /// Only meaningful in Deferred/Background modes (Inline leaves the queue
+    /// empty). Takes `&self` — mutation is via the Arc/RwLock handles.
+    #[cfg(feature = "embeddings")]
+    pub async fn enrich_pending(&self) -> memory::enrichment::EnrichmentReport {
+        let Some(ref kg) = self.knowledge_graph else {
+            return memory::enrichment::EnrichmentReport::default();
+        };
+        let params = memory::enrichment::EnrichmentParams {
+            distillation_live: self.distillation_live,
+        };
+        let concurrency = self._config.enrichment_concurrency.max(1);
+        let reasoner = self.reasoner_cell.lock().await.clone();
+        memory::enrichment::drain_and_enrich(
+            &self.enrichment_queue,
+            &self.storage,
+            kg,
+            &self.state,
+            &reasoner,
+            &self.retrieval_scoring_provider,
+            params,
+            concurrency,
+            &self.enrichment_inflight,
+        )
+        .await
+    }
+
+    /// Nudge the Background worker and poll until the enrichment queue
+    /// drains. In non-Background modes the queue only fills via an explicit
+    /// `enrich_pending()` call site (Deferred), so this returns immediately
+    /// whenever the queue happens to be empty.
+    #[cfg(feature = "embeddings")]
+    pub async fn wait_for_enrichment(&self) {
+        loop {
+            let queue_empty = self.enrichment_queue.lock().await.is_empty();
+            let inflight_zero = self
+                .enrichment_inflight
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0;
+            if queue_empty && inflight_zero {
+                return;
+            }
+            self.enrichment_notify.notify_one();
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
+
+    /// Signal the Background worker to stop, wake it, and await its clean
+    /// exit (it drains any remaining queued entries first). No-op if no
+    /// worker was spawned (non-Background modes) or `shutdown` was already
+    /// called (the second call finds `enrichment_worker` already `None`).
+    #[cfg(feature = "embeddings")]
+    pub async fn shutdown(&mut self) {
+        self.enrichment_shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.enrichment_notify.notify_one();
+        if let Some(h) = self.enrichment_worker.take() {
+            let _ = h.await;
+        }
     }
 
     /// Create a new agent memory system with the given configuration
@@ -217,7 +322,8 @@ impl AgentMemory {
             config.checkpoint_interval
         );
 
-        let state = memory::state::AgentState::new(config.session_id.unwrap_or_else(Uuid::new_v4));
+        let session_id = config.session_id.unwrap_or_else(Uuid::new_v4);
+        let state = memory::state::AgentState::new(session_id);
         tracing::debug!("Agent state initialized");
 
         // Initialize knowledge graph if enabled
@@ -505,9 +611,80 @@ impl AgentMemory {
             None
         };
 
+        let state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+        #[cfg(feature = "embeddings")]
+        let reasoner_cell = Arc::new(tokio::sync::Mutex::new(Arc::clone(&reasoner)));
+        #[cfg(feature = "embeddings")]
+        let enrichment_notify = Arc::new(tokio::sync::Notify::new());
+        #[cfg(feature = "embeddings")]
+        let enrichment_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(feature = "embeddings")]
+        let enrichment_inflight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        #[cfg(feature = "embeddings")]
+        let enrichment_queue: std::sync::Arc<
+            tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
+        > = std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::VecDeque::new()));
+
+        // Spawn the Background worker before the entries it captures are
+        // moved into `agent` below; it operates purely on shared `Arc`
+        // handles, so it can run independently of the `AgentMemory` value.
+        #[cfg(feature = "embeddings")]
+        let enrichment_worker = if config.enrichment_mode
+            == memory::enrichment::EnrichmentMode::Background
+            && knowledge_graph.is_some()
+        {
+            let queue = enrichment_queue.clone();
+            let notify = enrichment_notify.clone();
+            let shutdown = enrichment_shutdown.clone();
+            let inflight = enrichment_inflight.clone();
+            let storage = storage.clone();
+            let Some(kg) = knowledge_graph.clone() else {
+                unreachable!("guarded by knowledge_graph.is_some() above")
+            };
+            let worker_state = state.clone();
+            let reasoner_cell = reasoner_cell.clone();
+            let scoring = retrieval_scoring_provider.clone();
+            let params = memory::enrichment::EnrichmentParams { distillation_live };
+            let concurrency = config.enrichment_concurrency.max(1);
+            Some(tokio::spawn(async move {
+                loop {
+                    // Drain whatever is queued right now. `Notify::notify_one`
+                    // coalesces concurrent notifications into a single permit,
+                    // so a `store()` while we're already draining plus a
+                    // subsequent `shutdown()` can both collapse onto one
+                    // permit; draining first (before checking shutdown) makes
+                    // sure any entry queued before shutdown is always
+                    // enriched, and the loop then exits below without parking
+                    // on a `notified()` that will never be woken again.
+                    let reasoner = reasoner_cell.lock().await.clone();
+                    memory::enrichment::drain_and_enrich(
+                        &queue,
+                        &storage,
+                        &kg,
+                        &worker_state,
+                        &reasoner,
+                        &scoring,
+                        params,
+                        concurrency,
+                        &inflight,
+                    )
+                    .await;
+                    if shutdown.load(std::sync::atomic::Ordering::SeqCst)
+                        && queue.lock().await.is_empty()
+                    {
+                        break;
+                    }
+                    notify.notified().await;
+                }
+            }))
+        } else {
+            None
+        };
+
         // Build base agent without multimodal memory initialized
         let agent = Self {
             _config: config.clone(),
+            session_id,
             state,
             storage,
             checkpoint_manager,
@@ -518,6 +695,16 @@ impl AgentMemory {
             embedding_manager,
             #[cfg(feature = "embeddings")]
             reasoner,
+            #[cfg(feature = "embeddings")]
+            reasoner_cell,
+            #[cfg(feature = "embeddings")]
+            enrichment_notify,
+            #[cfg(feature = "embeddings")]
+            enrichment_shutdown,
+            #[cfg(feature = "embeddings")]
+            enrichment_inflight,
+            #[cfg(feature = "embeddings")]
+            enrichment_worker,
             #[cfg(feature = "embeddings")]
             reflection_engine,
             #[cfg(feature = "embeddings")]
@@ -546,6 +733,8 @@ impl AgentMemory {
             retrieval_tfidf_stats,
             #[cfg(all(feature = "embeddings", feature = "test-utils"))]
             neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(feature = "embeddings")]
+            enrichment_queue,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -639,7 +828,7 @@ impl AgentMemory {
         let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::ShortTerm);
 
         // Check if this is an update to existing memory
-        let is_update = self.state.has_memory(key);
+        let is_update = self.state.read().await.has_memory(key);
         let change_type = if is_update {
             memory::temporal::ChangeType::Updated
         } else {
@@ -649,7 +838,7 @@ impl AgentMemory {
         tracing::debug!("Memory operation type: {:?}", change_type);
 
         self.storage.store(&entry).await?;
-        self.state.add_memory(entry.clone());
+        self.state.write().await.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
 
         // Track accumulation for triggered reflection.
@@ -762,18 +951,43 @@ impl AgentMemory {
         // extraction does not recurse.
         #[cfg(feature = "embeddings")]
         if self.knowledge_graph.is_some() && !self.storing_facts {
-            if let Err(e) = self.reason_over_store(&entry).await {
-                tracing::warn!(error = %e, "reasoning degraded during store");
-                degradations.reasoning = Some(e.to_string());
+            match self._config.enrichment_mode {
+                memory::enrichment::EnrichmentMode::Inline => {
+                    if let Err(e) = self.reason_over_store(&entry).await {
+                        tracing::warn!(error = %e, "reasoning degraded during store");
+                        degradations.reasoning = Some(e.to_string());
+                    }
+                }
+                memory::enrichment::EnrichmentMode::Deferred
+                | memory::enrichment::EnrichmentMode::Background => {
+                    // Never enqueue a fact-memory (re-entrancy guard already
+                    // ensures fact stores set storing_facts, so we never reach
+                    // here for them; the key check is belt-and-braces).
+                    if !key.contains("::fact") {
+                        self.enrichment_queue.lock().await.push_back(
+                            memory::enrichment::PendingEnrichment {
+                                key: key.to_string(),
+                                value: value.to_string(),
+                            },
+                        );
+                        if self._config.enrichment_mode
+                            == memory::enrichment::EnrichmentMode::Background
+                        {
+                            self.enrichment_notify.notify_one();
+                        }
+                    }
+                }
             }
         }
 
         // Check if we need to create a checkpoint
-        if self.checkpoint_manager.should_checkpoint(&self.state) {
+        let state_guard = self.state.read().await;
+        if self.checkpoint_manager.should_checkpoint(&state_guard) {
             self.checkpoint_manager
-                .create_checkpoint(&self.state)
+                .create_checkpoint(&state_guard)
                 .await?;
         }
+        drop(state_guard);
 
         Ok(degradations)
     }
@@ -847,8 +1061,8 @@ impl AgentMemory {
                 .custom_fields
                 .insert(Self::RAW_SOURCE_FIELD.to_string(), Utc::now().to_rfc3339());
             self.storage.store(&entry).await?;
-            if self.state.has_memory(key) {
-                self.state.add_memory(entry);
+            if self.state.read().await.has_memory(key) {
+                self.state.write().await.add_memory(entry);
             }
         }
         Ok(())
@@ -869,8 +1083,8 @@ impl AgentMemory {
             self.storage.store(&entry).await?;
             // Keep in-memory state consistent (best-effort; state is the search
             // corpus for the non-pipeline path).
-            if self.state.has_memory(key) {
-                self.state.add_memory(entry);
+            if self.state.read().await.has_memory(key) {
+                self.state.write().await.add_memory(entry);
             }
         }
         Ok(())
@@ -1112,8 +1326,11 @@ impl AgentMemory {
         let mut entries: Vec<MemoryEntry> = Vec::with_capacity(pending.len());
         for key in &pending {
             // A pending memory may have been deleted since it was stored;
-            // reflection simply skips it.
-            if let Some(entry) = self.state.get_memory(key) {
+            // reflection simply skips it. Bind by value first so the write
+            // guard drops before the body (avoids holding it across the loop
+            // body / any future state access).
+            let maybe_entry = self.state.write().await.get_memory(key);
+            if let Some(entry) = maybe_entry {
                 entries.push(entry);
             }
         }
@@ -1161,7 +1378,7 @@ impl AgentMemory {
             .with_metadata(metadata);
 
         self.storage.store(&entry).await?;
-        self.state.add_memory(entry.clone());
+        self.state.write().await.add_memory(entry.clone());
 
         if let Some(ref kg) = self.knowledge_graph {
             let mut kg = kg.write().await;
@@ -1188,12 +1405,12 @@ impl AgentMemory {
     /// All insight memories produced by reflection (custom field
     /// `memory_source == "reflection"`), sorted by key for determinism.
     #[cfg(feature = "embeddings")]
-    pub fn insight_memories(&self) -> Vec<MemoryEntry> {
-        let mut insights: Vec<MemoryEntry> = self
-            .state
+    pub async fn insight_memories(&self) -> Vec<MemoryEntry> {
+        let state_guard = self.state.read().await;
+        let mut insights: Vec<MemoryEntry> = state_guard
             .get_short_term_memories()
             .values()
-            .chain(self.state.get_long_term_memories().values())
+            .chain(state_guard.get_long_term_memories().values())
             .filter(|e| {
                 e.metadata
                     .get_custom_field("memory_source")
@@ -1241,8 +1458,13 @@ impl AgentMemory {
         // Validate input
         validate_non_empty_string(key, "memory key")?;
 
-        // First check short-term memory
-        if let Some(mut entry) = self.state.get_memory(key) {
+        // First check short-term memory. Bind by value BEFORE the `if let`:
+        // an `if let ... = scrutinee` extends the scrutinee temporary (the
+        // write guard) across the ENTIRE body, and the body reacquires
+        // `self.state.write()` on the promotion path — holding both would
+        // deadlock (tokio RwLock is not reentrant).
+        let maybe_entry = self.state.write().await.get_memory(key);
+        if let Some(mut entry) = maybe_entry {
             tracing::debug!("Memory found in short-term memory");
 
             // Check if memory should be promoted to long-term
@@ -1256,7 +1478,7 @@ impl AgentMemory {
                     );
                     entry = pm.promote_memory(entry)?;
                     // Update in state and storage
-                    self.state.add_memory(entry.clone());
+                    self.state.write().await.add_memory(entry.clone());
                     self.storage.store(&entry).await?;
                 }
             }
@@ -1307,7 +1529,7 @@ impl AgentMemory {
             }
 
             // Add to state for future fast access
-            self.state.add_memory(entry.clone());
+            self.state.write().await.add_memory(entry.clone());
 
             // Refresh knowledge graph if enabled
             if let Some(ref kg) = self.knowledge_graph {
@@ -1375,6 +1597,8 @@ impl AgentMemory {
             // metadata (retrievals bump the state entry, not storage).
             let entry = self
                 .state
+                .read()
+                .await
                 .peek_memory(&stored.key)
                 .cloned()
                 .unwrap_or(stored);
@@ -1393,12 +1617,15 @@ impl AgentMemory {
                         "Forgetting pass demoting memory to short-term tier"
                     );
                     self.storage.store(&demoted).await?;
-                    if self.state.peek_memory(&demoted.key).is_some() {
+                    if self.state.read().await.peek_memory(&demoted.key).is_some() {
                         // Preserve real access metadata: relocating between
                         // tiers is not an access, so do not bump
                         // last_accessed/access_count (which would grant
                         // artificial recency protection on later passes).
-                        self.state.insert_preserving_access(demoted.clone());
+                        self.state
+                            .write()
+                            .await
+                            .insert_preserving_access(demoted.clone());
                     }
                     report.demoted.push(demoted.key);
                 }
@@ -1408,7 +1635,7 @@ impl AgentMemory {
                         retained_strength = strength,
                         "Forgetting pass evicting memory at lowest tier"
                     );
-                    self.state.remove_memory(&entry.key);
+                    self.state.write().await.remove_memory(&entry.key);
                     self.storage.delete(&entry.key).await?;
                     report.evicted.push(entry.key);
                 }
@@ -1468,7 +1695,10 @@ impl AgentMemory {
 
     /// Create a checkpoint of the current state
     pub async fn checkpoint(&self) -> Result<Uuid> {
-        self.checkpoint_manager.create_checkpoint(&self.state).await
+        let state_guard = self.state.read().await;
+        self.checkpoint_manager
+            .create_checkpoint(&state_guard)
+            .await
     }
 
     /// Restore from a checkpoint
@@ -1526,7 +1756,7 @@ impl AgentMemory {
 
         // Step 3: only now that storage matches the checkpoint exactly,
         // swap the in-process state cache.
-        self.state = restored_state;
+        *self.state.write().await = restored_state;
 
         Ok(())
     }
@@ -1534,22 +1764,23 @@ impl AgentMemory {
     /// Get current memory statistics
     /// Get the session ID for this agent memory instance
     pub fn session_id(&self) -> Uuid {
-        self.state.session_id()
+        self.session_id
     }
 
-    pub fn stats(&self) -> MemoryStats {
+    pub async fn stats(&self) -> MemoryStats {
+        let state_guard = self.state.read().await;
         MemoryStats {
-            short_term_count: self.state.short_term_memory_count(),
-            long_term_count: self.state.long_term_memory_count(),
-            total_size: self.state.total_memory_size(),
-            session_id: self.state.session_id(),
-            created_at: self.state.created_at(),
+            short_term_count: state_guard.short_term_memory_count(),
+            long_term_count: state_guard.long_term_memory_count(),
+            total_size: state_guard.total_memory_size(),
+            session_id: state_guard.session_id(),
+            created_at: state_guard.created_at(),
         }
     }
 
     /// Clear all memories (use with caution)
     pub async fn clear(&mut self) -> Result<()> {
-        self.state.clear();
+        self.state.write().await.clear();
         self.storage.clear().await?;
 
         // Clear knowledge graph if enabled
@@ -1658,8 +1889,8 @@ impl AgentMemory {
     }
 
     /// Check if a memory exists
-    pub fn has_memory(&self, key: &str) -> bool {
-        self.state.has_memory(key)
+    pub async fn has_memory(&self, key: &str) -> bool {
+        self.state.read().await.has_memory(key)
     }
 
     /// Semantic search using embeddings (if enabled)
@@ -1832,6 +2063,12 @@ pub struct MemoryConfig {
     /// augment recovered baseline accuracy (0.505 → 0.258 facts-primary vs 0.500
     /// augment). Only has an effect when distillation is live.
     pub retrieval_excludes_raw_sources: bool,
+    /// How write-path LLM enrichment is scheduled (see
+    /// [`memory::enrichment::EnrichmentMode`]). Default `Inline` (enrich
+    /// synchronously inside `store`), byte-for-byte today's behavior.
+    pub enrichment_mode: memory::enrichment::EnrichmentMode,
+    /// Bounded concurrency for `enrich_pending`/background enrichment. Default 8.
+    pub enrichment_concurrency: usize,
 }
 
 impl Default for MemoryConfig {
@@ -1892,6 +2129,8 @@ impl Default for MemoryConfig {
             // facts alongside raw turns rather than excluding raw from search.
             // The A/B showed exclusion is what hurt QA; augment ties baseline.
             retrieval_excludes_raw_sources: false,
+            enrichment_mode: memory::enrichment::EnrichmentMode::Inline,
+            enrichment_concurrency: 8,
         }
     }
 }
@@ -1967,6 +2206,216 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn enrichment_defaults_to_inline() {
+        let config = MemoryConfig::default();
+        assert_eq!(
+            config.enrichment_mode,
+            memory::enrichment::EnrichmentMode::Inline
+        );
+        assert_eq!(config.enrichment_concurrency, 8);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn deferred_mode_queues_without_inline_enrich() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
+        // Deferred: no fact-memory yet (enrichment not run), raw is present.
+        assert!(mem.get_entry_for_test("turn1").await.is_some());
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
+        assert_eq!(mem.enrichment_queue_len().await, 1);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn enrich_pending_processes_queue() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
+        let report = mem.enrich_pending().await;
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.facts_stored, 1);
+        assert_eq!(report.errors, 0);
+        // fact now retrievable + queue drained
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+        assert_eq!(mem.enrichment_queue_len().await, 0);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn background_mode_enriches_without_explicit_call() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        // No enrich_pending() call; the background worker drains it.
+        mem.wait_for_enrichment().await;
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+    }
+
+    // Regression test for the shutdown-hang bug: `Notify::notify_one`
+    // coalesces concurrent permits, so a `store()` racing a `shutdown()`
+    // could previously leave a queued entry undrained and park the worker
+    // forever, hanging `shutdown().await`. The drain-then-check loop always
+    // drains before checking the shutdown flag, so this must complete well
+    // within the timeout.
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn shutdown_drains_queued_entries_and_returns() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        // Immediately shut down without waiting for enrichment first; a
+        // pre-fix worker loop can park forever here.
+        tokio::time::timeout(std::time::Duration::from_secs(10), mem.shutdown())
+            .await
+            .expect("shutdown() hung: queued entry was never drained before exit");
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+    }
+
+    // Regression test for the early-return bug: `wait_for_enrichment` only
+    // polled the queue, but `drain_and_enrich` empties the queue into a
+    // local batch *before* running the (potentially slow) enrichment, so the
+    // queue looks empty for the whole duration of enrichment. A slow stub
+    // reasoner makes the race deterministic: pre-fix this assertion would
+    // fail because the fact isn't written yet when `wait_for_enrichment`
+    // returns; post-fix the in-flight counter keeps it waiting.
+    #[cfg(feature = "embeddings")]
+    #[derive(Clone)]
+    struct SlowStubReasoner {
+        facts: Vec<String>,
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[async_trait::async_trait]
+    impl memory::reasoning::MemoryReasoner for SlowStubReasoner {
+        async fn extract(
+            &self,
+            _text: &str,
+            _ctx: &memory::reasoning::ExtractionContext,
+        ) -> Result<memory::reasoning::Extraction> {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            Ok(memory::reasoning::Extraction {
+                facts: self
+                    .facts
+                    .iter()
+                    .map(|t| memory::reasoning::Fact {
+                        text: t.clone(),
+                        entities: Vec::new(),
+                        relations: Vec::new(),
+                    })
+                    .collect(),
+            })
+        }
+        async fn resolve(
+            &self,
+            _candidate: &memory::reasoning::Fact,
+            _neighbors: &[memory::reasoning::NeighborFact],
+        ) -> Result<memory::reasoning::ConflictResolution> {
+            Ok(memory::reasoning::ConflictResolution::Insert)
+        }
+        async fn synthesize(
+            &self,
+            _cluster: &[MemoryEntry],
+        ) -> Result<Option<memory::reasoning::Insight>> {
+            Ok(None)
+        }
+        fn name(&self) -> &str {
+            "SlowStubReasoner"
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn wait_for_enrichment_blocks_until_enriched() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(SlowStubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        mem.wait_for_enrichment().await;
+        // Must be true immediately after wait_for_enrichment returns, not
+        // merely "eventually" -- proving the wait covered enrichment, not
+        // just the queue drain.
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn enrich_pending_best_effort_on_error() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec![],
+            fail: true,
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        let report = mem.enrich_pending().await;
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.errors, 1);
+        // raw memory intact despite enrichment failure
+        assert!(mem.get_entry_for_test("turn1").await.is_some());
+    }
+
     #[cfg(feature = "embeddings")]
     #[tokio::test]
     async fn distillation_tags_raw_source_after_facts_land() {
@@ -1979,7 +2428,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2003,7 +2453,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec![],
             fail: true,
-        }));
+        }))
+        .await;
         // Write still succeeds (best-effort); raw turn stays searchable/untagged.
         mem.store("turn1", "Alice: I moved to Berlin")
             .await
@@ -2173,7 +2624,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2203,7 +2655,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2442,5 +2895,39 @@ mod tests {
         let config = MemoryConfig::default();
         assert!(!config.enable_cross_platform);
         assert!(config.cross_platform_config.is_none());
+    }
+
+    /// Regression test for the `retrieve()` promotion-on-retrieve deadlock.
+    ///
+    /// `retrieve()` previously took `self.state.write().await.get_memory(key)`
+    /// as an `if let` scrutinee, which keeps the write guard alive across the
+    /// whole body. When promotion fired (`should_promote` true), the body then
+    /// took a SECOND `self.state.write().await` to re-insert the promoted
+    /// entry — `tokio::sync::RwLock` is not reentrant, so this deadlocked.
+    ///
+    /// This config uses the Importance policy with threshold 0.0 so promotion
+    /// fires for any freshly stored short-term entry. On the buggy code this
+    /// test HANGS; with the guard bound-and-dropped before the `if let`, it
+    /// returns. A wall-clock timeout guards against a regression re-hanging the
+    /// suite instead of failing it.
+    #[tokio::test]
+    async fn retrieve_with_promotion_does_not_deadlock() {
+        let config = MemoryConfig {
+            enable_memory_promotion: true,
+            promotion_config: Some(memory::promotion::PromotionConfig {
+                policy_type: memory::promotion::PromotionPolicyType::Importance,
+                importance_threshold: 0.0,
+                ..memory::promotion::PromotionConfig::default()
+            }),
+            ..MemoryConfig::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.store("promo_k", "value to promote").await.unwrap();
+
+        let got = tokio::time::timeout(std::time::Duration::from_secs(10), mem.retrieve("promo_k"))
+            .await
+            .expect("retrieve() must not deadlock on the promotion path")
+            .unwrap();
+        assert!(got.is_some(), "retrieved promoted memory must be present");
     }
 }

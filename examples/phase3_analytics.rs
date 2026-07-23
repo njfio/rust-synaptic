@@ -360,7 +360,7 @@ async fn integrated_analytics_demo() -> Result<(), Box<dyn Error>> {
     }
 
     println!(" Integrated analytics pipeline completed");
-    println!(" Memory stats: {:?}", memory.stats());
+    println!(" Memory stats: {:?}", memory.stats().await);
 
     Ok(())
 }

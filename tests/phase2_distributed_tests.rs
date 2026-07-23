@@ -378,7 +378,7 @@ mod distributed_tests {
         assert_eq!(retrieved2.unwrap().value, "Distributed memory content 2");
 
         // Check statistics
-        let stats = memory.stats();
+        let stats = memory.stats().await;
         assert_eq!(stats.short_term_count, 2);
     }
 

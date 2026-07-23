@@ -107,6 +107,30 @@ pub async fn ingest(
     })
 }
 
+/// Ingest all turns with enrichment deferred, then run one bounded-concurrent
+/// enrich_pending pass. Returns (raw_ingest_secs, enrich_secs).
+pub async fn ingest_deferred(
+    conversation: &EvalConversation,
+    memory: &mut AgentMemory,
+) -> Result<(f64, f64), RunnerError> {
+    let t0 = Instant::now();
+    for session in &conversation.sessions {
+        for (i, turn) in session.turns.iter().enumerate() {
+            let key = turn_memory_key(session, i);
+            let value = match turn.timestamp.as_ref().or(session.timestamp.as_ref()) {
+                Some(ts) => format!("[{ts}] {}: {}", turn.speaker, turn.text),
+                None => format!("{}: {}", turn.speaker, turn.text),
+            };
+            memory.store(&key, &value).await.map_err(mem_err)?;
+        }
+    }
+    let raw_secs = t0.elapsed().as_secs_f64();
+    let t1 = Instant::now();
+    let _report = memory.enrich_pending().await;
+    let enrich_secs = t1.elapsed().as_secs_f64();
+    Ok((raw_secs, enrich_secs))
+}
+
 /// Result of running one question through retrieval.
 #[derive(Debug, Clone)]
 pub struct QuestionOutcome {
@@ -223,7 +247,7 @@ pub async fn measure_growth(targets: &[usize]) -> Result<Vec<GrowthPoint>, Runne
             target_memories: target,
             stored_memories: store_durations.len(),
             stored_bytes_estimate,
-            library_reported_total_size: memory.stats().total_size,
+            library_reported_total_size: memory.stats().await.total_size,
             store_latency: LatencySummary::from_durations(&store_durations),
             probe_search_micros,
         });
