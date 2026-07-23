@@ -1996,3 +1996,40 @@ nothing fired). The productive next step for every write-side LLM capability (di
 supersession, reflection synthesis) is the same: **move LLM enrichment off the synchronous per-turn
 write path** — batch it, do it asynchronously, or gate it to a cheap detector — so it can run at scale
 without stalling ingest. That is an engineering change to the write path, not another eval.
+
+## Async write-path enrichment: the write hot path is decoupled from LLM latency (2026-07-23)
+
+The write-side bottleneck (synchronous per-turn LLM enrichment made ingest gate on LLM latency —
+distillation ingest ~24 min/conv, an LLM-supersession A/B ~4 h) is addressed by decoupling the raw
+write from enrichment: `store()` records the raw memory and (in `Deferred`/`Background` mode) enqueues
+the entry; enrichment (`extract → resolve → supersede → fact-store`) runs later via `enrich_pending()`
+or a background worker, with bounded concurrency. Measured on LoCoMo conv-0 (419 turns), local 7B
+reasoner (ollama qwen2.5:7b):
+
+| path | time |
+|---|---|
+| synchronous (Inline) ingest | **1433.9 s** (~24 min) |
+| deferred: raw write | **2.3 s** |
+| deferred: enrich (concurrency 8) | 1343.5 s |
+| deferred total (raw + enrich) | 1345.7 s |
+
+**The write hot path drops from 1434 s to 2.3 s — ~630×.** `store()` is no longer gated on LLM
+latency: all 419 turns are written in 2.3 s, and enrichment happens off the critical path. In
+`Background` mode the enrichment worker drains the queue continuously, so ingest never waits at all.
+This is the primary architectural win — it is what makes write-time LLM capabilities (distillation,
+bi-temporal supersession detection) usable without stalling ingest.
+
+**Honest caveat — the *total* enrichment speedup is backend-bound, not harness-bound.** Total
+deferred time (1345.7 s) is only 1.1× faster than synchronous (1433.9 s) because a single 7B model on
+one GPU (ollama, default `num_parallel` ≈ 1–2) serves the 8 concurrent enrichment requests nearly
+serially — the harness submits 8 in flight (verified: 16 live connections during the deferred enrich),
+but the LLM backend, not the write path, is now the ceiling. The concurrency mechanism is real and
+proven; realizing it as wall-clock speedup on *total* enrichment requires a parallel/batching-capable
+backend (`OLLAMA_NUM_PARALLEL=8`, multiple model replicas, or a hosted API), which would take the
+enrichment toward `total_LLM_time / effective_parallelism`. Caveats: single conversation (n=419
+turns), local 7B reasoner, default ollama parallelism.
+
+**Net:** ingest is decoupled from LLM latency unconditionally (630× on the hot path; enrichment moved
+off the critical path); the additional concurrency speedup on total enrichment is available with a
+backend that serves requests in parallel. Default mode remains `Inline` (unchanged behavior); the
+opt-in `Deferred`/`Background` modes carry the decoupling.
