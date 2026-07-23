@@ -761,7 +761,7 @@ async fn generate_complex_visualizations(memory: &AgentMemory) -> Result<(), Box
     println!("   Saved: {}", network_path);
 
     // Generate temporal analytics
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     let temporal_data = vec![
         (
             chrono::Utc::now() - chrono::Duration::days(30),

@@ -253,7 +253,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         println!(" Retrieved memory: {}", retrieved.key);
 
                                         // Get memory stats
-                                        let memory_stats = memory.stats();
+                                        let memory_stats = memory.stats().await;
                                         println!(
                                             " Memory stats: {} short-term, {} long-term",
                                             memory_stats.short_term_count,

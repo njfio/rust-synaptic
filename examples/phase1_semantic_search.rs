@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Get basic statistics
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     println!("\n Memory System Statistics:");
     println!(
         "  • Total memories: {}",

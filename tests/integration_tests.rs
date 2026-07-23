@@ -135,7 +135,7 @@ async fn test_memory_statistics() -> Result<()> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Initial stats should be empty
-    let initial_stats = memory.stats();
+    let initial_stats = memory.stats().await;
     assert_eq!(initial_stats.short_term_count, 0);
     assert_eq!(initial_stats.long_term_count, 0);
 
@@ -144,7 +144,7 @@ async fn test_memory_statistics() -> Result<()> {
     memory.store("key2", "value2").await?;
     memory.store("key3", "value3").await?;
 
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert_eq!(stats.short_term_count, 3); // Default is short-term
     assert_eq!(stats.long_term_count, 0);
     assert!(stats.total_size > 0);
@@ -173,7 +173,7 @@ async fn test_memory_clearing() -> Result<()> {
     assert!(memory.retrieve("key2").await?.is_none());
 
     // Stats should be reset
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert_eq!(stats.short_term_count, 0);
     assert_eq!(stats.long_term_count, 0);
 
@@ -280,7 +280,7 @@ async fn test_memory_types() -> Result<()> {
     // For now, we'll test with the basic store method
     // In a full implementation, we'd have methods to specify memory type
 
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert!(stats.short_term_count > 0);
 
     Ok(())

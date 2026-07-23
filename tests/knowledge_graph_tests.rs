@@ -47,7 +47,7 @@ async fn test_memory_with_knowledge_graph() -> Result<(), Box<dyn Error>> {
     assert!(!search_results.is_empty());
 
     // Test that knowledge graph is enabled
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert!(stats.short_term_count >= 3);
 
     Ok(())
@@ -135,7 +135,7 @@ async fn test_knowledge_graph_with_related_memories() -> Result<(), Box<dyn Erro
     assert!(!ml_search.is_empty());
 
     // Test that knowledge graph is working (basic functionality)
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert_eq!(stats.short_term_count, 4);
 
     Ok(())
@@ -162,7 +162,7 @@ async fn test_knowledge_graph_stats() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Test that stats reflect the stored memories
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     assert_eq!(stats.short_term_count, 3);
     assert!(stats.total_size > 0);
 

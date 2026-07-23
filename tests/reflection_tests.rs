@@ -103,7 +103,7 @@ async fn reflect_synthesizes_one_insight_with_provenance_edges() {
     assert!(!insight.text.is_empty(), "insight text must be non-empty");
 
     // The insight was written as a distinguishable memory.
-    let insight_entries = memory.insight_memories();
+    let insight_entries = memory.insight_memories().await;
     assert_eq!(insight_entries.len(), 1, "one insight memory written");
     let insight_entry = &insight_entries[0];
     assert_eq!(insight_entry.value, insight.text);

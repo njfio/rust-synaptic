@@ -505,7 +505,7 @@ async fn test_phase5_memory_config_integration() {
 
     // Test that memory system can be created with Phase 5 features enabled
     let memory = AgentMemory::new(config).await.unwrap();
-    let stats = memory.stats();
+    let stats = memory.stats().await;
 
     assert_eq!(stats.short_term_count, 0);
     assert_eq!(stats.long_term_count, 0);

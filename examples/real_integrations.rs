@@ -618,7 +618,7 @@ async fn integrated_system_demo() -> Result<(), Box<dyn Error>> {
                         );
                     }
 
-                    println!(" Memory stats: {:?}", memory.stats());
+                    println!(" Memory stats: {:?}", memory.stats().await);
                 }
                 Err(e) => println!(" Failed to create integrated memory system: {}", e),
             }

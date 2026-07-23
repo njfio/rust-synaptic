@@ -87,7 +87,10 @@ use uuid::Uuid;
 /// Main memory system for AI agents
 pub struct AgentMemory {
     _config: MemoryConfig,
-    state: memory::state::AgentState,
+    /// Immutable session identifier, cached so `session_id()` stays sync
+    /// (the value equals the id passed to `AgentState::new`).
+    session_id: Uuid,
+    state: std::sync::Arc<tokio::sync::RwLock<memory::state::AgentState>>,
     storage: std::sync::Arc<dyn memory::storage::Storage + Send + Sync>,
     checkpoint_manager: memory::checkpoint::CheckpointManager,
     /// Knowledge graph shared with the retrieval pipeline's `GraphRetriever`
@@ -217,7 +220,8 @@ impl AgentMemory {
             config.checkpoint_interval
         );
 
-        let state = memory::state::AgentState::new(config.session_id.unwrap_or_else(Uuid::new_v4));
+        let session_id = config.session_id.unwrap_or_else(Uuid::new_v4);
+        let state = memory::state::AgentState::new(session_id);
         tracing::debug!("Agent state initialized");
 
         // Initialize knowledge graph if enabled
@@ -508,7 +512,8 @@ impl AgentMemory {
         // Build base agent without multimodal memory initialized
         let agent = Self {
             _config: config.clone(),
-            state,
+            session_id,
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(state)),
             storage,
             checkpoint_manager,
             knowledge_graph,
@@ -639,7 +644,7 @@ impl AgentMemory {
         let entry = MemoryEntry::new(key.to_string(), value.to_string(), MemoryType::ShortTerm);
 
         // Check if this is an update to existing memory
-        let is_update = self.state.has_memory(key);
+        let is_update = self.state.read().await.has_memory(key);
         let change_type = if is_update {
             memory::temporal::ChangeType::Updated
         } else {
@@ -649,7 +654,7 @@ impl AgentMemory {
         tracing::debug!("Memory operation type: {:?}", change_type);
 
         self.storage.store(&entry).await?;
-        self.state.add_memory(entry.clone());
+        self.state.write().await.add_memory(entry.clone());
         tracing::debug!("Memory stored in state and storage");
 
         // Track accumulation for triggered reflection.
@@ -769,11 +774,13 @@ impl AgentMemory {
         }
 
         // Check if we need to create a checkpoint
-        if self.checkpoint_manager.should_checkpoint(&self.state) {
+        let state_guard = self.state.read().await;
+        if self.checkpoint_manager.should_checkpoint(&state_guard) {
             self.checkpoint_manager
-                .create_checkpoint(&self.state)
+                .create_checkpoint(&state_guard)
                 .await?;
         }
+        drop(state_guard);
 
         Ok(degradations)
     }
@@ -847,8 +854,8 @@ impl AgentMemory {
                 .custom_fields
                 .insert(Self::RAW_SOURCE_FIELD.to_string(), Utc::now().to_rfc3339());
             self.storage.store(&entry).await?;
-            if self.state.has_memory(key) {
-                self.state.add_memory(entry);
+            if self.state.read().await.has_memory(key) {
+                self.state.write().await.add_memory(entry);
             }
         }
         Ok(())
@@ -869,8 +876,8 @@ impl AgentMemory {
             self.storage.store(&entry).await?;
             // Keep in-memory state consistent (best-effort; state is the search
             // corpus for the non-pipeline path).
-            if self.state.has_memory(key) {
-                self.state.add_memory(entry);
+            if self.state.read().await.has_memory(key) {
+                self.state.write().await.add_memory(entry);
             }
         }
         Ok(())
@@ -1112,8 +1119,11 @@ impl AgentMemory {
         let mut entries: Vec<MemoryEntry> = Vec::with_capacity(pending.len());
         for key in &pending {
             // A pending memory may have been deleted since it was stored;
-            // reflection simply skips it.
-            if let Some(entry) = self.state.get_memory(key) {
+            // reflection simply skips it. Bind by value first so the write
+            // guard drops before the body (avoids holding it across the loop
+            // body / any future state access).
+            let maybe_entry = self.state.write().await.get_memory(key);
+            if let Some(entry) = maybe_entry {
                 entries.push(entry);
             }
         }
@@ -1161,7 +1171,7 @@ impl AgentMemory {
             .with_metadata(metadata);
 
         self.storage.store(&entry).await?;
-        self.state.add_memory(entry.clone());
+        self.state.write().await.add_memory(entry.clone());
 
         if let Some(ref kg) = self.knowledge_graph {
             let mut kg = kg.write().await;
@@ -1188,12 +1198,12 @@ impl AgentMemory {
     /// All insight memories produced by reflection (custom field
     /// `memory_source == "reflection"`), sorted by key for determinism.
     #[cfg(feature = "embeddings")]
-    pub fn insight_memories(&self) -> Vec<MemoryEntry> {
-        let mut insights: Vec<MemoryEntry> = self
-            .state
+    pub async fn insight_memories(&self) -> Vec<MemoryEntry> {
+        let state_guard = self.state.read().await;
+        let mut insights: Vec<MemoryEntry> = state_guard
             .get_short_term_memories()
             .values()
-            .chain(self.state.get_long_term_memories().values())
+            .chain(state_guard.get_long_term_memories().values())
             .filter(|e| {
                 e.metadata
                     .get_custom_field("memory_source")
@@ -1241,8 +1251,13 @@ impl AgentMemory {
         // Validate input
         validate_non_empty_string(key, "memory key")?;
 
-        // First check short-term memory
-        if let Some(mut entry) = self.state.get_memory(key) {
+        // First check short-term memory. Bind by value BEFORE the `if let`:
+        // an `if let ... = scrutinee` extends the scrutinee temporary (the
+        // write guard) across the ENTIRE body, and the body reacquires
+        // `self.state.write()` on the promotion path — holding both would
+        // deadlock (tokio RwLock is not reentrant).
+        let maybe_entry = self.state.write().await.get_memory(key);
+        if let Some(mut entry) = maybe_entry {
             tracing::debug!("Memory found in short-term memory");
 
             // Check if memory should be promoted to long-term
@@ -1256,7 +1271,7 @@ impl AgentMemory {
                     );
                     entry = pm.promote_memory(entry)?;
                     // Update in state and storage
-                    self.state.add_memory(entry.clone());
+                    self.state.write().await.add_memory(entry.clone());
                     self.storage.store(&entry).await?;
                 }
             }
@@ -1307,7 +1322,7 @@ impl AgentMemory {
             }
 
             // Add to state for future fast access
-            self.state.add_memory(entry.clone());
+            self.state.write().await.add_memory(entry.clone());
 
             // Refresh knowledge graph if enabled
             if let Some(ref kg) = self.knowledge_graph {
@@ -1375,6 +1390,8 @@ impl AgentMemory {
             // metadata (retrievals bump the state entry, not storage).
             let entry = self
                 .state
+                .read()
+                .await
                 .peek_memory(&stored.key)
                 .cloned()
                 .unwrap_or(stored);
@@ -1393,12 +1410,12 @@ impl AgentMemory {
                         "Forgetting pass demoting memory to short-term tier"
                     );
                     self.storage.store(&demoted).await?;
-                    if self.state.peek_memory(&demoted.key).is_some() {
+                    if self.state.read().await.peek_memory(&demoted.key).is_some() {
                         // Preserve real access metadata: relocating between
                         // tiers is not an access, so do not bump
                         // last_accessed/access_count (which would grant
                         // artificial recency protection on later passes).
-                        self.state.insert_preserving_access(demoted.clone());
+                        self.state.write().await.insert_preserving_access(demoted.clone());
                     }
                     report.demoted.push(demoted.key);
                 }
@@ -1408,7 +1425,7 @@ impl AgentMemory {
                         retained_strength = strength,
                         "Forgetting pass evicting memory at lowest tier"
                     );
-                    self.state.remove_memory(&entry.key);
+                    self.state.write().await.remove_memory(&entry.key);
                     self.storage.delete(&entry.key).await?;
                     report.evicted.push(entry.key);
                 }
@@ -1468,7 +1485,8 @@ impl AgentMemory {
 
     /// Create a checkpoint of the current state
     pub async fn checkpoint(&self) -> Result<Uuid> {
-        self.checkpoint_manager.create_checkpoint(&self.state).await
+        let state_guard = self.state.read().await;
+        self.checkpoint_manager.create_checkpoint(&state_guard).await
     }
 
     /// Restore from a checkpoint
@@ -1526,7 +1544,7 @@ impl AgentMemory {
 
         // Step 3: only now that storage matches the checkpoint exactly,
         // swap the in-process state cache.
-        self.state = restored_state;
+        *self.state.write().await = restored_state;
 
         Ok(())
     }
@@ -1534,22 +1552,23 @@ impl AgentMemory {
     /// Get current memory statistics
     /// Get the session ID for this agent memory instance
     pub fn session_id(&self) -> Uuid {
-        self.state.session_id()
+        self.session_id
     }
 
-    pub fn stats(&self) -> MemoryStats {
+    pub async fn stats(&self) -> MemoryStats {
+        let state_guard = self.state.read().await;
         MemoryStats {
-            short_term_count: self.state.short_term_memory_count(),
-            long_term_count: self.state.long_term_memory_count(),
-            total_size: self.state.total_memory_size(),
-            session_id: self.state.session_id(),
-            created_at: self.state.created_at(),
+            short_term_count: state_guard.short_term_memory_count(),
+            long_term_count: state_guard.long_term_memory_count(),
+            total_size: state_guard.total_memory_size(),
+            session_id: state_guard.session_id(),
+            created_at: state_guard.created_at(),
         }
     }
 
     /// Clear all memories (use with caution)
     pub async fn clear(&mut self) -> Result<()> {
-        self.state.clear();
+        self.state.write().await.clear();
         self.storage.clear().await?;
 
         // Clear knowledge graph if enabled
@@ -1658,8 +1677,8 @@ impl AgentMemory {
     }
 
     /// Check if a memory exists
-    pub fn has_memory(&self, key: &str) -> bool {
-        self.state.has_memory(key)
+    pub async fn has_memory(&self, key: &str) -> bool {
+        self.state.read().await.has_memory(key)
     }
 
     /// Semantic search using embeddings (if enabled)
@@ -2442,5 +2461,42 @@ mod tests {
         let config = MemoryConfig::default();
         assert!(!config.enable_cross_platform);
         assert!(config.cross_platform_config.is_none());
+    }
+
+    /// Regression test for the `retrieve()` promotion-on-retrieve deadlock.
+    ///
+    /// `retrieve()` previously took `self.state.write().await.get_memory(key)`
+    /// as an `if let` scrutinee, which keeps the write guard alive across the
+    /// whole body. When promotion fired (`should_promote` true), the body then
+    /// took a SECOND `self.state.write().await` to re-insert the promoted
+    /// entry — `tokio::sync::RwLock` is not reentrant, so this deadlocked.
+    ///
+    /// This config uses the Importance policy with threshold 0.0 so promotion
+    /// fires for any freshly stored short-term entry. On the buggy code this
+    /// test HANGS; with the guard bound-and-dropped before the `if let`, it
+    /// returns. A wall-clock timeout guards against a regression re-hanging the
+    /// suite instead of failing it.
+    #[tokio::test]
+    async fn retrieve_with_promotion_does_not_deadlock() {
+        let config = MemoryConfig {
+            enable_memory_promotion: true,
+            promotion_config: Some(memory::promotion::PromotionConfig {
+                policy_type: memory::promotion::PromotionPolicyType::Importance,
+                importance_threshold: 0.0,
+                ..memory::promotion::PromotionConfig::default()
+            }),
+            ..MemoryConfig::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.store("promo_k", "value to promote").await.unwrap();
+
+        let got = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            mem.retrieve("promo_k"),
+        )
+        .await
+        .expect("retrieve() must not deadlock on the promotion path")
+        .unwrap();
+        assert!(got.is_some(), "retrieved promoted memory must be present");
     }
 }

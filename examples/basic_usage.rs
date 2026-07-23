@@ -68,7 +68,7 @@ async fn basic_memory_operations() -> Result<()> {
     }
 
     // Get memory statistics
-    let stats = memory.stats();
+    let stats = memory.stats().await;
     println!(
         "✓ Memory stats: {} short-term, {} long-term, {} bytes total",
         stats.short_term_count, stats.long_term_count, stats.total_size

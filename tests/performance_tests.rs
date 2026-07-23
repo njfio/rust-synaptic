@@ -222,7 +222,7 @@ async fn test_memory_usage() -> Result<(), Box<dyn Error>> {
     let mut memory = AgentMemory::new(config).await?;
 
     // Get initial memory stats
-    let initial_stats = memory.stats();
+    let initial_stats = memory.stats().await;
     println!("Initial stats: {:?}", initial_stats);
 
     let num_memories = 1000;
@@ -235,12 +235,12 @@ async fn test_memory_usage() -> Result<(), Box<dyn Error>> {
 
         // Check stats every 100 memories
         if i % 100 == 0 {
-            let current_stats = memory.stats();
+            let current_stats = memory.stats().await;
             println!("After {} memories: {:?}", i + 1, current_stats);
         }
     }
 
-    let final_stats = memory.stats();
+    let final_stats = memory.stats().await;
     println!("Final stats: {:?}", final_stats);
 
     // Verify memory growth is reasonable
