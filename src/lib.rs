@@ -202,6 +202,74 @@ impl AgentMemory {
         self.enrichment_queue.lock().await.len()
     }
 
+    /// Drain the pending-enrichment queue and enrich all entries with bounded
+    /// concurrency (`MemoryConfig::enrichment_concurrency`). Best-effort: a
+    /// per-entry failure is counted in the report, never aborts the batch.
+    /// Only meaningful in Deferred/Background modes (Inline leaves the queue
+    /// empty). Takes `&self` — mutation is via the Arc/RwLock handles.
+    #[cfg(feature = "embeddings")]
+    pub async fn enrich_pending(&self) -> memory::enrichment::EnrichmentReport {
+        use futures::stream::{self, StreamExt};
+        let Some(ref kg) = self.knowledge_graph else {
+            return memory::enrichment::EnrichmentReport::default();
+        };
+        let pending: Vec<memory::enrichment::PendingEnrichment> = {
+            let mut q = self.enrichment_queue.lock().await;
+            q.drain(..).collect()
+        };
+        if pending.is_empty() {
+            return memory::enrichment::EnrichmentReport::default();
+        }
+        let params = memory::enrichment::EnrichmentParams {
+            distillation_live: self.distillation_live,
+            exclude_raw_default: self._config.retrieval_excludes_raw_sources,
+        };
+        let concurrency = self._config.enrichment_concurrency.max(1);
+        let storage = std::sync::Arc::clone(&self.storage);
+        let kg = std::sync::Arc::clone(kg);
+        let state = std::sync::Arc::clone(&self.state);
+        let reasoner = std::sync::Arc::clone(&self.reasoner);
+        let scoring = self.retrieval_scoring_provider.clone();
+        let outcomes = stream::iter(pending)
+            .map(|p| {
+                let (storage, kg, state, reasoner, scoring, params) = (
+                    storage.clone(),
+                    kg.clone(),
+                    state.clone(),
+                    reasoner.clone(),
+                    scoring.clone(),
+                    params,
+                );
+                async move {
+                    memory::enrichment::enrich_one(
+                        &storage, &kg, &state, &reasoner, &scoring, params, &p.key, &p.value,
+                    )
+                    .await
+                }
+            })
+            .buffer_unordered(concurrency)
+            .collect::<Vec<_>>()
+            .await;
+        let mut report = memory::enrichment::EnrichmentReport {
+            entries: outcomes.len(),
+            ..Default::default()
+        };
+        for o in outcomes {
+            match o {
+                Ok(oc) => {
+                    report.facts_stored += oc.facts_stored;
+                    report.supersessions += oc.supersessions;
+                    report.raw_sources_tagged += usize::from(oc.raw_tagged);
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "enrichment degraded for entry");
+                    report.errors += 1;
+                }
+            }
+        }
+        report
+    }
+
     /// Create a new agent memory system with the given configuration
     #[tracing::instrument(skip(config), fields(session_id = %config.session_id.unwrap_or_else(Uuid::new_v4)))]
     pub async fn new(config: MemoryConfig) -> Result<Self> {
@@ -2057,6 +2125,53 @@ mod tests {
         assert!(mem.get_entry_for_test("turn1").await.is_some());
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
         assert_eq!(mem.enrichment_queue_len().await, 1);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn enrich_pending_processes_queue() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
+        let report = mem.enrich_pending().await;
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.facts_stored, 1);
+        assert_eq!(report.errors, 0);
+        // fact now retrievable + queue drained
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+        assert_eq!(mem.enrichment_queue_len().await, 0);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn enrich_pending_best_effort_on_error() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec![],
+            fail: true,
+        }));
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        let report = mem.enrich_pending().await;
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.errors, 1);
+        // raw memory intact despite enrichment failure
+        assert!(mem.get_entry_for_test("turn1").await.is_some());
     }
 
     #[cfg(feature = "embeddings")]

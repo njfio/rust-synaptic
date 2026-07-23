@@ -424,3 +424,13 @@ mod enrich_one_engine {
 
 #[cfg(feature = "embeddings")]
 pub use enrich_one_engine::{enrich_one, EnrichmentOutcome, EnrichmentParams};
+
+/// Summary of a batch drain-and-enrich run (`AgentMemory::enrich_pending`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnrichmentReport {
+    pub entries: usize,
+    pub facts_stored: usize,
+    pub supersessions: usize,
+    pub raw_sources_tagged: usize,
+    pub errors: usize,
+}
