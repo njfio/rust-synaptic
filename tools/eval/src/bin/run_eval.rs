@@ -272,11 +272,15 @@ async fn main() -> Result<(), String> {
         let keep_raw = args.iter().any(|a| a == "--distill-keep-raw");
         let exclude_superseded = args.iter().any(|a| a == "--exclude-superseded");
         let distill = keep_raw || args.iter().any(|a| a == "--distill");
+        // `--background-enrichment` = enrich concurrently off the critical path
+        // (instant ingest + background worker), then wait before querying.
+        let background = args.iter().any(|a| a == "--background-enrichment");
         return run_agentic_qa_only(
             &conversations,
             distill,
             !keep_raw,
             exclude_superseded,
+            background,
             &mut w,
         )
         .await;
@@ -991,8 +995,9 @@ fn distillation_config(
     distill: bool,
     exclude_raw: bool,
     exclude_superseded: bool,
+    background: bool,
 ) -> synaptic::MemoryConfig {
-    if distill {
+    let mut cfg = if distill {
         synaptic::MemoryConfig {
             distillation: synaptic::memory::reasoning::DistillationMode::On,
             enable_knowledge_graph: true,
@@ -1009,7 +1014,15 @@ fn distillation_config(
         }
     } else {
         synaptic::MemoryConfig::default()
+    };
+    if background {
+        // Ingest enqueues; a background worker enriches concurrently (off the
+        // critical path). The agentic QA loop waits for the queue to drain
+        // before querying. Needs the write path active (KG on) to enrich.
+        cfg.enrichment_mode = synaptic::memory::enrichment::EnrichmentMode::Background;
+        cfg.enable_knowledge_graph = true;
     }
+    cfg
 }
 
 #[cfg(test)]
@@ -1019,7 +1032,7 @@ mod distill_flag_tests {
 
     #[test]
     fn distill_flag_builds_facts_primary_config() {
-        let cfg = distillation_config(true, true, false);
+        let cfg = distillation_config(true, true, false, false);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(cfg.enable_knowledge_graph);
         assert!(cfg.retrieval_excludes_raw_sources);
@@ -1028,7 +1041,7 @@ mod distill_flag_tests {
     #[test]
     fn distill_keep_raw_augments() {
         // Augment mode: distillation on, but raw turns retained in search.
-        let cfg = distillation_config(true, false, false);
+        let cfg = distillation_config(true, false, false, false);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(cfg.enable_knowledge_graph);
         assert!(!cfg.retrieval_excludes_raw_sources);
@@ -1039,7 +1052,7 @@ mod distill_flag_tests {
         // Bi-temporal without distillation: supersession marking runs whenever
         // the KG is on (default), so we just drop superseded memories — no need
         // to force distillation on (which would confound the isolation).
-        let cfg = distillation_config(false, false, true);
+        let cfg = distillation_config(false, false, true, false);
         assert_eq!(cfg.distillation, DistillationMode::Off);
         assert!(cfg.enable_knowledge_graph);
         assert!(cfg.retrieval_excludes_superseded);
@@ -1047,16 +1060,25 @@ mod distill_flag_tests {
 
     #[test]
     fn distill_with_exclude_superseded_sets_both() {
-        let cfg = distillation_config(true, false, true);
+        let cfg = distillation_config(true, false, true, false);
         assert_eq!(cfg.distillation, DistillationMode::On);
         assert!(!cfg.retrieval_excludes_raw_sources);
         assert!(cfg.retrieval_excludes_superseded);
     }
 
     #[test]
+    fn background_flag_sets_background_mode_and_kg() {
+        use synaptic::memory::enrichment::EnrichmentMode;
+        let cfg = distillation_config(false, false, true, true);
+        assert_eq!(cfg.enrichment_mode, EnrichmentMode::Background);
+        assert!(cfg.enable_knowledge_graph);
+        assert!(cfg.retrieval_excludes_superseded);
+    }
+
+    #[test]
     fn no_distill_flag_is_default() {
         // Library default is Off (opt-in) after the A/B negative result.
-        let cfg = distillation_config(false, true, false);
+        let cfg = distillation_config(false, true, false, false);
         assert_eq!(cfg.distillation, DistillationMode::Off);
     }
 }
@@ -1066,6 +1088,7 @@ async fn run_agentic_qa_only(
     distill: bool,
     exclude_raw: bool,
     exclude_superseded: bool,
+    background: bool,
     w: &mut impl FnMut(String) -> Result<(), String>,
 ) -> Result<(), String> {
     w("== Agentic answer-guided retrieval QA (--agentic-qa) ==".to_string())?;
@@ -1116,7 +1139,7 @@ async fn run_agentic_qa_only(
         max_rounds,
         grounded,
         ground_verify,
-        distillation_config(distill, exclude_raw, exclude_superseded),
+        distillation_config(distill, exclude_raw, exclude_superseded, background),
     )
     .await
     .map_err(|e| e.to_string())?;
