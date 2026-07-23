@@ -174,6 +174,26 @@ pub struct AgentMemory {
     neighbor_examined_max: std::sync::atomic::AtomicUsize,
     /// Entries awaiting enrichment when `MemoryConfig::enrichment_mode` is
     /// `Deferred` or `Background` (see `memory::enrichment`).
+    /// Shared cell holding the active reasoner, read by both `enrich_pending`
+    /// and the Background worker loop. Indirection exists so
+    /// `set_reasoner_for_test` (called after construction) can inject a stub
+    /// into an already-spawned worker task rather than the value it captured
+    /// at spawn time.
+    #[cfg(feature = "embeddings")]
+    reasoner_cell: Arc<tokio::sync::Mutex<Arc<dyn memory::reasoning::MemoryReasoner>>>,
+    /// Wakes the Background worker after `store()` enqueues an entry, and
+    /// after `shutdown()`/`wait_for_enrichment()` request a drain.
+    #[cfg(feature = "embeddings")]
+    enrichment_notify: Arc<tokio::sync::Notify>,
+    /// Set by `shutdown()`; the worker exits its loop once this is true AND
+    /// the queue is empty.
+    #[cfg(feature = "embeddings")]
+    enrichment_shutdown: Arc<std::sync::atomic::AtomicBool>,
+    /// Handle to the spawned Background worker task; `None` unless
+    /// `MemoryConfig::enrichment_mode == Background` and a knowledge graph is
+    /// configured. Taken (and awaited) by `shutdown()`.
+    #[cfg(feature = "embeddings")]
+    enrichment_worker: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "embeddings")]
     enrichment_queue: std::sync::Arc<
         tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
@@ -188,8 +208,9 @@ impl AgentMemory {
     const RAW_SOURCE_FIELD: &'static str = "raw_source";
 
     #[cfg(all(feature = "embeddings", test))]
-    fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
-        self.reasoner = r;
+    async fn set_reasoner_for_test(&mut self, r: Arc<dyn memory::reasoning::MemoryReasoner>) {
+        self.reasoner = r.clone();
+        *self.reasoner_cell.lock().await = r;
     }
 
     #[cfg(all(feature = "embeddings", test))]
@@ -209,65 +230,55 @@ impl AgentMemory {
     /// empty). Takes `&self` — mutation is via the Arc/RwLock handles.
     #[cfg(feature = "embeddings")]
     pub async fn enrich_pending(&self) -> memory::enrichment::EnrichmentReport {
-        use futures::stream::{self, StreamExt};
         let Some(ref kg) = self.knowledge_graph else {
             return memory::enrichment::EnrichmentReport::default();
         };
-        let pending: Vec<memory::enrichment::PendingEnrichment> = {
-            let mut q = self.enrichment_queue.lock().await;
-            q.drain(..).collect()
-        };
-        if pending.is_empty() {
-            return memory::enrichment::EnrichmentReport::default();
-        }
         let params = memory::enrichment::EnrichmentParams {
             distillation_live: self.distillation_live,
             exclude_raw_default: self._config.retrieval_excludes_raw_sources,
         };
         let concurrency = self._config.enrichment_concurrency.max(1);
-        let storage = std::sync::Arc::clone(&self.storage);
-        let kg = std::sync::Arc::clone(kg);
-        let state = std::sync::Arc::clone(&self.state);
-        let reasoner = std::sync::Arc::clone(&self.reasoner);
-        let scoring = self.retrieval_scoring_provider.clone();
-        let outcomes = stream::iter(pending)
-            .map(|p| {
-                let (storage, kg, state, reasoner, scoring, params) = (
-                    storage.clone(),
-                    kg.clone(),
-                    state.clone(),
-                    reasoner.clone(),
-                    scoring.clone(),
-                    params,
-                );
-                async move {
-                    memory::enrichment::enrich_one(
-                        &storage, &kg, &state, &reasoner, &scoring, params, &p.key, &p.value,
-                    )
-                    .await
-                }
-            })
-            .buffer_unordered(concurrency)
-            .collect::<Vec<_>>()
-            .await;
-        let mut report = memory::enrichment::EnrichmentReport {
-            entries: outcomes.len(),
-            ..Default::default()
-        };
-        for o in outcomes {
-            match o {
-                Ok(oc) => {
-                    report.facts_stored += oc.facts_stored;
-                    report.supersessions += oc.supersessions;
-                    report.raw_sources_tagged += usize::from(oc.raw_tagged);
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "enrichment degraded for entry");
-                    report.errors += 1;
-                }
+        let reasoner = self.reasoner_cell.lock().await.clone();
+        memory::enrichment::drain_and_enrich(
+            &self.enrichment_queue,
+            &self.storage,
+            kg,
+            &self.state,
+            &reasoner,
+            &self.retrieval_scoring_provider,
+            params,
+            concurrency,
+        )
+        .await
+    }
+
+    /// Nudge the Background worker and poll until the enrichment queue
+    /// drains. In non-Background modes the queue only fills via an explicit
+    /// `enrich_pending()` call site (Deferred), so this returns immediately
+    /// whenever the queue happens to be empty.
+    #[cfg(feature = "embeddings")]
+    pub async fn wait_for_enrichment(&self) {
+        loop {
+            if self.enrichment_queue.lock().await.is_empty() {
+                return;
             }
+            self.enrichment_notify.notify_one();
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
-        report
+    }
+
+    /// Signal the Background worker to stop, wake it, and await its clean
+    /// exit (it drains any remaining queued entries first). No-op if no
+    /// worker was spawned (non-Background modes) or `shutdown` was already
+    /// called (the second call finds `enrichment_worker` already `None`).
+    #[cfg(feature = "embeddings")]
+    pub async fn shutdown(&mut self) {
+        self.enrichment_shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.enrichment_notify.notify_one();
+        if let Some(h) = self.enrichment_worker.take() {
+            let _ = h.await;
+        }
     }
 
     /// Create a new agent memory system with the given configuration
@@ -588,11 +599,71 @@ impl AgentMemory {
             None
         };
 
+        let state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+        #[cfg(feature = "embeddings")]
+        let reasoner_cell = Arc::new(tokio::sync::Mutex::new(Arc::clone(&reasoner)));
+        #[cfg(feature = "embeddings")]
+        let enrichment_notify = Arc::new(tokio::sync::Notify::new());
+        #[cfg(feature = "embeddings")]
+        let enrichment_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(feature = "embeddings")]
+        let enrichment_queue: std::sync::Arc<
+            tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
+        > = std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::VecDeque::new()));
+
+        // Spawn the Background worker before the entries it captures are
+        // moved into `agent` below; it operates purely on shared `Arc`
+        // handles, so it can run independently of the `AgentMemory` value.
+        #[cfg(feature = "embeddings")]
+        let enrichment_worker = if config.enrichment_mode == memory::enrichment::EnrichmentMode::Background
+            && knowledge_graph.is_some()
+        {
+            let queue = enrichment_queue.clone();
+            let notify = enrichment_notify.clone();
+            let shutdown = enrichment_shutdown.clone();
+            let storage = storage.clone();
+            let Some(kg) = knowledge_graph.clone() else {
+                unreachable!("guarded by knowledge_graph.is_some() above")
+            };
+            let worker_state = state.clone();
+            let reasoner_cell = reasoner_cell.clone();
+            let scoring = retrieval_scoring_provider.clone();
+            let params = memory::enrichment::EnrichmentParams {
+                distillation_live,
+                exclude_raw_default: config.retrieval_excludes_raw_sources,
+            };
+            let concurrency = config.enrichment_concurrency.max(1);
+            Some(tokio::spawn(async move {
+                loop {
+                    notify.notified().await;
+                    if shutdown.load(std::sync::atomic::Ordering::SeqCst)
+                        && queue.lock().await.is_empty()
+                    {
+                        break;
+                    }
+                    let reasoner = reasoner_cell.lock().await.clone();
+                    memory::enrichment::drain_and_enrich(
+                        &queue,
+                        &storage,
+                        &kg,
+                        &worker_state,
+                        &reasoner,
+                        &scoring,
+                        params,
+                        concurrency,
+                    )
+                    .await;
+                }
+            }))
+        } else {
+            None
+        };
+
         // Build base agent without multimodal memory initialized
         let agent = Self {
             _config: config.clone(),
             session_id,
-            state: std::sync::Arc::new(tokio::sync::RwLock::new(state)),
+            state,
             storage,
             checkpoint_manager,
             knowledge_graph,
@@ -602,6 +673,14 @@ impl AgentMemory {
             embedding_manager,
             #[cfg(feature = "embeddings")]
             reasoner,
+            #[cfg(feature = "embeddings")]
+            reasoner_cell,
+            #[cfg(feature = "embeddings")]
+            enrichment_notify,
+            #[cfg(feature = "embeddings")]
+            enrichment_shutdown,
+            #[cfg(feature = "embeddings")]
+            enrichment_worker,
             #[cfg(feature = "embeddings")]
             reflection_engine,
             #[cfg(feature = "embeddings")]
@@ -631,9 +710,7 @@ impl AgentMemory {
             #[cfg(all(feature = "embeddings", feature = "test-utils"))]
             neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(feature = "embeddings")]
-            enrichment_queue: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::VecDeque::new(),
-            )),
+            enrichment_queue,
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -869,7 +946,11 @@ impl AgentMemory {
                                 value: value.to_string(),
                             },
                         );
-                        // Background notification wired in Task 5.
+                        if self._config.enrichment_mode
+                            == memory::enrichment::EnrichmentMode::Background
+                        {
+                            self.enrichment_notify.notify_one();
+                        }
                     }
                 }
             }
@@ -2119,7 +2200,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        })).await;
         mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
         // Deferred: no fact-memory yet (enrichment not run), raw is present.
         assert!(mem.get_entry_for_test("turn1").await.is_some());
@@ -2140,7 +2221,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        })).await;
         mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
         let report = mem.enrich_pending().await;
@@ -2150,6 +2231,27 @@ mod tests {
         // fact now retrievable + queue drained
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
         assert_eq!(mem.enrichment_queue_len().await, 0);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn background_mode_enriches_without_explicit_call() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        // No enrich_pending() call; the background worker drains it.
+        mem.wait_for_enrichment().await;
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
     }
 
     #[cfg(feature = "embeddings")]
@@ -2165,7 +2267,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec![],
             fail: true,
-        }));
+        })).await;
         mem.store("turn1", "Alice: Berlin").await.unwrap();
         let report = mem.enrich_pending().await;
         assert_eq!(report.entries, 1);
@@ -2186,7 +2288,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        })).await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2210,7 +2312,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec![],
             fail: true,
-        }));
+        })).await;
         // Write still succeeds (best-effort); raw turn stays searchable/untagged.
         mem.store("turn1", "Alice: I moved to Berlin")
             .await
@@ -2380,7 +2482,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        })).await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2410,7 +2512,7 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        }));
+        })).await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();

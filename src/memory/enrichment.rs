@@ -434,3 +434,70 @@ pub struct EnrichmentReport {
     pub raw_sources_tagged: usize,
     pub errors: usize,
 }
+
+/// Drain the entire pending-enrichment queue and enrich each entry with
+/// bounded concurrency, folding the per-entry outcomes into a single
+/// `EnrichmentReport`. Best-effort: a per-entry failure is counted in the
+/// report, never aborts the batch. Shared core used by both
+/// `AgentMemory::enrich_pending` (Deferred mode, explicit call) and the
+/// Background worker loop (continuous drain on notify).
+#[cfg(feature = "embeddings")]
+pub async fn drain_and_enrich(
+    queue: &std::sync::Arc<tokio::sync::Mutex<std::collections::VecDeque<PendingEnrichment>>>,
+    storage: &std::sync::Arc<dyn crate::memory::storage::Storage + Send + Sync>,
+    kg: &std::sync::Arc<tokio::sync::RwLock<crate::memory::knowledge_graph::MemoryKnowledgeGraph>>,
+    state: &std::sync::Arc<tokio::sync::RwLock<crate::memory::state::AgentState>>,
+    reasoner: &std::sync::Arc<dyn crate::memory::reasoning::MemoryReasoner>,
+    scoring: &Option<std::sync::Arc<dyn crate::memory::embeddings::provider::EmbeddingProvider>>,
+    params: EnrichmentParams,
+    concurrency: usize,
+) -> EnrichmentReport {
+    use futures::stream::{self, StreamExt};
+
+    let pending: Vec<PendingEnrichment> = {
+        let mut q = queue.lock().await;
+        q.drain(..).collect()
+    };
+    if pending.is_empty() {
+        return EnrichmentReport::default();
+    }
+    let concurrency = concurrency.max(1);
+    let outcomes = stream::iter(pending)
+        .map(|p| {
+            let (storage, kg, state, reasoner, scoring, params) = (
+                storage.clone(),
+                kg.clone(),
+                state.clone(),
+                reasoner.clone(),
+                scoring.clone(),
+                params,
+            );
+            async move {
+                enrich_one(
+                    &storage, &kg, &state, &reasoner, &scoring, params, &p.key, &p.value,
+                )
+                .await
+            }
+        })
+        .buffer_unordered(concurrency)
+        .collect::<Vec<_>>()
+        .await;
+    let mut report = EnrichmentReport {
+        entries: outcomes.len(),
+        ..Default::default()
+    };
+    for o in outcomes {
+        match o {
+            Ok(oc) => {
+                report.facts_stored += oc.facts_stored;
+                report.supersessions += oc.supersessions;
+                report.raw_sources_tagged += usize::from(oc.raw_tagged);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "enrichment degraded for entry");
+                report.errors += 1;
+            }
+        }
+    }
+    report
+}
