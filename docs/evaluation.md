@@ -2033,3 +2033,27 @@ turns), local 7B reasoner, default ollama parallelism.
 off the critical path); the additional concurrency speedup on total enrichment is available with a
 backend that serves requests in parallel. Default mode remains `Inline` (unchanged behavior); the
 opt-in `Deferred`/`Background` modes carry the decoupling.
+
+### Follow-up: the enrichment concurrency is near-linear with a parallel backend (2026-07-23)
+
+The measurement above showed total enrichment at 1.1× because ollama (default `num_parallel`) served
+the 8 concurrent requests nearly serially — the LLM backend, not the async code, was the ceiling. To
+isolate the harness concurrency from the backend, we re-ran the same `--deferred-enrichment` path
+(same conv-0, same 8-way `enrich_pending`) against a **mock OpenAI-compatible endpoint that serves
+requests concurrently** with a fixed 1 s per-call delay — i.e. a genuinely parallel-capable backend:
+
+| path | time |
+|---|---|
+| synchronous (Inline) ingest | 844.7 s |
+| deferred: raw write | 2.3 s |
+| deferred: enrich (concurrency 8) | 106.3 s |
+| **total speedup** | **7.8×** |
+
+**7.8× at concurrency 8 (~97.5% efficiency).** The enrichment concurrency is real and near-linear; the
+1.1× in the real-7B run was entirely the single-model backend serializing requests, not the code. The
+two measurements bracket the truth: **the async write path (a) decouples the hot path unconditionally
+(store() 630× faster) and (b) parallelizes enrichment near-linearly — the realized wall-clock speedup
+equals the LLM backend's effective serving concurrency** (ollama default ≈1, so 1.1×; a batching/
+replicated/hosted backend at 8-way → ~7.8×). Caveat: the mock is a controlled backend (fixed 1 s
+latency), used only to isolate the harness-side concurrency; the real-LLM number remains the honest
+end-to-end figure for a single local model.
