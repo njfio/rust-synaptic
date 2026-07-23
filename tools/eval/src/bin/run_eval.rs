@@ -174,6 +174,12 @@ async fn main() -> Result<(), String> {
     // `--reflect` triggers reflection/synthesis after ingestion so insight
     // memories join the QA haystack (measures capability 2 of the v2 spec).
     let reflect = args.iter().any(|a| a == "--reflect");
+    // `--deferred-enrichment` measures the write-path speedup of deferred
+    // (queue-then-batch) enrichment vs synchronous (Inline) ingest, for
+    // conversation 0 only. Requires the library LLM reasoner
+    // (SYNAPTIC_LLM_URL/SYNAPTIC_LLM_MODEL + the `llm-reasoning` feature);
+    // prints a not-run notice (never fabricated numbers) if unset.
+    let deferred_enrichment = args.iter().any(|a| a == "--deferred-enrichment");
     let dataset_path = args
         .iter()
         .find(|a| !a.starts_with("--") && a.parse::<usize>().is_err())
@@ -223,6 +229,9 @@ async fn main() -> Result<(), String> {
 
     // 1. Retrieval quality + latency (default AgentMemory pipeline), one
     //    concurrent task per conversation (independent haystacks).
+    if deferred_enrichment {
+        return run_deferred_enrichment(&conversations, &mut w).await;
+    }
     if recall_curve {
         return run_recall_curve(&conversations, &mut w).await;
     }
@@ -739,6 +748,78 @@ mod forget_curve_tests {
         for &i in &test {
             assert_eq!(fnv(&keys[i]) & 1, 1);
         }
+    }
+}
+
+/// `--deferred-enrichment`: measure the write-path speedup of deferred
+/// (queue-then-bounded-concurrent-batch) enrichment vs synchronous (Inline)
+/// ingest, on conversation 0 only. Requires the library LLM reasoner
+/// (`SYNAPTIC_LLM_URL`/`SYNAPTIC_LLM_MODEL`, built with `llm-reasoning`);
+/// without it, prints a not-run notice — never a fabricated number.
+async fn run_deferred_enrichment(
+    conversations: &[EvalConversation],
+    w: &mut impl FnMut(String) -> Result<(), String>,
+) -> Result<(), String> {
+    w("== Deferred-enrichment ingest speedup (conv 0) ==".to_string())?;
+    if conversations.is_empty() {
+        w("not run: no conversations loaded".to_string())?;
+        return Ok(());
+    }
+
+    let llm_url = std::env::var("SYNAPTIC_LLM_URL").ok();
+    let llm_model = std::env::var("SYNAPTIC_LLM_MODEL").ok();
+    if llm_url.is_none() || llm_model.is_none() {
+        w(
+            "not run: requires SYNAPTIC_LLM_URL and SYNAPTIC_LLM_MODEL (the library LLM \
+             reasoner) plus the `llm-reasoning` build feature"
+                .to_string(),
+        )?;
+        return Ok(());
+    }
+    #[cfg(not(feature = "llm-reasoning"))]
+    {
+        w("not run: binary built without the `llm-reasoning` feature".to_string())?;
+        return Ok(());
+    }
+    #[cfg(feature = "llm-reasoning")]
+    {
+        use synaptic::memory::enrichment::EnrichmentMode;
+        let conversation = &conversations[0];
+        let deferred_cfg = MemoryConfig {
+            enrichment_mode: EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let concurrency = deferred_cfg.enrichment_concurrency;
+        let mut deferred_memory = AgentMemory::new(deferred_cfg)
+            .await
+            .map_err(|e| e.to_string())?;
+        let (raw_secs, enrich_secs) = runner::ingest_deferred(conversation, &mut deferred_memory)
+            .await
+            .map_err(|e| e.to_string())?;
+        let total = raw_secs + enrich_secs;
+
+        let sync_cfg = MemoryConfig {
+            enrichment_mode: EnrichmentMode::Inline,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut sync_memory = AgentMemory::new(sync_cfg).await.map_err(|e| e.to_string())?;
+        let sync_start = std::time::Instant::now();
+        runner::ingest(conversation, &mut sync_memory)
+            .await
+            .map_err(|e| e.to_string())?;
+        let sync_secs = sync_start.elapsed().as_secs_f64();
+
+        w(format!("synchronous (Inline) ingest: {sync_secs:.3}s"))?;
+        w(format!(
+            "deferred: raw {raw_secs:.3}s + enrich {enrich_secs:.3}s = {total:.3}s  (concurrency {concurrency})"
+        ))?;
+        let speedup = if total > 0.0 { sync_secs / total } else { 0.0 };
+        w(format!("speedup: {speedup:.1}x"))?;
+        Ok(())
     }
 }
 
