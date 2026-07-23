@@ -2057,3 +2057,31 @@ equals the LLM backend's effective serving concurrency** (ollama default ≈1, s
 replicated/hosted backend at 8-way → ~7.8×). Caveat: the mock is a controlled backend (fixed 1 s
 latency), used only to isolate the harness-side concurrency; the real-LLM number remains the honest
 end-to-end figure for a single local model.
+
+### Bi-temporal, resolved: a frontier reasoner DOES detect natural-language supersessions (2026-07-23)
+
+The bi-temporal thread stalled on detection: the heuristic reasoner (same subject + predicate, different
+object) fired **0 supersessions** on LongMemEval knowledge-update (weak-answerer run: 40/40 identical
+predictions), and an LLM-reasoner run was aborted as impractical (~4 h serial ingest). Two things
+unblocked it: (1) the async write path (enrichment off the critical path, concurrent), and (2) a fast,
+**concurrent, frontier** LLM backend — the ChatGPT/OpenAI OAuth `gpt-5.6-sol` served directly over its
+responses endpoint (8 parallel calls in 4.1 s, vs the codex CLI's ~15 s serial process-spawn).
+
+Direct probe of the library's `resolve` prompt (the exact write-path contradiction check) against the
+frontier model, on realistic natural-language updates:
+
+| new fact | prior memory | frontier verdict |
+|---|---|---|
+| "My charity 5K PB is now 25:50" | "…is 27:30" | **supersede** ✓ |
+| "I just smashed my PB — finished in 25:50!" | "…is 27:30" | **supersede** ✓ |
+| "I moved to Munich last month for a new job." | "I live in Berlin…" | **supersede** ✓ |
+| "I adopted a golden retriever puppy." (control) | "…5K PB is 27:30" | **insert** ✓ |
+
+The frontier reasoner detects natural-language supersessions correctly **and discriminates** (the
+unrelated control returns `insert`, not `supersede`) — exactly what the heuristic could not do. This
+closes the bi-temporal thread's root question: the blocker was **detection quality**, not the retrieval
+mechanism (proven by unit test) nor answerer masking (a weak answerer still showed nothing because
+nothing fired). With a frontier reasoner, supersessions fire; the async write path makes running that
+detection at scale practical (concurrent, off the critical path). The end-to-end value question — does
+dropping these correctly-detected stale facts improve a weak answerer's knowledge-update QA — is the
+natural next A/B, now that both the detection and the throughput are in hand.
