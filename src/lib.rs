@@ -615,7 +615,8 @@ impl AgentMemory {
         // moved into `agent` below; it operates purely on shared `Arc`
         // handles, so it can run independently of the `AgentMemory` value.
         #[cfg(feature = "embeddings")]
-        let enrichment_worker = if config.enrichment_mode == memory::enrichment::EnrichmentMode::Background
+        let enrichment_worker = if config.enrichment_mode
+            == memory::enrichment::EnrichmentMode::Background
             && knowledge_graph.is_some()
         {
             let queue = enrichment_queue.clone();
@@ -1598,7 +1599,10 @@ impl AgentMemory {
                         // tiers is not an access, so do not bump
                         // last_accessed/access_count (which would grant
                         // artificial recency protection on later passes).
-                        self.state.write().await.insert_preserving_access(demoted.clone());
+                        self.state
+                            .write()
+                            .await
+                            .insert_preserving_access(demoted.clone());
                     }
                     report.demoted.push(demoted.key);
                 }
@@ -1669,7 +1673,9 @@ impl AgentMemory {
     /// Create a checkpoint of the current state
     pub async fn checkpoint(&self) -> Result<Uuid> {
         let state_guard = self.state.read().await;
-        self.checkpoint_manager.create_checkpoint(&state_guard).await
+        self.checkpoint_manager
+            .create_checkpoint(&state_guard)
+            .await
     }
 
     /// Restore from a checkpoint
@@ -2200,8 +2206,11 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        })).await;
-        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        }))
+        .await;
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
         // Deferred: no fact-memory yet (enrichment not run), raw is present.
         assert!(mem.get_entry_for_test("turn1").await.is_some());
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
@@ -2221,8 +2230,11 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        })).await;
-        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        }))
+        .await;
+        mem.store("turn1", "Alice: I moved to Berlin")
+            .await
+            .unwrap();
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
         let report = mem.enrich_pending().await;
         assert_eq!(report.entries, 1);
@@ -2267,7 +2279,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec![],
             fail: true,
-        })).await;
+        }))
+        .await;
         mem.store("turn1", "Alice: Berlin").await.unwrap();
         let report = mem.enrich_pending().await;
         assert_eq!(report.entries, 1);
@@ -2288,7 +2301,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        })).await;
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2312,7 +2326,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec![],
             fail: true,
-        })).await;
+        }))
+        .await;
         // Write still succeeds (best-effort); raw turn stays searchable/untagged.
         mem.store("turn1", "Alice: I moved to Berlin")
             .await
@@ -2482,7 +2497,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        })).await;
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2512,7 +2528,8 @@ mod tests {
         mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
             facts: vec!["Alice lives in Berlin".to_string()],
             fail: false,
-        })).await;
+        }))
+        .await;
         mem.store("turn1", "Alice: I moved to Berlin last year")
             .await
             .unwrap();
@@ -2780,13 +2797,10 @@ mod tests {
         let mut mem = AgentMemory::new(config).await.unwrap();
         mem.store("promo_k", "value to promote").await.unwrap();
 
-        let got = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            mem.retrieve("promo_k"),
-        )
-        .await
-        .expect("retrieve() must not deadlock on the promotion path")
-        .unwrap();
+        let got = tokio::time::timeout(std::time::Duration::from_secs(10), mem.retrieve("promo_k"))
+            .await
+            .expect("retrieve() must not deadlock on the promotion path")
+            .unwrap();
         assert!(got.is_some(), "retrieved promoted memory must be present");
     }
 }

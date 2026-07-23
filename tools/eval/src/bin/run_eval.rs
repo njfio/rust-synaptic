@@ -806,7 +806,9 @@ async fn run_deferred_enrichment(
             enable_knowledge_graph: true,
             ..Default::default()
         };
-        let mut sync_memory = AgentMemory::new(sync_cfg).await.map_err(|e| e.to_string())?;
+        let mut sync_memory = AgentMemory::new(sync_cfg)
+            .await
+            .map_err(|e| e.to_string())?;
         let sync_start = std::time::Instant::now();
         runner::ingest(conversation, &mut sync_memory)
             .await
