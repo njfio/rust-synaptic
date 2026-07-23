@@ -2072,6 +2072,14 @@ async fn run_agentic_qa_impl(
             }
         }
 
+        // Background enrichment mode: ingest only enqueued the turns; wait for
+        // the background worker to finish enriching (distilling facts, marking
+        // supersessions) before querying so retrieval reflects the enrichment.
+        if memory_config.enrichment_mode == synaptic::memory::enrichment::EnrichmentMode::Background
+        {
+            memory.wait_for_enrichment().await;
+        }
+
         let memory_ref = &memory;
         let mut outcomes = stream::iter(pending)
             .map(|question| {
