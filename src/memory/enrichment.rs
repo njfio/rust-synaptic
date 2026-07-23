@@ -56,9 +56,6 @@ mod enrich_one_engine {
         /// Mirrors `AgentMemory.distillation_live`: whether extracted facts
         /// are persisted as their own retrievable memories.
         pub distillation_live: bool,
-        /// Reserved for a future step (raw-source exclusion default);
-        /// unused by `enrich_one` itself today.
-        pub exclude_raw_default: bool,
     }
 
     /// Summary of what `enrich_one` did for a single entry.
@@ -143,6 +140,13 @@ mod enrich_one_engine {
     /// inline enrichment path: raw storage + state, plus a best-effort
     /// scoring-provider embed so the fact stays pipeline-retrievable (this
     /// mirrors what `AgentMemory::store_with_report` does for every entry).
+    ///
+    /// Deferred/Background fact-memories are written to storage + state and
+    /// the scoring corpus (so they are retrievable via storage/dense/sparse
+    /// search and are checkpointable), but -- unlike the Inline path -- do
+    /// NOT get a knowledge-graph memory node, temporal tracking, or
+    /// analytics events. Graph-based retrieval over deferred facts therefore
+    /// differs from Inline.
     async fn store_fact_shared(
         storage: &Arc<dyn Storage + Send + Sync>,
         state: &Arc<RwLock<AgentState>>,
@@ -328,6 +332,7 @@ mod enrich_one_engine {
     }
 
     #[cfg(test)]
+    #[allow(clippy::unwrap_used)]
     mod tests {
         use super::*;
         use crate::memory::knowledge_graph::GraphConfig;
@@ -389,7 +394,6 @@ mod enrich_one_engine {
 
             let params = EnrichmentParams {
                 distillation_live: true,
-                exclude_raw_default: false,
             };
 
             let outcome = enrich_one(
@@ -442,6 +446,7 @@ pub struct EnrichmentReport {
 /// `AgentMemory::enrich_pending` (Deferred mode, explicit call) and the
 /// Background worker loop (continuous drain on notify).
 #[cfg(feature = "embeddings")]
+#[allow(clippy::too_many_arguments)]
 pub async fn drain_and_enrich(
     queue: &std::sync::Arc<tokio::sync::Mutex<std::collections::VecDeque<PendingEnrichment>>>,
     storage: &std::sync::Arc<dyn crate::memory::storage::Storage + Send + Sync>,
@@ -451,6 +456,7 @@ pub async fn drain_and_enrich(
     scoring: &Option<std::sync::Arc<dyn crate::memory::embeddings::provider::EmbeddingProvider>>,
     params: EnrichmentParams,
     concurrency: usize,
+    inflight: &std::sync::Arc<std::sync::atomic::AtomicUsize>,
 ) -> EnrichmentReport {
     use futures::stream::{self, StreamExt};
 
@@ -461,22 +467,31 @@ pub async fn drain_and_enrich(
     if pending.is_empty() {
         return EnrichmentReport::default();
     }
+    // Count the whole batch as in-flight up front: the queue is emptied
+    // above before any entry has actually finished enriching, so callers
+    // like `wait_for_enrichment` that only poll the queue would otherwise
+    // see "empty" while enrichment is still running. Each task decrements
+    // its own entry once `enrich_one` returns (success or error).
+    inflight.fetch_add(pending.len(), std::sync::atomic::Ordering::SeqCst);
     let concurrency = concurrency.max(1);
     let outcomes = stream::iter(pending)
         .map(|p| {
-            let (storage, kg, state, reasoner, scoring, params) = (
+            let (storage, kg, state, reasoner, scoring, params, inflight) = (
                 storage.clone(),
                 kg.clone(),
                 state.clone(),
                 reasoner.clone(),
                 scoring.clone(),
                 params,
+                inflight.clone(),
             );
             async move {
-                enrich_one(
+                let result = enrich_one(
                     &storage, &kg, &state, &reasoner, &scoring, params, &p.key, &p.value,
                 )
-                .await
+                .await;
+                inflight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                result
             }
         })
         .buffer_unordered(concurrency)

@@ -189,6 +189,13 @@ pub struct AgentMemory {
     /// the queue is empty.
     #[cfg(feature = "embeddings")]
     enrichment_shutdown: Arc<std::sync::atomic::AtomicBool>,
+    /// Number of entries currently drained from `enrichment_queue` but not
+    /// yet finished enriching. `drain_and_enrich` moves entries into a local
+    /// batch before running them concurrently, so the queue itself is empty
+    /// while enrichment is still in flight; `wait_for_enrichment` must poll
+    /// this in addition to the queue to avoid returning early.
+    #[cfg(feature = "embeddings")]
+    enrichment_inflight: Arc<std::sync::atomic::AtomicUsize>,
     /// Handle to the spawned Background worker task; `None` unless
     /// `MemoryConfig::enrichment_mode == Background` and a knowledge graph is
     /// configured. Taken (and awaited) by `shutdown()`.
@@ -235,7 +242,6 @@ impl AgentMemory {
         };
         let params = memory::enrichment::EnrichmentParams {
             distillation_live: self.distillation_live,
-            exclude_raw_default: self._config.retrieval_excludes_raw_sources,
         };
         let concurrency = self._config.enrichment_concurrency.max(1);
         let reasoner = self.reasoner_cell.lock().await.clone();
@@ -248,6 +254,7 @@ impl AgentMemory {
             &self.retrieval_scoring_provider,
             params,
             concurrency,
+            &self.enrichment_inflight,
         )
         .await
     }
@@ -259,7 +266,12 @@ impl AgentMemory {
     #[cfg(feature = "embeddings")]
     pub async fn wait_for_enrichment(&self) {
         loop {
-            if self.enrichment_queue.lock().await.is_empty() {
+            let queue_empty = self.enrichment_queue.lock().await.is_empty();
+            let inflight_zero = self
+                .enrichment_inflight
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0;
+            if queue_empty && inflight_zero {
                 return;
             }
             self.enrichment_notify.notify_one();
@@ -607,6 +619,8 @@ impl AgentMemory {
         #[cfg(feature = "embeddings")]
         let enrichment_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         #[cfg(feature = "embeddings")]
+        let enrichment_inflight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        #[cfg(feature = "embeddings")]
         let enrichment_queue: std::sync::Arc<
             tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
         > = std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::VecDeque::new()));
@@ -622,6 +636,7 @@ impl AgentMemory {
             let queue = enrichment_queue.clone();
             let notify = enrichment_notify.clone();
             let shutdown = enrichment_shutdown.clone();
+            let inflight = enrichment_inflight.clone();
             let storage = storage.clone();
             let Some(kg) = knowledge_graph.clone() else {
                 unreachable!("guarded by knowledge_graph.is_some() above")
@@ -629,19 +644,18 @@ impl AgentMemory {
             let worker_state = state.clone();
             let reasoner_cell = reasoner_cell.clone();
             let scoring = retrieval_scoring_provider.clone();
-            let params = memory::enrichment::EnrichmentParams {
-                distillation_live,
-                exclude_raw_default: config.retrieval_excludes_raw_sources,
-            };
+            let params = memory::enrichment::EnrichmentParams { distillation_live };
             let concurrency = config.enrichment_concurrency.max(1);
             Some(tokio::spawn(async move {
                 loop {
-                    notify.notified().await;
-                    if shutdown.load(std::sync::atomic::Ordering::SeqCst)
-                        && queue.lock().await.is_empty()
-                    {
-                        break;
-                    }
+                    // Drain whatever is queued right now. `Notify::notify_one`
+                    // coalesces concurrent notifications into a single permit,
+                    // so a `store()` while we're already draining plus a
+                    // subsequent `shutdown()` can both collapse onto one
+                    // permit; draining first (before checking shutdown) makes
+                    // sure any entry queued before shutdown is always
+                    // enriched, and the loop then exits below without parking
+                    // on a `notified()` that will never be woken again.
                     let reasoner = reasoner_cell.lock().await.clone();
                     memory::enrichment::drain_and_enrich(
                         &queue,
@@ -652,8 +666,15 @@ impl AgentMemory {
                         &scoring,
                         params,
                         concurrency,
+                        &inflight,
                     )
                     .await;
+                    if shutdown.load(std::sync::atomic::Ordering::SeqCst)
+                        && queue.lock().await.is_empty()
+                    {
+                        break;
+                    }
+                    notify.notified().await;
                 }
             }))
         } else {
@@ -680,6 +701,8 @@ impl AgentMemory {
             enrichment_notify,
             #[cfg(feature = "embeddings")]
             enrichment_shutdown,
+            #[cfg(feature = "embeddings")]
+            enrichment_inflight,
             #[cfg(feature = "embeddings")]
             enrichment_worker,
             #[cfg(feature = "embeddings")]
@@ -2263,6 +2286,110 @@ mod tests {
         mem.store("turn1", "Alice: Berlin").await.unwrap();
         // No enrich_pending() call; the background worker drains it.
         mem.wait_for_enrichment().await;
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+    }
+
+    // Regression test for the shutdown-hang bug: `Notify::notify_one`
+    // coalesces concurrent permits, so a `store()` racing a `shutdown()`
+    // could previously leave a queued entry undrained and park the worker
+    // forever, hanging `shutdown().await`. The drain-then-check loop always
+    // drains before checking the shutdown flag, so this must complete well
+    // within the timeout.
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn shutdown_drains_queued_entries_and_returns() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        // Immediately shut down without waiting for enrichment first; a
+        // pre-fix worker loop can park forever here.
+        tokio::time::timeout(std::time::Duration::from_secs(10), mem.shutdown())
+            .await
+            .expect("shutdown() hung: queued entry was never drained before exit");
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
+    }
+
+    // Regression test for the early-return bug: `wait_for_enrichment` only
+    // polled the queue, but `drain_and_enrich` empties the queue into a
+    // local batch *before* running the (potentially slow) enrichment, so the
+    // queue looks empty for the whole duration of enrichment. A slow stub
+    // reasoner makes the race deterministic: pre-fix this assertion would
+    // fail because the fact isn't written yet when `wait_for_enrichment`
+    // returns; post-fix the in-flight counter keeps it waiting.
+    #[cfg(feature = "embeddings")]
+    #[derive(Clone)]
+    struct SlowStubReasoner {
+        facts: Vec<String>,
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[async_trait::async_trait]
+    impl memory::reasoning::MemoryReasoner for SlowStubReasoner {
+        async fn extract(
+            &self,
+            _text: &str,
+            _ctx: &memory::reasoning::ExtractionContext,
+        ) -> Result<memory::reasoning::Extraction> {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            Ok(memory::reasoning::Extraction {
+                facts: self
+                    .facts
+                    .iter()
+                    .map(|t| memory::reasoning::Fact {
+                        text: t.clone(),
+                        entities: Vec::new(),
+                        relations: Vec::new(),
+                    })
+                    .collect(),
+            })
+        }
+        async fn resolve(
+            &self,
+            _candidate: &memory::reasoning::Fact,
+            _neighbors: &[memory::reasoning::NeighborFact],
+        ) -> Result<memory::reasoning::ConflictResolution> {
+            Ok(memory::reasoning::ConflictResolution::Insert)
+        }
+        async fn synthesize(
+            &self,
+            _cluster: &[MemoryEntry],
+        ) -> Result<Option<memory::reasoning::Insight>> {
+            Ok(None)
+        }
+        fn name(&self) -> &str {
+            "SlowStubReasoner"
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn wait_for_enrichment_blocks_until_enriched() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Background,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(SlowStubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+        }))
+        .await;
+        mem.store("turn1", "Alice: Berlin").await.unwrap();
+        mem.wait_for_enrichment().await;
+        // Must be true immediately after wait_for_enrichment returns, not
+        // merely "eventually" -- proving the wait covered enrichment, not
+        // just the queue drain.
         assert!(mem.get_entry_for_test("turn1::fact0").await.is_some());
     }
 
