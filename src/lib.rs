@@ -172,6 +172,12 @@ pub struct AgentMemory {
     /// candidate cap regardless of store size.
     #[cfg(all(feature = "embeddings", feature = "test-utils"))]
     neighbor_examined_max: std::sync::atomic::AtomicUsize,
+    /// Entries awaiting enrichment when `MemoryConfig::enrichment_mode` is
+    /// `Deferred` or `Background` (see `memory::enrichment`).
+    #[cfg(feature = "embeddings")]
+    enrichment_queue: std::sync::Arc<
+        tokio::sync::Mutex<std::collections::VecDeque<memory::enrichment::PendingEnrichment>>,
+    >,
 }
 
 impl AgentMemory {
@@ -189,6 +195,11 @@ impl AgentMemory {
     #[cfg(all(feature = "embeddings", test))]
     async fn get_entry_for_test(&self, key: &str) -> Option<MemoryEntry> {
         self.storage.retrieve(key).await.ok().flatten()
+    }
+
+    #[cfg(all(feature = "embeddings", test))]
+    async fn enrichment_queue_len(&self) -> usize {
+        self.enrichment_queue.lock().await.len()
     }
 
     /// Create a new agent memory system with the given configuration
@@ -551,6 +562,10 @@ impl AgentMemory {
             retrieval_tfidf_stats,
             #[cfg(all(feature = "embeddings", feature = "test-utils"))]
             neighbor_examined_max: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(feature = "embeddings")]
+            enrichment_queue: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::VecDeque::new(),
+            )),
         };
 
         // Initialize multimodal memory after creating base agent to avoid circular dependency
@@ -767,9 +782,28 @@ impl AgentMemory {
         // extraction does not recurse.
         #[cfg(feature = "embeddings")]
         if self.knowledge_graph.is_some() && !self.storing_facts {
-            if let Err(e) = self.reason_over_store(&entry).await {
-                tracing::warn!(error = %e, "reasoning degraded during store");
-                degradations.reasoning = Some(e.to_string());
+            match self._config.enrichment_mode {
+                memory::enrichment::EnrichmentMode::Inline => {
+                    if let Err(e) = self.reason_over_store(&entry).await {
+                        tracing::warn!(error = %e, "reasoning degraded during store");
+                        degradations.reasoning = Some(e.to_string());
+                    }
+                }
+                memory::enrichment::EnrichmentMode::Deferred
+                | memory::enrichment::EnrichmentMode::Background => {
+                    // Never enqueue a fact-memory (re-entrancy guard already
+                    // ensures fact stores set storing_facts, so we never reach
+                    // here for them; the key check is belt-and-braces).
+                    if !key.contains("::fact") {
+                        self.enrichment_queue.lock().await.push_back(
+                            memory::enrichment::PendingEnrichment {
+                                key: key.to_string(),
+                                value: value.to_string(),
+                            },
+                        );
+                        // Background notification wired in Task 5.
+                    }
+                }
             }
         }
 
@@ -1851,6 +1885,12 @@ pub struct MemoryConfig {
     /// augment recovered baseline accuracy (0.505 → 0.258 facts-primary vs 0.500
     /// augment). Only has an effect when distillation is live.
     pub retrieval_excludes_raw_sources: bool,
+    /// How write-path LLM enrichment is scheduled (see
+    /// [`memory::enrichment::EnrichmentMode`]). Default `Inline` (enrich
+    /// synchronously inside `store`), byte-for-byte today's behavior.
+    pub enrichment_mode: memory::enrichment::EnrichmentMode,
+    /// Bounded concurrency for `enrich_pending`/background enrichment. Default 8.
+    pub enrichment_concurrency: usize,
 }
 
 impl Default for MemoryConfig {
@@ -1911,6 +1951,8 @@ impl Default for MemoryConfig {
             // facts alongside raw turns rather than excluding raw from search.
             // The A/B showed exclusion is what hurt QA; augment ties baseline.
             retrieval_excludes_raw_sources: false,
+            enrichment_mode: memory::enrichment::EnrichmentMode::Inline,
+            enrichment_concurrency: 8,
         }
     }
 }
@@ -1984,6 +2026,37 @@ mod tests {
         fn name(&self) -> &str {
             "StubReasoner"
         }
+    }
+
+    #[tokio::test]
+    async fn enrichment_defaults_to_inline() {
+        let config = MemoryConfig::default();
+        assert_eq!(
+            config.enrichment_mode,
+            memory::enrichment::EnrichmentMode::Inline
+        );
+        assert_eq!(config.enrichment_concurrency, 8);
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[tokio::test]
+    async fn deferred_mode_queues_without_inline_enrich() {
+        let config = MemoryConfig {
+            enrichment_mode: memory::enrichment::EnrichmentMode::Deferred,
+            store_extracted_facts: true,
+            enable_knowledge_graph: true,
+            ..Default::default()
+        };
+        let mut mem = AgentMemory::new(config).await.unwrap();
+        mem.set_reasoner_for_test(std::sync::Arc::new(StubReasoner {
+            facts: vec!["Alice lives in Berlin".to_string()],
+            fail: false,
+        }));
+        mem.store("turn1", "Alice: I moved to Berlin").await.unwrap();
+        // Deferred: no fact-memory yet (enrichment not run), raw is present.
+        assert!(mem.get_entry_for_test("turn1").await.is_some());
+        assert!(mem.get_entry_for_test("turn1::fact0").await.is_none());
+        assert_eq!(mem.enrichment_queue_len().await, 1);
     }
 
     #[cfg(feature = "embeddings")]
